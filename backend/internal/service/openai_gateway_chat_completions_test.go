@@ -181,6 +181,56 @@ func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(
 	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, "cache-key-123")), upstream.lastReq.Header.Get("session_id"))
 }
 
+func TestForwardAsChatCompletions_APIKeyAutoDerivesPromptCacheKeyWhenMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.5","messages":[{"role":"system","content":"repo assistant"},{"role":"user","content":"inspect the project"},{"role":"assistant","content":"ok"},{"role":"user","content":"continue"}],"tools":[{"type":"function","function":{"name":"exec_command","parameters":{"type":"object"}}}],"stream":false}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_auto_cache_1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop first"}}`)),
+		},
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_auto_cache_2"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop second"}}`)),
+		},
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          2,
+		Name:        "openai-compatible",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-compatible"},
+		Extra:       map[string]any{"openai_responses_supported": true},
+	}
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("api_key", &APIKey{ID: 99})
+
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.5")
+		require.Error(t, err)
+		require.Nil(t, result)
+	}
+
+	require.Len(t, upstream.bodies, 2)
+	firstKey := gjson.GetBytes(upstream.bodies[0], "prompt_cache_key").String()
+	secondKey := gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").String()
+	require.NotEmpty(t, firstKey)
+	require.True(t, strings.HasPrefix(firstKey, compatAutoPromptCacheKeyPrefix))
+	require.Equal(t, firstKey, secondKey)
+	require.NotContains(t, firstKey, "inspect the project")
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, firstKey)), upstream.requests[0].Header.Get("session_id"))
+	require.Equal(t, upstream.requests[0].Header.Get("session_id"), upstream.requests[1].Header.Get("session_id"))
+}
+
 func TestForwardAsChatCompletions_OAuthDoesNotInjectDefaultInstructions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

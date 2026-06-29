@@ -101,8 +101,13 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
-	if promptCacheKey == "" && account.Type == AccountTypeOAuth && shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
-		promptCacheKey = deriveCompatPromptCacheKey(&chatReq, upstreamModel)
+	if promptCacheKey == "" {
+		switch {
+		case account.Type == AccountTypeOAuth && shouldAutoInjectPromptCacheKeyForCompat(upstreamModel):
+			promptCacheKey = deriveCompatPromptCacheKey(&chatReq, upstreamModel)
+		case account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount:
+			promptCacheKey = deriveAutoPromptCacheKeyFromBody(c, body, upstreamModel, getAPIKeyIDFromContext(c))
+		}
 		compatPromptCacheInjected = promptCacheKey != ""
 	}
 

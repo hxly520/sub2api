@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/tidwall/gjson"
 )
 
 const compatPromptCacheKeyPrefix = "compat_cc_"
+const compatAutoPromptCacheKeyPrefix = "compat_auto_"
 
 func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
 	trimmed := strings.TrimSpace(strings.ToLower(model))
@@ -67,6 +69,32 @@ func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedMod
 	}
 
 	return compatPromptCacheKeyPrefix + hashSensitiveValueForLog(strings.Join(seedParts, "|"))
+}
+
+func deriveAutoPromptCacheKeyFromBody(c interface{ GetHeader(string) string }, body []byte, model string, apiKeyID int64) string {
+	rawSession := ""
+	if c != nil {
+		rawSession = strings.TrimSpace(c.GetHeader("session_id"))
+		if rawSession == "" {
+			rawSession = strings.TrimSpace(c.GetHeader("conversation_id"))
+		}
+	}
+	if rawSession == "" && len(body) > 0 {
+		rawSession = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	}
+	if rawSession == "" {
+		rawSession = deriveOpenAIContentSessionSeed(body)
+	}
+	if rawSession == "" {
+		return ""
+	}
+
+	normalizedModel := strings.TrimSpace(model)
+	if normalizedModel == "" && len(body) > 0 {
+		normalizedModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	}
+	seed := fmt.Sprintf("api_key=%d|model=%s|session=%s", apiKeyID, normalizedModel, rawSession)
+	return compatAutoPromptCacheKeyPrefix + hashSensitiveValueForLog(seed)
 }
 
 func deriveAnthropicCompatPromptCacheKey(req *apicompat.AnthropicRequest, mappedModel string) string {
