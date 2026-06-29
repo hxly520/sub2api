@@ -11,10 +11,10 @@ payload changed in the produced image archive is `/app/sub2api`.
 - Image tag inside archive: `gptcodex/sub2api:0.1.139`
 - Base image: `weishaw/sub2api:0.1.139`
 - Base linux/amd64 digest: `sha256:2bc58a1af11c0b3e22c7c1c1b99b65da46e480e3936d01a86db3a4f3caef5e7b`
-- Produced image digest: `sha256:53e364e307dffb5a0161cfe50c2b7f8fde28260015d52f8a84280d580528dae0`
+- Produced image digest: `sha256:890d2bbad3cdae298fa5382bbbed10dbb71a25bdf97a70e9cc33e7760d29100c`
 - Docker archive: `build-cachecompat/gptcodex-sub2api-0.1.139-cachecompat.docker.tar`
-- Archive SHA256: `aa5369758613df2e59430747bc43be74650a20df53b0a162adf3fdd78b1a286a`
-- Binary SHA256: `fb1b2844c180cbe401e62d548b2ada286a6da6e1284aaeb45f016d99894f94ef`
+- Archive SHA256: `ce9efa10932d6be9d6359cf7c76b7a455e1506aac472ded5c4e35a8756c24ec8`
+- Binary SHA256: `c02d13ba686bce43842c66b4bd7fa48007308367d5ce2d0d5461c027e1f4f41d`
 
 ## What changed
 
@@ -98,4 +98,3 @@ go test ./internal/service -run 'TestForwardAsChatCompletions_APIKey(AutoDerives
 git diff --check
 crane validate --tarball build-cachecompat/gptcodex-sub2api-0.1.139-cachecompat.docker.tar
 ```
-
