@@ -2875,7 +2875,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			reqBody = nil
 		}
 	}
-	promptCacheKey = strings.TrimSpace(requestView.PromptCacheKey)
+	if requestPromptCacheKey := strings.TrimSpace(requestView.PromptCacheKey); requestPromptCacheKey != "" || promptCacheKey == "" {
+		promptCacheKey = requestPromptCacheKey
+	}
 	if (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && !imageIntent && promptCacheKey == "" {
 		if autoKey := deriveAutoPromptCacheKeyFromBody(c, body, upstreamModel, getAPIKeyIDFromContext(c)); autoKey != "" {
 			var patchErr error
