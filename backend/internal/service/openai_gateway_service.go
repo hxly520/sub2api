@@ -2968,6 +2968,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				requestView = newOpenAIRequestView(body)
 				reqBody = nil
 				bodyModified = false
+			} else {
+				return nil, fmt.Errorf("apply request patches: %w", patchErr)
 			}
 		}
 		if bodyModified {
@@ -2981,6 +2983,27 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, fmt.Errorf("serialize request body: %w", marshalErr)
 			}
 			requestView = newOpenAIRequestView(body)
+			reqBody = nil
+		}
+	}
+	if requestPromptCacheKey := strings.TrimSpace(requestView.PromptCacheKey); requestPromptCacheKey != "" || promptCacheKey == "" {
+		promptCacheKey = requestPromptCacheKey
+	}
+	if (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && !imageIntent && promptCacheKey == "" {
+		if autoKey := deriveAutoPromptCacheKeyFromBody(c, body, upstreamModel, getAPIKeyIDFromContext(c)); autoKey != "" {
+			var patchErr error
+			body, patchErr = sjson.SetBytes(body, "prompt_cache_key", autoKey)
+			if patchErr != nil {
+				return nil, fmt.Errorf("inject prompt cache key: %w", patchErr)
+			}
+			requestView = newOpenAIRequestView(body)
+			reqBody = nil
+			promptCacheKey = autoKey
+			logger.L().Debug("openai responses: compat prompt_cache_key injected",
+				zap.Int64("account_id", account.ID),
+				zap.String("model", upstreamModel),
+				zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
+			)
 		}
 	}
 	imageBillingModel := ""
@@ -4521,6 +4544,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("conversation_id", isolated)
 			}
 		}
+	}
+	if (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && promptCacheKey != "" {
+		apiKeyID := getAPIKeyIDFromContext(c)
+		req.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
 	}
 
 	// Apply custom User-Agent if configured
