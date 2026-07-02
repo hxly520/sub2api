@@ -1485,6 +1485,26 @@
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
         </div>
+        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
+            <Select
+              v-model="openAICompatibleAuthHeader"
+              :options="openAICompatibleAuthHeaderOptions"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.authHeaderDesc') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.chatCompletionsUrl') }}</label>
+            <input
+              v-model="openAIChatCompletionsURL"
+              type="text"
+              class="input font-mono"
+              placeholder="https://api.example.com/v1/chat/completions"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.chatCompletionsUrlDesc') }}</p>
+          </div>
+        </div>
         <div>
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -2420,7 +2440,8 @@ import type {
   CheckMixedChannelResponse,
   OpenAICompactMode,
   OpenAIResponsesMode,
-  OpenAIEndpointCapability
+  OpenAIEndpointCapability,
+  OpenAICompatibleAuthHeader
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2505,6 +2526,8 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const openAICompatibleAuthHeader = ref<OpenAICompatibleAuthHeader>('Authorization')
+const openAIChatCompletionsURL = ref('')
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2732,6 +2755,11 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
+])
+const openAICompatibleAuthHeaderOptions = computed(() => [
+  { value: 'Authorization', label: t('admin.accounts.openai.authHeaderAuthorization') },
+  { value: 'api-key', label: t('admin.accounts.openai.authHeaderAPIKey') },
+  { value: 'x-api-key', label: t('admin.accounts.openai.authHeaderXAPIKey') }
 ])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
@@ -3175,6 +3203,15 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+    const authHeader = credentials.auth_header
+    openAICompatibleAuthHeader.value =
+      authHeader === 'api-key' || authHeader === 'x-api-key' || authHeader === 'Authorization'
+        ? authHeader
+        : 'Authorization'
+    openAIChatCompletionsURL.value =
+      typeof credentials.chat_completions_url === 'string'
+        ? credentials.chat_completions_url
+        : ''
 
     // Load model mappings and detect mode
     loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
@@ -3243,6 +3280,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
+    openAICompatibleAuthHeader.value = 'Authorization'
+    openAIChatCompletionsURL.value = ''
 
     // Load model mappings for OpenAI OAuth accounts
     if (newAccount.platform === 'openai' && newAccount.credentials) {
@@ -3795,6 +3834,16 @@ const handleSubmit = async () => {
         newCredentials.model_mapping = currentCredentials.model_mapping
       }
       if (props.account.platform === 'openai') {
+        if (openAICompatibleAuthHeader.value === 'Authorization') {
+          delete newCredentials.auth_header
+        } else {
+          newCredentials.auth_header = openAICompatibleAuthHeader.value
+        }
+        if (openAIChatCompletionsURL.value.trim()) {
+          newCredentials.chat_completions_url = openAIChatCompletionsURL.value.trim()
+        } else {
+          delete newCredentials.chat_completions_url
+        }
         applyOpenAIEndpointCapabilities(newCredentials)
         const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
         if (compactModelMapping) {

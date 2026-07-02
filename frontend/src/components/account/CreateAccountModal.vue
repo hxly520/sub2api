@@ -2814,6 +2814,26 @@
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
         </p>
+        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
+            <Select
+              v-model="openAICompatibleAuthHeader"
+              :options="openAICompatibleAuthHeaderOptions"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.authHeaderDesc') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.chatCompletionsUrl') }}</label>
+            <input
+              v-model="openAIChatCompletionsURL"
+              type="text"
+              class="input font-mono"
+              placeholder="https://api.example.com/v1/chat/completions"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.chatCompletionsUrlDesc') }}</p>
+          </div>
+        </div>
         <div>
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3314,7 +3334,8 @@ import type {
   CodexSessionImportMessage,
   OpenAICompactMode,
   OpenAIResponsesMode,
-  OpenAIEndpointCapability
+  OpenAIEndpointCapability,
+  OpenAICompatibleAuthHeader
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3462,15 +3483,27 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const openAICompatibleAuthHeader = ref<OpenAICompatibleAuthHeader>('Authorization')
+const openAIChatCompletionsURL = ref('')
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
-  return {
+  const credentials: {
+    platform: string
+    type: string
+    base_url?: string
+    api_key: string
+    auth_header?: string
+  } = {
     platform: form.platform,
     type: form.type,
     base_url: apiKeyBaseUrl.value || undefined,
     api_key: apiKeyValue.value
   }
+  if (form.platform === 'openai' && openAICompatibleAuthHeader.value !== 'Authorization') {
+    credentials.auth_header = openAICompatibleAuthHeader.value
+  }
+  return credentials
 })
 
 const editQuotaLimit = ref<number | null>(null)
@@ -3583,6 +3616,11 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
+])
+const openAICompatibleAuthHeaderOptions = computed(() => [
+  { value: 'Authorization', label: t('admin.accounts.openai.authHeaderAuthorization') },
+  { value: 'api-key', label: t('admin.accounts.openai.authHeaderAPIKey') },
+  { value: 'x-api-key', label: t('admin.accounts.openai.authHeaderXAPIKey') }
 ])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
@@ -3909,6 +3947,10 @@ watch(
           : newPlatform === 'grok'
             ? 'https://api.x.ai/v1'
             : 'https://api.anthropic.com'
+    if (newPlatform !== 'openai') {
+      openAICompatibleAuthHeader.value = 'Authorization'
+      openAIChatCompletionsURL.value = ''
+    }
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -4334,6 +4376,8 @@ const resetForm = () => {
   addMethod.value = 'oauth'
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  openAICompatibleAuthHeader.value = 'Authorization'
+  openAIChatCompletionsURL.value = ''
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4766,6 +4810,12 @@ const handleSubmit = async () => {
     }
   }
   if (form.platform === 'openai') {
+    if (openAICompatibleAuthHeader.value !== 'Authorization') {
+      credentials.auth_header = openAICompatibleAuthHeader.value
+    }
+    if (openAIChatCompletionsURL.value.trim()) {
+      credentials.chat_completions_url = openAIChatCompletionsURL.value.trim()
+    }
     applyOpenAIEndpointCapabilities(credentials)
     const compactModelMapping = buildOpenAICompactModelMapping()
     if (compactModelMapping) {
