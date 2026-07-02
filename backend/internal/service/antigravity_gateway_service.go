@@ -4119,14 +4119,11 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 			}
 
 			lastDataAt = time.Now()
+			recordFirstStreamPayloadMs(&firstTokenMs, startTime, ev.line)
 
 			// 处理 SSE 行，转换为 Claude 格式
 			claudeEvents := processor.ProcessLine(strings.TrimRight(ev.line, "\r\n"))
 			if len(claudeEvents) > 0 {
-				if firstTokenMs == nil {
-					ms := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &ms
-				}
 				cw.Write(claudeEvents)
 			}
 

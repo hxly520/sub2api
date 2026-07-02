@@ -3533,11 +3533,17 @@ export default {
         responsesModeDesc:
           'Only applies to the OpenAI API Key text forwarding path. Auto follows probe results; force modes override probing.',
         responsesModeAuto: 'Auto',
-        responsesModeForceResponses: 'Force Responses',
-        responsesModeForceChatCompletions: 'Force Chat Completions',
-        responsesModeTextDisabledHint:
-          'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
-        authHeader: 'Upstream auth header',
+	        responsesModeForceResponses: 'Force Responses',
+	        responsesModeForceChatCompletions: 'Force Chat Completions',
+	        responsesModeTextDisabledHint:
+	          'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+	        chatCompletionsMode: 'Chat ingress mode',
+	        chatCompletionsModeDesc:
+	          'Only affects /v1/chat/completions ingress. Raw Chat can reduce waiting time for compatible clients without changing native /responses routing.',
+	        chatCompletionsModeAuto: 'Auto',
+	        chatCompletionsModeRawChat: 'Raw Chat',
+	        chatCompletionsModeResponsesBridge: 'Responses bridge',
+	        authHeader: 'Upstream auth header',
         authHeaderDesc:
           'Defaults to Authorization: Bearer. Some compatible upstreams require api-key or x-api-key.',
         authHeaderAuthorization: 'Authorization: Bearer',

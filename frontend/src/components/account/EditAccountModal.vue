@@ -1484,11 +1484,20 @@
           data-testid="openai-responses-mode-not-applicable"
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
-        </div>
-        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
-            <Select
+	        </div>
+	        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+	          <div>
+	            <label class="input-label">{{ t('admin.accounts.openai.chatCompletionsMode') }}</label>
+	            <Select
+	              v-model="openAIChatCompletionsMode"
+	              :options="openAIChatCompletionsModeOptions"
+	              data-testid="openai-chat-completions-mode-select"
+	            />
+	            <p class="input-hint">{{ t('admin.accounts.openai.chatCompletionsModeDesc') }}</p>
+	          </div>
+	          <div>
+	            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
+	            <Select
               v-model="openAICompatibleAuthHeader"
               :options="openAICompatibleAuthHeaderOptions"
             />
@@ -2437,11 +2446,12 @@ import type {
   Account,
   Proxy,
   AdminGroup,
-  CheckMixedChannelResponse,
-  OpenAICompactMode,
-  OpenAIResponsesMode,
-  OpenAIEndpointCapability,
-  OpenAICompatibleAuthHeader
+	  CheckMixedChannelResponse,
+	  OpenAICompactMode,
+	  OpenAIChatCompletionsMode,
+	  OpenAIResponsesMode,
+	  OpenAIEndpointCapability,
+	  OpenAICompatibleAuthHeader
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2644,6 +2654,7 @@ const customBaseUrl = ref('')
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
+const openAIChatCompletionsMode = ref<OpenAIChatCompletionsMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -2756,6 +2767,11 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
+const openAIChatCompletionsModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.accounts.openai.chatCompletionsModeAuto') },
+  { value: 'raw_chat', label: t('admin.accounts.openai.chatCompletionsModeRawChat') },
+  { value: 'responses_bridge', label: t('admin.accounts.openai.chatCompletionsModeResponsesBridge') }
+])
 const openAICompatibleAuthHeaderOptions = computed(() => [
   { value: 'Authorization', label: t('admin.accounts.openai.authHeaderAuthorization') },
   { value: 'api-key', label: t('admin.accounts.openai.authHeaderAPIKey') },
@@ -2823,6 +2839,7 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
     )
     if (!openAITextGenerationCapabilityEnabled.value) {
       openAIResponsesMode.value = 'auto'
+      openAIChatCompletionsMode.value = 'auto'
     }
     return
   }
@@ -2842,6 +2859,12 @@ const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) =
 }
 const normalizeOpenAIResponsesMode = (mode: unknown): OpenAIResponsesMode => {
   if (mode === 'force_responses' || mode === 'force_chat_completions') {
+    return mode
+  }
+  return 'auto'
+}
+const normalizeOpenAIChatCompletionsMode = (mode: unknown): OpenAIChatCompletionsMode => {
+  if (mode === 'raw_chat' || mode === 'responses_bridge') {
     return mode
   }
   return 'auto'
@@ -3056,6 +3079,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
   openAICompactMode.value = 'auto'
+  openAIChatCompletionsMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
   openAICompactModelMappings.value = []
@@ -3070,15 +3094,17 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
-    if (newAccount.type === 'apikey') {
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
-      openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
-        newAccount.credentials as Record<string, unknown> | undefined
-      )
-      if (!openAITextGenerationCapabilityEnabled.value) {
-        openAIResponsesMode.value = 'auto'
-      }
-    }
+	  if (newAccount.type === 'apikey') {
+	    openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
+	    openAIChatCompletionsMode.value = normalizeOpenAIChatCompletionsMode(extra?.openai_chat_completions_mode)
+	    openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
+	      newAccount.credentials as Record<string, unknown> | undefined
+	    )
+	    if (!openAITextGenerationCapabilityEnabled.value) {
+	      openAIResponsesMode.value = 'auto'
+	      openAIChatCompletionsMode.value = 'auto'
+	    }
+	  }
     const codexImageGenerationBridgeValue = typeof extra?.codex_image_generation_bridge === 'boolean'
       ? extra.codex_image_generation_bridge
       : extra?.codex_image_generation_bridge_enabled
@@ -4214,13 +4240,18 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_compact_mode = openAICompactMode.value
       }
-		if (props.account.type === 'apikey') {
-        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-          delete newExtra.openai_responses_mode
-        } else {
-          newExtra.openai_responses_mode = openAIResponsesMode.value
-        }
-		}
+			if (props.account.type === 'apikey') {
+	        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
+	          delete newExtra.openai_responses_mode
+	        } else {
+	          newExtra.openai_responses_mode = openAIResponsesMode.value
+	        }
+	        if (!openAITextGenerationCapabilityEnabled.value || openAIChatCompletionsMode.value === 'auto') {
+	          delete newExtra.openai_chat_completions_mode
+	        } else {
+	          newExtra.openai_chat_completions_mode = openAIChatCompletionsMode.value
+	        }
+			}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
 		} else {

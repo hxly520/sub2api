@@ -327,6 +327,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 			sawDone = true
 			break
 		}
+		recordFirstStreamPayloadMs(&firstTokenMs, startTime, payload)
 
 		if u := extractCCStreamUsage(payload); u != nil {
 			usage = *u
@@ -339,10 +340,6 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 				zap.String("request_id", requestID),
 			)
 			continue
-		}
-		if firstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
 		}
 		writeEvents(apicompat.ChatCompletionsChunkToResponsesEvents(&chunk, state))
 	}
@@ -396,16 +393,4 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
 	}, nil
-}
-
-func chatChunkStartsResponsesOutput(chunk *apicompat.ChatCompletionsChunk) bool {
-	if chunk == nil {
-		return false
-	}
-	for _, choice := range chunk.Choices {
-		if choice.Delta.Content != nil || choice.Delta.ReasoningContent != nil || len(choice.Delta.ToolCalls) > 0 {
-			return true
-		}
-	}
-	return false
 }

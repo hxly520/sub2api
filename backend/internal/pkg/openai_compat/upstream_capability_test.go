@@ -52,6 +52,13 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 		// 手动覆盖：覆盖自动探测结果
 		{"force responses overrides unsupported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses), ExtraKeyResponsesSupported: false}, true},
 		{"force chat completions overrides supported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceChatCompletions), ExtraKeyResponsesSupported: true}, false},
+
+		// Chat Completions endpoint-specific override: only callers of
+		// /v1/chat/completions use this decision; native /responses routing is
+		// handled elsewhere and remains unaffected.
+		{"chat raw override beats supported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, false},
+		{"chat responses bridge override beats unsupported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, true},
+		{"invalid chat mode follows probe", map[string]any{ExtraKeyChatCompletionsMode: "bogus", ExtraKeyResponsesSupported: true}, true},
 	}
 
 	for _, tc := range tests {
@@ -59,6 +66,29 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 			got := ShouldUseResponsesAPI(tc.extra)
 			if got != tc.want {
 				t.Errorf("ShouldUseResponsesAPI(%v) = %v, want %v", tc.extra, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeChatCompletionsMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want ChatCompletionsMode
+	}{
+		{"empty", "", ChatCompletionsModeAuto},
+		{"auto", "auto", ChatCompletionsModeAuto},
+		{"raw chat", "raw_chat", ChatCompletionsModeRawChat},
+		{"responses bridge", "responses_bridge", ChatCompletionsModeResponsesBridge},
+		{"invalid", "force_chat_completions", ChatCompletionsModeAuto},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := NormalizeChatCompletionsMode(tc.mode)
+			if got != tc.want {
+				t.Errorf("NormalizeChatCompletionsMode(%q) = %q, want %q", tc.mode, got, tc.want)
 			}
 		})
 	}

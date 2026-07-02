@@ -3996,6 +3996,18 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	return !openAIStreamEventIsPreamble(eventType)
 }
 
+func recordFirstStreamPayloadMs(firstTokenMs **int, startTime time.Time, payload string) {
+	if firstTokenMs == nil || *firstTokenMs != nil {
+		return
+	}
+	trimmed := strings.TrimSpace(payload)
+	if trimmed == "" || trimmed == "[DONE]" {
+		return
+	}
+	ms := int(time.Since(startTime).Milliseconds())
+	*firstTokenMs = &ms
+}
+
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
 	if isOpenAIContextWindowError(message, payload) {
 		return false
@@ -4227,10 +4239,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				line = "data: " + string(sanitizedData)
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
-			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
+			recordFirstStreamPayloadMs(&firstTokenMs, startTime, trimmedData)
 			s.parseSSEUsageBytes(dataBytes, usage)
 		}
 
@@ -5146,6 +5155,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			recordFirstStreamPayloadMs(&firstTokenMs, startTime, data)
 			if openAIStreamEventIsTerminal(data) {
 				sawTerminalEvent = true
 			}
@@ -5215,8 +5225,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected {
+				forceFirstOutputFlush := !clientOutputStarted && startsClientOutput
 				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
-				if firstTokenMs == nil && startsClientOutput {
+				if forceFirstOutputFlush {
 					// 保证首个 token 事件尽快出站，避免影响 TTFT。
 					shouldFlush = true
 				}
@@ -5237,11 +5248,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				}
 			}
 
-			// Record first token time
-			if firstTokenMs == nil && startsClientOutput {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}

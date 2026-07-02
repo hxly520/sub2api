@@ -49,10 +49,27 @@ const (
 	ResponsesSupportModeForceChatCompletions ResponsesSupportMode = "force_chat_completions"
 )
 
+// ChatCompletionsMode describes an endpoint-specific override for inbound
+// /v1/chat/completions requests. Unlike openai_responses_mode, this does not
+// change native /responses routing.
+type ChatCompletionsMode string
+
+const (
+	ChatCompletionsModeAuto            ChatCompletionsMode = "auto"
+	ChatCompletionsModeRawChat         ChatCompletionsMode = "raw_chat"
+	ChatCompletionsModeResponsesBridge ChatCompletionsMode = "responses_bridge"
+)
+
 // ExtraKeyResponsesMode 是 accounts.extra JSON 中存储手动覆盖模式的键名。
 // 值类型为 string：auto=跟随探测，force_responses=强制 Responses，
 // force_chat_completions=强制 Chat Completions。
 const ExtraKeyResponsesMode = "openai_responses_mode"
+
+// ExtraKeyChatCompletionsMode stores the endpoint-specific routing override for
+// inbound /v1/chat/completions. Values:
+// auto=follow capability detection, raw_chat=force upstream chat completions,
+// responses_bridge=force Chat→Responses bridge for chat-completions ingress.
+const ExtraKeyChatCompletionsMode = "openai_chat_completions_mode"
 
 // ExtraKeyResponsesSupported 是 accounts.extra JSON 中存储自动探测结果的键名。
 // 值类型为 bool：true=支持、false=不支持、键缺失=未探测。
@@ -68,6 +85,17 @@ func NormalizeResponsesSupportMode(mode string) ResponsesSupportMode {
 		return ResponsesSupportModeForceChatCompletions
 	default:
 		return ResponsesSupportModeAuto
+	}
+}
+
+func NormalizeChatCompletionsMode(mode string) ChatCompletionsMode {
+	switch ChatCompletionsMode(mode) {
+	case ChatCompletionsModeRawChat:
+		return ChatCompletionsModeRawChat
+	case ChatCompletionsModeResponsesBridge:
+		return ChatCompletionsModeResponsesBridge
+	default:
+		return ChatCompletionsModeAuto
 	}
 }
 
@@ -111,5 +139,15 @@ func ResolveResponsesSupport(extra map[string]any) AccountResponsesSupport {
 // 仅当账号已探测且确认不支持时返回 false，此时调用方应走 CC 直转路径
 // （详见 internal/service/openai_gateway_chat_completions_raw.go）。
 func ShouldUseResponsesAPI(extra map[string]any) bool {
+	if extra != nil {
+		if mode, ok := extra[ExtraKeyChatCompletionsMode].(string); ok {
+			switch NormalizeChatCompletionsMode(mode) {
+			case ChatCompletionsModeRawChat:
+				return false
+			case ChatCompletionsModeResponsesBridge:
+				return true
+			}
+		}
+	}
 	return ResolveResponsesSupport(extra) != ResponsesSupportNo
 }

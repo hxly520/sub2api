@@ -2814,10 +2814,19 @@
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
         </p>
-        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
-            <Select
+	        <div v-if="openAITextGenerationCapabilityEnabled" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+	          <div>
+	            <label class="input-label">{{ t('admin.accounts.openai.chatCompletionsMode') }}</label>
+	            <Select
+	              v-model="openAIChatCompletionsMode"
+	              :options="openAIChatCompletionsModeOptions"
+	              data-testid="openai-chat-completions-mode-select"
+	            />
+	            <p class="input-hint">{{ t('admin.accounts.openai.chatCompletionsModeDesc') }}</p>
+	          </div>
+	          <div>
+	            <label class="input-label">{{ t('admin.accounts.openai.authHeader') }}</label>
+	            <Select
               v-model="openAICompatibleAuthHeader"
               :options="openAICompatibleAuthHeaderOptions"
             />
@@ -3330,12 +3339,13 @@ import type {
   AccountPlatform,
   AccountType,
   CheckMixedChannelResponse,
-  CreateAccountRequest,
-  CodexSessionImportMessage,
-  OpenAICompactMode,
-  OpenAIResponsesMode,
-  OpenAIEndpointCapability,
-  OpenAICompatibleAuthHeader
+	  CreateAccountRequest,
+	  CodexSessionImportMessage,
+	  OpenAICompactMode,
+	  OpenAIChatCompletionsMode,
+	  OpenAIResponsesMode,
+	  OpenAIEndpointCapability,
+	  OpenAICompatibleAuthHeader
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3549,6 +3559,7 @@ const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
+const openAIChatCompletionsMode = ref<OpenAIChatCompletionsMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3617,6 +3628,11 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
+const openAIChatCompletionsModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.accounts.openai.chatCompletionsModeAuto') },
+  { value: 'raw_chat', label: t('admin.accounts.openai.chatCompletionsModeRawChat') },
+  { value: 'responses_bridge', label: t('admin.accounts.openai.chatCompletionsModeResponsesBridge') }
+])
 const openAICompatibleAuthHeaderOptions = computed(() => [
   { value: 'Authorization', label: t('admin.accounts.openai.authHeaderAuthorization') },
   { value: 'api-key', label: t('admin.accounts.openai.authHeaderAPIKey') },
@@ -3657,6 +3673,7 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
     )
     if (!openAITextGenerationCapabilityEnabled.value) {
       openAIResponsesMode.value = 'auto'
+      openAIChatCompletionsMode.value = 'auto'
     }
     return
   }
@@ -4407,6 +4424,7 @@ const resetForm = () => {
   autoPauseOnExpired.value = true
   openaiPassthroughEnabled.value = false
   openAICompactMode.value = 'auto'
+  openAIChatCompletionsMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4518,6 +4536,16 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_responses_mode = openAIResponsesMode.value
   } else {
     delete extra.openai_responses_mode
+  }
+
+  if (
+    accountCategory.value === 'apikey' &&
+    openAITextGenerationCapabilityEnabled.value &&
+    openAIChatCompletionsMode.value !== 'auto'
+  ) {
+    extra.openai_chat_completions_mode = openAIChatCompletionsMode.value
+  } else {
+    delete extra.openai_chat_completions_mode
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined
