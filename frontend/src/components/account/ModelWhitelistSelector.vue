@@ -150,6 +150,7 @@ const props = defineProps<{
     type: string
     base_url?: string
     api_key: string
+    auth_header?: string
   }
 }>()
 
@@ -181,7 +182,7 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity'])
+const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity', 'grok'])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
     if (normalizedPlatforms.value.length === 0) return true

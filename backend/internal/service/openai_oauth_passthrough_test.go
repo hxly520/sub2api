@@ -24,10 +24,11 @@ import (
 func f64p(v float64) *float64 { return &v }
 
 type httpUpstreamRecorder struct {
-	lastReq  *http.Request
-	lastBody []byte
-	requests []*http.Request
-	bodies   [][]byte
+	lastReq      *http.Request
+	lastBody     []byte
+	lastProxyURL string
+	requests     []*http.Request
+	bodies       [][]byte
 
 	resp      *http.Response
 	responses []*http.Response
@@ -36,6 +37,7 @@ type httpUpstreamRecorder struct {
 
 func (u *httpUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	u.lastReq = req
+	u.lastProxyURL = proxyURL
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
 		u.lastBody = b
@@ -151,6 +153,178 @@ func TestOpenAIGatewayService_NativeResponsesBodyModificationPreservesHTMLChars(
 	require.NotContains(t, string(upstream.lastBody), `\\u003c`)
 	require.NotContains(t, string(upstream.lastBody), `\\u003e`)
 	require.NotContains(t, string(upstream.lastBody), `\\u0026`)
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesAutoDerivesPromptCacheKeyWhenMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"instructions":"work as a coding agent","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"inspect the repository"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}],"tools":[{"type":"function","name":"exec_command","parameters":{"type":"object"}}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 501})
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_responses_auto_cache"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+			Enabled:           false,
+			AllowInsecureHTTP: true,
+		}}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          456,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "http://upstream.example",
+		},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeAuto),
+			openai_compat.ExtraKeyResponsesSupported: true,
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.NotEmpty(t, cacheKey)
+	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
+	require.NotContains(t, cacheKey, "inspect the repository")
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(501, cacheKey)), upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesUsesConfiguredAuthHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Authorization", "Bearer inbound-platform-key")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_responses_auth_header"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+			Enabled:           false,
+			AllowInsecureHTTP: true,
+		}}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          456,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-test",
+			"base_url":    "http://upstream.example",
+			"auth_header": OpenAICompatibleAuthHeaderXAPIKey,
+		},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeAuto),
+			openai_compat.ExtraKeyResponsesSupported: true,
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-test", upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderXAPIKey))
+	require.Empty(t, upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderAuthorization))
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesPreservesExistingPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"prompt_cache_key":"client-cache-key","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 502})
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_responses_existing_cache"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          456,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{openai_compat.ExtraKeyResponsesSupported: true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, "client-cache-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(502, "client-cache-key")), upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesDoesNotInjectPromptCacheKeyForImageIntent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"draw a logo"}]}],"tools":[{"type":"image_generation"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 503, Group: &Group{AllowImageGeneration: true}})
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_responses_image_no_cache"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:          456,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{openai_compat.ExtraKeyResponsesSupported: true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
+	require.Empty(t, upstream.lastReq.Header.Get("session_id"))
 }
 
 func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstructions(t *testing.T) {
@@ -1022,7 +1196,8 @@ func TestOpenAIGatewayService_CodexCLIOnly_AllowOfficialClientFamilies(t *testin
 		{name: "codex_cli_rs", ua: "codex_cli_rs/0.99.0", originator: ""},
 		{name: "codex_vscode", ua: "codex_vscode/1.0.0", originator: ""},
 		{name: "codex_app", ua: "codex_app/2.1.0", originator: ""},
-		{name: "originator_codex_chatgpt_desktop", ua: "curl/8.0", originator: "codex_chatgpt_desktop"},
+		// req②：codex_cli_only 下 UA 须能解析出引擎版本；originator 命中路径用可解析的非官方前缀 UA。
+		{name: "originator_codex_chatgpt_desktop", ua: "myterm/0.141.0", originator: "codex_chatgpt_desktop"},
 	}
 
 	for _, tt := range tests {
@@ -1034,6 +1209,10 @@ func TestOpenAIGatewayService_CodexCLIOnly_AllowOfficialClientFamilies(t *testin
 			if tt.originator != "" {
 				c.Request.Header.Set("originator", tt.originator)
 			}
+			// 引擎指纹头：真实官方客户端必带。本测试用 nil settingService 构造 gateway，
+			// detectCodexClientRestriction 会兜底默认种子指纹信号（只勾 x-codex-），与生产默认策略一致，
+			// 故官方家族也须携带 x-codex-* 才能过门（对齐 TestDetect_EngineFingerprintSignals）。
+			c.Request.Header.Set("x-codex-window-id", "1")
 
 			inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
 

@@ -18,6 +18,7 @@ import type {
   AdminDataImportResult,
   CodexSessionImportRequest,
   CodexSessionImportResult,
+  OpenAICodexPATCreateRequest,
   CheckMixedChannelRequest,
   CheckMixedChannelResponse
 } from '@/types'
@@ -492,6 +493,7 @@ export interface SyncUpstreamPreviewParams {
   type: string
   base_url?: string
   api_key: string
+  auth_header?: string
 }
 
 /**
@@ -609,6 +611,11 @@ export async function importData(payload: {
 
 export async function importCodexSession(payload: CodexSessionImportRequest): Promise<CodexSessionImportResult> {
   const { data } = await apiClient.post<CodexSessionImportResult>('/admin/accounts/import/codex-session', payload)
+  return data
+}
+
+export async function createOpenAICodexPAT(payload: OpenAICodexPATCreateRequest): Promise<Account> {
+  const { data } = await apiClient.post<Account>('/admin/openai/create-from-codex-pat', payload)
   return data
 }
 
@@ -775,6 +782,18 @@ export async function resetOpenAIQuota(id: number): Promise<OpenAIQuotaResetResu
   return data
 }
 
+export interface SparkShadowCreatePayload {
+  name?: string
+  priority?: number
+  concurrency?: number
+  group_ids?: number[]
+}
+
+export async function createSparkShadow(parentId: number, payload: SparkShadowCreatePayload): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${parentId}/shadow`, payload)
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -812,13 +831,15 @@ export const accountsAPI = {
   exportData,
   importData,
   importCodexSession,
+  createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,
   setPrivacy,
   revertProxyFallback,
   queryOpenAIQuota,
-  resetOpenAIQuota
+  resetOpenAIQuota,
+  createSparkShadow
 }
 
 export default accountsAPI

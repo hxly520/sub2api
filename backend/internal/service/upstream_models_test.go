@@ -105,6 +105,20 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "https://openai.example.com/v1/models", openAIReq.URL.String())
 	require.Equal(t, "Bearer openai-key", openAIReq.Header.Get("Authorization"))
 
+	openAIAPIKeyHeaderReq, err := svc.buildOpenAIUpstreamModelsRequest(ctx, &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":     "openai-key",
+			"base_url":    "https://openai.example.com",
+			"auth_header": OpenAICompatibleAuthHeaderAPIKey,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://openai.example.com/v1/models", openAIAPIKeyHeaderReq.URL.String())
+	require.Equal(t, "openai-key", openAIAPIKeyHeaderReq.Header.Get(OpenAICompatibleAuthHeaderAPIKey))
+	require.Empty(t, openAIAPIKeyHeaderReq.Header.Get(OpenAICompatibleAuthHeaderAuthorization))
+
 	geminiReq, err := svc.buildGeminiUpstreamModelsRequest(ctx, &Account{
 		Platform: PlatformGemini,
 		Type:     AccountTypeAPIKey,

@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -66,6 +67,7 @@ type AccountTestService struct {
 	accountRepo               AccountRepository
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
+	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
@@ -77,6 +79,7 @@ func NewAccountTestService(
 	accountRepo AccountRepository,
 	geminiTokenProvider *GeminiTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
+	grokTokenProvider *GrokTokenProvider,
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
@@ -86,6 +89,7 @@ func NewAccountTestService(
 		accountRepo:               accountRepo,
 		geminiTokenProvider:       geminiTokenProvider,
 		claudeTokenProvider:       claudeTokenProvider,
+		grokTokenProvider:         grokTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
@@ -186,6 +190,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.IsGemini() {
 		return s.testGeminiAccountConnection(c, account, modelID, prompt)
+	}
+
+	if account.Platform == PlatformGrok {
+		return s.testGrokAccountConnection(c, account, modelID)
 	}
 
 	if account.Platform == PlatformAntigravity {
@@ -522,31 +530,38 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.testOpenAIImageOAuth(c, ctx, account, testModelID, imagePrompt)
 	}
 
+	credentialAccount := account
+	if account.IsCredentialShadow() {
+		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		credentialAccount = resolved
+	}
+
 	// Determine authentication method and API URL
 	var authToken string
 	var apiURL string
 	var isOAuth bool
-	var chatgptAccountID string
 
-	if account.IsOAuth() {
+	if credentialAccount.IsOAuth() {
 		isOAuth = true
 		// OAuth - use Bearer token with ChatGPT internal API
-		authToken = account.GetOpenAIAccessToken()
+		authToken = credentialAccount.GetOpenAIAccessToken()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No access token available")
 		}
 
 		// OAuth uses ChatGPT internal API
 		apiURL = chatgptCodexAPIURL
-		chatgptAccountID = account.GetChatGPTAccountID()
-	} else if account.Type == "apikey" {
+	} else if credentialAccount.Type == "apikey" {
 		// API Key - use Platform API
-		authToken = account.GetOpenAIApiKey()
+		authToken = credentialAccount.GetOpenAIApiKey()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
 
-		baseURL := account.GetOpenAIBaseURL()
+		baseURL := credentialAccount.GetOpenAIBaseURL()
 		if baseURL == "" {
 			baseURL = "https://api.openai.com"
 		}
@@ -555,7 +570,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
 		if !openai_compat.ShouldUseResponsesAPI(account.Extra) {
-			return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
+			chatCompletionsURL, err := s.openAIChatCompletionsTestURL(credentialAccount, normalizedBaseURL)
+			if err != nil {
+				return s.sendErrorAndEnd(c, err.Error())
+			}
+			return s.testOpenAIChatCompletionsConnection(c, account, credentialAccount, testModelID, prompt, chatCompletionsURL, authToken)
 		}
 		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
 	} else {
@@ -584,15 +603,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
+		req.Header.Set("Authorization", "Bearer "+authToken)
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
-		if chatgptAccountID != "" {
-			req.Header.Set("chatgpt-account-id", chatgptAccountID)
-		}
+		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
+	} else {
+		applyOpenAICompatibleAPIKeyAuth(req, credentialAccount, authToken)
 	}
 
 	// Get proxy URL
@@ -631,18 +650,101 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	return s.processOpenAIStream(c, resp.Body)
 }
 
+// testGrokAccountConnection tests a Grok OAuth account through xAI's Responses API.
+func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	if account.Type != AccountTypeOAuth {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Grok account type: %s", account.Type))
+	}
+	if s.grokTokenProvider == nil {
+		return s.sendErrorAndEnd(c, "Grok token provider not configured")
+	}
+	if s.httpUpstream == nil {
+		return s.sendErrorAndEnd(c, "HTTP upstream not configured")
+	}
+
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = "grok-4.3"
+	}
+	if mapped := strings.TrimSpace(account.GetMappedModel(testModelID)); mapped != "" {
+		testModelID = mapped
+	}
+
+	authToken, err := s.grokTokenProvider.GetAccessToken(ctx, account)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to get Grok access token: %s", err.Error()))
+	}
+
+	apiURL, err := xai.BuildResponsesURL(account.GetGrokBaseURL())
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid Grok base URL: %s", err.Error()))
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	payloadBytes, err := json.Marshal(map[string]any{
+		"model":  testModelID,
+		"input":  "hi",
+		"stream": true,
+	})
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create Grok test payload")
+	}
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create Grok request")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("User-Agent", "sub2api-grok/1.0")
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if snapshot := xai.ParseQuotaHeaders(resp.Header, resp.StatusCode); snapshot != nil && s.accountRepo != nil {
+		_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			grokQuotaSnapshotExtraKey: snapshot,
+		})
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API returned %d: %s", resp.StatusCode, string(body)))
+	}
+
+	return s.processOpenAIStream(c, resp.Body)
+}
+
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account
 // through the raw /v1/chat/completions endpoint.
 func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c *gin.Context,
 	account *Account,
+	credentialAccount *Account,
 	testModelID string,
 	prompt string,
-	normalizedBaseURL string,
+	apiURL string,
 	authToken string,
 ) error {
 	ctx := c.Request.Context()
-	apiURL := buildOpenAIChatCompletionsURL(normalizedBaseURL)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -663,7 +765,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+authToken)
+	applyOpenAICompatibleAPIKeyAuth(req, credentialAccount, authToken)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -691,6 +793,17 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	return s.processOpenAIChatCompletionsStream(c, resp.Body)
 }
 
+func (s *AccountTestService) openAIChatCompletionsTestURL(account *Account, normalizedBaseURL string) (string, error) {
+	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
+		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
+		if err != nil {
+			return "", fmt.Errorf("Invalid Chat Completions URL: %s", err.Error())
+		}
+		return validatedURL, nil
+	}
+	return buildOpenAIChatCompletionsURL(normalizedBaseURL), nil
+}
+
 // testOpenAICompactConnection probes /responses/compact and persists the
 // resulting capability state on the account.
 func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account *Account, testModelID string) error {
@@ -699,7 +812,6 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	authToken := ""
 	apiURL := ""
 	isOAuth := false
-	chatgptAccountID := ""
 
 	switch {
 	case account.IsOAuth():
@@ -709,7 +821,6 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 			return s.sendErrorAndEnd(c, "No access token available")
 		}
 		apiURL = chatgptCodexAPIURL + "/compact"
-		chatgptAccountID = account.GetChatGPTAccountID()
 	case account.Type == AccountTypeAPIKey:
 		authToken = account.GetOpenAIApiKey()
 		if authToken == "" {
@@ -745,7 +856,11 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+authToken)
+	if isOAuth {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else {
+		applyOpenAICompatibleAPIKeyAuth(req, account, authToken)
+	}
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	req.Header.Set("Originator", "codex_cli_rs")
 	req.Header.Set("User-Agent", codexCLIUserAgent)
@@ -756,9 +871,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	if isOAuth {
 		req.Host = "chatgpt.com"
-		if chatgptAccountID != "" {
-			req.Header.Set("chatgpt-account-id", chatgptAccountID)
-		}
+		setOpenAIChatGPTAccountHeaders(req.Header, account)
 	}
 
 	proxyURL := ""
@@ -1510,7 +1623,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+authToken)
+	applyOpenAICompatibleAPIKeyAuth(req, account, authToken)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1609,9 +1722,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	} else {
 		req.Header.Set("User-Agent", codexCLIUserAgent)
 	}
-	if chatgptAccountID := strings.TrimSpace(account.GetChatGPTAccountID()); chatgptAccountID != "" {
-		req.Header.Set("chatgpt-account-id", chatgptAccountID)
-	}
+	setOpenAIChatGPTAccountHeaders(req.Header, account)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
