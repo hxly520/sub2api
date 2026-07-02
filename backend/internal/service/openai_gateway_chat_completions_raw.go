@@ -143,7 +143,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	}
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+token)
+	applyOpenAICompatibleAPIKeyAuth(upstreamReq, account, token)
 	if clientStream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {
@@ -255,6 +255,14 @@ func (s *OpenAIGatewayService) rawChatCompletionsURL(account *Account) (string, 
 			return "", fmt.Errorf("invalid grok base_url: %w", err)
 		}
 		return targetURL, nil
+	}
+
+	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
+		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid chat_completions_url: %w", err)
+		}
+		return validatedURL, nil
 	}
 
 	baseURL := account.GetOpenAIBaseURL()

@@ -272,7 +272,7 @@ func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Contex
 		return nil, newUpstreamModelSyncConfigError("Invalid OpenAI model list URL", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	applyOpenAICompatibleAPIKeyAuth(req, account, apiKey)
 	return req, nil
 }
 

@@ -3714,9 +3714,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 覆盖入站鉴权残留，并注入上游认证
 	req.Header.Del("authorization")
+	req.Header.Del("api-key")
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")
-	req.Header.Set("authorization", "Bearer "+token)
+	if account.Type == AccountTypeAPIKey {
+		applyOpenAICompatibleAPIKeyAuth(req, account, token)
+	} else {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
 
 	// OAuth 透传到 ChatGPT internal API 时补齐必要头。
 	if account.Type == AccountTypeOAuth {
@@ -4492,7 +4497,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
 	// Set authentication header
-	req.Header.Set("authorization", "Bearer "+token)
+	if account.Type == AccountTypeAPIKey {
+		applyOpenAICompatibleAPIKeyAuth(req, account, token)
+	} else {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
 
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
 	if account.Type == AccountTypeOAuth {

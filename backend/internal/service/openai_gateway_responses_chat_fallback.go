@@ -102,15 +102,10 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if apiKey == "" {
 		return nil, fmt.Errorf("account %d missing api_key", account.ID)
 	}
-	baseURL := account.GetOpenAIBaseURL()
-	if baseURL == "" {
-		baseURL = "https://api.openai.com"
-	}
-	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+	targetURL, err := s.rawChatCompletionsURL(account)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base_url: %w", err)
+		return nil, err
 	}
-	targetURL := buildOpenAIChatCompletionsURL(validatedURL)
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(chatBody))
@@ -120,7 +115,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	}
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
+	applyOpenAICompatibleAPIKeyAuth(upstreamReq, account, apiKey)
 	if clientStream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {
