@@ -1763,6 +1763,46 @@ func TestOpenAIGatewayService_CountEligibleAccountsExcludesDisabledAndOutOfGroup
 	require.Equal(t, 1, count)
 }
 
+func TestOpenAIGatewayService_CountEligibleAccountsExcludesRuntimeBlocked(t *testing.T) {
+	groupID := int64(21850)
+	blockedAccount := Account{
+		ID:          21851,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		GroupIDs:    []int64{groupID},
+	}
+	healthyAccount := Account{
+		ID:          21852,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: groupAwareStubOpenAIAccountRepo{
+			stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{blockedAccount, healthyAccount}},
+		},
+	}
+	svc.BlockAccountScheduling(&blockedAccount, time.Now().Add(time.Minute), "test_runtime_block")
+
+	count, err := svc.CountOpenAIEligibleAccountsForCapability(
+		context.Background(),
+		&groupID,
+		"gpt-5.5",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		PlatformOpenAI,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionSticky_ForceHTTP(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(1010)

@@ -14,6 +14,7 @@ import (
 )
 
 type openAIFirstResponseTimeoutContextKey struct{}
+type openAIFirstResponseEarlyFlushContextKey struct{}
 
 // WithOpenAIFirstResponseTimeout enables a first-SSE/data-payload timeout for a
 // single upstream attempt. Handlers should only set it when a same-group
@@ -37,6 +38,24 @@ func openAIFirstResponseTimeoutFromContext(ctx context.Context) time.Duration {
 		return 0
 	}
 	return timeout
+}
+
+// WithOpenAIFirstResponseEarlyFlush asks streaming Responses handlers to flush
+// the upstream preamble as soon as it arrives. It is meant for attempts where no
+// failover target remains, so early bytes do not take away a useful retry path.
+func WithOpenAIFirstResponseEarlyFlush(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIFirstResponseEarlyFlushContextKey{}, true)
+}
+
+func openAIFirstResponseEarlyFlushFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, _ := ctx.Value(openAIFirstResponseEarlyFlushContextKey{}).(bool)
+	return enabled
 }
 
 type openAIFirstResponseTimeoutWatch struct {

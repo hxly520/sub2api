@@ -59,12 +59,6 @@ func (h *OpenAIGatewayHandler) openAIFirstResponseForwardContext(
 	if !runtimeCfg.Enabled || timeout <= 0 || !stream || h == nil || h.gatewayService == nil {
 		return ctx
 	}
-	if maxAccountSwitches <= 0 || switchCount >= maxAccountSwitches {
-		return ctx
-	}
-	if switchCount+1 >= runtimeCfg.MaxAttempts {
-		return ctx
-	}
 
 	eligibleCount, err := h.gatewayService.CountOpenAIEligibleAccountsForCapability(
 		ctx,
@@ -84,11 +78,31 @@ func (h *OpenAIGatewayHandler) openAIFirstResponseForwardContext(
 	}
 	if eligibleCount <= 1 {
 		if reqLog != nil {
-			reqLog.Debug("openai.first_response_timeout_disabled_single_candidate",
+			reqLog.Debug("openai.first_response_early_flush_enabled_single_candidate",
 				zap.Int("eligible_account_count", eligibleCount),
 			)
 		}
-		return ctx
+		return service.WithOpenAIFirstResponseEarlyFlush(ctx)
+	}
+	if maxAccountSwitches <= 0 || switchCount >= maxAccountSwitches {
+		if reqLog != nil {
+			reqLog.Debug("openai.first_response_early_flush_enabled_no_switch_budget",
+				zap.Int("eligible_account_count", eligibleCount),
+				zap.Int("switch_count", switchCount),
+				zap.Int("max_switches", maxAccountSwitches),
+			)
+		}
+		return service.WithOpenAIFirstResponseEarlyFlush(ctx)
+	}
+	if switchCount+1 >= runtimeCfg.MaxAttempts {
+		if reqLog != nil {
+			reqLog.Debug("openai.first_response_early_flush_enabled_attempt_budget",
+				zap.Int("eligible_account_count", eligibleCount),
+				zap.Int("switch_count", switchCount),
+				zap.Int("max_attempts", runtimeCfg.MaxAttempts),
+			)
+		}
+		return service.WithOpenAIFirstResponseEarlyFlush(ctx)
 	}
 	if reqLog != nil {
 		reqLog.Debug("openai.first_response_timeout_enabled",

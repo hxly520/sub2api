@@ -2,8 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
 )
 
 const (
@@ -153,6 +159,118 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) b
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
 	return false
+}
+
+func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterFailoverError(account *Account, failoverErr *UpstreamFailoverError) bool {
+	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	reason := ""
+	if failoverErr.FirstResponseTimeout {
+		reason = "first_response_timeout"
+	} else if openAIStatusShouldRuntimeBlockAfterFailure(failoverErr.StatusCode) {
+		if text := http.StatusText(failoverErr.StatusCode); text != "" {
+			reason = "upstream_status_" + text
+		} else {
+			reason = "upstream_status_" + strconv.Itoa(failoverErr.StatusCode)
+		}
+	}
+	if reason == "" {
+		return false
+	}
+	s.blockOpenAIAccountSchedulingAfterFailure(account, normalizeOpenAIRuntimeBlockReason(reason))
+	return true
+}
+
+func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterForwardError(account *Account, err error) bool {
+	if s == nil || account == nil || err == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	reason := openAIForwardErrorRuntimeBlockReason(err)
+	if reason == "" {
+		return false
+	}
+	s.blockOpenAIAccountSchedulingAfterFailure(account, reason)
+	return true
+}
+
+func (s *OpenAIGatewayService) blockOpenAIAccountSchedulingAfterFailure(account *Account, reason string) {
+	if s == nil || account == nil {
+		return
+	}
+	s.BlockAccountScheduling(account, time.Time{}, reason)
+	logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
+		"openai.account_runtime_block_failure",
+		zap.Int64("account_id", account.ID),
+		zap.String("account_name", account.Name),
+		zap.String("platform", account.Platform),
+		zap.String("reason", reason),
+		zap.Duration("cooldown", openAIStopSchedulingBridgeCooldown),
+	)
+}
+
+func openAIStatusShouldRuntimeBlockAfterFailure(statusCode int) bool {
+	if statusCode == 0 {
+		return false
+	}
+	if statusCode == http.StatusTooManyRequests {
+		return false
+	}
+	if statusCode == 529 {
+		return true
+	}
+	return statusCode >= http.StatusInternalServerError
+}
+
+func openAIForwardErrorRuntimeBlockReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	if msg == "" {
+		return ""
+	}
+	if strings.Contains(msg, "client disconnected") ||
+		strings.Contains(msg, "after disconnect") ||
+		strings.Contains(msg, "context canceled") ||
+		strings.Contains(msg, "context deadline exceeded") {
+		return ""
+	}
+	switch {
+	case strings.Contains(msg, "stream read error"):
+		return "stream_read_error"
+	case strings.Contains(msg, "stream data interval timeout"):
+		return "stream_data_interval_timeout"
+	case strings.Contains(msg, "http2: response body closed"):
+		return "stream_read_error"
+	case strings.Contains(msg, "unexpected eof"):
+		return "stream_read_error"
+	case strings.Contains(msg, "connection reset by peer"):
+		return "stream_read_error"
+	case strings.Contains(msg, "missing terminal event"):
+		return "missing_terminal_event"
+	default:
+		return ""
+	}
+}
+
+func normalizeOpenAIRuntimeBlockReason(reason string) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return "upstream_failure"
+	}
+	replacer := strings.NewReplacer(
+		" ", "_",
+		"-", "_",
+		"/", "_",
+		":", "_",
+		"(", "",
+		")", "",
+	)
+	return replacer.Replace(reason)
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {

@@ -4147,7 +4147,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawFailedEvent := false
 	failedMessage := ""
 	clientOutputStarted := false
-	earlyFlushPreamble := account != nil && openai_compat.ShouldEarlyFlushResponsesPreamble(account.Extra)
+	earlyFlushPreamble := openAIFirstResponseEarlyFlushFromContext(ctx) ||
+		(account != nil && openai_compat.ShouldEarlyFlushResponsesPreamble(account.Extra))
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	pendingLines := make([]string, 0, 8)
 	writePendingLines := func() bool {
@@ -5062,6 +5063,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	sawFailedEvent := false
 	failedMessage := ""
 	clientOutputStarted := false
+	earlyFlushPreamble := openAIFirstResponseEarlyFlushFromContext(ctx) ||
+		(account != nil && openai_compat.ShouldEarlyFlushResponsesPreamble(account.Extra))
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
 	sendErrorEvent := func(reason string) {
@@ -5241,6 +5244,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+			if !startsClientOutput && earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && strings.TrimSpace(data) != "" {
+				startsClientOutput = true
+			}
 
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected {

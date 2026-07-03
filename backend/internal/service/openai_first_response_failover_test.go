@@ -86,6 +86,55 @@ func TestHandleStreamingResponsePassthrough_FirstResponseTimeoutBeforeDataTrigge
 	require.Empty(t, rec.Body.String())
 }
 
+func TestHandleStreamingResponsePassthrough_EarlyFlushContextFlushesPreamble(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	reader, writer := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_first_early_flush"}},
+		Body:       reader,
+	}
+	account := &Account{ID: 203, Name: "single-account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+	ctx := WithOpenAIFirstResponseEarlyFlush(context.Background())
+
+	resultCh := make(chan struct {
+		result *openaiStreamingResultPassthrough
+		err    error
+	}, 1)
+	go func() {
+		result, err := svc.handleStreamingResponsePassthrough(ctx, resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
+		resultCh <- struct {
+			result *openaiStreamingResultPassthrough
+			err    error
+		}{result: result, err: err}
+	}()
+
+	_, err := writer.Write([]byte("data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_early\"}}\n\n"))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return strings.Contains(rec.Body.String(), "response.created")
+	}, time.Second, 10*time.Millisecond)
+
+	_, err = writer.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_early\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	select {
+	case got := <-resultCh:
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.Equal(t, "resp_early", got.result.responseID)
+	case <-time.After(time.Second):
+		t.Fatal("stream did not finish")
+	}
+}
+
 func TestStreamRawChatCompletions_FirstDataStopsFirstResponseTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
