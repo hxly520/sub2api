@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -164,4 +165,72 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 
 	got := GetUpstreamEndpoint(c, service.PlatformOpenAI)
 	require.Equal(t, "/v1/responses/compact", got)
+}
+
+func TestResolveOpenAIUpstreamEndpoint_ChatModeOnlyAffectsChatIngress(t *testing.T) {
+	tests := []struct {
+		name    string
+		inbound string
+		rawPath string
+		extra   map[string]any
+		want    string
+	}{
+		{
+			name:    "chat ingress raw chat override",
+			inbound: EndpointChatCompletions,
+			rawPath: EndpointChatCompletions,
+			extra: map[string]any{
+				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeRawChat),
+				openai_compat.ExtraKeyResponsesSupported:  true,
+			},
+			want: EndpointChatCompletions,
+		},
+		{
+			name:    "responses ingress ignores raw chat override",
+			inbound: EndpointResponses,
+			rawPath: EndpointResponses,
+			extra: map[string]any{
+				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeRawChat),
+				openai_compat.ExtraKeyResponsesSupported:  true,
+			},
+			want: EndpointResponses,
+		},
+		{
+			name:    "chat ingress responses bridge override",
+			inbound: EndpointChatCompletions,
+			rawPath: EndpointChatCompletions,
+			extra: map[string]any{
+				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeResponsesBridge),
+				openai_compat.ExtraKeyResponsesSupported:  false,
+			},
+			want: EndpointResponses,
+		},
+		{
+			name:    "responses ingress follows responses mode",
+			inbound: EndpointResponses,
+			rawPath: EndpointResponses,
+			extra: map[string]any{
+				openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeForceChatCompletions),
+				openai_compat.ExtraKeyResponsesSupported: true,
+			},
+			want: EndpointChatCompletions,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.rawPath, nil)
+			c.Set(ctxKeyInboundEndpoint, tt.inbound)
+			account := &service.Account{
+				Type:     service.AccountTypeAPIKey,
+				Platform: service.PlatformOpenAI,
+				Extra:    tt.extra,
+			}
+
+			got := resolveOpenAIUpstreamEndpoint(c, account)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

@@ -1573,7 +1573,7 @@ func TestDefaultOpenAIAccountScheduler_ShouldEscapeStickyAccount_ThresholdBounda
 		enabled:   true,
 		ttftMs:    15000,
 		errorRate: 0.5,
-	})
+	}, OpenAIAccountScheduleProfile{})
 	require.False(t, shouldEscape)
 	require.Empty(t, reason)
 	require.InDelta(t, 0.16, errorRate, 1e-9)
@@ -1586,18 +1586,124 @@ func TestDefaultOpenAIAccountScheduler_ShouldEscapeStickyAccount_ThresholdBounda
 		enabled:   true,
 		ttftMs:    15000,
 		errorRate: 1,
-	})
+	}, OpenAIAccountScheduleProfile{})
 	require.False(t, shouldEscape)
 	require.Empty(t, reason)
 	reason, errorRate, observedTTFT, shouldEscape = scheduler.shouldEscapeStickyAccount(accountID, openAIStickyEscapeConfig{
 		enabled:   true,
 		ttftMs:    15000,
 		errorRate: errorRate,
-	})
+	}, OpenAIAccountScheduleProfile{})
 	require.False(t, shouldEscape)
 	require.Empty(t, reason)
 	require.InDelta(t, 0.655936, errorRate, 1e-9)
 	require.InDelta(t, 15000, observedTTFT, 1e-9)
+}
+
+func TestDefaultOpenAIAccountScheduler_RouteProfileTTFTScoring(t *testing.T) {
+	accounts := []*Account{
+		{
+			ID:          21601,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    1,
+		},
+		{
+			ID:          21602,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    1,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+
+	stats := newOpenAIAccountRuntimeStats()
+	fast := 800
+	slow := 9000
+
+	// Global samples say account 21602 is faster. Route-specific Chat samples
+	// say account 21601 is faster. The scheduler must prefer the route profile.
+	stats.report(21601, true, &slow)
+	stats.report(21602, true, &fast)
+	chatProfile := NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", "/v1/chat/completions")
+	stats.reportForProfile(21601, true, &fast, chatProfile)
+	stats.reportForProfile(21602, true, &slow, chatProfile)
+
+	scheduler := &defaultOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{cfg: cfg},
+		stats:   stats,
+	}
+	plan := scheduler.buildOpenAIAccountLoadPlan(OpenAIAccountScheduleRequest{
+		RequestedModel: "gpt-5.5",
+		Profile:        NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", ""),
+	}, accounts, map[int64]*AccountLoadInfo{
+		21601: {AccountID: 21601},
+		21602: {AccountID: 21602},
+	})
+
+	scores := map[int64]float64{}
+	for _, candidate := range plan.candidates {
+		scores[candidate.account.ID] = candidate.score
+	}
+	require.Greater(t, scores[int64(21601)], scores[int64(21602)])
+	require.Equal(t, 8, stats.profileSize())
+}
+
+func TestDefaultOpenAIAccountScheduler_RouteProfilesDoNotBleedAcrossEndpoints(t *testing.T) {
+	accounts := []*Account{
+		{ID: 21701, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3, Priority: 1},
+		{ID: 21702, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3, Priority: 1},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+
+	stats := newOpenAIAccountRuntimeStats()
+	fast := 700
+	slow := 8500
+	stats.reportForProfile(21701, true, &fast, NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", "/v1/chat/completions"))
+	stats.reportForProfile(21702, true, &slow, NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", "/v1/chat/completions"))
+	stats.reportForProfile(21701, true, &slow, NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/responses", "/v1/responses"))
+	stats.reportForProfile(21702, true, &fast, NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/responses", "/v1/responses"))
+
+	scheduler := &defaultOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{cfg: cfg},
+		stats:   stats,
+	}
+	chatPlan := scheduler.buildOpenAIAccountLoadPlan(OpenAIAccountScheduleRequest{
+		RequestedModel: "gpt-5.5",
+		Profile:        NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", ""),
+	}, accounts, map[int64]*AccountLoadInfo{
+		21701: {AccountID: 21701},
+		21702: {AccountID: 21702},
+	})
+	responsesPlan := scheduler.buildOpenAIAccountLoadPlan(OpenAIAccountScheduleRequest{
+		RequestedModel: "gpt-5.5",
+		Profile:        NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/responses", ""),
+	}, accounts, map[int64]*AccountLoadInfo{
+		21701: {AccountID: 21701},
+		21702: {AccountID: 21702},
+	})
+
+	scoreByID := func(plan openAIAccountLoadPlan) map[int64]float64 {
+		out := map[int64]float64{}
+		for _, candidate := range plan.candidates {
+			out[candidate.account.ID] = candidate.score
+		}
+		return out
+	}
+	chatScores := scoreByID(chatPlan)
+	responsesScores := scoreByID(responsesPlan)
+	require.Greater(t, chatScores[int64(21701)], chatScores[int64(21702)])
+	require.Greater(t, responsesScores[int64(21702)], responsesScores[int64(21701)])
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionSticky_ForceHTTP(t *testing.T) {

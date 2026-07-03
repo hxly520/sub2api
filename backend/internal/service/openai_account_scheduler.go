@@ -56,6 +56,7 @@ type OpenAIAccountScheduleRequest struct {
 	RequiredImageCapability OpenAIImagesCapability
 	RequireCompact          bool
 	ExcludedIDs             map[int64]struct{}
+	Profile                 OpenAIAccountScheduleProfile
 }
 
 type OpenAIAccountScheduleDecision struct {
@@ -82,11 +83,13 @@ type OpenAIAccountSchedulerMetricsSnapshot struct {
 	AccountSwitchRate        float64
 	LoadSkewAvg              float64
 	RuntimeStatsAccountCount int
+	RuntimeStatsProfileCount int
 }
 
 type OpenAIAccountScheduler interface {
 	Select(ctx context.Context, req OpenAIAccountScheduleRequest) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error)
 	ReportResult(accountID int64, success bool, firstTokenMs *int)
+	ReportResultForProfile(accountID int64, success bool, firstTokenMs *int, profile OpenAIAccountScheduleProfile)
 	ReportSwitch()
 	SnapshotMetrics() OpenAIAccountSchedulerMetricsSnapshot
 }
@@ -137,8 +140,10 @@ func (m *openAIAccountSchedulerMetrics) recordSwitch() {
 }
 
 type openAIAccountRuntimeStats struct {
-	accounts     sync.Map
+	accounts     sync.Map // map[int64]*openAIAccountRuntimeStat
+	profiles     sync.Map // map[openAIAccountRuntimeProfileKey]*openAIAccountRuntimeStat
 	accountCount atomic.Int64
+	profileCount atomic.Int64
 }
 
 type openAIAccountRuntimeStat struct {
@@ -146,8 +151,106 @@ type openAIAccountRuntimeStat struct {
 	ttftEWMABits      atomic.Uint64
 }
 
+type OpenAIAccountScheduleProfile struct {
+	ModelFamily      string
+	InboundEndpoint  string
+	UpstreamEndpoint string
+}
+
+type openAIAccountScheduleProfileContextKey struct{}
+
+type openAIAccountRuntimeProfileKey struct {
+	AccountID        int64
+	ModelFamily      string
+	InboundEndpoint  string
+	UpstreamEndpoint string
+}
+
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
 	return &openAIAccountRuntimeStats{}
+}
+
+func NewOpenAIAccountScheduleProfile(model, inboundEndpoint, upstreamEndpoint string) OpenAIAccountScheduleProfile {
+	return OpenAIAccountScheduleProfile{
+		ModelFamily:      normalizeOpenAIAccountScheduleModelFamily(model),
+		InboundEndpoint:  normalizeOpenAIAccountScheduleEndpoint(inboundEndpoint),
+		UpstreamEndpoint: normalizeOpenAIAccountScheduleEndpoint(upstreamEndpoint),
+	}
+}
+
+func WithOpenAIAccountScheduleProfile(ctx context.Context, profile OpenAIAccountScheduleProfile) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIAccountScheduleProfileContextKey{}, profile)
+}
+
+func openAIAccountScheduleProfileFromContext(ctx context.Context, requestedModel string) OpenAIAccountScheduleProfile {
+	profile := OpenAIAccountScheduleProfile{}
+	if ctx != nil {
+		if value, ok := ctx.Value(openAIAccountScheduleProfileContextKey{}).(OpenAIAccountScheduleProfile); ok {
+			profile = value
+		}
+	}
+	if profile.ModelFamily == "" {
+		profile.ModelFamily = normalizeOpenAIAccountScheduleModelFamily(requestedModel)
+	}
+	profile.InboundEndpoint = normalizeOpenAIAccountScheduleEndpoint(profile.InboundEndpoint)
+	profile.UpstreamEndpoint = normalizeOpenAIAccountScheduleEndpoint(profile.UpstreamEndpoint)
+	return profile
+}
+
+func normalizeOpenAIAccountScheduleEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
+	if endpoint == "" {
+		return ""
+	}
+	if strings.HasSuffix(endpoint, "/") && len(endpoint) > 1 {
+		endpoint = strings.TrimRight(endpoint, "/")
+	}
+	switch {
+	case strings.Contains(endpoint, "/chat/completions"):
+		return "/v1/chat/completions"
+	case strings.Contains(endpoint, "/responses"):
+		return "/v1/responses"
+	case strings.Contains(endpoint, "/images/generations"):
+		return "/v1/images/generations"
+	case strings.Contains(endpoint, "/images/edits"):
+		return "/v1/images/edits"
+	case strings.Contains(endpoint, "/embeddings"):
+		return "/v1/embeddings"
+	default:
+		return endpoint
+	}
+}
+
+func normalizeOpenAIAccountScheduleModelFamily(model string) string {
+	model = strings.TrimSpace(strings.ToLower(model))
+	if model == "" {
+		return ""
+	}
+	for _, sep := range []string{"/", ":", "@"} {
+		if idx := strings.LastIndex(model, sep); idx >= 0 && idx+1 < len(model) {
+			model = strings.TrimSpace(model[idx+1:])
+		}
+	}
+	knownPrefixes := []string{
+		"gpt-5.5", "gpt-5", "gpt-4.1", "gpt-4o", "gpt-4", "o4", "o3", "o1",
+		"deepseek", "kimi", "moonshot", "glm", "qwen", "doubao",
+		"claude", "gemini", "grok",
+	}
+	for _, prefix := range knownPrefixes {
+		if strings.HasPrefix(model, prefix) {
+			return prefix
+		}
+	}
+	parts := strings.FieldsFunc(model, func(r rune) bool {
+		return r == '/' || r == ':' || r == '@' || r == ' '
+	})
+	if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+		return strings.TrimSpace(parts[0])
+	}
+	return model
 }
 
 func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccountRuntimeStat {
@@ -172,6 +275,28 @@ func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccount
 	return stat
 }
 
+func (s *openAIAccountRuntimeStats) loadOrCreateProfile(key openAIAccountRuntimeProfileKey) *openAIAccountRuntimeStat {
+	if value, ok := s.profiles.Load(key); ok {
+		stat, _ := value.(*openAIAccountRuntimeStat)
+		if stat != nil {
+			return stat
+		}
+	}
+
+	stat := &openAIAccountRuntimeStat{}
+	stat.ttftEWMABits.Store(math.Float64bits(math.NaN()))
+	actual, loaded := s.profiles.LoadOrStore(key, stat)
+	if !loaded {
+		s.profileCount.Add(1)
+		return stat
+	}
+	existing, _ := actual.(*openAIAccountRuntimeStat)
+	if existing != nil {
+		return existing
+	}
+	return stat
+}
+
 func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
 	for {
 		oldBits := target.Load()
@@ -183,12 +308,10 @@ func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
 	}
 }
 
-func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstTokenMs *int) {
-	if s == nil || accountID <= 0 {
+func reportOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat, success bool, firstTokenMs *int, alpha float64) {
+	if stat == nil {
 		return
 	}
-	const alpha = 0.2
-	stat := s.loadOrCreate(accountID)
 
 	errorSample := 1.0
 	if success {
@@ -216,24 +339,102 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 	}
 }
 
-func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+func openAIAccountRuntimeReportKeys(accountID int64, profile OpenAIAccountScheduleProfile) []openAIAccountRuntimeProfileKey {
+	if accountID <= 0 {
+		return nil
+	}
+	profile.ModelFamily = normalizeOpenAIAccountScheduleModelFamily(profile.ModelFamily)
+	profile.InboundEndpoint = normalizeOpenAIAccountScheduleEndpoint(profile.InboundEndpoint)
+	profile.UpstreamEndpoint = normalizeOpenAIAccountScheduleEndpoint(profile.UpstreamEndpoint)
+	keys := make([]openAIAccountRuntimeProfileKey, 0, 4)
+	appendKey := func(key openAIAccountRuntimeProfileKey) {
+		if key.ModelFamily == "" && key.InboundEndpoint == "" && key.UpstreamEndpoint == "" {
+			return
+		}
+		for _, existing := range keys {
+			if existing == key {
+				return
+			}
+		}
+		keys = append(keys, key)
+	}
+	appendKey(openAIAccountRuntimeProfileKey{
+		AccountID:        accountID,
+		ModelFamily:      profile.ModelFamily,
+		InboundEndpoint:  profile.InboundEndpoint,
+		UpstreamEndpoint: profile.UpstreamEndpoint,
+	})
+	appendKey(openAIAccountRuntimeProfileKey{
+		AccountID:       accountID,
+		ModelFamily:     profile.ModelFamily,
+		InboundEndpoint: profile.InboundEndpoint,
+	})
+	appendKey(openAIAccountRuntimeProfileKey{
+		AccountID:   accountID,
+		ModelFamily: profile.ModelFamily,
+	})
+	appendKey(openAIAccountRuntimeProfileKey{
+		AccountID:       accountID,
+		InboundEndpoint: profile.InboundEndpoint,
+	})
+	return keys
+}
+
+func openAIAccountRuntimeLookupKeys(accountID int64, profile OpenAIAccountScheduleProfile) []openAIAccountRuntimeProfileKey {
+	return openAIAccountRuntimeReportKeys(accountID, profile)
+}
+
+func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstTokenMs *int) {
+	s.reportForProfile(accountID, success, firstTokenMs, OpenAIAccountScheduleProfile{})
+}
+
+func (s *openAIAccountRuntimeStats) reportForProfile(accountID int64, success bool, firstTokenMs *int, profile OpenAIAccountScheduleProfile) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	const alpha = 0.2
+	reportOpenAIAccountRuntimeStat(s.loadOrCreate(accountID), success, firstTokenMs, alpha)
+	for _, key := range openAIAccountRuntimeReportKeys(accountID, profile) {
+		reportOpenAIAccountRuntimeStat(s.loadOrCreateProfile(key), success, firstTokenMs, alpha)
+	}
+}
+
+func snapshotOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat) (errorRate float64, ttft float64, hasTTFT bool, ok bool) {
+	if stat == nil {
+		return 0, 0, false, false
+	}
+	errorRate = clamp01(math.Float64frombits(stat.errorRateEWMABits.Load()))
+	ttftValue := math.Float64frombits(stat.ttftEWMABits.Load())
+	if math.IsNaN(ttftValue) {
+		return errorRate, 0, false, true
+	}
+	return errorRate, ttftValue, true, true
+}
+
+func (s *openAIAccountRuntimeStats) snapshot(accountID int64, profiles ...OpenAIAccountScheduleProfile) (errorRate float64, ttft float64, hasTTFT bool) {
 	if s == nil || accountID <= 0 {
 		return 0, 0, false
+	}
+	if len(profiles) > 0 {
+		for _, key := range openAIAccountRuntimeLookupKeys(accountID, profiles[0]) {
+			if value, ok := s.profiles.Load(key); ok {
+				stat, _ := value.(*openAIAccountRuntimeStat)
+				if errRate, profileTTFT, profileHasTTFT, statOK := snapshotOpenAIAccountRuntimeStat(stat); statOK {
+					return errRate, profileTTFT, profileHasTTFT
+				}
+			}
+		}
 	}
 	value, ok := s.accounts.Load(accountID)
 	if !ok {
 		return 0, 0, false
 	}
 	stat, _ := value.(*openAIAccountRuntimeStat)
-	if stat == nil {
+	errRate, globalTTFT, globalHasTTFT, statOK := snapshotOpenAIAccountRuntimeStat(stat)
+	if !statOK {
 		return 0, 0, false
 	}
-	errorRate = clamp01(math.Float64frombits(stat.errorRateEWMABits.Load()))
-	ttftValue := math.Float64frombits(stat.ttftEWMABits.Load())
-	if math.IsNaN(ttftValue) {
-		return errorRate, 0, false
-	}
-	return errorRate, ttftValue, true
+	return errRate, globalTTFT, globalHasTTFT
 }
 
 func (s *openAIAccountRuntimeStats) size() int {
@@ -241,6 +442,13 @@ func (s *openAIAccountRuntimeStats) size() int {
 		return 0
 	}
 	return int(s.accountCount.Load())
+}
+
+func (s *openAIAccountRuntimeStats) profileSize() int {
+	if s == nil {
+		return 0
+	}
+	return int(s.profileCount.Load())
 }
 
 type defaultOpenAIAccountScheduler struct {
@@ -388,7 +596,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
-	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
+	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg, req.Profile); shouldEscape {
 		slog.Info("sticky_escape_triggered",
 			"account_id", accountID,
 			"reason", reason,
@@ -411,7 +619,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
 		if escapeCfg.enabled && acquireErr == nil && result != nil && !result.Acquired {
-			errorRate, ttft, _ := s.stats.snapshot(accountID)
+			errorRate, ttft, _ := s.stats.snapshot(accountID, req.Profile)
 			slog.Info("sticky_escape_triggered",
 				"account_id", accountID,
 				"reason", "concurrency_full",
@@ -453,11 +661,11 @@ func openAIStickyAccountMatchesGroup(account *Account, groupID *int64) bool {
 	return false
 }
 
-func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int64, cfg openAIStickyEscapeConfig) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
+func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int64, cfg openAIStickyEscapeConfig, profile OpenAIAccountScheduleProfile) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
 	if !cfg.enabled || s == nil || s.stats == nil || accountID <= 0 {
 		return "", 0, 0, false
 	}
-	errorRate, ttft, hasTTFT := s.stats.snapshot(accountID)
+	errorRate, ttft, hasTTFT := s.stats.snapshot(accountID, profile)
 	if hasTTFT && ttft > cfg.ttftMs {
 		return "ttft", errorRate, ttft, true
 	}
@@ -681,7 +889,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		}
 		errorRate, ttft, hasTTFT := 0.0, 0.0, false
 		if s.stats != nil {
-			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID)
+			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID, req.Profile)
 		}
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
 			account:   account,
@@ -1140,6 +1348,13 @@ func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bo
 	s.stats.report(accountID, success, firstTokenMs)
 }
 
+func (s *defaultOpenAIAccountScheduler) ReportResultForProfile(accountID int64, success bool, firstTokenMs *int, profile OpenAIAccountScheduleProfile) {
+	if s == nil || s.stats == nil {
+		return
+	}
+	s.stats.reportForProfile(accountID, success, firstTokenMs, profile)
+}
+
 func (s *defaultOpenAIAccountScheduler) ReportSwitch() {
 	if s == nil {
 		return
@@ -1167,6 +1382,7 @@ func (s *defaultOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountScheduler
 		AccountSwitchTotal:       switchTotal,
 		SchedulerLatencyMsTotal:  latencyTotal,
 		RuntimeStatsAccountCount: s.stats.size(),
+		RuntimeStatsProfileCount: s.stats.profileSize(),
 	}
 	if selectTotal > 0 {
 		snapshot.SchedulerLatencyMsAvg = float64(latencyTotal) / float64(selectTotal)
@@ -1391,6 +1607,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequiredImageCapability: requiredImageCapability,
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
+		Profile:                 openAIAccountScheduleProfileFromContext(ctx, requestedModel),
 	})
 }
 
@@ -1441,6 +1658,14 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 		return
 	}
 	scheduler.ReportResult(accountID, success, firstTokenMs)
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithProfile(accountID int64, success bool, firstTokenMs *int, profile OpenAIAccountScheduleProfile) {
+	scheduler := s.getOpenAIAccountScheduler(context.Background())
+	if scheduler == nil {
+		return
+	}
+	scheduler.ReportResultForProfile(accountID, success, firstTokenMs, profile)
 }
 
 func (s *OpenAIGatewayService) RecordOpenAIAccountSwitch() {

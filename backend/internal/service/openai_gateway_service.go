@@ -4147,6 +4147,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawFailedEvent := false
 	failedMessage := ""
 	clientOutputStarted := false
+	earlyFlushPreamble := account != nil && openai_compat.ShouldEarlyFlushResponsesPreamble(account.Extra)
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	pendingLines := make([]string, 0, 8)
 	writePendingLines := func() bool {
@@ -4239,6 +4240,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				line = "data: " + string(sanitizedData)
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
+			if !lineStartsClientOutput && earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && trimmedData != "" {
+				lineStartsClientOutput = true
+			}
 			recordFirstStreamPayloadMs(&firstTokenMs, startTime, trimmedData)
 			s.parseSSEUsageBytes(dataBytes, usage)
 		}

@@ -71,6 +71,13 @@ const ExtraKeyResponsesMode = "openai_responses_mode"
 // responses_bridge=force Chat→Responses bridge for chat-completions ingress.
 const ExtraKeyChatCompletionsMode = "openai_chat_completions_mode"
 
+// ExtraKeyResponsesEarlyFlush enables early flushing of Responses preamble SSE
+// events for passthrough streams. It is intentionally opt-in because flushing
+// response.created/response.in_progress commits the downstream HTTP response
+// before a later response.failed event can be converted into a failover HTTP
+// error.
+const ExtraKeyResponsesEarlyFlush = "openai_responses_early_flush"
+
 // ExtraKeyResponsesSupported 是 accounts.extra JSON 中存储自动探测结果的键名。
 // 值类型为 bool：true=支持、false=不支持、键缺失=未探测。
 const ExtraKeyResponsesSupported = "openai_responses_supported"
@@ -129,16 +136,22 @@ func ResolveResponsesSupport(extra map[string]any) AccountResponsesSupport {
 	return ResponsesSupportNo
 }
 
-// ShouldUseResponsesAPI 判断 OpenAI APIKey 账号的入站 /v1/chat/completions 请求
-// 是否应走"CC→Responses 转换 + 上游 /v1/responses"路径。
+// ShouldUseResponsesAPI 判断 OpenAI APIKey 账号是否应使用上游 Responses API。
 //
 // 返回 true 的两种情况：
 //  1. 账号已探测确认支持 Responses
 //  2. 账号未探测（标记缺失）——按"现状即证据"原则保留旧行为
 //
-// 仅当账号已探测且确认不支持时返回 false，此时调用方应走 CC 直转路径
-// （详见 internal/service/openai_gateway_chat_completions_raw.go）。
+// 仅当账号已探测且确认不支持时返回 false。该函数用于原生 /responses 路由，
+// 不读取 openai_chat_completions_mode，避免 Chat 入站优化误伤 Codex/Responses。
 func ShouldUseResponsesAPI(extra map[string]any) bool {
+	return ResolveResponsesSupport(extra) != ResponsesSupportNo
+}
+
+// ShouldUseResponsesAPIForChatIngress 判断 OpenAI APIKey 账号的入站
+// /v1/chat/completions 请求是否应走"CC→Responses 转换 + 上游
+// /v1/responses"路径。openai_chat_completions_mode 只在这里生效。
+func ShouldUseResponsesAPIForChatIngress(extra map[string]any) bool {
 	if extra != nil {
 		if mode, ok := extra[ExtraKeyChatCompletionsMode].(string); ok {
 			switch NormalizeChatCompletionsMode(mode) {
@@ -149,5 +162,21 @@ func ShouldUseResponsesAPI(extra map[string]any) bool {
 			}
 		}
 	}
-	return ResolveResponsesSupport(extra) != ResponsesSupportNo
+	return ShouldUseResponsesAPI(extra)
+}
+
+// ShouldEarlyFlushResponsesPreamble reports whether passthrough Responses
+// streams may flush response.created/response.in_progress before the first
+// content event. Only boolean true enables it; other values keep the safer
+// default behavior.
+func ShouldEarlyFlushResponsesPreamble(extra map[string]any) bool {
+	if extra == nil {
+		return false
+	}
+	v, ok := extra[ExtraKeyResponsesEarlyFlush]
+	if !ok {
+		return false
+	}
+	enabled, ok := v.(bool)
+	return ok && enabled
 }

@@ -564,7 +564,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
-		if !openai_compat.ShouldUseResponsesAPI(account.Extra) {
+		if !openai_compat.ShouldUseResponsesAPIForChatIngress(account.Extra) {
 			chatCompletionsURL, err := s.openAIChatCompletionsTestURL(credentialAccount, normalizedBaseURL)
 			if err != nil {
 				return s.sendErrorAndEnd(c, err.Error())

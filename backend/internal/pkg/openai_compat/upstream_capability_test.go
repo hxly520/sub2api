@@ -53,11 +53,10 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 		{"force responses overrides unsupported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses), ExtraKeyResponsesSupported: false}, true},
 		{"force chat completions overrides supported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceChatCompletions), ExtraKeyResponsesSupported: true}, false},
 
-		// Chat Completions endpoint-specific override: only callers of
-		// /v1/chat/completions use this decision; native /responses routing is
-		// handled elsewhere and remains unaffected.
-		{"chat raw override beats supported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, false},
-		{"chat responses bridge override beats unsupported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, true},
+		// Chat Completions endpoint-specific overrides must not affect native
+		// /v1/responses routing.
+		{"chat raw override ignored for native responses", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, true},
+		{"chat responses bridge override ignored for native responses", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, false},
 		{"invalid chat mode follows probe", map[string]any{ExtraKeyChatCompletionsMode: "bogus", ExtraKeyResponsesSupported: true}, true},
 	}
 
@@ -66,6 +65,53 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 			got := ShouldUseResponsesAPI(tc.extra)
 			if got != tc.want {
 				t.Errorf("ShouldUseResponsesAPI(%v) = %v, want %v", tc.extra, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShouldUseResponsesAPIForChatIngress(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra map[string]any
+		want  bool
+	}{
+		{"unknown defaults to responses", nil, true},
+		{"supported probe uses responses", map[string]any{ExtraKeyResponsesSupported: true}, true},
+		{"unsupported probe uses raw chat", map[string]any{ExtraKeyResponsesSupported: false}, false},
+		{"raw chat override beats supported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, false},
+		{"responses bridge override beats unsupported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, true},
+		{"invalid chat mode follows probe", map[string]any{ExtraKeyChatCompletionsMode: "bogus", ExtraKeyResponsesSupported: false}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ShouldUseResponsesAPIForChatIngress(tc.extra)
+			if got != tc.want {
+				t.Errorf("ShouldUseResponsesAPIForChatIngress(%v) = %v, want %v", tc.extra, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShouldEarlyFlushResponsesPreamble(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra map[string]any
+		want  bool
+	}{
+		{"nil extra", nil, false},
+		{"missing key", map[string]any{}, false},
+		{"false", map[string]any{ExtraKeyResponsesEarlyFlush: false}, false},
+		{"true", map[string]any{ExtraKeyResponsesEarlyFlush: true}, true},
+		{"wrong type", map[string]any{ExtraKeyResponsesEarlyFlush: "true"}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ShouldEarlyFlushResponsesPreamble(tc.extra)
+			if got != tc.want {
+				t.Errorf("ShouldEarlyFlushResponsesPreamble(%v) = %v, want %v", tc.extra, got, tc.want)
 			}
 		})
 	}
