@@ -243,7 +243,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 8. Forward response
 	if clientStream {
-		return s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+		return s.streamRawChatCompletions(ctx, c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
 	}
 	return s.bufferRawChatCompletions(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -283,6 +283,7 @@ func (s *OpenAIGatewayService) rawChatCompletionsURL(account *Account) (string, 
 // 网关会对上游强制打开 include_usage 以保证计费完整，并原样向下游透传 usage，
 // 让级联代理或下游计费系统也能拿到完整用量。
 func (s *OpenAIGatewayService) streamRawChatCompletions(
+	ctx context.Context,
 	c *gin.Context,
 	resp *http.Response,
 	account *Account,
@@ -318,6 +319,8 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
@@ -360,6 +363,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		firstResponseWatch.ObserveLine(line)
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
@@ -388,6 +392,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	if err := scanner.Err(); err != nil {
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+			return nil, failoverErr
+		}
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			logger.L().Warn("openai chat_completions raw: stream read error",
 				zap.Error(err),
@@ -415,6 +422,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				clientOutputStarted = true
 			}
 		}
+	}
+	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+		return nil, failoverErr
 	}
 
 	return &OpenAIForwardResult{

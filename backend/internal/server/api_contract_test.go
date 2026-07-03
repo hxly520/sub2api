@@ -670,6 +670,8 @@ func TestAPIContracts(t *testing.T) {
 					service.SettingPaymentVisibleMethodAlipayEnabled: "true",
 					service.SettingPaymentVisibleMethodWxpayEnabled:  "false",
 					"openai_advanced_scheduler_enabled":              "true",
+					"openai_first_response_enabled":                  "true",
+					"openai_first_response_timeout_ms":               "3000",
 				})
 			},
 			method:     http.MethodGet,
@@ -861,6 +863,8 @@ func TestAPIContracts(t *testing.T) {
 					"payment_visible_method_alipay_enabled": true,
 					"payment_visible_method_wxpay_enabled": false,
 					"openai_advanced_scheduler_enabled": true,
+					"openai_first_response_enabled": true,
+					"openai_first_response_timeout_ms": 3000,
 					"openai_codex_user_agent":           "",
 					"openai_fast_policy_settings": {
 						"rules": []
@@ -1110,6 +1114,8 @@ func TestAPIContracts(t *testing.T) {
 					"payment_visible_method_alipay_enabled": false,
 					"payment_visible_method_wxpay_enabled": false,
 					"openai_advanced_scheduler_enabled": false,
+					"openai_first_response_enabled": false,
+					"openai_first_response_timeout_ms": 5000,
 					"openai_codex_user_agent":           "",
 					"openai_fast_policy_settings": {
 						"rules": []

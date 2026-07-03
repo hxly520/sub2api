@@ -4170,6 +4170,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
 	defer putSSEScannerBuf64K(scanBuf)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
 	resultWithUsage := func() *openaiStreamingResultPassthrough {
@@ -4184,6 +4186,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		firstResponseWatch.ObserveLine(line)
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
 		if data, ok := extractOpenAISSEDataLine(line); ok {
@@ -4267,6 +4270,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, true, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
+		}
 		if sawTerminalEvent && !sawFailedEvent {
 			return resultWithUsage(), nil
 		}
@@ -4298,6 +4304,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			err,
 		)
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
+	}
+	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, true, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+		return resultWithUsage(), failoverErr
 	}
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -5007,6 +5016,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	}
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	streamInterval := time.Duration(0)
 	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
@@ -5121,6 +5132,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if scanErr == nil {
 			return nil, nil, false
 		}
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr, true
+		}
 		if sawTerminalEvent && !sawFailedEvent {
 			logger.LegacyPrintf("service.openai_gateway", "Upstream scan ended after terminal event: %v", scanErr)
 			return resultWithUsage(), nil, true
@@ -5156,6 +5170,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if streamFailoverErr != nil {
 			return
 		}
+		firstResponseWatch.ObserveLine(line)
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
@@ -5288,6 +5303,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if result, err, done := handleScanErr(scanner.Err()); done {
 			return result, err
 		}
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
+		}
 		return finalizeStream()
 	}
 
@@ -5313,7 +5331,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		defer close(events)
 		for scanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
-			if !sendEvent(scanEvent{line: scanner.Text()}) {
+			line := scanner.Text()
+			firstResponseWatch.ObserveLine(line)
+			if !sendEvent(scanEvent{line: line}) {
 				return
 			}
 		}
@@ -5327,6 +5347,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+					return resultWithUsage(), failoverErr
+				}
 				return finalizeStream()
 			}
 			if result, err, done := handleScanErr(ev.err); done {

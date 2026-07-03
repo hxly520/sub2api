@@ -209,6 +209,8 @@ type SystemSettings struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIFirstResponseEnabled     bool `json:"openai_first_response_enabled"`
+	OpenAIFirstResponseTimeoutMS   int  `json:"openai_first_response_timeout_ms"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

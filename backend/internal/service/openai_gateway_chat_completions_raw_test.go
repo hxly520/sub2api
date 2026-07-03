@@ -189,7 +189,7 @@ func TestForwardAsRawChatCompletions_UsesConfiguredURLAndAuthHeader(t *testing.T
 	require.Contains(t, rec.Body.String(), `"content":"ok"`)
 }
 
-func TestForwardAsChatCompletions_ChatIngressRawModeOverridesResponsesSupport(t *testing.T) {
+func TestForwardAsChatCompletions_UnsupportedResponsesUsesChatEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"compat-model","messages":[{"role":"user","content":"hello"}],"stream":false}`)
@@ -210,9 +210,8 @@ func TestForwardAsChatCompletions_ChatIngressRawModeOverridesResponsesSupport(t 
 	}
 	account := rawChatCompletionsTestAccount()
 	account.Extra = map[string]any{
-		"openai_responses_supported":   true,
-		"openai_chat_completions_mode": "raw_chat",
-		"openai_responses_mode":        "auto",
+		"openai_responses_supported": false,
+		"openai_responses_mode":      "auto",
 	}
 
 	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
@@ -420,6 +419,7 @@ func TestHandleChatStreamingResponse_SilentRefusalReasoningSummaryExempt(t *test
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
 
 	result, err := svc.handleChatStreamingResponse(
+		context.Background(),
 		resp,
 		c,
 		rawChatCompletionsTestAccount(),

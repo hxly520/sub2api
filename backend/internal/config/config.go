@@ -728,6 +728,9 @@ type GatewayConfig struct {
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// OpenAIScheduler: OpenAI 高级调度器粘性逃逸配置
 	OpenAIScheduler GatewayOpenAISchedulerConfig `mapstructure:"openai_scheduler"`
+	// OpenAIFirstResponse: OpenAI 流式首事件超时切号默认配置。
+	// 后台系统设置存在时优先使用系统设置；本配置作为缺省/兜底。
+	OpenAIFirstResponse GatewayOpenAIFirstResponseConfig `mapstructure:"openai_first_response"`
 	// OpenAIHTTP2: OpenAI HTTP 上游协议策略（默认启用 HTTP/2，可按代理能力回退 HTTP/1.1）
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
@@ -979,6 +982,21 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
+}
+
+// GatewayOpenAIFirstResponseConfig controls pre-client-write failover when an
+// OpenAI-compatible streaming upstream accepts the request but does not emit the
+// first SSE/data payload promptly.
+type GatewayOpenAIFirstResponseConfig struct {
+	// Enabled: 是否启用首事件超时切号。默认关闭，避免改变现有流式语义。
+	Enabled bool `mapstructure:"enabled"`
+	// TimeoutMS: 等待首个上游 SSE/data payload 的时间（毫秒）。
+	TimeoutMS int `mapstructure:"timeout_ms"`
+	// MaxAttempts: 同一请求最多允许多少次“首事件超时”尝试，包含首次账号。
+	// 2 表示首次账号超时后最多切一次；同时仍受 max_account_switches 和分组可用账号数限制。
+	MaxAttempts int `mapstructure:"max_attempts"`
+	// CountAsError: 超时样本是否计入调度错误率。默认 false，只上报慢 TTFT 用于速度降权。
+	CountAsError bool `mapstructure:"count_as_error"`
 }
 
 // GatewayUsageRecordConfig 使用量记录异步队列配置
@@ -1422,6 +1440,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	if !cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled && !viper.IsSet("gateway.openai_scheduler.sticky_escape_enabled") {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled = true
+	}
+	if cfg.Gateway.OpenAIFirstResponse.TimeoutMS == 0 {
+		cfg.Gateway.OpenAIFirstResponse.TimeoutMS = 5000
+	}
+	if cfg.Gateway.OpenAIFirstResponse.MaxAttempts == 0 {
+		cfg.Gateway.OpenAIFirstResponse.MaxAttempts = 2
 	}
 
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
@@ -1891,6 +1915,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.ttft", 0.5)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.reset", 0.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.quota_headroom", 0.0)
+	viper.SetDefault("gateway.openai_first_response.enabled", false)
+	viper.SetDefault("gateway.openai_first_response.timeout_ms", 5000)
+	viper.SetDefault("gateway.openai_first_response.max_attempts", 2)
+	viper.SetDefault("gateway.openai_first_response.count_as_error", false)
 	// OpenAI HTTP upstream protocol strategy
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)
@@ -2688,6 +2716,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeErrorRate < 0 || c.Gateway.OpenAIScheduler.StickyEscapeErrorRate > 1 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_error_rate must be between 0 and 1")
+	}
+	if c.Gateway.OpenAIFirstResponse.TimeoutMS < 0 {
+		return fmt.Errorf("gateway.openai_first_response.timeout_ms must be non-negative")
+	}
+	if c.Gateway.OpenAIFirstResponse.Enabled {
+		if c.Gateway.OpenAIFirstResponse.TimeoutMS < 500 || c.Gateway.OpenAIFirstResponse.TimeoutMS > 60000 {
+			return fmt.Errorf("gateway.openai_first_response.timeout_ms must be between 500-60000 milliseconds when enabled")
+		}
+		if c.Gateway.OpenAIFirstResponse.MaxAttempts <= 0 {
+			return fmt.Errorf("gateway.openai_first_response.max_attempts must be positive when enabled")
+		}
 	}
 	if c.Gateway.MaxLineSize < 0 {
 		return fmt.Errorf("gateway.max_line_size must be non-negative")

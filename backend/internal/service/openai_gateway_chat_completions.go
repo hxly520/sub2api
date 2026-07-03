@@ -48,9 +48,9 @@ var cursorResponsesUnsupportedFields = []string{
 // 正确的，但 sub2api 接入 DeepSeek/Kimi/GLM 等第三方 OpenAI 兼容上游后假设破裂：
 // 这些上游普遍只支持 /v1/chat/completions，无 /v1/responses 端点。
 //
-// 当前路由策略（基于账号覆盖模式/探测标记，详见
+// 当前路由策略（基于账号 Responses 覆盖模式/探测标记，详见
 // openai_compat.ShouldUseResponsesAPIForChatIngress）：
-//   - APIKey 账号 + Chat 入站强制 raw_chat 或探测确认不支持 Responses →
+//   - APIKey 账号 + 探测确认不支持 Responses 或强制 Chat Completions →
 //     走 forwardAsRawChatCompletions，直转上游 /v1/chat/completions，不做协议转换
 //   - 其他所有情况（OAuth、APIKey 强制/探测确认支持、未探测）→ 走原有 CC→Responses
 //     转换路径（保留旧行为，存量未探测账号零兼容破坏）
@@ -324,7 +324,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
+		result, handleErr = s.handleChatStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
 	} else {
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
@@ -496,6 +496,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 // handleChatStreamingResponse reads Responses SSE events from upstream,
 // converts each to Chat Completions SSE chunks, and writes them to the client.
 func (s *OpenAIGatewayService) handleChatStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
@@ -545,6 +546,8 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	streamInterval := time.Duration(0)
 	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
@@ -574,6 +577,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	}
 
 	processDataLine := func(payload string) bool {
+		firstResponseWatch.ObservePayload(payload)
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())
@@ -823,6 +827,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
+			firstResponseWatch.ObserveLine(line)
 			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
@@ -835,8 +840,14 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			}
 		}
 		if err := scanner.Err(); err != nil {
+			if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+				return resultWithUsage(), failoverErr
+			}
 			handleScanErr(err)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+		}
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
 		}
 		if frame, ok := parser.Finish(); ok {
 			if strings.TrimSpace(frame.Data) == "[DONE]" {
@@ -870,7 +881,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		defer close(events)
 		for scanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
-			if !sendEvent(scanEvent{line: scanner.Text()}) {
+			line := scanner.Text()
+			firstResponseWatch.ObserveLine(line)
+			if !sendEvent(scanEvent{line: line}) {
 				return
 			}
 		}
@@ -896,6 +909,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+					return resultWithUsage(), failoverErr
+				}
 				if frame, ok := parser.Finish(); ok {
 					if strings.TrimSpace(frame.Data) == "[DONE]" {
 						return missingTerminalErr()
@@ -907,6 +923,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				return missingTerminalErr()
 			}
 			if ev.err != nil {
+				if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+					return resultWithUsage(), failoverErr
+				}
 				handleScanErr(ev.err)
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
 			}

@@ -3533,17 +3533,11 @@ export default {
         responsesModeDesc:
           'Only applies to the OpenAI API Key text forwarding path. Auto follows probe results; force modes override probing.',
         responsesModeAuto: 'Auto',
-	        responsesModeForceResponses: 'Force Responses',
-	        responsesModeForceChatCompletions: 'Force Chat Completions',
-	        responsesModeTextDisabledHint:
-	          'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
-	        chatCompletionsMode: 'Chat ingress mode',
-	        chatCompletionsModeDesc:
-	          'Only affects /v1/chat/completions ingress. Raw Chat can reduce waiting time for compatible clients without changing native /responses routing.',
-	        chatCompletionsModeAuto: 'Auto',
-	        chatCompletionsModeRawChat: 'Raw Chat',
-	        chatCompletionsModeResponsesBridge: 'Responses bridge',
-	        authHeader: 'Upstream auth header',
+        responsesModeForceResponses: 'Force Responses',
+        responsesModeForceChatCompletions: 'Force Chat Completions',
+        responsesModeTextDisabledHint:
+          'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        authHeader: 'Upstream auth header',
         authHeaderDesc:
           'Defaults to Authorization: Bearer. Some compatible upstreams require api-key or x-api-key.',
         authHeaderAuthorization: 'Authorization: Bearer',
@@ -6736,6 +6730,12 @@ export default {
       openaiExperimentalScheduler: {
         title: 'OpenAI experimental scheduler policy',
         description: "Disabled by default. When enabled, this only changes the gateway's experimental account-selection policy for OpenAI traffic; it does not indicate an upstream OpenAI capability."
+      },
+      openaiFirstResponse: {
+        title: 'OpenAI first-token optimization',
+        description: 'Disabled by default. When enabled, streaming requests wait for the first upstream event before writing to the client, then try another available account in the same group on timeout.',
+        timeout: 'First-event timeout (ms)',
+        timeoutHint: 'Recommended: 3000-5000ms. Range: 500-60000ms. Disabling this fully restores the original forwarding path.'
       },
       usageRecords: {
         title: 'Usage Records',

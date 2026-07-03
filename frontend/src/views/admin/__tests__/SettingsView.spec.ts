@@ -411,6 +411,8 @@ const baseSettingsResponse = {
   payment_visible_method_alipay_enabled: true,
   payment_visible_method_wxpay_enabled: true,
   openai_advanced_scheduler_enabled: false,
+  openai_first_response_enabled: false,
+  openai_first_response_timeout_ms: 5000,
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
@@ -774,6 +776,8 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).toContain(
       "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑",
     );
+    expect(wrapper.text()).toContain("OpenAI 首字优化");
+    expect(wrapper.text()).toContain("首事件超时（毫秒）");
     expect(wrapper.text()).not.toContain("OpenAI 高级调度器");
   });
 

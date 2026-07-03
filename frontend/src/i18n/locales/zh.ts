@@ -3709,16 +3709,10 @@ export default {
         responsesModeDesc:
           '仅对 OpenAI API Key 的文本转发链路生效。自动跟随探测结果，强制模式会覆盖自动探测。',
         responsesModeAuto: '自动',
-	        responsesModeForceResponses: '强制 Responses',
-	        responsesModeForceChatCompletions: '强制 Chat Completions',
-	        responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
-	        chatCompletionsMode: 'Chat 入站模式',
-	        chatCompletionsModeDesc:
-	          '仅影响 /v1/chat/completions 入站。直连 Chat 可降低兼容客户端等待时间，不影响 /responses 原生链路。',
-	        chatCompletionsModeAuto: '自动',
-	        chatCompletionsModeRawChat: '直连 Chat',
-	        chatCompletionsModeResponsesBridge: '转换 Responses',
-	        authHeader: '上游认证头',
+        responsesModeForceResponses: '强制 Responses',
+        responsesModeForceChatCompletions: '强制 Chat Completions',
+        responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
+        authHeader: '上游认证头',
         authHeaderDesc: '默认使用 Authorization: Bearer。部分兼容上游需要 api-key 或 x-api-key。',
         authHeaderAuthorization: 'Authorization: Bearer',
         authHeaderAPIKey: 'api-key',
@@ -6888,6 +6882,12 @@ export default {
       openaiExperimentalScheduler: {
         title: 'OpenAI 实验调度策略',
         description: '默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。'
+      },
+      openaiFirstResponse: {
+        title: 'OpenAI 首字优化',
+        description: '默认关闭。开启后，流式请求在写出客户端前等待首个上游事件，超时会尝试切换同分组其他可用账号。',
+        timeout: '首事件超时（毫秒）',
+        timeoutHint: '建议 3000-5000ms。范围 500-60000ms；关闭后完全回到原版转发链路。'
       },
       usageRecords: {
         title: '使用记录',

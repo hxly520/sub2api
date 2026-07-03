@@ -583,9 +583,18 @@ type UpstreamFailoverError struct {
 	ResponseHeaders        http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
 	ForceCacheBilling      bool        // Antigravity 粘性会话切换时设为 true
 	RetryableOnSameAccount bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	FirstResponseTimeout   bool        // 上游已返回响应头但首个 SSE/data payload 超时，允许写客户端前切换账号
+	FirstResponseTimeoutMs int         // 首事件超时阈值，用于调度慢样本上报
+	CountAsError           bool        // 首事件超时是否计入调度错误率；默认只作为慢 TTFT
 }
 
 func (e *UpstreamFailoverError) Error() string {
+	if e != nil && e.FirstResponseTimeout {
+		if e.FirstResponseTimeoutMs > 0 {
+			return fmt.Sprintf("upstream first response timeout after %dms (failover)", e.FirstResponseTimeoutMs)
+		}
+		return "upstream first response timeout (failover)"
+	}
 	return fmt.Sprintf("upstream error: %d (failover)", e.StatusCode)
 }
 

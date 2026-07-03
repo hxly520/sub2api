@@ -4014,6 +4014,41 @@
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
+
+              <div class="space-y-3 rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label
+                      class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.openaiFirstResponse.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiFirstResponse.description") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_first_response_enabled" />
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ t("admin.settings.openaiFirstResponse.timeout") }}
+                    </label>
+                    <input
+                      v-model.number="form.openai_first_response_timeout_ms"
+                      type="number"
+                      min="500"
+                      max="60000"
+                      step="100"
+                      :disabled="!form.openai_first_response_enabled"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiFirstResponse.timeoutHint") }}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -7903,6 +7938,8 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  openai_first_response_enabled: boolean;
+  openai_first_response_timeout_ms: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
@@ -8094,6 +8131,8 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  openai_first_response_enabled: false,
+  openai_first_response_timeout_ms: 5000,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -9359,6 +9398,9 @@ async function saveSettings() {
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      openai_first_response_enabled: form.openai_first_response_enabled,
+      openai_first_response_timeout_ms:
+        Number(form.openai_first_response_timeout_ms) || 5000,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

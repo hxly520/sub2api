@@ -2229,6 +2229,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+	openAIFirstResponseDefaults := defaultOpenAIFirstResponseRuntimeConfigFromConfig(s.cfg)
+	openAIFirstResponseTimeoutMS := settings.OpenAIFirstResponseTimeoutMS
+	if openAIFirstResponseTimeoutMS <= 0 {
+		openAIFirstResponseTimeoutMS = openAIFirstResponseDefaults.TimeoutMS
+	}
+	if err := validateOpenAIFirstResponseTimeoutMS(openAIFirstResponseTimeoutMS); err != nil {
+		return nil, err
+	}
+	updates[openAIFirstResponseEnabledSettingKey] = strconv.FormatBool(settings.OpenAIFirstResponseEnabled)
+	updates[openAIFirstResponseTimeoutMSSettingKey] = strconv.Itoa(openAIFirstResponseTimeoutMS)
 
 	// 余额、订阅到期与账号限额通知
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -2378,6 +2388,25 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 		enabled:   settings.OpenAIAdvancedSchedulerEnabled,
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+	})
+	firstResponseRuntimeDefaults := defaultOpenAIFirstResponseRuntimeConfigFromConfig(s.cfg)
+	firstResponseTimeoutMS := settings.OpenAIFirstResponseTimeoutMS
+	if firstResponseTimeoutMS <= 0 {
+		firstResponseTimeoutMS = firstResponseRuntimeDefaults.TimeoutMS
+	}
+	firstResponseTimeoutMS = normalizeOpenAIFirstResponseTimeoutMSValue(
+		firstResponseTimeoutMS,
+		firstResponseRuntimeDefaults.TimeoutMS,
+	)
+	openAIFirstResponseRuntimeConfigSF.Forget(openAIFirstResponseSettingCacheKey)
+	openAIFirstResponseRuntimeConfigCache.Store(&cachedOpenAIFirstResponseRuntimeConfig{
+		config: OpenAIFirstResponseRuntimeConfig{
+			Enabled:      settings.OpenAIFirstResponseEnabled,
+			TimeoutMS:    firstResponseTimeoutMS,
+			MaxAttempts:  firstResponseRuntimeDefaults.MaxAttempts,
+			CountAsError: firstResponseRuntimeDefaults.CountAsError,
+		},
+		expiresAt: time.Now().Add(openAIFirstResponseSettingCacheTTL).UnixNano(),
 	})
 	// Invalidate the quota auto-pause cache and let the next read trigger a fresh load.
 	// We can't know from here whether ops_advanced_settings was also touched, so be
@@ -3207,6 +3236,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingPaymentVisibleMethodAlipayEnabled:     "false",
 		SettingPaymentVisibleMethodWxpayEnabled:      "false",
 		openAIAdvancedSchedulerSettingKey:            "false",
+		openAIFirstResponseEnabledSettingKey:         "false",
+		openAIFirstResponseTimeoutMSSettingKey:       strconv.Itoa(defaultOpenAIFirstResponseRuntimeConfigFromConfig(s.cfg).TimeoutMS),
 
 		SettingKeyAllowUserViewErrorRequests: "false",
 	}
@@ -3769,6 +3800,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
 	result.PaymentVisibleMethodWxpayEnabled = settings[SettingPaymentVisibleMethodWxpayEnabled] == "true"
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
+	firstResponseDefaults := defaultOpenAIFirstResponseRuntimeConfigFromConfig(s.cfg)
+	if raw, ok := settings[openAIFirstResponseEnabledSettingKey]; ok {
+		result.OpenAIFirstResponseEnabled = strings.EqualFold(strings.TrimSpace(raw), "true")
+	} else {
+		result.OpenAIFirstResponseEnabled = firstResponseDefaults.Enabled
+	}
+	result.OpenAIFirstResponseTimeoutMS = parseOpenAIFirstResponseTimeoutMS(
+		settings[openAIFirstResponseTimeoutMSSettingKey],
+		firstResponseDefaults.TimeoutMS,
+	)
 
 	// 余额、订阅到期与账号限额通知
 	result.BalanceLowNotifyEnabled = settings[SettingKeyBalanceLowNotifyEnabled] == "true"

@@ -417,7 +417,21 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
+			forwardCtx := h.openAIFirstResponseForwardContext(
+				c,
+				reqLog,
+				apiKey.GroupID,
+				reqModel,
+				failedAccountIDs,
+				switchCount,
+				maxAccountSwitches,
+				reqStream,
+				service.OpenAIUpstreamTransportAny,
+				service.OpenAIEndpointCapabilityChatCompletions,
+				requireCompact,
+				requestPlatform,
+			)
+			return h.gatewayService.Forward(forwardCtx, c, account, forwardBody)
 		}()
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -448,9 +462,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
 					// 池模式：同账号重试
-					if failoverErr.RetryableOnSameAccount {
+					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
 						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
@@ -840,7 +854,21 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
+			forwardCtx := h.openAIFirstResponseForwardContext(
+				c,
+				reqLog,
+				apiKey.GroupID,
+				currentRoutingModel,
+				failedAccountIDs,
+				switchCount,
+				maxAccountSwitches,
+				reqStream,
+				service.OpenAIUpstreamTransportAny,
+				service.OpenAIEndpointCapabilityChatCompletions,
+				false,
+				requestPlatform,
+			)
+			return h.gatewayService.ForwardAsAnthropic(forwardCtx, c, account, forwardBody, promptCacheKey, defaultMappedModel)
 		}()
 		cyberBlockKeyMsg := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -871,9 +899,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.reportOpenAIAccountScheduleResult(c, account, currentRoutingModel, false, nil)
+					h.reportOpenAIAccountFailoverScheduleResult(c, account, currentRoutingModel, failoverErr)
 					// 池模式：同账号重试
-					if failoverErr.RetryableOnSameAccount {
+					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
 						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++

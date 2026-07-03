@@ -1706,6 +1706,63 @@ func TestDefaultOpenAIAccountScheduler_RouteProfilesDoNotBleedAcrossEndpoints(t 
 	require.Greater(t, responsesScores[int64(21702)], responsesScores[int64(21701)])
 }
 
+func TestOpenAIGatewayService_CountEligibleAccountsExcludesDisabledAndOutOfGroup(t *testing.T) {
+	groupID := int64(21800)
+	accounts := []Account{
+		{
+			ID:          21801,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			GroupIDs:    []int64{groupID},
+		},
+		{
+			ID:          21802,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusDisabled,
+			Schedulable: true,
+			GroupIDs:    []int64{groupID},
+		},
+		{
+			ID:          21803,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: false,
+			GroupIDs:    []int64{groupID},
+		},
+		{
+			ID:          21804,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			GroupIDs:    []int64{groupID + 1},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: groupAwareStubOpenAIAccountRepo{
+			stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: accounts},
+		},
+	}
+
+	count, err := svc.CountOpenAIEligibleAccountsForCapability(
+		context.Background(),
+		&groupID,
+		"gpt-5.5",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		PlatformOpenAI,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionSticky_ForceHTTP(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(1010)

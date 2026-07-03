@@ -377,7 +377,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
 		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
@@ -719,6 +719,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 // pattern to send Anthropic ping events during periods of upstream silence,
 // preventing proxy/client timeout disconnections.
 func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
@@ -760,6 +761,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	streamInterval := time.Duration(0)
 	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
@@ -793,6 +796,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// processDataLine handles a single "data: ..." SSE line from upstream.
 	processDataLine := func(payload string) bool {
+		firstResponseWatch.ObservePayload(payload)
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())
@@ -940,6 +944,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
+			firstResponseWatch.ObserveLine(line)
 			if isOpenAICompatDoneSentinelLine(line) {
 				return missingTerminalErr()
 			}
@@ -952,8 +957,14 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 		}
 		if err := scanner.Err(); err != nil {
+			if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+				return resultWithUsage(), failoverErr
+			}
 			handleScanErr(err)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+		}
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
 		}
 		if frame, ok := parser.Finish(); ok {
 			if strings.TrimSpace(frame.Data) == "[DONE]" {
@@ -987,7 +998,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		defer close(events)
 		for scanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
-			if !sendEvent(scanEvent{line: scanner.Text()}) {
+			line := scanner.Text()
+			firstResponseWatch.ObserveLine(line)
+			if !sendEvent(scanEvent{line: line}) {
 				return
 			}
 		}
@@ -1014,6 +1027,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		case ev, ok := <-events:
 			if !ok {
 				// Upstream closed
+				if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+					return resultWithUsage(), failoverErr
+				}
 				if frame, ok := parser.Finish(); ok {
 					if strings.TrimSpace(frame.Data) == "[DONE]" {
 						return missingTerminalErr()
@@ -1025,6 +1041,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return missingTerminalErr()
 			}
 			if ev.err != nil {
+				if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+					return resultWithUsage(), failoverErr
+				}
 				handleScanErr(ev.err)
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
 			}

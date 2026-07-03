@@ -201,7 +201,21 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
+			forwardCtx := h.openAIFirstResponseForwardContext(
+				c,
+				reqLog,
+				apiKey.GroupID,
+				reqModel,
+				failedAccountIDs,
+				switchCount,
+				maxAccountSwitches,
+				reqStream,
+				service.OpenAIUpstreamTransportAny,
+				service.OpenAIEndpointCapabilityChatCompletions,
+				false,
+				requestPlatform,
+			)
+			return h.gatewayService.ForwardAsChatCompletions(forwardCtx, c, account, forwardBody, promptCacheKey, "")
 		}()
 		cyberBlockKeyChat := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -233,9 +247,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
 					// Pool mode: retry on the same account
-					if failoverErr.RetryableOnSameAccount {
+					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
 						retryLimit := account.GetPoolModeRetryCount()
 						if sameAccountRetryCount[account.ID] < retryLimit {
 							sameAccountRetryCount[account.ID]++
@@ -336,9 +350,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 }
 
 // resolveOpenAIUpstreamEndpoint returns the actual upstream endpoint for an
-// OpenAI account, used by every OpenAI usage-recording site. Chat Completions
-// ingress may use the chat-specific raw_chat override, while native Responses
-// ingress only follows the upstream Responses capability/mode.
+// OpenAI account, used by every OpenAI usage-recording site. APIKey accounts
+// that do not support Responses are recorded as upstream Chat Completions for
+// both native Responses fallback and Chat Completions ingress.
 func resolveOpenAIUpstreamEndpoint(c *gin.Context, account *service.Account) string {
 	if account != nil && account.Type == service.AccountTypeAPIKey {
 		switch GetInboundEndpoint(c) {

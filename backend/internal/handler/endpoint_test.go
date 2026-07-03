@@ -167,7 +167,7 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 	require.Equal(t, "/v1/responses/compact", got)
 }
 
-func TestResolveOpenAIUpstreamEndpoint_ChatModeOnlyAffectsChatIngress(t *testing.T) {
+func TestResolveOpenAIUpstreamEndpoint_APIKeyResponsesSupport(t *testing.T) {
 	tests := []struct {
 		name    string
 		inbound string
@@ -176,32 +176,30 @@ func TestResolveOpenAIUpstreamEndpoint_ChatModeOnlyAffectsChatIngress(t *testing
 		want    string
 	}{
 		{
-			name:    "chat ingress raw chat override",
+			name:    "chat ingress unsupported responses uses chat completions",
 			inbound: EndpointChatCompletions,
 			rawPath: EndpointChatCompletions,
 			extra: map[string]any{
-				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeRawChat),
-				openai_compat.ExtraKeyResponsesSupported:  true,
+				openai_compat.ExtraKeyResponsesSupported: false,
 			},
 			want: EndpointChatCompletions,
 		},
 		{
-			name:    "responses ingress ignores raw chat override",
+			name:    "responses ingress supported responses uses responses",
 			inbound: EndpointResponses,
 			rawPath: EndpointResponses,
 			extra: map[string]any{
-				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeRawChat),
-				openai_compat.ExtraKeyResponsesSupported:  true,
+				openai_compat.ExtraKeyResponsesSupported: true,
 			},
 			want: EndpointResponses,
 		},
 		{
-			name:    "chat ingress responses bridge override",
+			name:    "chat ingress force responses uses responses",
 			inbound: EndpointChatCompletions,
 			rawPath: EndpointChatCompletions,
 			extra: map[string]any{
-				openai_compat.ExtraKeyChatCompletionsMode: string(openai_compat.ChatCompletionsModeResponsesBridge),
-				openai_compat.ExtraKeyResponsesSupported:  false,
+				openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeForceResponses),
+				openai_compat.ExtraKeyResponsesSupported: false,
 			},
 			want: EndpointResponses,
 		},

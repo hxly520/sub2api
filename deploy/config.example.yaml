@@ -338,6 +338,16 @@ gateway:
     sticky_escape_ttft_ms: 15000
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
+  # OpenAI 流式首事件保护默认值：后台“系统设置”优先，本段作为缺省/兜底。
+  # 仅在同分组仍有其他启用可用账号时，才会在写客户端前切号。
+  openai_first_response:
+    enabled: false
+    # 等待上游首个 SSE/data payload 的时间。建议先用 3000-5000ms 小流量灰度。
+    timeout_ms: 5000
+    # 包含首次账号的最大尝试次数。2 表示最多因首事件超时切一次账号。
+    max_attempts: 2
+    # false 表示只按慢 TTFT 降权；true 会同时拉高调度错误率。
+    count_as_error: false
   # OpenAI HTTP upstream protocol strategy.
   # OpenAI HTTP 上游协议策略（默认 HTTP/2；代理明确不兼容时可临时回退 HTTP/1.1）。
   openai_http2:

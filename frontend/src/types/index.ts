@@ -1049,7 +1049,6 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
-export type OpenAIChatCompletionsMode = 'auto' | 'raw_chat' | 'responses_bridge'
 export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
 export type OpenAICompatibleAuthHeader = 'Authorization' | 'api-key' | 'x-api-key'
 
@@ -1064,7 +1063,6 @@ export interface OpenAICompactState {
 export interface OpenAIResponsesState {
   openai_responses_mode?: OpenAIResponsesMode
   openai_responses_supported?: boolean
-  openai_chat_completions_mode?: OpenAIChatCompletionsMode
 }
 
 export interface CreateAccountRequest {

@@ -1282,6 +1282,96 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked)
 }
 
+// CountOpenAIEligibleAccountsForCapability counts same-scope accounts that are
+// actually schedulable for this request. It intentionally mirrors the scheduler
+// filters instead of using group account totals, so disabled / paused / blocked
+// accounts do not enlarge retry or first-response failover budgets.
+func (s *OpenAIGatewayService) CountOpenAIEligibleAccountsForCapability(
+	ctx context.Context,
+	groupID *int64,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	platform string,
+) (int, error) {
+	if s == nil {
+		return 0, ErrNoAvailableAccounts
+	}
+	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
+	if err != nil {
+		return 0, err
+	}
+	if len(accounts) == 0 {
+		return 0, nil
+	}
+
+	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
+	var schedGroup *Group
+	if groupID != nil && s.schedulerSnapshot != nil {
+		schedGroup, _ = s.schedulerSnapshot.GetGroupByID(ctx, *groupID)
+	}
+	parentCache := make(map[int64]*Account)
+	parentLookup := func(id int64) *Account {
+		if account, ok := parentCache[id]; ok {
+			return account
+		}
+		if s.accountRepo == nil {
+			return nil
+		}
+		account, _ := s.accountRepo.GetByID(ctx, id)
+		parentCache[id] = account
+		return account
+	}
+
+	count := 0
+	for i := range accounts {
+		account := &accounts[i]
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				continue
+			}
+		}
+		if !account.IsSchedulable() || account.Platform != platform || !account.IsOpenAICompatible() {
+			continue
+		}
+		if s.isOpenAIAccountRuntimeBlocked(account) {
+			continue
+		}
+		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
+			continue
+		}
+		if !isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, requireCompact, requiredCapability) {
+			continue
+		}
+		if !s.isOpenAIAccountTransportCompatible(account, requiredTransport) {
+			continue
+		}
+		if needsUpstreamCheck && groupID != nil && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
+			continue
+		}
+		if !parentHealthyForShadow(account, parentLookup) {
+			continue
+		}
+		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
+		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, platform, requestedModel, requireCompact, requiredCapability)
+		if fresh == nil || !openAIStickyAccountMatchesGroup(fresh, groupID) || s.isOpenAIAccountRuntimeBlocked(fresh) {
+			continue
+		}
+		if !s.isOpenAIAccountTransportCompatible(fresh, requiredTransport) {
+			continue
+		}
+		if needsUpstreamCheck && groupID != nil && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Account, requiredTransport OpenAIUpstreamTransport) bool {
 	if requiredTransport == OpenAIUpstreamTransportAny || requiredTransport == OpenAIUpstreamTransportHTTPSSE {
 		return true

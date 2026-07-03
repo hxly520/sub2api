@@ -53,11 +53,8 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 		{"force responses overrides unsupported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses), ExtraKeyResponsesSupported: false}, true},
 		{"force chat completions overrides supported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceChatCompletions), ExtraKeyResponsesSupported: true}, false},
 
-		// Chat Completions endpoint-specific overrides must not affect native
-		// /v1/responses routing.
-		{"chat raw override ignored for native responses", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, true},
-		{"chat responses bridge override ignored for native responses", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, false},
-		{"invalid chat mode follows probe", map[string]any{ExtraKeyChatCompletionsMode: "bogus", ExtraKeyResponsesSupported: true}, true},
+		// Unknown extra keys must not affect native /v1/responses routing.
+		{"unknown extra ignored for native responses", map[string]any{"openai_chat_completions_mode": "raw_chat", ExtraKeyResponsesSupported: true}, true},
 	}
 
 	for _, tc := range tests {
@@ -79,9 +76,7 @@ func TestShouldUseResponsesAPIForChatIngress(t *testing.T) {
 		{"unknown defaults to responses", nil, true},
 		{"supported probe uses responses", map[string]any{ExtraKeyResponsesSupported: true}, true},
 		{"unsupported probe uses raw chat", map[string]any{ExtraKeyResponsesSupported: false}, false},
-		{"raw chat override beats supported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeRawChat), ExtraKeyResponsesSupported: true}, false},
-		{"responses bridge override beats unsupported probe", map[string]any{ExtraKeyChatCompletionsMode: string(ChatCompletionsModeResponsesBridge), ExtraKeyResponsesSupported: false}, true},
-		{"invalid chat mode follows probe", map[string]any{ExtraKeyChatCompletionsMode: "bogus", ExtraKeyResponsesSupported: false}, false},
+		{"unknown chat mode key ignored", map[string]any{"openai_chat_completions_mode": "responses_bridge", ExtraKeyResponsesSupported: false}, false},
 	}
 
 	for _, tc := range tests {
@@ -112,29 +107,6 @@ func TestShouldEarlyFlushResponsesPreamble(t *testing.T) {
 			got := ShouldEarlyFlushResponsesPreamble(tc.extra)
 			if got != tc.want {
 				t.Errorf("ShouldEarlyFlushResponsesPreamble(%v) = %v, want %v", tc.extra, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestNormalizeChatCompletionsMode(t *testing.T) {
-	tests := []struct {
-		name string
-		mode string
-		want ChatCompletionsMode
-	}{
-		{"empty", "", ChatCompletionsModeAuto},
-		{"auto", "auto", ChatCompletionsModeAuto},
-		{"raw chat", "raw_chat", ChatCompletionsModeRawChat},
-		{"responses bridge", "responses_bridge", ChatCompletionsModeResponsesBridge},
-		{"invalid", "force_chat_completions", ChatCompletionsModeAuto},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := NormalizeChatCompletionsMode(tc.mode)
-			if got != tc.want {
-				t.Errorf("NormalizeChatCompletionsMode(%q) = %q, want %q", tc.mode, got, tc.want)
 			}
 		})
 	}

@@ -274,6 +274,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIFirstResponseEnabled:             settings.OpenAIFirstResponseEnabled,
+		OpenAIFirstResponseTimeoutMS:           settings.OpenAIFirstResponseTimeoutMS,
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
@@ -619,6 +621,8 @@ type UpdateSettingsRequest struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled *bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIFirstResponseEnabled     *bool `json:"openai_first_response_enabled"`
+	OpenAIFirstResponseTimeoutMS   *int  `json:"openai_first_response_timeout_ms"`
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -1792,6 +1796,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		OpenAIFirstResponseEnabled: func() bool {
+			if req.OpenAIFirstResponseEnabled != nil {
+				return *req.OpenAIFirstResponseEnabled
+			}
+			return previousSettings.OpenAIFirstResponseEnabled
+		}(),
+		OpenAIFirstResponseTimeoutMS: func() int {
+			if req.OpenAIFirstResponseTimeoutMS != nil {
+				return *req.OpenAIFirstResponseTimeoutMS
+			}
+			return previousSettings.OpenAIFirstResponseTimeoutMS
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2165,6 +2181,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIFirstResponseEnabled:             updatedSettings.OpenAIFirstResponseEnabled,
+		OpenAIFirstResponseTimeoutMS:           updatedSettings.OpenAIFirstResponseTimeoutMS,
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,
@@ -2676,6 +2694,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
+	}
+	if before.OpenAIFirstResponseEnabled != after.OpenAIFirstResponseEnabled {
+		changed = append(changed, "openai_first_response_enabled")
+	}
+	if before.OpenAIFirstResponseTimeoutMS != after.OpenAIFirstResponseTimeoutMS {
+		changed = append(changed, "openai_first_response_timeout_ms")
 	}
 	// 余额、订阅到期与账号限额通知
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

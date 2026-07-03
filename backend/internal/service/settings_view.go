@@ -219,6 +219,8 @@ type SystemSettings struct {
 
 	// OpenAI 账号调度
 	OpenAIAdvancedSchedulerEnabled bool
+	OpenAIFirstResponseEnabled     bool
+	OpenAIFirstResponseTimeoutMS   int
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool
