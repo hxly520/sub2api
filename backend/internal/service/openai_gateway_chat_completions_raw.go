@@ -364,6 +364,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	for scanner.Scan() {
 		line := scanner.Text()
 		firstResponseWatch.ObserveLine(line)
+		recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)

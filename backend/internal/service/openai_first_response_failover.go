@@ -111,6 +111,12 @@ func (w *openAIFirstResponseTimeoutWatch) ObserveLine(line string) {
 	}
 	if payload, ok := extractOpenAISSEDataLine(line); ok {
 		w.ObservePayload(payload)
+		return
+	}
+	if openAIStreamEventLineCountsAsFirstResponse(line) {
+		if w.observed.CompareAndSwap(false, true) && w.timer != nil {
+			w.timer.Stop()
+		}
 	}
 }
 

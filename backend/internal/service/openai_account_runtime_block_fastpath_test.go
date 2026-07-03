@@ -117,9 +117,10 @@ func TestOpenAIRuntimeBlock_DoesNotShortenExistingBlock(t *testing.T) {
 
 	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.True(t, ok)
-	actualUntil, ok := value.(time.Time)
+	block, ok := openAIAccountRuntimeBlockFromValue(value)
 	require.True(t, ok)
-	require.WithinDuration(t, longUntil, actualUntil, time.Second)
+	require.WithinDuration(t, longUntil, block.Until, time.Second)
+	require.Equal(t, "oauth_401", block.Reason)
 }
 
 func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {

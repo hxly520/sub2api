@@ -1803,6 +1803,136 @@ func TestOpenAIGatewayService_CountEligibleAccountsExcludesRuntimeBlocked(t *tes
 	require.Equal(t, 1, count)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_RuntimeBlockedSingleCandidateFailsOpen(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(21860)
+	account := Account{
+		ID:          21861,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{account}}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                &config.Config{},
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	svc.BlockAccountScheduling(&account, time.Now().Add(time.Minute), "stream_read_error")
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.Equal(t, 1, decision.CandidateCount)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(&account))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_RuntimeBlockedSingleCandidatePermanentBlockStaysBlocked(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(21865)
+	account := Account{
+		ID:          21866,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{account}}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                &config.Config{},
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	svc.BlockAccountScheduling(&account, time.Now().Add(time.Minute), "missing_refresh_token")
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+
+	require.Error(t, err)
+	require.Nil(t, selection)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(&account))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_RuntimeBlockedMultiCandidateSkipsBlocked(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(21870)
+	blockedAccount := Account{
+		ID:          21871,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	healthyAccount := Account{
+		ID:          21872,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{
+			accounts: []Account{blockedAccount, healthyAccount},
+		}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                &config.Config{},
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	svc.BlockAccountScheduling(&blockedAccount, time.Now().Add(time.Minute), "stream_read_error")
+
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.1",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, healthyAccount.ID, selection.Account.ID)
+	require.Equal(t, 1, decision.CandidateCount)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(&blockedAccount))
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionSticky_ForceHTTP(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(1010)

@@ -3985,6 +3985,11 @@ func openAIStreamEventIsPreamble(eventType string) bool {
 	}
 }
 
+func openAIStreamEventLineCountsAsFirstResponse(line string) bool {
+	eventType, ok := extractOpenAISSEEventLine(line)
+	return ok && openAIStreamEventIsPreamble(eventType)
+}
+
 func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" {
@@ -4002,6 +4007,14 @@ func recordFirstStreamPayloadMs(firstTokenMs **int, startTime time.Time, payload
 	}
 	trimmed := strings.TrimSpace(payload)
 	if trimmed == "" || trimmed == "[DONE]" {
+		return
+	}
+	ms := int(time.Since(startTime).Milliseconds())
+	*firstTokenMs = &ms
+}
+
+func recordFirstStreamEventLineMs(firstTokenMs **int, startTime time.Time, line string) {
+	if firstTokenMs == nil || *firstTokenMs != nil || !openAIStreamEventLineCountsAsFirstResponse(line) {
 		return
 	}
 	ms := int(time.Since(startTime).Milliseconds())
@@ -4190,6 +4203,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		firstResponseWatch.ObserveLine(line)
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
+		if earlyFlushPreamble && openAIStreamEventLineCountsAsFirstResponse(line) {
+			lineStartsClientOutput = true
+			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
 			trimmedData := strings.TrimSpace(data)
@@ -5174,6 +5191,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return
 		}
 		firstResponseWatch.ObserveLine(line)
+		lineStartsClientOutput := false
+		if earlyFlushPreamble && openAIStreamEventLineCountsAsFirstResponse(line) {
+			lineStartsClientOutput = true
+			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
@@ -5243,7 +5265,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if needModelReplace && mappedModel != "" && strings.Contains(line, mappedModel) {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
-			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+			startsClientOutput := forceFlushFailedEvent || lineStartsClientOutput || openAIStreamDataStartsClientOutput(data, eventType)
 			if !startsClientOutput && earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && strings.TrimSpace(data) != "" {
 				startsClientOutput = true
 			}
@@ -5279,13 +5301,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 		// Forward non-data lines as-is
 		if !clientDisconnected {
+			shouldFlush := queueDrained && clientOutputStarted
+			if lineStartsClientOutput && !clientOutputStarted {
+				shouldFlush = true
+			}
 			if _, err := bufferedWriter.WriteString(line); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 			} else if _, err := bufferedWriter.WriteString("\n"); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-			} else if queueDrained && clientOutputStarted {
+			} else if shouldFlush {
 				if err := flushBuffered(); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")

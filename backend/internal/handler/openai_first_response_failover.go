@@ -112,7 +112,9 @@ func (h *OpenAIGatewayHandler) openAIFirstResponseForwardContext(
 			zap.Int("max_switches", maxAccountSwitches),
 		)
 	}
-	return service.WithOpenAIFirstResponseTimeout(ctx, timeout)
+	return service.WithOpenAIFirstResponseEarlyFlush(
+		service.WithOpenAIFirstResponseTimeout(ctx, timeout),
+	)
 }
 
 func (h *OpenAIGatewayHandler) reportOpenAIAccountFailoverScheduleResult(

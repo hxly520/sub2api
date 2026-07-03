@@ -799,8 +799,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		firstResponseWatch.ObservePayload(payload)
 		if firstChunk {
 			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
+			if firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+			}
 		}
 
 		var event apicompat.ResponsesStreamEvent
@@ -945,6 +947,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		for scanner.Scan() {
 			line := scanner.Text()
 			firstResponseWatch.ObserveLine(line)
+			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
 			if isOpenAICompatDoneSentinelLine(line) {
 				return missingTerminalErr()
 			}
@@ -1000,6 +1003,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			line := scanner.Text()
 			firstResponseWatch.ObserveLine(line)
+			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
 			if !sendEvent(scanEvent{line: line}) {
 				return
 			}

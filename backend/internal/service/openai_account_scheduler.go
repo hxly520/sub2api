@@ -1166,6 +1166,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	filtered := make([]*Account, 0, len(accounts))
+	runtimeBlockedFallback := make([]*Account, 0, 1)
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
@@ -1177,14 +1178,19 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if !account.IsSchedulable() || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			continue
 		}
-		if s.service.isOpenAIAccountRuntimeBlocked(account) {
-			continue
-		}
 		// require_privacy_set: 跳过 privacy 未设置的账号并标记异常
 		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
 			s.service.BlockAccountScheduling(account, time.Time{}, "privacy_not_set")
 			_ = s.service.accountRepo.SetError(ctx, account.ID,
 				fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
+			continue
+		}
+		if block, runtimeBlocked := s.service.openAIAccountRuntimeBlock(account); runtimeBlocked {
+			if openAIRuntimeBlockReasonAllowsSingleCandidateFailOpen(block.Reason) &&
+				s.isAccountRequestCompatibleIgnoringRuntimeBlock(ctx, account, req) &&
+				s.isAccountTransportCompatible(account, req.RequiredTransport) {
+				runtimeBlockedFallback = append(runtimeBlockedFallback, account)
+			}
 			continue
 		}
 		if !s.isAccountRequestCompatible(ctx, account, req) {
@@ -1198,6 +1204,20 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			ID:             account.ID,
 			MaxConcurrency: account.EffectiveLoadFactor(),
 		})
+	}
+	if len(filtered) == 0 && len(runtimeBlockedFallback) == 1 {
+		account := runtimeBlockedFallback[0]
+		s.service.ClearAccountSchedulingBlock(account.ID)
+		filtered = append(filtered, account)
+		loadReq = append(loadReq, AccountWithConcurrency{
+			ID:             account.ID,
+			MaxConcurrency: account.EffectiveLoadFactor(),
+		})
+		slog.Warn("openai.runtime_block_fail_open_single_candidate",
+			"account_id", account.ID,
+			"group_id", req.GroupID,
+			"model", req.RequestedModel,
+		)
 	}
 	if len(filtered) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false)
@@ -1399,10 +1419,18 @@ func (s *defaultOpenAIAccountScheduler) lookupShadowParentAccount(ctx context.Co
 }
 
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) bool {
+	return s.isAccountRequestCompatibleWithRuntimeBlock(ctx, account, req, true)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleIgnoringRuntimeBlock(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) bool {
+	return s.isAccountRequestCompatibleWithRuntimeBlock(ctx, account, req, false)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleWithRuntimeBlock(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, checkRuntimeBlock bool) bool {
 	if account == nil {
 		return false
 	}
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlocked(account) {
+	if checkRuntimeBlock && s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlocked(account) {
 		return false
 	}
 	// Quota auto-pause must be evaluated during the initial filter too. Without it the
