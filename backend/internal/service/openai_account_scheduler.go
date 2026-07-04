@@ -35,6 +35,13 @@ const (
 	openAIQuotaHeadroomSnapshotStaleAfter = 8 * time.Hour
 )
 
+const (
+	openAIAccountSlowSuccessTTFTThresholdMs      = 8000
+	openAIAccountSlowSuccessConsecutiveThreshold = 2
+	openAIAccountSlowSuccessPenaltyDuration      = 90 * time.Second
+	openAIAccountSlowSuccessScoreMultiplier      = 0.35
+)
+
 type cachedOpenAIAdvancedSchedulerSetting struct {
 	enabled   bool
 	expiresAt int64
@@ -147,8 +154,10 @@ type openAIAccountRuntimeStats struct {
 }
 
 type openAIAccountRuntimeStat struct {
-	errorRateEWMABits atomic.Uint64
-	ttftEWMABits      atomic.Uint64
+	errorRateEWMABits       atomic.Uint64
+	ttftEWMABits            atomic.Uint64
+	slowSuccessCount        atomic.Int64
+	slowSuccessPenaltyUntil atomic.Int64
 }
 
 type OpenAIAccountScheduleProfile struct {
@@ -308,7 +317,7 @@ func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
 	}
 }
 
-func reportOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat, success bool, firstTokenMs *int, alpha float64) {
+func reportOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat, success bool, firstTokenMs *int, alpha float64, now time.Time) {
 	if stat == nil {
 		return
 	}
@@ -336,6 +345,17 @@ func reportOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat, success bool
 				break
 			}
 		}
+	}
+
+	if success && firstTokenMs != nil && *firstTokenMs > 0 {
+		if *firstTokenMs > openAIAccountSlowSuccessTTFTThresholdMs {
+			if stat.slowSuccessCount.Add(1) >= openAIAccountSlowSuccessConsecutiveThreshold {
+				stat.slowSuccessPenaltyUntil.Store(now.Add(openAIAccountSlowSuccessPenaltyDuration).UnixNano())
+			}
+			return
+		}
+		stat.slowSuccessCount.Store(0)
+		stat.slowSuccessPenaltyUntil.Store(0)
 	}
 }
 
@@ -393,9 +413,10 @@ func (s *openAIAccountRuntimeStats) reportForProfile(accountID int64, success bo
 		return
 	}
 	const alpha = 0.2
-	reportOpenAIAccountRuntimeStat(s.loadOrCreate(accountID), success, firstTokenMs, alpha)
+	now := time.Now()
+	reportOpenAIAccountRuntimeStat(s.loadOrCreate(accountID), success, firstTokenMs, alpha, now)
 	for _, key := range openAIAccountRuntimeReportKeys(accountID, profile) {
-		reportOpenAIAccountRuntimeStat(s.loadOrCreateProfile(key), success, firstTokenMs, alpha)
+		reportOpenAIAccountRuntimeStat(s.loadOrCreateProfile(key), success, firstTokenMs, alpha, now)
 	}
 }
 
@@ -435,6 +456,32 @@ func (s *openAIAccountRuntimeStats) snapshot(accountID int64, profiles ...OpenAI
 		return 0, 0, false
 	}
 	return errRate, globalTTFT, globalHasTTFT
+}
+
+func openAIAccountRuntimeSlowPenaltyActive(stat *openAIAccountRuntimeStat, now time.Time) bool {
+	if stat == nil {
+		return false
+	}
+	until := stat.slowSuccessPenaltyUntil.Load()
+	return until > 0 && now.UnixNano() < until
+}
+
+func (s *openAIAccountRuntimeStats) slowSuccessPenaltyActive(accountID int64, profile OpenAIAccountScheduleProfile, now time.Time) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	for _, key := range openAIAccountRuntimeLookupKeys(accountID, profile) {
+		if value, ok := s.profiles.Load(key); ok {
+			stat, _ := value.(*openAIAccountRuntimeStat)
+			return openAIAccountRuntimeSlowPenaltyActive(stat, now)
+		}
+	}
+	value, ok := s.accounts.Load(accountID)
+	if !ok {
+		return false
+	}
+	stat, _ := value.(*openAIAccountRuntimeStat)
+	return openAIAccountRuntimeSlowPenaltyActive(stat, now)
 }
 
 func (s *openAIAccountRuntimeStats) size() int {
@@ -676,12 +723,13 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int6
 }
 
 type openAIAccountCandidateScore struct {
-	account   *Account
-	loadInfo  *AccountLoadInfo
-	score     float64
-	errorRate float64
-	ttft      float64
-	hasTTFT   bool
+	account            *Account
+	loadInfo           *AccountLoadInfo
+	score              float64
+	errorRate          float64
+	ttft               float64
+	hasTTFT            bool
+	slowSuccessPenalty bool
 }
 
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
@@ -882,21 +930,25 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	loadMap map[int64]*AccountLoadInfo,
 ) openAIAccountLoadPlan {
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
+	now := time.Now()
 	for _, account := range filtered {
 		loadInfo := loadMap[account.ID]
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
 		errorRate, ttft, hasTTFT := 0.0, 0.0, false
+		slowSuccessPenalty := false
 		if s.stats != nil {
 			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID, req.Profile)
+			slowSuccessPenalty = s.stats.slowSuccessPenaltyActive(account.ID, req.Profile, now)
 		}
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
+			account:            account,
+			loadInfo:           loadInfo,
+			errorRate:          errorRate,
+			ttft:               ttft,
+			hasTTFT:            hasTTFT,
+			slowSuccessPenalty: slowSuccessPenalty,
 		})
 	}
 
@@ -988,7 +1040,6 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		}
 	}
 
-	now := time.Now()
 	for i := range candidates {
 		item := &candidates[i]
 		priorityFactor := 1.0
@@ -1025,6 +1076,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 			weights.TTFT*ttftFactor +
 			weights.Reset*resetFactor +
 			weights.QuotaHeadroom*quotaHeadroomFactor
+		if len(candidates) > 1 && item.slowSuccessPenalty {
+			item.score *= openAIAccountSlowSuccessScoreMultiplier
+		}
 	}
 	plan.candidates = candidates
 
