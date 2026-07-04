@@ -532,6 +532,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	var firstTokenAt *time.Time
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
@@ -573,6 +574,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			Stream:        true,
 			Duration:      time.Since(startTime),
 			FirstTokenMs:  firstTokenMs,
+			FirstTokenAt:  firstTokenAt,
 		}
 	}
 
@@ -580,10 +582,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		firstResponseWatch.ObservePayload(payload)
 		if firstChunk {
 			firstChunk = false
-			if firstTokenMs == nil {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
+			recordFirstStreamObservedAt(&firstTokenMs, &firstTokenAt, startTime)
 		}
 
 		var event apicompat.ResponsesStreamEvent
@@ -830,7 +829,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		for scanner.Scan() {
 			line := scanner.Text()
 			firstResponseWatch.ObserveLine(line)
-			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+			recordFirstStreamEventLineMs(&firstTokenMs, &firstTokenAt, startTime, line)
 			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
@@ -886,7 +885,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			line := scanner.Text()
 			firstResponseWatch.ObserveLine(line)
-			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+			recordFirstStreamEventLineMs(&firstTokenMs, &firstTokenAt, startTime, line)
 			if !sendEvent(scanEvent{line: line}) {
 				return
 			}

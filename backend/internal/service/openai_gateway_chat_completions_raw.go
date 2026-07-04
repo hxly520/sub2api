@@ -324,6 +324,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	var firstTokenAt *time.Time
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
@@ -364,7 +365,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	for scanner.Scan() {
 		line := scanner.Text()
 		firstResponseWatch.ObserveLine(line)
-		recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+		recordFirstStreamEventLineMs(&firstTokenMs, &firstTokenAt, startTime, line)
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
@@ -374,8 +375,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					usage = *u
 				}
 				if firstTokenMs == nil && !usageOnlyChunk {
-					elapsed := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &elapsed
+					recordFirstStreamObservedAt(&firstTokenMs, &firstTokenAt, startTime)
 				}
 			}
 		}
@@ -439,6 +439,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		Stream:          true,
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
+		FirstTokenAt:    firstTokenAt,
 	}, nil
 }
 

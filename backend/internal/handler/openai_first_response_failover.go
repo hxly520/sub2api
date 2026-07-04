@@ -146,3 +146,41 @@ func (h *OpenAIGatewayHandler) reportOpenAIAccountFailoverScheduleResult(
 	failoverErr.CountAsError = countAsError
 	h.reportOpenAIAccountScheduleResult(c, account, requestedModel, !countAsError, &timeoutMs)
 }
+
+func normalizeOpenAIFailoverFirstTokenMs(
+	c *gin.Context,
+	reqLog *zap.Logger,
+	result *service.OpenAIForwardResult,
+	switchCount int,
+	attemptStartedAt time.Time,
+	route string,
+) {
+	if switchCount <= 0 || result == nil || result.FirstTokenMs == nil || attemptStartedAt.IsZero() {
+		return
+	}
+	original := *result.FirstTokenMs
+	adjusted := original
+	if result.FirstTokenAt != nil {
+		adjusted = int(result.FirstTokenAt.Sub(attemptStartedAt).Milliseconds())
+	} else if elapsedMs := int(time.Since(attemptStartedAt).Milliseconds()); elapsedMs >= 0 && adjusted > elapsedMs {
+		adjusted = elapsedMs
+	}
+	if adjusted < 0 {
+		adjusted = 0
+	}
+	if adjusted == original {
+		return
+	}
+	result.FirstTokenMs = &adjusted
+	if reqLog != nil {
+		reqLog.Debug("openai.first_token_ms_adjusted_after_failover",
+			zap.String("route", route),
+			zap.Int("switch_count", switchCount),
+			zap.Int("original_first_token_ms", original),
+			zap.Int("adjusted_first_token_ms", adjusted),
+		)
+	}
+	if c != nil {
+		service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(adjusted))
+	}
+}

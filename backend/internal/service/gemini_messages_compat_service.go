@@ -2031,7 +2031,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 			}
 			continue
 		}
-		recordFirstStreamPayloadMs(&firstTokenMs, startTime, payload)
+		recordFirstStreamPayloadMs(&firstTokenMs, nil, startTime, payload)
 
 		unwrappedBytes, err := unwrapGeminiResponse([]byte(payload))
 		if err != nil {

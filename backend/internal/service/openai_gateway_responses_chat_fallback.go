@@ -327,7 +327,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 			sawDone = true
 			break
 		}
-		recordFirstStreamPayloadMs(&firstTokenMs, startTime, payload)
+		recordFirstStreamPayloadMs(&firstTokenMs, nil, startTime, payload)
 
 		if u := extractCCStreamUsage(payload); u != nil {
 			usage = *u

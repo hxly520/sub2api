@@ -247,6 +247,7 @@ type OpenAIForwardResult struct {
 	ResponseHeaders    http.Header
 	Duration           time.Duration
 	FirstTokenMs       *int
+	FirstTokenAt       *time.Time
 	ClientDisconnect   bool
 	ImageCount         int
 	ImageSize          string
@@ -3344,6 +3345,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Handle normal response
 		var usage *OpenAIUsage
 		var firstTokenMs *int
+		var firstTokenAt *time.Time
 		responseID := ""
 		imageCount := 0
 		var imageOutputSizes []string
@@ -3354,6 +3356,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			usage = streamResult.usage
 			firstTokenMs = streamResult.firstTokenMs
+			firstTokenAt = streamResult.firstTokenAt
 			responseID = strings.TrimSpace(streamResult.responseID)
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes
@@ -3393,6 +3396,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			OpenAIWSMode:    false,
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
+			FirstTokenAt:    firstTokenAt,
 		}
 		if imageCount > 0 {
 			forwardResult.ImageCount = imageCount
@@ -3582,6 +3586,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	var usage *OpenAIUsage
 	var firstTokenMs *int
+	var firstTokenAt *time.Time
 	responseID := ""
 	imageCount := 0
 	var imageOutputSizes []string
@@ -3592,6 +3597,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		usage = result.usage
 		firstTokenMs = result.firstTokenMs
+		firstTokenAt = result.firstTokenAt
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
@@ -3630,6 +3636,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		OpenAIWSMode:    false,
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
+		FirstTokenAt:    firstTokenAt,
 	}
 	if imageCount > 0 {
 		forwardResult.ImageCount = imageCount
@@ -3956,6 +3963,7 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 type openaiStreamingResultPassthrough struct {
 	usage            *OpenAIUsage
 	firstTokenMs     *int
+	firstTokenAt     *time.Time
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
@@ -4001,7 +4009,19 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	return !openAIStreamEventIsPreamble(eventType)
 }
 
-func recordFirstStreamPayloadMs(firstTokenMs **int, startTime time.Time, payload string) {
+func recordFirstStreamObservedAt(firstTokenMs **int, firstTokenAt **time.Time, startTime time.Time) {
+	if firstTokenMs == nil || *firstTokenMs != nil {
+		return
+	}
+	now := time.Now()
+	ms := int(now.Sub(startTime).Milliseconds())
+	*firstTokenMs = &ms
+	if firstTokenAt != nil {
+		*firstTokenAt = &now
+	}
+}
+
+func recordFirstStreamPayloadMs(firstTokenMs **int, firstTokenAt **time.Time, startTime time.Time, payload string) {
 	if firstTokenMs == nil || *firstTokenMs != nil {
 		return
 	}
@@ -4009,16 +4029,14 @@ func recordFirstStreamPayloadMs(firstTokenMs **int, startTime time.Time, payload
 	if trimmed == "" || trimmed == "[DONE]" {
 		return
 	}
-	ms := int(time.Since(startTime).Milliseconds())
-	*firstTokenMs = &ms
+	recordFirstStreamObservedAt(firstTokenMs, firstTokenAt, startTime)
 }
 
-func recordFirstStreamEventLineMs(firstTokenMs **int, startTime time.Time, line string) {
+func recordFirstStreamEventLineMs(firstTokenMs **int, firstTokenAt **time.Time, startTime time.Time, line string) {
 	if firstTokenMs == nil || *firstTokenMs != nil || !openAIStreamEventLineCountsAsFirstResponse(line) {
 		return
 	}
-	ms := int(time.Since(startTime).Milliseconds())
-	*firstTokenMs = &ms
+	recordFirstStreamObservedAt(firstTokenMs, firstTokenAt, startTime)
 }
 
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
@@ -4153,6 +4171,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
+	var firstTokenAt *time.Time
 	responseID := ""
 	clientDisconnected := false
 	sawDone := false
@@ -4192,6 +4211,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		return &openaiStreamingResultPassthrough{
 			usage:            usage,
 			firstTokenMs:     firstTokenMs,
+			firstTokenAt:     firstTokenAt,
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
@@ -4205,7 +4225,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		forceFlushFailedEvent := false
 		if earlyFlushPreamble && openAIStreamEventLineCountsAsFirstResponse(line) {
 			lineStartsClientOutput = true
-			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+			recordFirstStreamEventLineMs(&firstTokenMs, &firstTokenAt, startTime, line)
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
@@ -4264,7 +4284,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if !lineStartsClientOutput && earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && trimmedData != "" {
 				lineStartsClientOutput = true
 			}
-			recordFirstStreamPayloadMs(&firstTokenMs, startTime, trimmedData)
+			recordFirstStreamPayloadMs(&firstTokenMs, &firstTokenAt, startTime, trimmedData)
 			s.parseSSEUsageBytes(dataBytes, usage)
 		}
 
@@ -4980,6 +5000,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 type openaiStreamingResult struct {
 	usage            *OpenAIUsage
 	firstTokenMs     *int
+	firstTokenAt     *time.Time
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
@@ -5026,6 +5047,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
+	var firstTokenAt *time.Time
 	responseID := ""
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -5114,6 +5136,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		return &openaiStreamingResult{
 			usage:            usage,
 			firstTokenMs:     firstTokenMs,
+			firstTokenAt:     firstTokenAt,
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
@@ -5194,12 +5217,12 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		lineStartsClientOutput := false
 		if earlyFlushPreamble && openAIStreamEventLineCountsAsFirstResponse(line) {
 			lineStartsClientOutput = true
-			recordFirstStreamEventLineMs(&firstTokenMs, startTime, line)
+			recordFirstStreamEventLineMs(&firstTokenMs, &firstTokenAt, startTime, line)
 		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
-			recordFirstStreamPayloadMs(&firstTokenMs, startTime, data)
+			recordFirstStreamPayloadMs(&firstTokenMs, &firstTokenAt, startTime, data)
 			if openAIStreamEventIsTerminal(data) {
 				sawTerminalEvent = true
 			}
