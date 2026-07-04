@@ -1706,6 +1706,86 @@ func TestDefaultOpenAIAccountScheduler_RouteProfilesDoNotBleedAcrossEndpoints(t 
 	require.Greater(t, responsesScores[int64(21702)], responsesScores[int64(21701)])
 }
 
+func TestDefaultOpenAIAccountScheduler_SlowSuccessPenaltySoftlyLowersScore(t *testing.T) {
+	accounts := []*Account{
+		{ID: 21711, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3, Priority: 1},
+		{ID: 21712, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3, Priority: 1},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+
+	stats := newOpenAIAccountRuntimeStats()
+	profile := NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/responses", "/v1/responses")
+	slow := openAIAccountSlowSuccessTTFTThresholdMs + 1000
+	stats.reportForProfile(21711, true, &slow, profile)
+	stats.reportForProfile(21711, true, &slow, profile)
+
+	scheduler := &defaultOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{cfg: cfg},
+		stats:   stats,
+	}
+	plan := scheduler.buildOpenAIAccountLoadPlan(OpenAIAccountScheduleRequest{
+		RequestedModel: "gpt-5.5",
+		Profile:        NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/responses", ""),
+	}, accounts, map[int64]*AccountLoadInfo{
+		21711: {AccountID: 21711},
+		21712: {AccountID: 21712},
+	})
+
+	scores := map[int64]float64{}
+	penalized := map[int64]bool{}
+	for _, candidate := range plan.candidates {
+		scores[candidate.account.ID] = candidate.score
+		penalized[candidate.account.ID] = candidate.slowSuccessPenalty
+	}
+	require.True(t, penalized[int64(21711)])
+	require.False(t, penalized[int64(21712)])
+	require.Less(t, scores[int64(21711)], scores[int64(21712)])
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_SlowSuccessPenaltyDoesNotBlockSingleCandidate(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(21720)
+	account := Account{
+		ID:          21721,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		GroupIDs:    []int64{groupID},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+	stats := newOpenAIAccountRuntimeStats()
+	slow := openAIAccountSlowSuccessTTFTThresholdMs + 1000
+	stats.report(21721, true, &slow)
+	stats.report(21721, true, &slow)
+	require.True(t, stats.slowSuccessPenaltyActive(21721, OpenAIAccountScheduleProfile{}, time.Now()))
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{acquireResults: map[int64]bool{21721: true}}),
+		openaiAccountStats: stats,
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-5.5", nil, OpenAIUpstreamTransportAny, false)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(21721), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.Equal(t, 1, decision.CandidateCount)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_CountEligibleAccountsExcludesDisabledAndOutOfGroup(t *testing.T) {
 	groupID := int64(21800)
 	accounts := []Account{
@@ -2377,6 +2457,23 @@ func TestOpenAIAccountRuntimeStats_ReportAndSnapshot(t *testing.T) {
 	require.InDelta(t, 0.36, errorRate, 1e-9)
 	require.InDelta(t, 120.0, ttft, 1e-9)
 	require.Equal(t, 1, stats.size())
+}
+
+func TestOpenAIAccountRuntimeStats_SlowSuccessPenaltyLifecycle(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+	profile := NewOpenAIAccountScheduleProfile("gpt-5.5", "/v1/chat/completions", "/v1/chat/completions")
+	accountID := int64(1002)
+	slow := openAIAccountSlowSuccessTTFTThresholdMs + 1
+	fast := openAIAccountSlowSuccessTTFTThresholdMs - 1
+
+	stats.reportForProfile(accountID, true, &slow, profile)
+	require.False(t, stats.slowSuccessPenaltyActive(accountID, profile, time.Now()))
+
+	stats.reportForProfile(accountID, true, &slow, profile)
+	require.True(t, stats.slowSuccessPenaltyActive(accountID, profile, time.Now()))
+
+	stats.reportForProfile(accountID, true, &fast, profile)
+	require.False(t, stats.slowSuccessPenaltyActive(accountID, profile, time.Now()))
 }
 
 func TestOpenAIAccountRuntimeStats_ReportConcurrent(t *testing.T) {
