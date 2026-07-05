@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -35,8 +36,9 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 		case "thinking":
 			if block.Thinking != "" {
 				outputs = append(outputs, ResponsesOutput{
-					Type: "reasoning",
-					ID:   generateItemID(),
+					Type:   "reasoning",
+					ID:     generateItemID(),
+					Status: "completed",
 					Summary: []ResponsesSummary{{
 						Type: "summary_text",
 						Text: block.Thinking,
@@ -151,10 +153,23 @@ type AnthropicEventToResponsesState struct {
 
 	// For message output: accumulate text parts
 	ContentIndex int
+	CurrentText  strings.Builder
+	MessageText  strings.Builder
+	MessageParts []ResponsesContentPart
 
 	// For function_call: track per-output info
-	CurrentCallID string
-	CurrentName   string
+	CurrentCallID       string
+	CurrentName         string
+	CurrentArgs         strings.Builder
+	CurrentArgsFallback string
+	CurrentArgsHadDelta bool
+
+	// For reasoning output: track summary text.
+	CurrentThinking strings.Builder
+
+	// Completed output items, used to populate terminal response.output so strict
+	// Responses clients can validate streamed item lifecycle after completion.
+	Output []ResponsesOutput
 
 	// Usage from message_start / message_delta. InputTokens here follows
 	// Anthropic semantics (excludes cached tokens); they are added back when
@@ -260,24 +275,36 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 
 	switch evt.ContentBlock.Type {
 	case "thinking":
+		events = append(events, closeCurrentResponsesItem(state)...)
 		state.CurrentItemID = generateItemID()
 		state.CurrentItemType = "reasoning"
 		state.ContentIndex = 0
+		state.CurrentThinking.Reset()
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
 			Item: &ResponsesOutput{
-				Type: "reasoning",
-				ID:   state.CurrentItemID,
+				Type:   "reasoning",
+				ID:     state.CurrentItemID,
+				Status: "in_progress",
 			},
+		}))
+		events = append(events, makeResponsesEvent(state, "response.reasoning_summary_part.added", &ResponsesStreamEvent{
+			OutputIndex:  state.OutputIndex,
+			SummaryIndex: 0,
+			ItemID:       state.CurrentItemID,
+			Part:         &ResponsesContentPart{Type: "summary_text"},
 		}))
 
 	case "text":
 		// If we don't have an open message item, open one
 		if state.CurrentItemType != "message" {
+			events = append(events, closeCurrentResponsesItem(state)...)
 			state.CurrentItemID = generateItemID()
 			state.CurrentItemType = "message"
 			state.ContentIndex = 0
+			state.MessageText.Reset()
+			state.MessageParts = nil
 
 			events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 				OutputIndex: state.OutputIndex,
@@ -289,6 +316,13 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 				},
 			}))
 		}
+		state.CurrentText.Reset()
+		events = append(events, makeResponsesEvent(state, "response.content_part.added", &ResponsesStreamEvent{
+			OutputIndex:  state.OutputIndex,
+			ContentIndex: state.ContentIndex,
+			ItemID:       state.CurrentItemID,
+			Part:         &ResponsesContentPart{Type: "output_text", Text: ""},
+		}))
 
 	case "tool_use":
 		// Close previous item if any
@@ -298,6 +332,9 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentItemType = "function_call"
 		state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
 		state.CurrentName = evt.ContentBlock.Name
+		state.CurrentArgs.Reset()
+		state.CurrentArgsFallback = strings.TrimSpace(string(evt.ContentBlock.Input))
+		state.CurrentArgsHadDelta = false
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -324,6 +361,10 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.Text == "" {
 			return nil
 		}
+		if state.CurrentItemType == "message" {
+			_, _ = state.CurrentText.WriteString(evt.Delta.Text)
+			_, _ = state.MessageText.WriteString(evt.Delta.Text)
+		}
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_text.delta", &ResponsesStreamEvent{
 			OutputIndex:  state.OutputIndex,
 			ContentIndex: state.ContentIndex,
@@ -335,6 +376,9 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.Thinking == "" {
 			return nil
 		}
+		if state.CurrentItemType == "reasoning" {
+			_, _ = state.CurrentThinking.WriteString(evt.Delta.Thinking)
+		}
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.reasoning_summary_text.delta", &ResponsesStreamEvent{
 			OutputIndex:  state.OutputIndex,
 			SummaryIndex: 0,
@@ -345,6 +389,10 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 	case "input_json_delta":
 		if evt.Delta.PartialJSON == "" {
 			return nil
+		}
+		if state.CurrentItemType == "function_call" {
+			state.CurrentArgsHadDelta = true
+			_, _ = state.CurrentArgs.WriteString(evt.Delta.PartialJSON)
 		}
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -366,11 +414,19 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 	switch state.CurrentItemType {
 	case "reasoning":
 		// Emit reasoning summary done + output item done
+		text := state.CurrentThinking.String()
 		events := []ResponsesStreamEvent{
 			makeResponsesEvent(state, "response.reasoning_summary_text.done", &ResponsesStreamEvent{
 				OutputIndex:  state.OutputIndex,
 				SummaryIndex: 0,
 				ItemID:       state.CurrentItemID,
+				Text:         text,
+			}),
+			makeResponsesEvent(state, "response.reasoning_summary_part.done", &ResponsesStreamEvent{
+				OutputIndex:  state.OutputIndex,
+				SummaryIndex: 0,
+				ItemID:       state.CurrentItemID,
+				Part:         &ResponsesContentPart{Type: "summary_text", Text: text},
 			}),
 		}
 		events = append(events, closeCurrentResponsesItem(state)...)
@@ -378,12 +434,14 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 
 	case "function_call":
 		// Emit function_call_arguments.done + output item done
+		args := currentAnthropicFunctionArgs(state)
 		events := []ResponsesStreamEvent{
 			makeResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
 				OutputIndex: state.OutputIndex,
 				ItemID:      state.CurrentItemID,
 				CallID:      state.CurrentCallID,
 				Name:        state.CurrentName,
+				Arguments:   args,
 			}),
 		}
 		events = append(events, closeCurrentResponsesItem(state)...)
@@ -391,11 +449,23 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 
 	case "message":
 		// Emit output_text.done (text block is done, but message item stays open for potential more blocks)
+		text := state.CurrentText.String()
+		contentIndex := state.ContentIndex
+		state.ContentIndex++
+		state.CurrentText.Reset()
+		state.MessageParts = append(state.MessageParts, ResponsesContentPart{Type: "output_text", Text: text})
 		return []ResponsesStreamEvent{
 			makeResponsesEvent(state, "response.output_text.done", &ResponsesStreamEvent{
 				OutputIndex:  state.OutputIndex,
-				ContentIndex: state.ContentIndex,
+				ContentIndex: contentIndex,
 				ItemID:       state.CurrentItemID,
+				Text:         text,
+			}),
+			makeResponsesEvent(state, "response.content_part.done", &ResponsesStreamEvent{
+				OutputIndex:  state.OutputIndex,
+				ContentIndex: contentIndex,
+				ItemID:       state.CurrentItemID,
+				Part:         &ResponsesContentPart{Type: "output_text", Text: text},
 			}),
 		}
 	}
@@ -450,23 +520,71 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 
 	itemType := state.CurrentItemType
 	itemID := state.CurrentItemID
+	callID := state.CurrentCallID
+	name := state.CurrentName
+	args := currentAnthropicFunctionArgs(state)
+
+	item := ResponsesOutput{
+		Type:   itemType,
+		ID:     itemID,
+		Status: "completed",
+	}
+	switch itemType {
+	case "message":
+		item.Role = "assistant"
+		if len(state.MessageParts) > 0 {
+			item.Content = append([]ResponsesContentPart(nil), state.MessageParts...)
+		} else if state.MessageText.Len() > 0 {
+			item.Content = []ResponsesContentPart{{
+				Type: "output_text",
+				Text: state.MessageText.String(),
+			}}
+		}
+	case "reasoning":
+		item.Summary = []ResponsesSummary{{
+			Type: "summary_text",
+			Text: state.CurrentThinking.String(),
+		}}
+	case "function_call":
+		item.CallID = callID
+		item.Name = name
+		item.Arguments = args
+	}
+	state.Output = append(state.Output, item)
 
 	// Reset
 	state.CurrentItemType = ""
 	state.CurrentItemID = ""
+	state.CurrentText.Reset()
+	state.MessageText.Reset()
+	state.MessageParts = nil
 	state.CurrentCallID = ""
 	state.CurrentName = ""
+	state.CurrentArgs.Reset()
+	state.CurrentArgsFallback = ""
+	state.CurrentArgsHadDelta = false
+	state.CurrentThinking.Reset()
 	state.OutputIndex++
 	state.ContentIndex = 0
 
 	return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
 		OutputIndex: state.OutputIndex - 1, // Use the index before increment
-		Item: &ResponsesOutput{
-			Type:   itemType,
-			ID:     itemID,
-			Status: "completed",
-		},
+		Item:        &item,
 	})}
+}
+
+func currentAnthropicFunctionArgs(state *AnthropicEventToResponsesState) string {
+	if state == nil {
+		return "{}"
+	}
+	args := state.CurrentArgs.String()
+	if !state.CurrentArgsHadDelta && strings.TrimSpace(args) == "" {
+		args = strings.TrimSpace(state.CurrentArgsFallback)
+	}
+	if strings.TrimSpace(args) == "" {
+		return "{}"
+	}
+	return args
 }
 
 func makeResponsesCreatedEvent(state *AnthropicEventToResponsesState) ResponsesStreamEvent {
@@ -515,7 +633,7 @@ func makeResponsesCompletedEvent(
 			Object:            "response",
 			Model:             state.Model,
 			Status:            status,
-			Output:            []ResponsesOutput{}, // Simplified; full output tracking would add complexity
+			Output:            append([]ResponsesOutput(nil), state.Output...),
 			Usage:             usage,
 			IncompleteDetails: incompleteDetails,
 		},

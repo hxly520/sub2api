@@ -3,6 +3,7 @@ package apicompat
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -173,6 +174,8 @@ type ResponsesEventToAnthropicState struct {
 	ContentBlockIndex   int
 	ContentBlockOpen    bool
 	CurrentBlockType    string // "text" | "thinking" | "tool_use"
+	CurrentOutputIndex  int
+	CurrentToolCallID   string
 	CurrentToolName     string
 	CurrentToolArgs     string
 	CurrentToolHadDelta bool
@@ -180,6 +183,8 @@ type ResponsesEventToAnthropicState struct {
 
 	// OutputIndexToBlockIdx maps Responses output_index → Anthropic content block index.
 	OutputIndexToBlockIdx map[int]int
+	OutputIndexSeen       map[int]struct{}
+	ToolOutputIndexClosed map[int]struct{}
 
 	InputTokens          int
 	OutputTokens         int
@@ -194,6 +199,8 @@ type ResponsesEventToAnthropicState struct {
 func NewResponsesEventToAnthropicState() *ResponsesEventToAnthropicState {
 	return &ResponsesEventToAnthropicState{
 		OutputIndexToBlockIdx: make(map[int]int),
+		OutputIndexSeen:       make(map[int]struct{}),
+		ToolOutputIndexClosed: make(map[int]struct{}),
 		Created:               time.Now().Unix(),
 	}
 }
@@ -217,7 +224,7 @@ func ResponsesEventToAnthropicEvents(
 		// custom/freeform 工具的输入增量与 function_call 参数增量同形。
 		"response.custom_tool_call_input.delta":
 		return resToAnthHandleFuncArgsDelta(evt, state)
-	case "response.function_call_arguments.done":
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
 		return resToAnthHandleFuncArgsDone(evt, state)
 	case "response.output_item.done":
 		return resToAnthHandleOutputItemDone(evt, state)
@@ -324,8 +331,11 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 
 		idx := state.ContentBlockIndex
 		state.OutputIndexToBlockIdx[evt.OutputIndex] = idx
+		state.OutputIndexSeen[evt.OutputIndex] = struct{}{}
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "tool_use"
+		state.CurrentOutputIndex = evt.OutputIndex
+		state.CurrentToolCallID = evt.Item.CallID
 		state.CurrentToolName = evt.Item.Name
 		state.CurrentToolArgs = ""
 		state.CurrentToolHadDelta = false
@@ -348,9 +358,11 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		events = append(events, closeCurrentBlock(state)...)
 
 		idx := state.ContentBlockIndex
+		state.OutputIndexSeen[evt.OutputIndex] = struct{}{}
 		state.OutputIndexToBlockIdx[evt.OutputIndex] = idx
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "thinking"
+		state.CurrentOutputIndex = evt.OutputIndex
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
@@ -435,33 +447,25 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 
 func resToAnthHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
 	if state.CurrentBlockType != "tool_use" {
+		if evt != nil && (evt.CallID != "" || evt.Name != "" || responsesToolInput(evt.Arguments, evt.Input) != "") {
+			return resToAnthEmitCompleteToolUseFromItem(evt.OutputIndex, &ResponsesOutput{
+				Type:      "function_call",
+				CallID:    evt.CallID,
+				Name:      evt.Name,
+				Arguments: responsesToolInput(evt.Arguments, evt.Input),
+			}, state)
+		}
 		return resToAnthHandleBlockDone(state)
 	}
 
-	raw := evt.Arguments
-	if raw == "" {
-		raw = state.CurrentToolArgs
+	args := ""
+	if evt != nil {
+		args = responsesToolInput(evt.Arguments, evt.Input)
 	}
-	if raw == "" || state.CurrentToolHadDelta {
-		return closeCurrentBlock(state)
+	events := resToAnthEmitMissingToolArgsDelta(args, state)
+	if len(events) == 0 && !state.CurrentToolHadDelta {
+		return nil
 	}
-	if state.CurrentToolName == "Read" {
-		sanitized := sanitizeAnthropicToolUseInput(state.CurrentToolName, raw)
-		if len(sanitized) == 0 {
-			return closeCurrentBlock(state)
-		}
-		raw = string(sanitized)
-	}
-
-	idx := state.ContentBlockIndex
-	events := []AnthropicStreamEvent{{
-		Type:  "content_block_delta",
-		Index: &idx,
-		Delta: &AnthropicDelta{
-			Type:        "input_json_delta",
-			PartialJSON: raw,
-		},
-	}}
 	events = append(events, closeCurrentBlock(state)...)
 	return events
 }
@@ -496,6 +500,10 @@ func resToAnthHandleBlockDone(state *ResponsesEventToAnthropicState) []Anthropic
 func resToAnthHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
 	if evt.Item == nil {
 		return nil
+	}
+
+	if evt.Item.Type == "function_call" || evt.Item.Type == "custom_tool_call" {
+		return resToAnthHandleToolItemDone(evt, state)
 	}
 
 	// Handle web_search_call → synthesize server_tool_use + web_search_tool_result blocks.
@@ -570,7 +578,6 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	}
 
 	var events []AnthropicStreamEvent
-	events = append(events, closeCurrentBlock(state)...)
 
 	stopReason := "end_turn"
 	if evt.Usage != nil {
@@ -586,6 +593,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			state.OutputTokens = usage.OutputTokens
 			state.CacheReadInputTokens = usage.CacheReadInputTokens
 		}
+		events = append(events, resToAnthEmitMissingCompletedToolUse(evt.Response.Output, state)...)
 		switch evt.Response.Status {
 		case "incomplete":
 			if evt.Response.IncompleteDetails != nil && evt.Response.IncompleteDetails.Reason == "max_output_tokens" {
@@ -597,6 +605,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			}
 		}
 	}
+	events = append(events, closeCurrentBlock(state)...)
 
 	events = append(events,
 		AnthropicStreamEvent{
@@ -621,13 +630,148 @@ func closeCurrentBlock(state *ResponsesEventToAnthropicState) []AnthropicStreamE
 		return nil
 	}
 	idx := state.ContentBlockIndex
+	if state.CurrentBlockType == "tool_use" {
+		if state.ToolOutputIndexClosed == nil {
+			state.ToolOutputIndexClosed = make(map[int]struct{})
+		}
+		state.ToolOutputIndexClosed[state.CurrentOutputIndex] = struct{}{}
+	}
 	state.ContentBlockOpen = false
 	state.ContentBlockIndex++
+	state.CurrentOutputIndex = 0
+	state.CurrentToolCallID = ""
 	state.CurrentToolName = ""
 	state.CurrentToolArgs = ""
 	state.CurrentToolHadDelta = false
 	return []AnthropicStreamEvent{{
 		Type:  "content_block_stop",
 		Index: &idx,
+	}}
+}
+
+func resToAnthHandleToolItemDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if evt == nil || evt.Item == nil {
+		return nil
+	}
+	if state.ContentBlockOpen && state.CurrentBlockType == "tool_use" && state.CurrentOutputIndex == evt.OutputIndex {
+		events := resToAnthEmitMissingToolArgsDelta(responsesToolInput(evt.Item.Arguments, evt.Item.Input), state)
+		events = append(events, closeCurrentBlock(state)...)
+		return events
+	}
+	if _, ok := state.OutputIndexSeen[evt.OutputIndex]; ok {
+		return nil
+	}
+	return resToAnthEmitCompleteToolUseFromItem(evt.OutputIndex, evt.Item, state)
+}
+
+func resToAnthEmitMissingCompletedToolUse(outputs []ResponsesOutput, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	var events []AnthropicStreamEvent
+	if state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+		currentMatched := false
+		for i := range outputs {
+			item := outputs[i]
+			if item.Type != "function_call" && item.Type != "custom_tool_call" {
+				continue
+			}
+			if state.CurrentOutputIndex == i ||
+				(item.CallID != "" && item.CallID == state.CurrentToolCallID) ||
+				(state.CurrentToolCallID == "" && state.CurrentToolName == item.Name) {
+				events = append(events, resToAnthEmitMissingToolArgsDelta(responsesToolInput(item.Arguments, item.Input), state)...)
+				currentMatched = true
+				break
+			}
+		}
+		if !currentMatched {
+			events = append(events, closeCurrentBlock(state)...)
+		} else {
+			return events
+		}
+	}
+	for i := range outputs {
+		item := outputs[i]
+		if item.Type != "function_call" && item.Type != "custom_tool_call" {
+			continue
+		}
+		if _, ok := state.ToolOutputIndexClosed[i]; ok {
+			continue
+		}
+		if _, ok := state.OutputIndexSeen[i]; ok {
+			continue
+		}
+		events = append(events, resToAnthEmitCompleteToolUseFromItem(i, &item, state)...)
+	}
+	return events
+}
+
+func resToAnthEmitCompleteToolUseFromItem(outputIndex int, item *ResponsesOutput, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if item == nil {
+		return nil
+	}
+
+	events := closeCurrentBlock(state)
+	idx := state.ContentBlockIndex
+	state.OutputIndexToBlockIdx[outputIndex] = idx
+	state.OutputIndexSeen[outputIndex] = struct{}{}
+	state.ContentBlockOpen = true
+	state.CurrentBlockType = "tool_use"
+	state.CurrentOutputIndex = outputIndex
+	state.CurrentToolCallID = item.CallID
+	state.CurrentToolName = item.Name
+	state.CurrentToolArgs = ""
+	state.CurrentToolHadDelta = false
+	state.HasToolCall = true
+
+	events = append(events, AnthropicStreamEvent{
+		Type:  "content_block_start",
+		Index: &idx,
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "tool_use",
+			ID:    fromResponsesCallID(item.CallID),
+			Name:  item.Name,
+			Input: json.RawMessage("{}"),
+		},
+	})
+	events = append(events, resToAnthEmitMissingToolArgsDelta(responsesToolInput(item.Arguments, item.Input), state)...)
+	events = append(events, closeCurrentBlock(state)...)
+	return events
+}
+
+func responsesToolInput(arguments, input string) string {
+	if input != "" {
+		return input
+	}
+	return arguments
+}
+
+func resToAnthEmitMissingToolArgsDelta(raw string, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if state == nil || state.CurrentBlockType != "tool_use" {
+		return nil
+	}
+	if state.CurrentToolHadDelta && state.CurrentToolName != "Read" {
+		return nil
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		raw = strings.TrimSpace(state.CurrentToolArgs)
+	}
+	if raw == "" {
+		return nil
+	}
+	if state.CurrentToolName == "Read" {
+		sanitized := sanitizeAnthropicToolUseInput(state.CurrentToolName, raw)
+		if len(sanitized) == 0 {
+			return nil
+		}
+		raw = string(sanitized)
+	}
+	idx := state.ContentBlockIndex
+	state.CurrentToolHadDelta = true
+	return []AnthropicStreamEvent{{
+		Type:  "content_block_delta",
+		Index: &idx,
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: raw,
+		},
 	}}
 }

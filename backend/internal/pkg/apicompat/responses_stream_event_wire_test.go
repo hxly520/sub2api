@@ -102,6 +102,67 @@ func TestWire_ArgumentsDonePresentEvenEmpty(t *testing.T) {
 	require.Equal(t, "", m["arguments"])
 }
 
+// TestWire_CustomToolInputDoneUsesInput guards the freeform custom-tool event
+// shape. It carries input, not arguments.
+func TestWire_CustomToolInputDoneUsesInput(t *testing.T) {
+	m := marshalEvent(t, ResponsesStreamEvent{
+		Type:        "response.custom_tool_call_input.done",
+		OutputIndex: 1,
+		ItemID:      "ct_1",
+		CallID:      "call_patch",
+		Name:        "apply_patch",
+		Input:       "*** Begin Patch",
+	})
+	require.Contains(t, m, "input")
+	require.Equal(t, "*** Begin Patch", m["input"])
+	require.NotContains(t, m, "arguments")
+}
+
+// TestWire_CompletedOutputItemsStayProtocolComplete guards that the terminal
+// response.output shape stays as complete as the streamed output_item.done item.
+func TestWire_CompletedOutputItemsStayProtocolComplete(t *testing.T) {
+	m := marshalEvent(t, ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			ID:     "resp_1",
+			Object: "response",
+			Model:  "gpt-5.5",
+			Status: "completed",
+			Output: []ResponsesOutput{
+				{Type: "message", ID: "msg_1", Role: "assistant", Status: "completed"},
+				{Type: "function_call", ID: "fc_1", CallID: "call_a", Name: "exec", Status: "completed"},
+				{Type: "custom_tool_call", ID: "ct_1", CallID: "call_b", Name: "apply_patch", Input: "patch", Status: "completed"},
+			},
+		},
+	})
+
+	response, ok := m["response"].(map[string]any)
+	require.True(t, ok, "response must be an object")
+	output, ok := response["output"].([]any)
+	require.True(t, ok, "output must be an array")
+	require.Len(t, output, 3)
+
+	message, ok := output[0].(map[string]any)
+	require.True(t, ok, "message output must be an object")
+	require.Contains(t, message, "content")
+	require.Equal(t, []any{}, message["content"])
+
+	fn, ok := output[1].(map[string]any)
+	require.True(t, ok, "function output must be an object")
+	require.Equal(t, "call_a", fn["call_id"])
+	require.Equal(t, "exec", fn["name"])
+	require.Contains(t, fn, "arguments")
+	require.Equal(t, "", fn["arguments"])
+
+	custom, ok := output[2].(map[string]any)
+	require.True(t, ok, "custom tool output must be an object")
+	require.Equal(t, "custom_tool_call", custom["type"])
+	require.Equal(t, "call_b", custom["call_id"])
+	require.Equal(t, "apply_patch", custom["name"])
+	require.Equal(t, "patch", custom["input"])
+	require.NotContains(t, custom, "arguments")
+}
+
 // TestWire_UnknownEventFallsBackToDefault ensures non-streamed event types keep
 // default marshalling (the response object is preserved).
 func TestWire_UnknownEventFallsBackToDefault(t *testing.T) {

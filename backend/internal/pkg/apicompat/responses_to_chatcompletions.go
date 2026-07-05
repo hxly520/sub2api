@@ -119,6 +119,7 @@ type ResponsesEventToChatState struct {
 	Finalized              bool        // true after finish chunk has been emitted
 	NextToolCallIndex      int         // next sequential tool_call index to assign
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
+	ToolArgDeltaSeen       map[int]bool
 	IncludeUsage           bool
 	Usage                  *ChatUsage
 }
@@ -129,6 +130,7 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 		ID:                     generateChatCmplID(),
 		Created:                time.Now().Unix(),
 		OutputIndexToToolIndex: make(map[int]int),
+		ToolArgDeltaSeen:       make(map[int]bool),
 	}
 }
 
@@ -142,11 +144,15 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		return resToChatHandleTextDelta(evt, state)
 	case "response.output_item.added":
 		return resToChatHandleOutputItemAdded(evt, state)
+	case "response.output_item.done":
+		return resToChatHandleOutputItemDone(evt, state)
 	case "response.function_call_arguments.delta",
 		// custom/freeform 工具（如新版 apply_patch）的输入增量与 function_call 参数增量同形，
 		// 均按 OutputIndex 累加到对应工具调用。
 		"response.custom_tool_call_input.delta":
 		return resToChatHandleFuncArgsDelta(evt, state)
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+		return resToChatHandleFuncArgsDone(evt, state)
 	case "response.reasoning_summary_text.delta",
 		// 原始推理文本增量（真实 Codex 客户端消费的 reasoning_text.delta），
 		// 与 reasoning summary 一样映射为 reasoning_content。
@@ -266,6 +272,7 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
+	state.ToolArgDeltaSeen[evt.OutputIndex] = true
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
@@ -275,6 +282,46 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 			},
 		}},
 	})}
+}
+
+func resToChatHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	raw := responsesToolInput(evt.Arguments, evt.Input)
+	if raw == "" || state.ToolArgDeltaSeen[evt.OutputIndex] {
+		return nil
+	}
+	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
+	if !ok {
+		return nil
+	}
+	state.ToolArgDeltaSeen[evt.OutputIndex] = true
+	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
+		ToolCalls: []ChatToolCall{{
+			Index: &idx,
+			Function: ChatFunctionCall{
+				Arguments: raw,
+			},
+		}},
+	})}
+}
+
+func resToChatHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if evt.Item == nil || (evt.Item.Type != "function_call" && evt.Item.Type != "custom_tool_call") {
+		return nil
+	}
+	var chunks []ChatCompletionsChunk
+	if _, ok := state.OutputIndexToToolIndex[evt.OutputIndex]; !ok {
+		chunks = append(chunks, resToChatHandleOutputItemAdded(evt, state)...)
+	}
+	raw := responsesToolInput(evt.Item.Arguments, evt.Item.Input)
+	if raw == "" || state.ToolArgDeltaSeen[evt.OutputIndex] {
+		return chunks
+	}
+	chunks = append(chunks, resToChatHandleFuncArgsDone(&ResponsesStreamEvent{
+		OutputIndex: evt.OutputIndex,
+		Arguments:   evt.Item.Arguments,
+		Input:       evt.Item.Input,
+	}, state)...)
+	return chunks
 }
 
 func resToChatHandleReasoningDelta(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
@@ -465,6 +512,19 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 		if event.Delta != "" {
 			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
 				_, _ = a.funcCalls[idx].Args.WriteString(event.Delta)
+			}
+		}
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+		raw := responsesToolInput(event.Arguments, event.Input)
+		if raw != "" {
+			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok && a.funcCalls[idx].Args.Len() == 0 {
+				_, _ = a.funcCalls[idx].Args.WriteString(raw)
+			}
+		}
+	case "response.output_item.done":
+		if event.Item != nil && (event.Item.Type == "function_call" || event.Item.Type == "custom_tool_call") {
+			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok && a.funcCalls[idx].Args.Len() == 0 {
+				_, _ = a.funcCalls[idx].Args.WriteString(responsesToolInput(event.Item.Arguments, event.Item.Input))
 			}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":

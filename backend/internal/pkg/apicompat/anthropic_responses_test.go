@@ -718,6 +718,248 @@ func TestStreamingToolCallDoneWithoutDeltaEmitsArguments(t *testing.T) {
 	assert.Equal(t, "content_block_stop", events[1].Type)
 }
 
+func TestStreamingCustomToolInputDoneEmitsInput(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_custom", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "custom_tool_call", CallID: "call_patch", Name: "apply_patch"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+	assert.Equal(t, "tool_use", events[0].ContentBlock.Type)
+	assert.Equal(t, "apply_patch", events[0].ContentBlock.Name)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.custom_tool_call_input.done",
+		OutputIndex: 0,
+		ItemID:      "ct_1",
+		Input:       "*** Begin Patch",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.Equal(t, "input_json_delta", events[0].Delta.Type)
+	assert.Equal(t, "*** Begin Patch", events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+}
+
+func TestStreamingToolCallOutputItemDoneWithoutArgumentsDoneEmitsArguments(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_item_done", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_write", Name: "write_project_file"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.done",
+		OutputIndex: 0,
+		Item: &ResponsesOutput{
+			Type:      "function_call",
+			CallID:    "call_write",
+			Name:      "write_project_file",
+			Arguments: `{"path":"README.md","content":"ok"}`,
+			Status:    "completed",
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.Equal(t, "input_json_delta", events[0].Delta.Type)
+	assert.JSONEq(t, `{"path":"README.md","content":"ok"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Output: []ResponsesOutput{{
+				Type:      "function_call",
+				CallID:    "call_write",
+				Name:      "write_project_file",
+				Arguments: `{"path":"README.md","content":"ok"}`,
+				Status:    "completed",
+			}},
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "message_delta", events[0].Type)
+	assert.Equal(t, "tool_use", events[0].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[1].Type)
+}
+
+func TestStreamingEmptyArgumentsDoneWaitsForOutputItemDone(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_empty_args_done", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_late_args", Name: "write_project_file"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 0,
+	}, state)
+	require.Len(t, events, 0)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.done",
+		OutputIndex: 0,
+		Item: &ResponsesOutput{
+			Type:      "function_call",
+			CallID:    "call_late_args",
+			Name:      "write_project_file",
+			Arguments: `{"path":"README.md"}`,
+			Status:    "completed",
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.JSONEq(t, `{"path":"README.md"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+}
+
+func TestStreamingCompletedOutputSynthesizesMissingToolUse(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_completed_tool", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Output: []ResponsesOutput{{
+				Type:      "function_call",
+				CallID:    "call_done_only",
+				Name:      "write_project_file",
+				Arguments: `{"path":"README.md"}`,
+				Status:    "completed",
+			}},
+			Usage: &ResponsesUsage{InputTokens: 20, OutputTokens: 10},
+		},
+	}, state)
+	require.Len(t, events, 5)
+	assert.Equal(t, "content_block_start", events[0].Type)
+	assert.Equal(t, "tool_use", events[0].ContentBlock.Type)
+	assert.Equal(t, "call_done_only", events[0].ContentBlock.ID)
+	assert.Equal(t, "write_project_file", events[0].ContentBlock.Name)
+	assert.Equal(t, "content_block_delta", events[1].Type)
+	assert.Equal(t, "input_json_delta", events[1].Delta.Type)
+	assert.JSONEq(t, `{"path":"README.md"}`, events[1].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[2].Type)
+	assert.Equal(t, "message_delta", events[3].Type)
+	assert.Equal(t, "tool_use", events[3].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[4].Type)
+}
+
+func TestStreamingCompletedOutputBackfillsOpenToolArguments(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_backfill_tool", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_backfill", Name: "write_project_file"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Output: []ResponsesOutput{{
+				Type:      "function_call",
+				CallID:    "call_backfill",
+				Name:      "write_project_file",
+				Arguments: `{"path":"README.md"}`,
+				Status:    "completed",
+			}},
+		},
+	}, state)
+	require.Len(t, events, 4)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.JSONEq(t, `{"path":"README.md"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+	assert.Equal(t, "tool_use", events[2].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[3].Type)
+}
+
+func TestStreamingCompletedOutputBackfillMatchesOpenToolByCallID(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_backfill_by_call", Model: "gpt-5.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_b", Name: "write_project_file"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+	assert.Equal(t, "call_b", events[0].ContentBlock.ID)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{
+			Status: "completed",
+			Output: []ResponsesOutput{
+				{
+					Type:      "function_call",
+					CallID:    "call_a",
+					Name:      "write_project_file",
+					Arguments: `{"path":"wrong.md"}`,
+					Status:    "completed",
+				},
+				{
+					Type:      "function_call",
+					CallID:    "call_b",
+					Name:      "write_project_file",
+					Arguments: `{"path":"right.md"}`,
+					Status:    "completed",
+				},
+			},
+		},
+	}, state)
+	require.Len(t, events, 4)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.JSONEq(t, `{"path":"right.md"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+	assert.Equal(t, "tool_use", events[2].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[3].Type)
+}
+
 func TestStreamingReadToolDropsEmptyPages(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 
@@ -1732,4 +1974,211 @@ func TestAnthropicEventToResponses_CacheTokensFromMessageDelta(t *testing.T) {
 	assert.Equal(t, 8, completed.Response.Usage.OutputTokens)
 	require.NotNil(t, completed.Response.Usage.InputTokensDetails)
 	assert.Equal(t, 11, completed.Response.Usage.InputTokensDetails.CachedTokens)
+}
+
+func TestAnthropicEventToResponses_ToolUseCarriesCompletedArguments(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	blockIndex := 0
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_tool",
+			Model: "claude-sonnet-4-5-20250929",
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.created", events[0].Type)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_start",
+		Index: &blockIndex,
+		ContentBlock: &AnthropicContentBlock{
+			Type: "tool_use",
+			ID:   "toolu_123",
+			Name: "write_project_file",
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.output_item.added", events[0].Type)
+	require.NotNil(t, events[0].Item)
+	assert.Equal(t, "function_call", events[0].Item.Type)
+	assert.Equal(t, "toolu_123", events[0].Item.CallID)
+	assert.Equal(t, "write_project_file", events[0].Item.Name)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &blockIndex,
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: `{"path":`,
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.function_call_arguments.delta", events[0].Type)
+	assert.Equal(t, `{"path":`, events[0].Delta)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &blockIndex,
+		Delta: &AnthropicDelta{
+			Type:        "input_json_delta",
+			PartialJSON: `"README.md"}`,
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.function_call_arguments.delta", events[0].Type)
+	assert.Equal(t, `"README.md"}`, events[0].Delta)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_stop",
+		Index: &blockIndex,
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, `{"path":"README.md"}`, events[0].Arguments)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+	require.NotNil(t, events[1].Item)
+	assert.Equal(t, "function_call", events[1].Item.Type)
+	assert.Equal(t, "toolu_123", events[1].Item.CallID)
+	assert.Equal(t, "write_project_file", events[1].Item.Name)
+	assert.Equal(t, `{"path":"README.md"}`, events[1].Item.Arguments)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	var completed *ResponsesStreamEvent
+	for i := range events {
+		if events[i].Type == "response.completed" {
+			completed = &events[i]
+		}
+	}
+	require.NotNil(t, completed)
+	require.NotNil(t, completed.Response)
+	require.Len(t, completed.Response.Output, 1)
+	assert.Equal(t, "function_call", completed.Response.Output[0].Type)
+	assert.Equal(t, "toolu_123", completed.Response.Output[0].CallID)
+	assert.Equal(t, "write_project_file", completed.Response.Output[0].Name)
+	assert.Equal(t, `{"path":"README.md"}`, completed.Response.Output[0].Arguments)
+}
+
+func TestAnthropicEventToResponses_TextLifecycleCarriesCompletedOutput(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	blockIndex := 0
+
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_text",
+			Model: "claude-sonnet-4-5-20250929",
+		},
+	}, state)
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_start",
+		Index: &blockIndex,
+		ContentBlock: &AnthropicContentBlock{
+			Type: "text",
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.output_item.added", events[0].Type)
+	assert.Equal(t, "response.content_part.added", events[1].Type)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &blockIndex,
+		Delta: &AnthropicDelta{
+			Type: "text_delta",
+			Text: "hello",
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.output_text.delta", events[0].Type)
+	assert.Equal(t, "hello", events[0].Delta)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_stop",
+		Index: &blockIndex,
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.output_text.done", events[0].Type)
+	assert.Equal(t, "hello", events[0].Text)
+	assert.Equal(t, "response.content_part.done", events[1].Type)
+	require.NotNil(t, events[1].Part)
+	assert.Equal(t, "hello", events[1].Part.Text)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	var completed *ResponsesStreamEvent
+	for i := range events {
+		if events[i].Type == "response.completed" {
+			completed = &events[i]
+		}
+	}
+	require.NotNil(t, completed)
+	require.NotNil(t, completed.Response)
+	require.Len(t, completed.Response.Output, 1)
+	assert.Equal(t, "message", completed.Response.Output[0].Type)
+	require.Len(t, completed.Response.Output[0].Content, 1)
+	assert.Equal(t, "hello", completed.Response.Output[0].Content[0].Text)
+}
+
+func TestAnthropicEventToResponses_ReasoningLifecycleCarriesCompletedOutput(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	blockIndex := 0
+
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_reasoning",
+			Model: "claude-sonnet-4-5-20250929",
+		},
+	}, state)
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_start",
+		Index: &blockIndex,
+		ContentBlock: &AnthropicContentBlock{
+			Type: "thinking",
+		},
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.output_item.added", events[0].Type)
+	assert.Equal(t, "response.reasoning_summary_part.added", events[1].Type)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &blockIndex,
+		Delta: &AnthropicDelta{
+			Type:     "thinking_delta",
+			Thinking: "plan",
+		},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.reasoning_summary_text.delta", events[0].Type)
+	assert.Equal(t, "plan", events[0].Delta)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_stop",
+		Index: &blockIndex,
+	}, state)
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.reasoning_summary_text.done", events[0].Type)
+	assert.Equal(t, "plan", events[0].Text)
+	assert.Equal(t, "response.reasoning_summary_part.done", events[1].Type)
+	require.NotNil(t, events[1].Part)
+	assert.Equal(t, "plan", events[1].Part.Text)
+	assert.Equal(t, "response.output_item.done", events[2].Type)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	var completed *ResponsesStreamEvent
+	for i := range events {
+		if events[i].Type == "response.completed" {
+			completed = &events[i]
+		}
+	}
+	require.NotNil(t, completed)
+	require.NotNil(t, completed.Response)
+	require.Len(t, completed.Response.Output, 1)
+	assert.Equal(t, "reasoning", completed.Response.Output[0].Type)
+	require.Len(t, completed.Response.Output[0].Summary, 1)
+	assert.Equal(t, "plan", completed.Response.Output[0].Summary[0].Text)
 }

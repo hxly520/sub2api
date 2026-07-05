@@ -2,6 +2,19 @@ package apicompat
 
 import "encoding/json"
 
+// MarshalJSON renders a Responses output item with the same field-presence
+// rules used by streaming output_item events. This also keeps terminal
+// response.completed.response.output protocol-complete for strict clients.
+func (item ResponsesOutput) MarshalJSON() ([]byte, error) {
+	switch item.Type {
+	case "message", "reasoning", "function_call", "custom_tool_call":
+		return json.Marshal(responsesItemWire(&item))
+	default:
+		type alias ResponsesOutput
+		return json.Marshal(alias(item))
+	}
+}
+
 // MarshalJSON renders a ResponsesStreamEvent into its wire form.
 //
 // The OpenAI Responses streaming protocol requires several fields to be present
@@ -69,7 +82,8 @@ func (e ResponsesStreamEvent) MarshalJSON() ([]byte, error) {
 		m["item"] = responsesItemWire(e.Item)
 		return json.Marshal(m)
 
-	case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+	case "response.function_call_arguments.delta", "response.function_call_arguments.done",
+		"response.custom_tool_call_input.delta", "response.custom_tool_call_input.done":
 		m := e.wireBase()
 		e.putItemID(m)
 		m["output_index"] = e.OutputIndex
@@ -79,7 +93,9 @@ func (e ResponsesStreamEvent) MarshalJSON() ([]byte, error) {
 		if e.Name != "" {
 			m["name"] = e.Name
 		}
-		if e.Type == "response.function_call_arguments.done" {
+		if e.Type == "response.custom_tool_call_input.done" {
+			m["input"] = firstNonEmpty(e.Input, e.Arguments)
+		} else if e.Type == "response.function_call_arguments.done" {
 			m["arguments"] = e.Arguments
 		} else {
 			m["delta"] = e.Delta
@@ -167,6 +183,14 @@ func responsesItemWire(item *ResponsesOutput) map[string]any {
 		m["call_id"] = item.CallID
 		m["name"] = item.Name
 		m["arguments"] = item.Arguments
+	case "custom_tool_call":
+		m["call_id"] = item.CallID
+		m["name"] = item.Name
+		m["input"] = firstNonEmpty(item.Input, item.Arguments)
+	case "web_search_call":
+		if item.Action != nil {
+			m["action"] = item.Action
+		}
 	}
 	return m
 }
@@ -196,4 +220,13 @@ func reasoningSummaryWire(summary []ResponsesSummary) []map[string]any {
 		out = append(out, map[string]any{"type": typ, "text": s.Text})
 	}
 	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
