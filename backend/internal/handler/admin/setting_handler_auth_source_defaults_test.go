@@ -217,14 +217,15 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
-		"promo_code_enabled":                    true,
-		"payment_visible_method_alipay_source":  "easypay",
-		"payment_visible_method_wxpay_source":   "wxpay",
-		"payment_visible_method_alipay_enabled": true,
-		"payment_visible_method_wxpay_enabled":  false,
-		"openai_advanced_scheduler_enabled":     true,
-		"openai_first_response_enabled":         true,
-		"openai_first_response_timeout_ms":      3000,
+		"promo_code_enabled":                                      true,
+		"payment_visible_method_alipay_source":                    "easypay",
+		"payment_visible_method_wxpay_source":                     "wxpay",
+		"payment_visible_method_alipay_enabled":                   true,
+		"payment_visible_method_wxpay_enabled":                    false,
+		"openai_advanced_scheduler_enabled":                       true,
+		"openai_first_response_enabled":                           true,
+		"openai_first_response_timeout_ms":                        3000,
+		"openai_advanced_scheduler_subscription_priority_enabled": true,
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -244,6 +245,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
 	require.Equal(t, "true", repo.values["openai_first_response_enabled"])
 	require.Equal(t, "3000", repo.values["openai_first_response_timeout_ms"])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
 
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -256,6 +258,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
 	require.Equal(t, true, data["openai_first_response_enabled"])
 	require.Equal(t, float64(3000), data["openai_first_response_timeout_ms"])
+	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
 }
 
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {

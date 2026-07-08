@@ -26,6 +26,17 @@
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
+        <!-- QQ Group Link -->
+        <button
+          v-if="qqGroupUrl"
+          type="button"
+          @click="openQQGroup"
+          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+        >
+          <Icon name="users" size="sm" />
+          <span class="hidden sm:inline">{{ t('nav.qqGroup') }}</span>
+        </button>
+
         <!-- Docs Link -->
         <a
           v-if="docUrl"
@@ -236,6 +247,7 @@ const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => appStore.docUrl)
+const qqGroupUrl = computed(() => normalizeJumpUrl(appStore.qqGroupUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 
 // 只在标准模式的管理员下显示新手引导按钮
@@ -296,6 +308,30 @@ function toggleDropdown() {
 
 function closeDropdown() {
   dropdownOpen.value = false
+}
+
+function normalizeJumpUrl(url: string | undefined): string {
+  const value = (url || '').trim()
+  if (!value) return ''
+  try {
+    const parsed = new URL(value)
+    if (['http:', 'https:', 'mqqapi:'].includes(parsed.protocol)) {
+      return value
+    }
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+function openQQGroup() {
+  const url = qqGroupUrl.value
+  if (!url) return
+  if (url.startsWith('mqqapi:')) {
+    window.location.href = url
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 async function handleLogout() {

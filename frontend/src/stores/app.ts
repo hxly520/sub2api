@@ -31,6 +31,7 @@ export const useAppStore = defineStore('app', () => {
   const contactInfo = ref<string>('')
   const apiBaseUrl = ref<string>('')
   const docUrl = ref<string>('')
+  const qqGroupUrl = ref<string>('')
   const cachedPublicSettings = ref<PublicSettings | null>(null)
 
   // Version cache state
@@ -298,6 +299,7 @@ export const useAppStore = defineStore('app', () => {
     contactInfo.value = config.contact_info || ''
     apiBaseUrl.value = config.api_base_url || ''
     docUrl.value = config.doc_url || ''
+    qqGroupUrl.value = config.qq_group_url || ''
     publicSettingsLoaded.value = true
   }
 
@@ -333,6 +335,7 @@ export const useAppStore = defineStore('app', () => {
         api_base_url: apiBaseUrl.value,
         contact_info: contactInfo.value,
         doc_url: docUrl.value,
+        qq_group_url: qqGroupUrl.value,
         home_content: '',
         hide_ccs_import_button: false,
         payment_enabled: false,
@@ -420,6 +423,7 @@ export const useAppStore = defineStore('app', () => {
     contactInfo,
     apiBaseUrl,
     docUrl,
+    qqGroupUrl,
     cachedPublicSettings,
 
     // Version state

@@ -133,6 +133,7 @@ type SystemSettings struct {
 	APIBaseURL                  string
 	ContactInfo                 string
 	DocURL                      string
+	QQGroupURL                  string
 	HomeContent                 string
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
@@ -218,9 +219,31 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool
 
 	// OpenAI 账号调度
-	OpenAIAdvancedSchedulerEnabled bool
-	OpenAIFirstResponseEnabled     bool
-	OpenAIFirstResponseTimeoutMS   int
+	OpenAIAdvancedSchedulerEnabled                         bool
+	OpenAIFirstResponseEnabled                             bool
+	OpenAIFirstResponseTimeoutMS                           int
+	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool
+	OpenAIAdvancedSchedulerLBTopK                          string
+	OpenAIAdvancedSchedulerWeightPriority                  string
+	OpenAIAdvancedSchedulerWeightLoad                      string
+	OpenAIAdvancedSchedulerWeightQueue                     string
+	OpenAIAdvancedSchedulerWeightErrorRate                 string
+	OpenAIAdvancedSchedulerWeightTTFT                      string
+	OpenAIAdvancedSchedulerWeightReset                     string
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom             string
+	OpenAIAdvancedSchedulerWeightPreviousResponse          string
+	OpenAIAdvancedSchedulerWeightSessionSticky             string
+	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
+	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
+	OpenAIAdvancedSchedulerEffectiveWeightLoad             string
+	OpenAIAdvancedSchedulerEffectiveWeightQueue            string
+	OpenAIAdvancedSchedulerEffectiveWeightErrorRate        string
+	OpenAIAdvancedSchedulerEffectiveWeightTTFT             string
+	OpenAIAdvancedSchedulerEffectiveWeightReset            string
+	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string
+	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string
+	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool
@@ -268,6 +291,7 @@ type PublicSettings struct {
 	APIBaseURL                       string
 	ContactInfo                      string
 	DocURL                           string
+	QQGroupURL                       string
 	HomeContent                      string
 	HideCcsImportButton              bool
 

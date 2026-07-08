@@ -207,6 +207,7 @@ export interface PublicSettings {
   api_base_url: string
   contact_info: string
   doc_url: string
+  qq_group_url: string
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
@@ -586,6 +587,7 @@ export interface ApiKey {
   expires_at: string | null // Expiration time (null = never expires)
   created_at: string
   updated_at: string
+  current_concurrency: number
   group?: Group
   rate_limit_5h: number
   rate_limit_1d: number
@@ -857,6 +859,13 @@ export interface Account {
   concurrency: number
   load_factor?: number | null
   current_concurrency?: number // Real-time concurrency count from Redis
+  scheduler_score?: {
+    base_score: number
+    sticky_score?: number
+    sticky_score_infinity?: boolean
+    sticky_weighted_enabled: boolean
+  } | null
+  scheduler_scores?: AccountSchedulerGroupScore[] | null
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   status: 'active' | 'inactive' | 'error'
@@ -945,6 +954,16 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface AccountSchedulerGroupScore {
+  group_id?: number | null
+  group_name?: string
+  group_priority?: number | null
+  base_score: number
+  sticky_score?: number
+  sticky_score_infinity?: boolean
+  sticky_weighted_enabled: boolean
 }
 
 // Account Usage types
@@ -1050,7 +1069,7 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
-export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
+export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'videos'
 export type OpenAICompatibleAuthHeader = 'Authorization' | 'api-key' | 'x-api-key'
 
 export interface OpenAICompactState {
