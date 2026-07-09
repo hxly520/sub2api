@@ -1849,6 +1849,46 @@ func TestGrokVideoMediaBillingUsesImageRateMultiplier(t *testing.T) {
 	require.Equal(t, string(BillingModeImage), *usageRepo.lastLog.BillingMode)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_ChannelVideoBillingUsesDurationSeconds(t *testing.T) {
+	groupID := int64(127)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIMediaChannelPricingResolverForTest(t, groupID, "seedance-2.0-pro-1080p", BillingModePerSecond, 0.1)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "video:seedance-task-123",
+			ResponseID:           "seedance-task-123",
+			Model:                "seedance-2.0-pro-1080p",
+			BillingModel:         "seedance-2.0-pro-1080p",
+			ImageCount:           1,
+			ImageSize:            ImageBillingSize2K,
+			MediaDurationSeconds: 8,
+			MediaType:            "video",
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      10127,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				RateMultiplier: 1,
+			},
+		},
+		User:    &User{ID: 20127},
+		Account: &Account{ID: 30127},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "video:seedance-task-123", usageRepo.lastLog.RequestID)
+	require.InDelta(t, 0.8, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.8, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModePerSecond), *usageRepo.lastLog.BillingMode)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_ChannelImageBillingUsesImageCountAndSharedMultiplier(t *testing.T) {
 	groupID := int64(123)
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
@@ -1927,9 +1967,14 @@ func TestOpenAIGatewayServiceRecordUsage_ChannelImageBillingUsesImageCountAndInd
 
 func newOpenAIImageChannelPricingResolverForTest(t *testing.T, groupID int64, model string, price float64) *ModelPricingResolver {
 	t.Helper()
+	return newOpenAIMediaChannelPricingResolverForTest(t, groupID, model, BillingModeImage, price)
+}
+
+func newOpenAIMediaChannelPricingResolverForTest(t *testing.T, groupID int64, model string, mode BillingMode, price float64) *ModelPricingResolver {
+	t.Helper()
 	cache := newEmptyChannelCache()
 	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}] = &ChannelModelPricing{
-		BillingMode:     BillingModeImage,
+		BillingMode:     mode,
 		PerRequestPrice: &price,
 	}
 	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}

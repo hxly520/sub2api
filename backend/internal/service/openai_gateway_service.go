@@ -241,21 +241,27 @@ type OpenAIForwardResult struct {
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
-	ReasoningEffort    *string
-	Stream             bool
-	OpenAIWSMode       bool
-	ResponseHeaders    http.Header
-	Duration           time.Duration
-	FirstTokenMs       *int
-	FirstTokenAt       *time.Time
-	ClientDisconnect   bool
-	ImageCount         int
-	ImageSize          string
-	ImageInputSize     string
-	ImageOutputSize    string
-	ImageOutputSizes   []string
-	ImageSizeSource    string
-	ImageSizeBreakdown map[string]int
+	ReasoningEffort      *string
+	Stream               bool
+	OpenAIWSMode         bool
+	ResponseHeaders      http.Header
+	Duration             time.Duration
+	FirstTokenMs         *int
+	FirstTokenAt         *time.Time
+	ClientDisconnect     bool
+	ImageCount           int
+	ImageSize            string
+	ImageInputSize       string
+	ImageOutputSize      string
+	ImageOutputSizes     []string
+	ImageSizeSource      string
+	ImageSizeBreakdown   map[string]int
+	MediaDurationSeconds int
+	MediaType            string
+	ResponseStatus       int
+	ResponseBody         []byte
+	ResponseContentType  string
+	VideoStatus          string
 
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool
@@ -6567,6 +6573,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
 			requestID = upstreamRequestID
 		}
+	} else if strings.HasPrefix(strings.TrimSpace(result.RequestID), "video:") {
+		requestID = strings.TrimSpace(result.RequestID)
 	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
@@ -6782,13 +6790,20 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 ) *CostBreakdown {
 	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
 	if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved != nil &&
-		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage) {
+		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage || resolved.Mode == BillingModePerSecond) {
 		gid := apiKey.Group.ID
+		requestCount := result.ImageCount
+		if resolved.Mode == BillingModePerSecond && result.MediaDurationSeconds > 0 {
+			requestCount = result.MediaDurationSeconds
+		}
+		if requestCount <= 0 {
+			requestCount = 1
+		}
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
-			RequestCount:   result.ImageCount,
+			RequestCount:   requestCount,
 			SizeTier:       sizeTier,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,

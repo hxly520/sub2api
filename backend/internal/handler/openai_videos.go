@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"strconv"
@@ -74,6 +75,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		return
 	}
 	requestModel := strings.TrimSpace(parsed.Model)
+	requestFingerprint := service.HashMediaGenerationRequestFingerprint(parsed.Endpoint, body)
 	reqLog = reqLog.With(
 		zap.String("model", requestModel),
 		zap.String("endpoint", parsed.Endpoint),
@@ -82,6 +84,66 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		zap.Bool("content", parsed.ContentRequest),
 		zap.String("request_id", parsed.RequestID),
 	)
+
+	idempotencyHash := ""
+	replayIdempotentTask := func(replay *service.MediaGenerationTask) bool {
+		if replay == nil {
+			return false
+		}
+		if strings.TrimSpace(replay.RequestFingerprint) != requestFingerprint {
+			h.errorResponse(c, http.StatusConflict, "idempotency_error", "Idempotency-Key was reused with a different video request")
+			return true
+		}
+		statusCode := replay.ResponseStatus
+		if statusCode <= 0 {
+			statusCode = http.StatusOK
+		}
+		contentType := strings.TrimSpace(replay.ResponseContentType)
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		c.Data(statusCode, contentType, []byte(replay.ResponseBody))
+		reqLog.Debug("openai.videos.idempotency_replayed", zap.String("task_id", replay.TaskID))
+		return true
+	}
+	if parsed.GenerationRequest {
+		idempotencyHash = service.HashMediaGenerationIdempotencyKey(openAIVideoIdempotencyKey(c))
+		if idempotencyHash != "" {
+			replay, err := h.gatewayService.GetOpenAIVideoTaskByIdempotency(c.Request.Context(), apiKey.ID, idempotencyHash)
+			if err == nil && replay != nil {
+				if replayIdempotentTask(replay) {
+					return
+				}
+				return
+			}
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				reqLog.Warn("openai.videos.idempotency_lookup_failed", zap.Error(err))
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video idempotency lookup failed")
+				return
+			}
+			releaseIdempotencyLock, err := h.gatewayService.AcquireOpenAIVideoIdempotencyLock(c.Request.Context(), apiKey.ID, idempotencyHash)
+			if err != nil {
+				reqLog.Warn("openai.videos.idempotency_lock_failed", zap.Error(err))
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video idempotency lock failed")
+				return
+			}
+			if releaseIdempotencyLock != nil {
+				defer releaseIdempotencyLock()
+			}
+			replay, err = h.gatewayService.GetOpenAIVideoTaskByIdempotency(c.Request.Context(), apiKey.ID, idempotencyHash)
+			if err == nil && replay != nil {
+				if replayIdempotentTask(replay) {
+					return
+				}
+				return
+			}
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				reqLog.Warn("openai.videos.idempotency_recheck_failed", zap.Error(err))
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video idempotency lookup failed")
+				return
+			}
+		}
+	}
 
 	if parsed.GenerationRequest {
 		if !service.GroupAllowsImageGeneration(apiKey.Group) {
@@ -138,8 +200,22 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	if parsed.GenerationRequest && sessionHash == "" {
 		sessionHash = h.gatewayService.GenerateSessionHashWithFallback(c, body, parsed.StickySessionSeed())
 	}
+	var storedTask *service.MediaGenerationTask
 	if !parsed.GenerationRequest && parsed.RequestID != "" {
 		sessionHash = service.OpenAIVideoTaskSessionHash(parsed.RequestID)
+		task, err := h.gatewayService.GetOpenAIVideoTaskByTaskID(c.Request.Context(), apiKey.ID, parsed.RequestID)
+		if err == nil && task != nil {
+			storedTask = task
+			if err := h.gatewayService.BindOpenAIVideoTaskAccount(c.Request.Context(), apiKey.GroupID, task.TaskID, task.AccountID); err != nil {
+				reqLog.Warn("openai.videos.bind_stored_task_account_failed",
+					zap.String("request_id", task.TaskID),
+					zap.Int64("account_id", task.AccountID),
+					zap.Error(err),
+				)
+			}
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			reqLog.Warn("openai.videos.lookup_stored_task_failed", zap.String("request_id", parsed.RequestID), zap.Error(err))
+		}
 	}
 
 	requestCtx := service.WithOpenAIAccountScheduleProfile(c.Request.Context(), service.NewOpenAIAccountScheduleProfile(requestModel, GetInboundEndpoint(c), ""))
@@ -303,13 +379,207 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 					zap.Error(err),
 				)
 			}
+			upstreamModel := result.UpstreamModel
+			usageFields := channelMapping.ToUsageFields(requestModel, upstreamModel)
+			task := &service.MediaGenerationTask{
+				TaskID:              result.ResponseID,
+				APIKeyID:            apiKey.ID,
+				UserID:              subject.UserID,
+				AccountID:           account.ID,
+				GroupID:             apiKey.GroupID,
+				Model:               requestModel,
+				RequestedModel:      requestModel,
+				UpstreamModel:       upstreamModel,
+				Endpoint:            parsed.Endpoint,
+				InboundEndpoint:     GetInboundEndpoint(c),
+				UpstreamEndpoint:    GetUpstreamEndpoint(c, account.Platform),
+				RequestFingerprint:  requestFingerprint,
+				RequestPayloadHash:  service.HashUsageRequestPayload(body),
+				IdempotencyKeyHash:  idempotencyHash,
+				ResponseStatus:      result.ResponseStatus,
+				ResponseContentType: result.ResponseContentType,
+				ResponseBody:        string(result.ResponseBody),
+				Status:              result.VideoStatus,
+				DurationSeconds:     result.MediaDurationSeconds,
+				Resolution:          parsed.Resolution,
+				SizeTier:            parsed.BillingSizeTier(),
+				MediaType:           "video",
+				ChannelMappedModel:  usageFields.ChannelMappedModel,
+				BillingModelSource:  usageFields.BillingModelSource,
+				ModelMappingChain:   usageFields.ModelMappingChain,
+			}
+			if usageFields.ChannelID > 0 {
+				task.ChannelID = &usageFields.ChannelID
+			}
+			if subscription != nil {
+				task.SubscriptionID = &subscription.ID
+			}
+			if err := h.gatewayService.CreateOpenAIVideoTask(requestCtx, task); err != nil {
+				reqLog.Warn("openai.videos.store_task_failed",
+					zap.Int64("account_id", account.ID),
+					zap.String("request_id", result.ResponseID),
+					zap.Error(err),
+				)
+			}
+			if service.IsMediaGenerationSuccessStatus(result.VideoStatus) {
+				finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, task)
+			}
 		}
-		if parsed.GenerationRequest && requestModel != "" {
-			recordOpenAIVideoUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, channelMapping)
+		if !parsed.GenerationRequest && !parsed.ContentRequest && result != nil && parsed.RequestID != "" {
+			if storedTask == nil {
+				if task, err := h.gatewayService.GetOpenAIVideoTaskByTaskID(requestCtx, apiKey.ID, parsed.RequestID); err == nil {
+					storedTask = task
+				}
+			}
+			finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, storedTask)
 		}
 		reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount))
 		return
 	}
+}
+
+func finalizeOpenAIVideoTaskFromStatus(
+	c *gin.Context,
+	h *OpenAIGatewayHandler,
+	reqLog *zap.Logger,
+	apiKey *service.APIKey,
+	subject middleware2.AuthSubject,
+	subscription *service.UserSubscription,
+	account *service.Account,
+	result *service.OpenAIForwardResult,
+	task *service.MediaGenerationTask,
+) {
+	if result == nil || task == nil || strings.TrimSpace(task.TaskID) == "" {
+		return
+	}
+	status := service.NormalizeMediaGenerationStatus(result.VideoStatus)
+	if status == service.MediaGenerationStatusPending || status == service.MediaGenerationStatusRunning || status == "" {
+		return
+	}
+	if service.IsMediaGenerationFailureStatus(status) {
+		errMsg := ""
+		if len(result.ResponseBody) > 0 {
+			errMsg = openAIVideoFinalizationErrorMessage(result.ResponseBody)
+		}
+		if err := h.gatewayService.MarkOpenAIVideoTaskTerminal(c.Request.Context(), apiKey.ID, task.TaskID, status, errMsg); err != nil {
+			reqLog.Warn("openai.videos.mark_task_failed_status_failed", zap.String("request_id", task.TaskID), zap.String("status", status), zap.Error(err))
+		}
+		return
+	}
+	if !service.IsMediaGenerationSuccessStatus(status) || task.FinalizedAt != nil {
+		return
+	}
+	recordOpenAIVideoFinalUsage(c, h, reqLog, apiKey, subject, subscription, account, result, task)
+}
+
+func recordOpenAIVideoFinalUsage(
+	c *gin.Context,
+	h *OpenAIGatewayHandler,
+	reqLog *zap.Logger,
+	apiKey *service.APIKey,
+	subject middleware2.AuthSubject,
+	subscription *service.UserSubscription,
+	account *service.Account,
+	statusResult *service.OpenAIForwardResult,
+	task *service.MediaGenerationTask,
+) {
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	durationSeconds := task.DurationSeconds
+	if statusResult != nil && statusResult.MediaDurationSeconds > 0 {
+		durationSeconds = statusResult.MediaDurationSeconds
+	}
+	requestModel := strings.TrimSpace(task.RequestedModel)
+	if requestModel == "" {
+		requestModel = strings.TrimSpace(task.Model)
+	}
+	upstreamModel := strings.TrimSpace(task.UpstreamModel)
+	if upstreamModel == "" && statusResult != nil {
+		upstreamModel = strings.TrimSpace(statusResult.UpstreamModel)
+	}
+	imageSize := strings.TrimSpace(task.SizeTier)
+	if imageSize == "" && statusResult != nil {
+		imageSize = statusResult.ImageSize
+	}
+	usageFields := service.ChannelUsageFields{
+		OriginalModel:      requestModel,
+		ChannelMappedModel: strings.TrimSpace(task.ChannelMappedModel),
+		BillingModelSource: strings.TrimSpace(task.BillingModelSource),
+		ModelMappingChain:  strings.TrimSpace(task.ModelMappingChain),
+	}
+	if task.ChannelID != nil {
+		usageFields.ChannelID = *task.ChannelID
+	}
+	if usageFields.ChannelMappedModel == "" {
+		usageFields.ChannelMappedModel = requestModel
+	}
+	recordResult := &service.OpenAIForwardResult{
+		RequestID:            "video:" + strings.TrimSpace(task.TaskID),
+		ResponseID:           task.TaskID,
+		Model:                requestModel,
+		BillingModel:         upstreamModel,
+		UpstreamModel:        upstreamModel,
+		Usage:                statusResult.Usage,
+		Stream:               false,
+		Duration:             statusResult.Duration,
+		ImageCount:           1,
+		ImageSize:            imageSize,
+		MediaDurationSeconds: durationSeconds,
+		MediaType:            "video",
+		ResponseStatus:       statusResult.ResponseStatus,
+		VideoStatus:          statusResult.VideoStatus,
+	}
+	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+			Result:             recordResult,
+			APIKey:             apiKey,
+			User:               apiKey.User,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    strings.TrimSpace(task.InboundEndpoint),
+			UpstreamEndpoint:   strings.TrimSpace(task.UpstreamEndpoint),
+			UserAgent:          userAgent,
+			IPAddress:          clientIP,
+			RequestPayloadHash: strings.TrimSpace(task.RequestPayloadHash),
+			APIKeyService:      h.apiKeyService,
+			QuotaPlatform:      quotaPlatform,
+			ChannelUsageFields: usageFields,
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", "handler.openai_gateway.videos"),
+				zap.Int64("user_id", subject.UserID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Any("group_id", apiKey.GroupID),
+				zap.String("model", requestModel),
+				zap.Int64("account_id", account.ID),
+				zap.String("request_id", task.TaskID),
+			).Error("openai.videos.record_final_usage_failed", zap.Error(err))
+			reqLog.Debug("openai.videos.record_final_usage_failed", zap.Error(err))
+			return
+		}
+		if err := h.gatewayService.MarkOpenAIVideoTaskTerminal(ctx, apiKey.ID, task.TaskID, service.MediaGenerationStatusCompleted, ""); err != nil {
+			reqLog.Warn("openai.videos.mark_task_completed_failed", zap.String("request_id", task.TaskID), zap.Error(err))
+		}
+	})
+}
+
+func openAIVideoFinalizationErrorMessage(body []byte) string {
+	msg := strings.TrimSpace(string(body))
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	return msg
+}
+
+func openAIVideoIdempotencyKey(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(c.GetHeader("Idempotency-Key")); key != "" {
+		return key
+	}
+	return strings.TrimSpace(c.GetHeader("X-Idempotency-Key"))
 }
 
 func recordOpenAIVideoUsage(

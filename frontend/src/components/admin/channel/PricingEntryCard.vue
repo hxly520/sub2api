@@ -153,11 +153,11 @@
           </div>
         </div>
 
-        <!-- Per-request mode -->
-        <div v-else-if="entry.billing_mode === 'per_request'">
-          <!-- Default per-request price -->
+        <!-- Per-request / per-second mode -->
+        <div v-else-if="entry.billing_mode === 'per_request' || entry.billing_mode === 'per_second'">
+          <!-- Default per-request/per-second price -->
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ t('admin.channels.form.defaultPerRequestPrice') }}
+            {{ entry.billing_mode === 'per_second' ? t('admin.channels.form.defaultPerSecondPrice') : t('admin.channels.form.defaultPerRequestPrice') }}
             <span class="ml-1 font-normal text-gray-400">$</span>
           </label>
           <div class="mt-1 w-48">
@@ -168,7 +168,7 @@
           <!-- Tiers -->
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.channels.form.requestTiers') }}
+              {{ entry.billing_mode === 'per_second' ? t('admin.channels.form.secondTiers') : t('admin.channels.form.requestTiers') }}
             </label>
             <button type="button" @click="addInterval" class="text-xs text-primary-600 hover:text-primary-700">
               + {{ t('admin.channels.form.addTier') }}
@@ -256,6 +256,7 @@ const collapsed = ref(props.entry.models.length > 0)
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },
   { value: 'per_request', label: t('admin.channels.billingMode.perRequest') },
+  { value: 'per_second', label: t('admin.channels.billingMode.perSecond') },
   { value: 'image', label: t('admin.channels.billingMode.image') }
 ])
 

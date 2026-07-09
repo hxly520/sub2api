@@ -130,6 +130,65 @@ func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T)
 	require.Equal(t, 1, result.ImageCount)
 }
 
+func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"sync-video","prompt":"city","seconds":8}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          75,
+		Name:        "openai-sync-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://video-upstream.test/v1",
+		},
+	}
+	responseBody := []byte(`{"video_url":"https://cdn.test/video.mp4","duration":8}`)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+			"X-Request-Id": []string{"sync-upstream-req"},
+		},
+		Body: io.NopCloser(bytes.NewReader(responseBody)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
+	require.NoError(t, err)
+
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
+	require.Equal(t, localOpenAIVideoSynchronousTaskID("sync-upstream-req", responseBody), result.ResponseID)
+	require.Equal(t, MediaGenerationStatusCompleted, result.VideoStatus)
+	require.Equal(t, 8, result.MediaDurationSeconds)
+	require.Equal(t, 1, result.ImageCount)
+	require.JSONEq(t, string(responseBody), recorder.Body.String())
+}
+
+func TestOpenAIVideoHasResultURLSupportsNestedOutput(t *testing.T) {
+	require.True(t, openAIVideoHasResultURL([]byte(`{"output":[{"url":"https://cdn.test/video.mp4"}]}`)))
+	require.True(t, openAIVideoHasResultURL([]byte(`{"data":{"content":{"video_url":"https://cdn.test/video.mp4"}}}`)))
+	require.False(t, openAIVideoHasResultURL([]byte(`{"status":"completed"}`)))
+}
+
+func TestOpenAIVideoTaskExtractorsSupportNestedTaskShapes(t *testing.T) {
+	body := []byte(`{"data":{"task":{"task_id":"task_nested_123","state":"succeeded","duration_seconds":"12s"}}}`)
+
+	require.Equal(t, "task_nested_123", extractOpenAIVideoTaskID(body))
+	require.Equal(t, MediaGenerationStatusCompleted, extractOpenAIVideoStatus(body))
+	require.Equal(t, 12, extractOpenAIVideoDurationSeconds(body))
+}
+
 func TestForwardOpenAIVideoContentTaskUsesVersionedPlanBaseURL(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)

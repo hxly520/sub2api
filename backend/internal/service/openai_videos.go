@@ -10,6 +10,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ type OpenAIVideoRequest struct {
 	Prompt            string
 	Size              string
 	Resolution        string
+	DurationSeconds   int
 	Stream            bool
 	GenerationRequest bool
 	ContentRequest    bool
@@ -222,6 +224,7 @@ func parseOpenAIVideoBody(req *OpenAIVideoRequest) error {
 	if req.Resolution == "" {
 		req.Resolution = strings.TrimSpace(gjson.GetBytes(req.Body, "resolution").String())
 	}
+	req.DurationSeconds = extractOpenAIVideoDurationSeconds(req.Body)
 	if stream := gjson.GetBytes(req.Body, "stream"); stream.Exists() {
 		req.Stream = stream.Bool()
 	}
@@ -268,6 +271,8 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 			req.Size = value
 		case "resolution", "resolution_name":
 			req.Resolution = value
+		case "duration", "seconds", "video_duration", "sora2_duration":
+			req.DurationSeconds = normalizeOpenAIVideoDurationSeconds(value)
 		case "stream":
 			req.Stream = strings.EqualFold(value, "true")
 		}
@@ -379,23 +384,28 @@ func (s *OpenAIGatewayService) ForwardVideo(
 			UpstreamModel:   upstreamModel,
 			ResponseHeaders: resp.Header.Clone(),
 			Duration:        time.Since(startTime),
+			ResponseStatus:  resp.StatusCode,
+			MediaType:       "video",
 		}, nil
 	}
 
 	if parsed.Stream && isEventStreamResponse(resp.Header) {
 		usage, _, _, ttft, err := s.handleOpenAIImagesStreamingResponse(resp, c, startTime)
 		return &OpenAIForwardResult{
-			RequestID:       resp.Header.Get("x-request-id"),
-			Usage:           usage,
-			Model:           requestModel,
-			BillingModel:    upstreamModel,
-			UpstreamModel:   upstreamModel,
-			Stream:          true,
-			ResponseHeaders: resp.Header.Clone(),
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    ttft,
-			ImageCount:      boolToMediaCount(parsed.GenerationRequest),
-			ImageSize:       parsed.BillingSizeTier(),
+			RequestID:            resp.Header.Get("x-request-id"),
+			Usage:                usage,
+			Model:                requestModel,
+			BillingModel:         upstreamModel,
+			UpstreamModel:        upstreamModel,
+			Stream:               true,
+			ResponseHeaders:      resp.Header.Clone(),
+			Duration:             time.Since(startTime),
+			FirstTokenMs:         ttft,
+			ImageCount:           boolToMediaCount(parsed.GenerationRequest),
+			ImageSize:            parsed.BillingSizeTier(),
+			MediaDurationSeconds: parsed.DurationSeconds,
+			MediaType:            "video",
+			ResponseStatus:       resp.StatusCode,
 		}, err
 	}
 
@@ -414,18 +424,35 @@ func (s *OpenAIGatewayService) ForwardVideo(
 
 	usage, _ := extractOpenAIUsageFromJSONBytes(body)
 	responseID := extractOpenAIVideoTaskID(body)
+	videoStatus := extractOpenAIVideoStatus(body)
+	if videoStatus == "" && openAIVideoHasResultURL(body) {
+		videoStatus = MediaGenerationStatusCompleted
+	}
+	if responseID == "" && parsed.GenerationRequest && IsMediaGenerationSuccessStatus(videoStatus) {
+		responseID = localOpenAIVideoSynchronousTaskID(resp.Header.Get("x-request-id"), body)
+	}
+	durationSeconds := parsed.DurationSeconds
+	if durationSeconds <= 0 {
+		durationSeconds = extractOpenAIVideoDurationSeconds(body)
+	}
 	return &OpenAIForwardResult{
-		RequestID:       resp.Header.Get("x-request-id"),
-		ResponseID:      responseID,
-		Usage:           usage,
-		Model:           requestModel,
-		BillingModel:    upstreamModel,
-		UpstreamModel:   upstreamModel,
-		Stream:          false,
-		ResponseHeaders: resp.Header.Clone(),
-		Duration:        time.Since(startTime),
-		ImageCount:      boolToMediaCount(parsed.GenerationRequest),
-		ImageSize:       parsed.BillingSizeTier(),
+		RequestID:            resp.Header.Get("x-request-id"),
+		ResponseID:           responseID,
+		Usage:                usage,
+		Model:                requestModel,
+		BillingModel:         upstreamModel,
+		UpstreamModel:        upstreamModel,
+		Stream:               false,
+		ResponseHeaders:      resp.Header.Clone(),
+		Duration:             time.Since(startTime),
+		ImageCount:           boolToMediaCount(parsed.GenerationRequest),
+		ImageSize:            parsed.BillingSizeTier(),
+		MediaDurationSeconds: durationSeconds,
+		MediaType:            "video",
+		ResponseStatus:       resp.StatusCode,
+		ResponseBody:         body,
+		ResponseContentType:  contentType,
+		VideoStatus:          videoStatus,
 	}, nil
 }
 
@@ -533,13 +560,178 @@ func extractOpenAIVideoTaskID(body []byte) string {
 		"data.id",
 		"data.request_id",
 		"data.task_id",
+		"data.task.id",
+		"data.task.request_id",
+		"data.task.task_id",
 		"data.video.id",
+		"result.id",
+		"result.request_id",
+		"result.task_id",
 	} {
 		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
 			return value
 		}
 	}
 	return ""
+}
+
+func extractOpenAIVideoStatus(body []byte) string {
+	for _, path := range []string{
+		"status",
+		"state",
+		"data.status",
+		"data.state",
+		"data.task.status",
+		"data.task.state",
+		"data.video.status",
+		"data.video.state",
+		"result.status",
+		"result.state",
+		"video.status",
+		"video.state",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
+			return NormalizeMediaGenerationStatus(value)
+		}
+	}
+	return ""
+}
+
+func openAIVideoHasResultURL(body []byte) bool {
+	for _, path := range []string{
+		"url",
+		"video_url",
+		"content.url",
+		"content.video_url",
+		"data.url",
+		"data.video_url",
+		"data.content.url",
+		"data.content.video_url",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
+			return true
+		}
+	}
+	for _, path := range []string{"output", "data.output"} {
+		for _, item := range gjson.GetBytes(body, path).Array() {
+			if strings.TrimSpace(item.Get("url").String()) != "" || strings.TrimSpace(item.Get("video_url").String()) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func localOpenAIVideoSynchronousTaskID(upstreamRequestID string, body []byte) string {
+	seed := strings.TrimSpace(upstreamRequestID)
+	if seed == "" {
+		seed = fmt.Sprintf("local:%d:%s", time.Now().UnixNano(), string(body))
+	} else {
+		seed = "upstream:" + seed
+	}
+	sum := sha256.Sum256([]byte(seed))
+	return "video-sync-" + hex.EncodeToString(sum[:])[:24]
+}
+
+func extractOpenAIVideoDurationSeconds(body []byte) int {
+	for _, path := range []string{
+		"duration",
+		"seconds",
+		"duration_seconds",
+		"video_duration",
+		"sora2_duration",
+		"data.duration",
+		"data.seconds",
+		"data.duration_seconds",
+		"data.task.duration",
+		"data.task.seconds",
+		"data.task.duration_seconds",
+		"data.video.duration",
+		"data.video.seconds",
+		"data.video.duration_seconds",
+		"video.duration",
+		"video.seconds",
+		"video.duration_seconds",
+		"result.duration",
+		"result.seconds",
+		"result.duration_seconds",
+	} {
+		value := gjson.GetBytes(body, path)
+		if !value.Exists() {
+			continue
+		}
+		if seconds := normalizeOpenAIVideoDurationSeconds(value.String()); seconds > 0 {
+			return seconds
+		}
+	}
+	return 0
+}
+
+func normalizeOpenAIVideoDurationSeconds(value string) int {
+	value = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(value), "s"))
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	seconds := int(parsed)
+	if seconds < 0 {
+		return 0
+	}
+	if seconds > 3600 {
+		return 3600
+	}
+	return seconds
+}
+
+func (s *OpenAIGatewayService) openAIMediaTaskRepo() (MediaGenerationTaskRepository, bool) {
+	if s == nil || s.usageBillingRepo == nil {
+		return nil, false
+	}
+	repo, ok := s.usageBillingRepo.(MediaGenerationTaskRepository)
+	return repo, ok
+}
+
+func (s *OpenAIGatewayService) GetOpenAIVideoTaskByTaskID(ctx context.Context, apiKeyID int64, taskID string) (*MediaGenerationTask, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil, nil
+	}
+	return repo.GetMediaGenerationTaskByTaskID(ctx, apiKeyID, taskID)
+}
+
+func (s *OpenAIGatewayService) GetOpenAIVideoTaskByIdempotency(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (*MediaGenerationTask, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil, nil
+	}
+	return repo.GetMediaGenerationTaskByIdempotency(ctx, apiKeyID, idempotencyKeyHash)
+}
+
+func (s *OpenAIGatewayService) AcquireOpenAIVideoIdempotencyLock(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (func(), error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return func() {}, nil
+	}
+	return repo.AcquireMediaGenerationIdempotencyLock(ctx, apiKeyID, idempotencyKeyHash)
+}
+
+func (s *OpenAIGatewayService) CreateOpenAIVideoTask(ctx context.Context, task *MediaGenerationTask) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil
+	}
+	return repo.CreateMediaGenerationTask(ctx, task)
+}
+
+func (s *OpenAIGatewayService) MarkOpenAIVideoTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil
+	}
+	return repo.MarkMediaGenerationTaskTerminal(ctx, apiKeyID, taskID, status, finalizationError)
 }
 
 func OpenAIVideoTaskSessionHash(requestID string) string {

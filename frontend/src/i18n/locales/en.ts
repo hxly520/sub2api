@@ -1135,6 +1135,7 @@ export default {
       billingMode: 'Billing Mode',
       billingModeToken: 'Per Token',
       billingModePerRequest: 'Per Request',
+      billingModePerSecond: 'Per Second',
       billingModeImage: 'Per Image',
       inputPrice: 'Input',
       outputPrice: 'Output',
@@ -1142,9 +1143,11 @@ export default {
       cacheReadPrice: 'Cache Read',
       imageOutputPrice: 'Image Output',
       perRequestPrice: 'Per Request',
+      perSecondPrice: 'Per Second',
       intervals: 'Tiered Pricing',
       unitPerMillion: '/ 1M tokens',
-      unitPerRequest: '/ request'
+      unitPerRequest: '/ request',
+      unitPerSecond: '/ second'
     }
   },
 
@@ -2430,6 +2433,7 @@ export default {
         billingMode: 'Billing Mode',
         billingModeToken: 'Per Token',
         billingModePerRequest: 'Per Request',
+        billingModePerSecond: 'Per Second',
         billingModeImage: 'Per Image',
         inputPrice: 'Input',
         outputPrice: 'Output',
@@ -2437,9 +2441,11 @@ export default {
         cacheReadPrice: 'Cache Read',
         imageOutputPrice: 'Image Output',
         perRequestPrice: 'Per Request',
+        perSecondPrice: 'Per Second',
         intervals: 'Tiered Pricing',
         unitPerMillion: '/ 1M tokens',
-        unitPerRequest: '/ request'
+        unitPerRequest: '/ request',
+        unitPerSecond: '/ second'
       }
     },
 
@@ -2497,6 +2503,7 @@ export default {
       billingMode: {
         token: 'Token',
         perRequest: 'Per Request',
+        perSecond: 'Per Second',
         image: 'Image (Per Request)'
       },
       form: {
@@ -2529,12 +2536,14 @@ export default {
         inclusive: '(inclusive)',
         addInterval: 'Add Interval',
         requestTiers: 'Request Tiers',
+        secondTiers: 'Second Tiers',
         imageTiers: 'Image Tiers (Per Request)',
         addTier: 'Add Tier',
         noTiersYet: 'No tiers yet. Click add to configure per-request pricing.',
         noPricingRules: 'No pricing rules yet. Click "Add" to create one.',
         perRequestPrice: 'Price per Request',
-        perRequestPriceRequired: 'Per-request price or billing tiers required for per-request/image billing mode',
+        perSecondPrice: 'Price per Second',
+        perRequestPriceRequired: 'Per-request/per-second price or billing tiers required for per-request/per-second/image billing mode',
         tierLabel: 'Tier',
         resolution: 'Resolution',
         modelMapping: 'Model Mapping',
@@ -2553,6 +2562,7 @@ export default {
         restrictModels: 'Restrict Models',
         restrictModelsHint: 'When enabled, only models in the pricing list are allowed. Others will be rejected.',
         defaultPerRequestPrice: 'Default per-request price (fallback when no tier matches)',
+        defaultPerSecondPrice: 'Default per-second price (fallback when no tier matches)',
         defaultImagePrice: 'Default image price (fallback when no tier matches)',
         platformConfig: 'Platform Configuration',
         webSearchEmulation: 'Web Search Emulation',
@@ -4842,6 +4852,7 @@ export default {
       billingMode: 'Billing Mode',
       billingModeToken: 'Token',
       billingModePerRequest: 'Per Request',
+      billingModePerSecond: 'Per Second',
       billingModeImage: 'Image',
       allBillingModes: 'All Billing Modes',
       ipAddress: 'IP',
