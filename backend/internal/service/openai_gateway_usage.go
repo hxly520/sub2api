@@ -115,7 +115,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
-	if !isGrokVideoUsageResult(result, nil) {
+	if !isOpenAIVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
 
@@ -242,11 +242,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:     optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:  result.ImageSizeBreakdown,
 	}
-	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
+	isVideoUsage := isOpenAIVideoUsageResult(result, billingModels)
 	if isVideoUsage {
-		usageLog.VideoCount = result.VideoCount
-		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(result.VideoResolution))
-		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
+		usageLog.VideoCount = openAIVideoUsageCount(result)
+		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(openAIVideoUsageResolution(result)))
+		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(openAIVideoUsageDurationSeconds(result))
 		usageLog.VideoDurationSeconds = &videoDurationSeconds
 	}
 	if cost != nil {
@@ -367,7 +367,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	serviceTier string,
 ) (*CostBreakdown, error) {
 	billingModel := firstUsageBillingModel(billingModels)
-	if isGrokVideoUsageResult(result, billingModels) {
+	if isOpenAIVideoUsageResult(result, billingModels) {
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
 			return s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, result, videoMultiplier), nil
 		}
@@ -415,6 +415,49 @@ func isGrokVideoUsageResult(result *OpenAIForwardResult, billingModels []string)
 		}
 	}
 	return false
+}
+
+func isOpenAIVideoUsageResult(result *OpenAIForwardResult, billingModels []string) bool {
+	if result == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(result.MediaType), "video") {
+		return true
+	}
+	if result.VideoCount > 0 {
+		return true
+	}
+	return isGrokVideoUsageResult(result, billingModels)
+}
+
+func openAIVideoUsageCount(result *OpenAIForwardResult) int {
+	if result == nil {
+		return 0
+	}
+	if result.VideoCount > 0 {
+		return result.VideoCount
+	}
+	return 1
+}
+
+func openAIVideoUsageResolution(result *OpenAIForwardResult) string {
+	if result == nil {
+		return ""
+	}
+	if strings.TrimSpace(result.VideoResolution) != "" {
+		return result.VideoResolution
+	}
+	return result.ImageSize
+}
+
+func openAIVideoUsageDurationSeconds(result *OpenAIForwardResult) int {
+	if result == nil {
+		return 0
+	}
+	if result.VideoDurationSeconds > 0 {
+		return result.VideoDurationSeconds
+	}
+	return result.MediaDurationSeconds
 }
 
 func isUsagePricingUnavailableError(err error) bool {
@@ -500,12 +543,9 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
-	videoCount := result.VideoCount
-	if videoCount <= 0 {
-		videoCount = 1
-	}
-	resolution := NormalizeVideoBillingResolutionOrDefault(result.VideoResolution)
-	durationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
+	videoCount := openAIVideoUsageCount(result)
+	resolution := NormalizeVideoBillingResolutionOrDefault(openAIVideoUsageResolution(result))
+	durationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(openAIVideoUsageDurationSeconds(result))
 	groupConfig := videoPriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredVideoPrice(apiKey, resolution) {
 		return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
@@ -518,14 +558,18 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 		}
 	}
 	if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved != nil &&
-		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage) {
-		// 渠道 per_request/image 定价保持"按请求次数"口径（价格由管理员按次配置），不乘视频时长。
+		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage || resolved.Mode == BillingModeVideo) {
+		// 渠道 per_request/image 定价保持"按请求次数"口径；video 定价按每秒单价乘时长。
+		requestCount := videoCount
+		if resolved.Mode == BillingModeVideo {
+			requestCount = videoCount * durationSeconds
+		}
 		gid := apiKey.Group.ID
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
-			RequestCount:   videoCount,
+			RequestCount:   requestCount,
 			SizeTier:       resolution,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,

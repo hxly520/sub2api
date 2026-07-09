@@ -526,9 +526,9 @@ func recordOpenAIVideoFinalUsage(
 	if upstreamModel == "" && statusResult != nil {
 		upstreamModel = strings.TrimSpace(statusResult.UpstreamModel)
 	}
-	imageSize := strings.TrimSpace(task.SizeTier)
-	if imageSize == "" && statusResult != nil {
-		imageSize = statusResult.ImageSize
+	videoResolution := strings.TrimSpace(task.Resolution)
+	if videoResolution == "" && statusResult != nil {
+		videoResolution = statusResult.VideoResolution
 	}
 	usageFields := service.ChannelUsageFields{
 		OriginalModel:      requestModel,
@@ -552,7 +552,9 @@ func recordOpenAIVideoFinalUsage(
 		Stream:               false,
 		Duration:             statusResult.Duration,
 		ImageCount:           1,
-		ImageSize:            imageSize,
+		VideoCount:           1,
+		VideoResolution:      videoResolution,
+		VideoDurationSeconds: durationSeconds,
 		MediaDurationSeconds: durationSeconds,
 		MediaType:            "video",
 		ResponseStatus:       statusResult.ResponseStatus,

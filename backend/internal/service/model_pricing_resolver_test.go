@@ -406,6 +406,30 @@ func TestResolve_WithChannelOverride_ImageTierLabels(t *testing.T) {
 	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "8K"), 1e-12) // not found
 }
 
+func TestResolve_WithChannelOverride_VideoTierLabels(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    PlatformOpenAI,
+		Models:      []string{"seedance-2.0-fast-720p"},
+		BillingMode: BillingModeVideo,
+		Intervals: []PricingInterval{
+			{TierLabel: VideoBillingResolution480P, PerRequestPrice: testPtrFloat64(0.02)},
+			{TierLabel: VideoBillingResolution720P, PerRequestPrice: testPtrFloat64(0.04)},
+		},
+	}})
+
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "seedance-2.0-fast-720p",
+		GroupID: groupIDPtr(),
+	})
+
+	require.NotNil(t, resolved)
+	require.Equal(t, BillingModeVideo, resolved.Mode)
+	require.Equal(t, "channel", resolved.Source)
+	require.Len(t, resolved.RequestTiers, 2)
+	require.InDelta(t, 0.02, r.GetRequestTierPrice(resolved, VideoBillingResolution480P), 1e-12)
+	require.InDelta(t, 0.04, r.GetRequestTierPrice(resolved, VideoBillingResolution720P), 1e-12)
+}
+
 // ---------------------------------------------------------------------------
 // 4. Source tracking & default mode
 // ---------------------------------------------------------------------------
