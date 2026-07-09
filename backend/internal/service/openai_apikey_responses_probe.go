@@ -146,7 +146,7 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	applyOpenAICompatibleAPIKeyAuth(req, account, apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	// 账号级请求头覆写：能力探测与真实转发保持一致的最终头

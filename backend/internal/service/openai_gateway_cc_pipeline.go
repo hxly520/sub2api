@@ -168,7 +168,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+bearerToken)
+	applyOpenAICompatibleAPIKeyAuth(upstreamReq, account, bearerToken)
 	if stream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {

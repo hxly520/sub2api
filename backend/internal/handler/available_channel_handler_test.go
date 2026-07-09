@@ -63,6 +63,28 @@ func TestToUserSupportedModels_NilAllowedPlatformsKeepsAll(t *testing.T) {
 	require.Len(t, toUserSupportedModels(src, nil), 2)
 }
 
+func TestToUserSupportedModels_KeepsAllAllowedVideoModels(t *testing.T) {
+	src := []service.SupportedModel{
+		{Name: "seedance-2.0", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "seedance-2.0-fast-480p", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "seedance-2.0-fast-720p", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "sora-2", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "sora-2-pro", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "omni-v1", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "omni-v2v", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "grok-video", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "veo-3-fast", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+	}
+
+	out := toUserSupportedModels(src, map[string]struct{}{"openai": {}})
+	require.Len(t, out, len(src))
+	for i := range out {
+		require.Equal(t, src[i].Name, out[i].Name)
+		require.NotNil(t, out[i].Pricing)
+		require.Equal(t, string(service.BillingModeVideo), out[i].Pricing.BillingMode)
+	}
+}
+
 func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 	// 通过序列化 userAvailableChannel 结构体验证响应形状：
 	// 只有 name / description / platforms；不含管理端字段。

@@ -85,6 +85,7 @@ type OpenAIEndpointCapability string
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
+	OpenAIEndpointCapabilityVideos          OpenAIEndpointCapability = "videos"
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
@@ -1223,6 +1224,45 @@ func (a *Account) IsOpenAIApiKey() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeAPIKey
 }
 
+// GetOpenAIChatCompletionsURL returns an optional exact Chat Completions
+// endpoint URL for OpenAI-compatible APIKey upstreams.
+func (a *Account) GetOpenAIChatCompletionsURL() string {
+	if a == nil || a.Credentials == nil || !a.IsOpenAIApiKey() {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("chat_completions_url"))
+}
+
+const (
+	OpenAICompatibleAuthHeaderAuthorization = "Authorization"
+	OpenAICompatibleAuthHeaderAPIKey        = "api-key"
+	OpenAICompatibleAuthHeaderXAPIKey       = "x-api-key"
+)
+
+func NormalizeOpenAICompatibleAuthHeader(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", strings.ToLower(OpenAICompatibleAuthHeaderAuthorization):
+		return OpenAICompatibleAuthHeaderAuthorization, true
+	case OpenAICompatibleAuthHeaderAPIKey:
+		return OpenAICompatibleAuthHeaderAPIKey, true
+	case OpenAICompatibleAuthHeaderXAPIKey:
+		return OpenAICompatibleAuthHeaderXAPIKey, true
+	default:
+		return "", false
+	}
+}
+
+func (a *Account) OpenAICompatibleAuthHeader() string {
+	if a == nil || a.Credentials == nil || !a.IsOpenAIApiKey() {
+		return OpenAICompatibleAuthHeaderAuthorization
+	}
+	header, valid := NormalizeOpenAICompatibleAuthHeader(a.GetCredential("auth_header"))
+	if !valid {
+		return OpenAICompatibleAuthHeaderAuthorization
+	}
+	return header
+}
+
 func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() {
 		return ""
@@ -1361,6 +1401,10 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
 	case OpenAIEndpointCapabilityEmbeddings:
+		if a.Type != AccountTypeAPIKey {
+			return false
+		}
+	case OpenAIEndpointCapabilityVideos:
 		if a.Type != AccountTypeAPIKey {
 			return false
 		}

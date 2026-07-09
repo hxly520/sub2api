@@ -215,7 +215,7 @@ func (s *OpenAIGatewayService) buildInputTokensUpstreamRequest(
 		return nil, err
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
-	req.Header.Set("authorization", "Bearer "+token)
+	applyOpenAICompatibleAPIKeyAuth(req, account, token)
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("accept", "application/json")
 
