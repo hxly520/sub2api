@@ -59,8 +59,12 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoGenerationHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.OpenAIGateway.GrokVideoGeneration(c)
+			return
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.Videos(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)

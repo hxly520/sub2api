@@ -102,7 +102,8 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if contentType == "" {
 			contentType = "application/json"
 		}
-		c.Data(statusCode, contentType, []byte(replay.ResponseBody))
+		body := service.RewriteOpenAIVideoClientResponseBody([]byte(replay.ResponseBody), replay.TaskID)
+		c.Data(statusCode, contentType, body)
 		reqLog.Debug("openai.videos.idempotency_replayed", zap.String("task_id", replay.TaskID))
 		return true
 	}
@@ -215,6 +216,20 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			}
 		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			reqLog.Warn("openai.videos.lookup_stored_task_failed", zap.String("request_id", parsed.RequestID), zap.Error(err))
+		}
+	}
+	if parsed.ContentRequest && storedTask != nil {
+		handled, err := h.gatewayService.StreamOpenAIVideoTaskContent(c.Request.Context(), c, storedTask)
+		if handled {
+			if err != nil {
+				reqLog.Warn("openai.videos.stored_content_proxy_failed", zap.String("request_id", storedTask.TaskID), zap.Error(err))
+				if c.Writer.Size() == -1 {
+					h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Video content proxy failed")
+				}
+			} else {
+				streamStarted = true
+			}
+			return
 		}
 	}
 
@@ -429,6 +444,19 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			if storedTask == nil {
 				if task, err := h.gatewayService.GetOpenAIVideoTaskByTaskID(requestCtx, apiKey.ID, parsed.RequestID); err == nil {
 					storedTask = task
+				}
+			}
+			if len(result.ResponseBody) > 0 {
+				if err := h.gatewayService.UpdateOpenAIVideoTaskResponse(requestCtx, apiKey.ID, parsed.RequestID, result); err != nil {
+					reqLog.Warn("openai.videos.update_task_response_failed", zap.String("request_id", parsed.RequestID), zap.Error(err))
+				} else if storedTask != nil {
+					storedTask.ResponseStatus = result.ResponseStatus
+					storedTask.ResponseContentType = result.ResponseContentType
+					storedTask.ResponseBody = string(result.ResponseBody)
+					storedTask.Status = result.VideoStatus
+					if result.MediaDurationSeconds > 0 {
+						storedTask.DurationSeconds = result.MediaDurationSeconds
+					}
 				}
 			}
 			finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, storedTask)

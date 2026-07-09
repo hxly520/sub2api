@@ -115,6 +115,28 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 	return err
 }
 
+func (r *usageBillingRepository) UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, status string, durationSeconds int) error {
+	if r == nil || r.db == nil {
+		return errors.New("usage billing repository db is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil
+	}
+	status = service.NormalizeMediaGenerationStatus(status)
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE media_generation_tasks
+		SET response_status = COALESCE($3, response_status),
+			response_content_type = COALESCE(NULLIF($4, ''), response_content_type),
+			response_body = COALESCE(NULLIF($5, ''), response_body),
+			status = COALESCE(NULLIF($6, ''), status),
+			duration_seconds = COALESCE($7, duration_seconds),
+			updated_at = NOW()
+		WHERE api_key_id = $1 AND task_id = $2
+	`, apiKeyID, taskID, nullableInt(responseStatus), strings.TrimSpace(responseContentType), responseBody, status, nullableInt(durationSeconds))
+	return err
+}
+
 func (r *usageBillingRepository) MarkMediaGenerationTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error {
 	if r == nil || r.db == nil {
 		return errors.New("usage billing repository db is nil")

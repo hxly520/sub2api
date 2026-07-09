@@ -89,6 +89,8 @@ func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
 	for _, path := range []string{
 		"/v1/videos",
 		"/videos",
+		"/v1/videos/generations",
+		"/videos/generations",
 		"/v1/video/generations",
 		"/video/generations",
 		"/v1/contents/generations/tasks",
@@ -159,7 +161,7 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesGrokPluralVideosAreRejectedForOpenAI(t *testing.T) {
+func TestGatewayRoutesOpenAIGrokCompatiblePluralVideosAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, tc := range []struct {
@@ -175,8 +177,8 @@ func TestGatewayRoutesGrokPluralVideosAreRejectedForOpenAI(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
-		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
+		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.NotContains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}
 }
 
@@ -186,6 +188,8 @@ func TestGatewayRoutesOpenAIVideosRejectedForAnthropic(t *testing.T) {
 	for _, path := range []string{
 		"/v1/videos",
 		"/videos",
+		"/v1/videos/generations",
+		"/videos/generations",
 		"/v1/video/generations",
 		"/contents/generations/tasks",
 	} {

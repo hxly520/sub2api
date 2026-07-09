@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
@@ -130,6 +131,46 @@ func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T)
 	require.Equal(t, 1, result.ImageCount)
 }
 
+func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok-imagine-video-1.5","prompt":"city","seconds":6}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          76,
+		Name:        "openai-grok-compatible-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://video-upstream.test/v1",
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"request_id":"grok-video-request-789","status":"queued"}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	require.True(t, parsed.GenerationRequest)
+	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
+	require.NoError(t, err)
+
+	require.Equal(t, "https://video-upstream.test/v1/videos/generations", upstream.lastReq.URL.String())
+	require.JSONEq(t, string(body), string(upstream.lastBody))
+	require.Equal(t, "grok-video-request-789", result.ResponseID)
+	require.Equal(t, 1, result.ImageCount)
+}
+
 func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
@@ -172,13 +213,89 @@ func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
 	require.Equal(t, MediaGenerationStatusCompleted, result.VideoStatus)
 	require.Equal(t, 8, result.MediaDurationSeconds)
 	require.Equal(t, 1, result.ImageCount)
-	require.JSONEq(t, string(responseBody), recorder.Body.String())
+	require.JSONEq(t, string(responseBody), string(result.ResponseBody))
+	require.NotContains(t, recorder.Body.String(), "https://cdn.test/video.mp4")
+	require.JSONEq(t, `{"video_url":"/v1/videos/`+result.ResponseID+`/content","duration":8}`, recorder.Body.String())
 }
 
 func TestOpenAIVideoHasResultURLSupportsNestedOutput(t *testing.T) {
 	require.True(t, openAIVideoHasResultURL([]byte(`{"output":[{"url":"https://cdn.test/video.mp4"}]}`)))
 	require.True(t, openAIVideoHasResultURL([]byte(`{"data":{"content":{"video_url":"https://cdn.test/video.mp4"}}}`)))
 	require.False(t, openAIVideoHasResultURL([]byte(`{"status":"completed"}`)))
+}
+
+func TestRewriteOpenAIVideoClientResponseBodyReplacesAllResultURLs(t *testing.T) {
+	body := []byte(`{"video_url":"https://cdn.test/a.mp4","content":{"url":"https://cdn.test/b.mp4"},"output":[{"url":"https://cdn.test/c.mp4"},{"video_url":"https://cdn.test/d.mp4"}],"data":{"output":[{"url":"https://cdn.test/e.mp4"}]}}`)
+
+	rewritten := RewriteOpenAIVideoClientResponseBody(body, "task_123")
+
+	require.NotContains(t, string(rewritten), "https://cdn.test")
+	require.Equal(t, "/v1/videos/task_123/content", gjson.GetBytes(rewritten, "video_url").String())
+	require.Equal(t, "/v1/videos/task_123/content", gjson.GetBytes(rewritten, "content.url").String())
+	require.Equal(t, "/v1/videos/task_123/content", gjson.GetBytes(rewritten, "output.0.url").String())
+	require.Equal(t, "/v1/videos/task_123/content", gjson.GetBytes(rewritten, "output.1.video_url").String())
+	require.Equal(t, "/v1/videos/task_123/content", gjson.GetBytes(rewritten, "data.output.0.url").String())
+}
+
+func TestStreamOpenAIVideoTaskContentProxiesStoredResultURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task_123/content", nil)
+	c.Request.Header.Set("Range", "bytes=0-3")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusPartialContent,
+		Header: http.Header{
+			"Content-Type":  []string{"video/mp4"},
+			"Content-Range": []string{"bytes 0-3/9"},
+		},
+		Body: io.NopCloser(strings.NewReader("mp4!")),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	task := &MediaGenerationTask{
+		TaskID:       "task_123",
+		AccountID:    73,
+		ResponseBody: `{"video_url":"https://cdn.test/video.mp4"}`,
+	}
+
+	handled, err := svc.StreamOpenAIVideoTaskContent(context.Background(), c, task)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.Equal(t, "https://cdn.test/video.mp4", upstream.lastReq.URL.String())
+	require.Equal(t, "bytes=0-3", upstream.lastReq.Header.Get("Range"))
+	require.Equal(t, http.StatusPartialContent, recorder.Code)
+	require.Equal(t, "mp4!", recorder.Body.String())
+	require.Equal(t, "video/mp4", recorder.Header().Get("Content-Type"))
+}
+
+func TestStreamOpenAIVideoTaskContentDoesNotExposeRedirectLocation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task_123/content", nil)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusFound,
+		Header: http.Header{
+			"Location": []string{"https://cdn.test/redirected-video.mp4"},
+		},
+		Body: io.NopCloser(strings.NewReader("")),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	task := &MediaGenerationTask{
+		TaskID:       "task_123",
+		AccountID:    73,
+		ResponseBody: `{"video_url":"https://cdn.test/video.mp4"}`,
+	}
+
+	handled, err := svc.StreamOpenAIVideoTaskContent(context.Background(), c, task)
+	require.Error(t, err)
+	require.True(t, handled)
+	require.Empty(t, recorder.Header().Get("Location"))
+	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
 func TestOpenAIVideoTaskExtractorsSupportNestedTaskShapes(t *testing.T) {

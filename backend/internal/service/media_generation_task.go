@@ -59,6 +59,7 @@ type MediaGenerationTaskRepository interface {
 	GetMediaGenerationTaskByIdempotency(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (*MediaGenerationTask, error)
 	AcquireMediaGenerationIdempotencyLock(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (func(), error)
 	CreateMediaGenerationTask(ctx context.Context, task *MediaGenerationTask) error
+	UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, status string, durationSeconds int) error
 	MarkMediaGenerationTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error
 }
 

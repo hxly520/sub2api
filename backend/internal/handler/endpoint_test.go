@@ -128,6 +128,7 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 		{"openai image generations", EndpointImagesGenerations, "/v1/images/generations", service.PlatformOpenAI, EndpointImagesGenerations},
 		{"openai image edits", EndpointImagesEdits, "/openai/v1/images/edits", service.PlatformOpenAI, EndpointImagesEdits},
 		{"openai videos", EndpointVideos, "/v1/videos", service.PlatformOpenAI, EndpointVideos},
+		{"openai videos generations", EndpointVideosGenerations, "/v1/videos/generations", service.PlatformOpenAI, EndpointVideosGenerations},
 		{"openai video generations", EndpointVideoGenerations, "/v1/video/generations", service.PlatformOpenAI, EndpointVideoGenerations},
 		{"openai content tasks", EndpointContentTasks, "/contents/generations/tasks", service.PlatformOpenAI, EndpointContentTasks},
 		{"grok video generations", EndpointVideosGenerations, "/v1/videos/generations", service.PlatformGrok, EndpointVideosGenerations},
