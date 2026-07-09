@@ -168,6 +168,10 @@ func TestGetRequestTierPrice_NilPerRequestPrice(t *testing.T) {
 // helper: creates a resolver wired to a ChannelService that returns the given
 // channel (active, groupID=100, platform=anthropic) with the specified pricing.
 func newResolverWithChannel(t *testing.T, pricing []ChannelModelPricing) *ModelPricingResolver {
+	return newResolverWithChannelPlatform(t, "anthropic", pricing)
+}
+
+func newResolverWithChannelPlatform(t *testing.T, platform string, pricing []ChannelModelPricing) *ModelPricingResolver {
 	t.Helper()
 	const groupID = 100
 	repo := &mockChannelRepository{
@@ -181,7 +185,7 @@ func newResolverWithChannel(t *testing.T, pricing []ChannelModelPricing) *ModelP
 			}}, nil
 		},
 		getGroupPlatformsFn: func(_ context.Context, _ []int64) (map[int64]string, error) {
-			return map[int64]string{groupID: "anthropic"}, nil
+			return map[int64]string{groupID: platform}, nil
 		},
 	}
 	cs := NewChannelService(repo, nil, nil, nil)
@@ -407,7 +411,7 @@ func TestResolve_WithChannelOverride_ImageTierLabels(t *testing.T) {
 }
 
 func TestResolve_WithChannelOverride_VideoTierLabels(t *testing.T) {
-	r := newResolverWithChannel(t, []ChannelModelPricing{{
+	r := newResolverWithChannelPlatform(t, PlatformOpenAI, []ChannelModelPricing{{
 		Platform:    PlatformOpenAI,
 		Models:      []string{"seedance-2.0-fast-720p"},
 		BillingMode: BillingModeVideo,
