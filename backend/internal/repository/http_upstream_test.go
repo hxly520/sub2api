@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -408,6 +410,71 @@ func (s *HTTPUpstreamSuite) TestIdleTTLDoesNotEvictActive() {
 	_, _ = svc.getOrCreateClient("", 2, 1)
 
 	require.True(s.T(), hasEntry(svc, entry1), "有活跃请求时不应回收")
+}
+
+func (s *HTTPUpstreamSuite) TestPinnedDialContextUsesValidatedIP() {
+	var dialAddress string
+	sentinel := errors.New("stop after capture")
+	dial := pinnedDialContext("media.example.com", []net.IP{net.ParseIP("8.8.8.8")}, func(_ context.Context, _ string, address string) (net.Conn, error) {
+		dialAddress = address
+		return nil, sentinel
+	})
+
+	_, err := dial(context.Background(), "tcp", "media.example.com:443")
+	require.ErrorIs(s.T(), err, sentinel)
+	require.Equal(s.T(), "8.8.8.8:443", dialAddress)
+}
+
+func (s *HTTPUpstreamSuite) TestPinnedDialContextRejectsUnexpectedHostAndPrivateIP() {
+	called := false
+	dialer := func(_ context.Context, _ string, _ string) (net.Conn, error) {
+		called = true
+		return nil, errors.New("unexpected dial")
+	}
+
+	dial := pinnedDialContext("media.example.com", []net.IP{net.ParseIP("8.8.8.8")}, dialer)
+	_, err := dial(context.Background(), "tcp", "other.example.com:443")
+	require.ErrorContains(s.T(), err, "unexpected dial host")
+	require.False(s.T(), called)
+
+	dial = pinnedDialContext("media.example.com", []net.IP{net.ParseIP("127.0.0.1")}, dialer)
+	_, err = dial(context.Background(), "tcp", "media.example.com:443")
+	require.ErrorContains(s.T(), err, "not allowed")
+	require.False(s.T(), called)
+}
+
+func (s *HTTPUpstreamSuite) TestClientForRequestPinsResolvedIPAndDisablesRedirects() {
+	svc := s.newService()
+	baseTransport := &http.Transport{}
+	entry := &upstreamClientEntry{client: &http.Client{Transport: baseTransport}}
+	req, err := http.NewRequest(http.MethodGet, "https://8.8.8.8/video.mp4", nil)
+	require.NoError(s.T(), err)
+	ctx := service.WithHTTPUpstreamResolvedIPValidation(req.Context())
+	ctx = service.WithHTTPUpstreamRedirectsDisabled(ctx)
+	req = req.WithContext(ctx)
+
+	client, cleanup, err := svc.clientForRequest(req, "", entry)
+	require.NoError(s.T(), err)
+	require.NotSame(s.T(), entry.client, client)
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(s.T(), ok)
+	require.NotSame(s.T(), baseTransport, transport)
+	require.NotNil(s.T(), transport.DialContext)
+	require.Nil(s.T(), transport.Proxy)
+	require.NotNil(s.T(), cleanup)
+	require.ErrorIs(s.T(), client.CheckRedirect(req, nil), http.ErrUseLastResponse)
+	cleanup()
+}
+
+func (s *HTTPUpstreamSuite) TestClientForRequestRejectsProxyWhenPinning() {
+	svc := s.newService()
+	entry := &upstreamClientEntry{client: &http.Client{Transport: &http.Transport{}}}
+	req, err := http.NewRequest(http.MethodGet, "https://8.8.8.8/video.mp4", nil)
+	require.NoError(s.T(), err)
+	req = req.WithContext(service.WithHTTPUpstreamResolvedIPValidation(req.Context()))
+
+	_, _, err = svc.clientForRequest(req, "http://proxy.example.com:8080", entry)
+	require.ErrorContains(s.T(), err, "requires a direct connection")
 }
 
 // TestHTTPUpstreamSuite 运行测试套件

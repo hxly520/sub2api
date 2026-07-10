@@ -78,6 +78,38 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 	return NewChannelService(repo, groupRepo, nil, nil)
 }
 
+// stubAccountRepoForAvailable 只提供用户可用渠道聚合所需的可调度账号查询。
+type stubAccountRepoForAvailable struct {
+	accountsByGroup map[int64][]Account
+	errByGroup      map[int64]error
+	calls           []int64
+}
+
+func (s *stubAccountRepoForAvailable) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]Account, error) {
+	s.calls = append(s.calls, groupID)
+	if err := s.errByGroup[groupID]; err != nil {
+		return nil, err
+	}
+	return s.accountsByGroup[groupID], nil
+}
+
+func schedulableAvailableAccount(platform string, mapping map[string]any) Account {
+	return Account{
+		Platform:    platform,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": mapping},
+	}
+}
+
+func availableModelNames(models []SupportedModel) []string {
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		out = append(out, model.Name)
+	}
+	return out
+}
+
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
 	// 活跃分组列表为空时，渠道的 Groups 应为空切片，不报错。
 	channels := []Channel{{
@@ -308,4 +340,180 @@ func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
 
 func newStubPricingServiceFromMap(data map[string]*LiteLLMModelPricing) *PricingService {
 	return &PricingService{pricingData: data}
+}
+
+func TestListAvailable_MergesAccountAliasesWithoutExposingTargets(t *testing.T) {
+	publicVideoModels := map[string]any{
+		"seedance-2.0":           "private/seedance-v2",
+		"seedance-2.0-fast-480p": "private/seedance-fast-480p",
+		"seedance-2.0-fast-720p": "private/seedance-fast-720p",
+		"sora-2":                 "private/sora-v2",
+		"sora-2-pro":             "private/sora-v2-pro",
+		"omni-v1":                "private/omni-v1",
+		"omni-v2v":               "private/omni-v2v",
+		"grok-video":             "private/grok-video",
+		"veo-3-fast":             "private/veo-3-fast",
+		"video-*":                "private/wildcard-key",
+		"wildcard-target":        "private/video-*",
+		"":                       "private/empty",
+	}
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{
+		{ID: 1, Name: "video-public", Platform: "openai"},
+		{ID: 2, Name: "video-exclusive", Platform: "openai"},
+	}}
+	accountRepo := &stubAccountRepoForAvailable{accountsByGroup: map[int64][]Account{
+		1: {
+			schedulableAvailableAccount("openai", publicVideoModels),
+			{Platform: "openai", Status: StatusDisabled, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"disabled-model": "private/disabled"}}},
+			schedulableAvailableAccount("anthropic", map[string]any{"wrong-platform": "private/wrong"}),
+		},
+		2: {schedulableAvailableAccount("openai", map[string]any{"exclusive-only-video": "private/exclusive"})},
+	}}
+	channels := []Channel{{
+		ID:       10,
+		Name:     "video-channel",
+		Status:   StatusActive,
+		GroupIDs: []int64{1, 2},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: "openai",
+			Models:   []string{"channel-base-video"},
+		}},
+	}}
+	svc := newAvailableChannelService(channels, groupRepo)
+	svc.availableAccountRepo = accountRepo
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, []int64{1, 2}, accountRepo.calls)
+
+	publicNames := availableModelNames(out[0].SupportedModelsByGroup[1])
+	require.Len(t, publicNames, 10, "1 个渠道模型 + 9 个账号公开视频别名应全部可见")
+	for _, expected := range []string{
+		"channel-base-video",
+		"seedance-2.0",
+		"seedance-2.0-fast-480p",
+		"seedance-2.0-fast-720p",
+		"sora-2",
+		"sora-2-pro",
+		"omni-v1",
+		"omni-v2v",
+		"grok-video",
+		"veo-3-fast",
+	} {
+		require.Contains(t, publicNames, expected)
+	}
+	for _, forbidden := range []string{
+		"private/seedance-v2",
+		"private/grok-video",
+		"video-*",
+		"wildcard-target",
+		"disabled-model",
+		"wrong-platform",
+	} {
+		require.NotContains(t, publicNames, forbidden)
+	}
+
+	exclusiveNames := availableModelNames(out[0].SupportedModelsByGroup[2])
+	require.ElementsMatch(t, []string{"channel-base-video", "exclusive-only-video"}, exclusiveNames)
+}
+
+func TestListAvailable_MergesStringMapAccountAliases(t *testing.T) {
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{{ID: 1, Name: "video", Platform: "openai"}}}
+	accountRepo := &stubAccountRepoForAvailable{accountsByGroup: map[int64][]Account{
+		1: {{
+			Platform:    "openai",
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{
+				"model_mapping": map[string]string{
+					"grok-video":              "private/grok-video",
+					"seedance-2.0-fast-1080p": "private/seedance-1080p",
+				},
+			},
+		}},
+	}}
+	svc := newAvailableChannelService([]Channel{{
+		ID:       10,
+		Name:     "video-channel",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+	}}, groupRepo)
+	svc.availableAccountRepo = accountRepo
+
+	out, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.ElementsMatch(t, []string{"grok-video", "seedance-2.0-fast-1080p"}, availableModelNames(out[0].SupportedModelsByGroup[1]))
+}
+
+func TestListAvailable_RestrictModelsUsesConfiguredBillingSource(t *testing.T) {
+	tests := []struct {
+		name               string
+		billingModelSource string
+		channelMapping     map[string]map[string]string
+		pricedModel        string
+	}{
+		{name: "requested", billingModelSource: BillingModelSourceRequested, pricedModel: "public-video"},
+		{name: "upstream", billingModelSource: BillingModelSourceUpstream, pricedModel: "private/upstream-video"},
+		{
+			name:               "channel mapped",
+			billingModelSource: BillingModelSourceChannelMapped,
+			channelMapping:     map[string]map[string]string{"openai": {"public-video": "channel-billing-video"}},
+			pricedModel:        "channel-billing-video",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{{ID: 1, Name: "video", Platform: "openai"}}}
+			accountRepo := &stubAccountRepoForAvailable{accountsByGroup: map[int64][]Account{
+				1: {schedulableAvailableAccount("openai", map[string]any{
+					"public-video": "private/upstream-video",
+					"hidden-video": "private/hidden-video",
+				})},
+			}}
+			channels := []Channel{{
+				ID:                 1,
+				Name:               "restricted",
+				Status:             StatusActive,
+				GroupIDs:           []int64{1},
+				RestrictModels:     true,
+				BillingModelSource: tt.billingModelSource,
+				ModelMapping:       tt.channelMapping,
+				ModelPricing: []ChannelModelPricing{{
+					Platform:    "openai",
+					Models:      []string{tt.pricedModel},
+					BillingMode: BillingModeVideo,
+				}},
+			}}
+			svc := newAvailableChannelService(channels, groupRepo)
+			svc.availableAccountRepo = accountRepo
+
+			out, err := svc.ListAvailable(context.Background())
+			require.NoError(t, err)
+			require.Len(t, out, 1)
+			names := availableModelNames(out[0].SupportedModelsByGroup[1])
+			require.Contains(t, names, "public-video")
+			require.NotContains(t, names, "hidden-video")
+			for _, model := range out[0].SupportedModelsByGroup[1] {
+				if model.Name == "public-video" {
+					require.NotNil(t, model.Pricing)
+					require.Equal(t, BillingModeVideo, model.Pricing.BillingMode)
+				}
+			}
+		})
+	}
+}
+
+func TestListAvailable_AccountRepositoryErrorPropagates(t *testing.T) {
+	sentinel := errors.New("account-list-boom")
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{{ID: 7, Name: "video", Platform: "openai"}}}
+	svc := newAvailableChannelService([]Channel{{ID: 1, Name: "ch", GroupIDs: []int64{7}}}, groupRepo)
+	svc.availableAccountRepo = &stubAccountRepoForAvailable{errByGroup: map[int64]error{7: sentinel}}
+
+	out, err := svc.ListAvailable(context.Background())
+	require.Nil(t, out)
+	require.ErrorIs(t, err, sentinel)
+	require.Contains(t, err.Error(), "list schedulable accounts for group 7")
 }

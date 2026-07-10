@@ -218,19 +218,23 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 	entries, err := FS.ReadDir(".")
 	require.NoError(t, err)
 
-	previousIndex := -1
-	currentIndex := -1
+	indexes := map[string]int{
+		"172_video_per_second_billing_metadata.sql":      -1,
+		"173_allow_cyber_blocked_usage_request_type.sql": -1,
+		"173_media_generation_tasks.sql":                 -1,
+		"174_media_generation_task_public_ids.sql":       -1,
+	}
 	for i, entry := range entries {
-		switch entry.Name() {
-		case "172_video_per_second_billing_metadata.sql":
-			previousIndex = i
-		case "173_allow_cyber_blocked_usage_request_type.sql":
-			currentIndex = i
+		if _, tracked := indexes[entry.Name()]; tracked {
+			indexes[entry.Name()] = i
 		}
 	}
-	require.NotEqual(t, -1, previousIndex)
-	require.NotEqual(t, -1, currentIndex)
-	require.Less(t, previousIndex, currentIndex)
+	for name, index := range indexes {
+		require.NotEqualf(t, -1, index, "migration %s must be embedded", name)
+	}
+	require.Less(t, indexes["172_video_per_second_billing_metadata.sql"], indexes["173_allow_cyber_blocked_usage_request_type.sql"])
+	require.Less(t, indexes["173_allow_cyber_blocked_usage_request_type.sql"], indexes["173_media_generation_tasks.sql"])
+	require.Less(t, indexes["173_media_generation_tasks.sql"], indexes["174_media_generation_task_public_ids.sql"])
 
 	content, err := FS.ReadFile("173_allow_cyber_blocked_usage_request_type.sql")
 	require.NoError(t, err)

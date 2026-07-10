@@ -19,8 +19,11 @@ func (r *usageBillingRepository) GetMediaGenerationTaskByTaskID(ctx context.Cont
 	if taskID == "" {
 		return nil, sql.ErrNoRows
 	}
+	// Client lookups are public-ID only. Migration 174 backfills every legacy
+	// row with a public_task_id, so accepting task_id here would keep historical
+	// upstream provider IDs usable as client-facing lookup keys.
 	return scanMediaGenerationTask(r.db.QueryRowContext(ctx, mediaGenerationTaskSelectSQL+`
-		WHERE api_key_id = $1 AND task_id = $2
+		WHERE api_key_id = $1 AND public_task_id = $2
 	`, apiKeyID, taskID))
 }
 
@@ -72,8 +75,17 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 	if r == nil || r.db == nil {
 		return errors.New("usage billing repository db is nil")
 	}
-	if task == nil || strings.TrimSpace(task.TaskID) == "" {
+	if task == nil {
 		return nil
+	}
+	publicTaskID := task.ClientTaskID()
+	upstreamTaskID := task.ProviderTaskID()
+	if publicTaskID == "" {
+		return errors.New("media generation public task ID is required")
+	}
+	legacyTaskID := strings.TrimSpace(task.TaskID)
+	if legacyTaskID == "" {
+		legacyTaskID = publicTaskID
 	}
 	status := service.NormalizeMediaGenerationStatus(task.Status)
 	if status == "" {
@@ -85,37 +97,63 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO media_generation_tasks (
-			task_id, api_key_id, user_id, account_id, group_id, subscription_id, model,
-			requested_model, upstream_model, endpoint, inbound_endpoint, upstream_endpoint,
-			channel_id, channel_mapped_model, billing_model_source, model_mapping_chain,
-			request_fingerprint, request_payload_hash, idempotency_key_hash, response_status,
-			response_content_type, response_body, status, duration_seconds, resolution,
-			size_tier, billing_mode, media_type, created_at, updated_at
+			task_id, public_task_id, upstream_task_id, api_key_id, user_id, account_id,
+			group_id, subscription_id, model, requested_model, upstream_model, endpoint,
+			inbound_endpoint, upstream_endpoint, channel_id, channel_mapped_model,
+			billing_model_source, model_mapping_chain, request_fingerprint,
+			request_payload_hash, idempotency_key_hash, response_status,
+			response_content_type, response_body, upstream_result_url, status,
+			duration_seconds, resolution, size_tier, billing_mode, media_type, created_at, updated_at
 		)
 		VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11, $12,
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16,
-			$17, $18, NULLIF($19, ''), $20,
-			$21, $22, $23, $24, $25,
-			$26, $27, $28, NOW(), NOW()
+			$17, $18, $19,
+			$20, NULLIF($21, ''), $22,
+			$23, $24, NULLIF($25, ''), $26, $27,
+			$28, $29, $30, $31, NOW(), NOW()
 		)
 		ON CONFLICT (api_key_id, task_id) DO UPDATE SET
-			response_status = EXCLUDED.response_status,
-			response_content_type = EXCLUDED.response_content_type,
-			response_body = EXCLUDED.response_body,
+			public_task_id = EXCLUDED.public_task_id,
+			upstream_task_id = COALESCE(EXCLUDED.upstream_task_id, media_generation_tasks.upstream_task_id),
+			account_id = EXCLUDED.account_id,
+			group_id = EXCLUDED.group_id,
+			subscription_id = EXCLUDED.subscription_id,
+			model = EXCLUDED.model,
+			requested_model = EXCLUDED.requested_model,
+			upstream_model = EXCLUDED.upstream_model,
+			endpoint = EXCLUDED.endpoint,
+			inbound_endpoint = EXCLUDED.inbound_endpoint,
+			upstream_endpoint = EXCLUDED.upstream_endpoint,
+			channel_id = EXCLUDED.channel_id,
+			channel_mapped_model = EXCLUDED.channel_mapped_model,
+			billing_model_source = EXCLUDED.billing_model_source,
+			model_mapping_chain = EXCLUDED.model_mapping_chain,
+			request_fingerprint = EXCLUDED.request_fingerprint,
+			request_payload_hash = EXCLUDED.request_payload_hash,
+			idempotency_key_hash = COALESCE(EXCLUDED.idempotency_key_hash, media_generation_tasks.idempotency_key_hash),
+			response_status = COALESCE(EXCLUDED.response_status, media_generation_tasks.response_status),
+			response_content_type = COALESCE(NULLIF(EXCLUDED.response_content_type, ''), media_generation_tasks.response_content_type),
+			response_body = COALESCE(NULLIF(EXCLUDED.response_body, ''), media_generation_tasks.response_body),
+			upstream_result_url = COALESCE(EXCLUDED.upstream_result_url, media_generation_tasks.upstream_result_url),
 			status = EXCLUDED.status,
+			duration_seconds = COALESCE(EXCLUDED.duration_seconds, media_generation_tasks.duration_seconds),
+			resolution = COALESCE(NULLIF(EXCLUDED.resolution, ''), media_generation_tasks.resolution),
+			size_tier = COALESCE(NULLIF(EXCLUDED.size_tier, ''), media_generation_tasks.size_tier),
+			billing_mode = COALESCE(NULLIF(EXCLUDED.billing_mode, ''), media_generation_tasks.billing_mode),
 			updated_at = NOW()
-	`, task.TaskID, task.APIKeyID, task.UserID, task.AccountID, task.GroupID, task.SubscriptionID, task.Model,
-		task.RequestedModel, task.UpstreamModel, task.Endpoint, task.InboundEndpoint, task.UpstreamEndpoint,
-		task.ChannelID, task.ChannelMappedModel, task.BillingModelSource, task.ModelMappingChain,
-		task.RequestFingerprint, task.RequestPayloadHash, task.IdempotencyKeyHash, nullableInt(task.ResponseStatus),
-		task.ResponseContentType, task.ResponseBody, status, nullableInt(task.DurationSeconds), task.Resolution,
-		task.SizeTier, task.BillingMode, mediaType)
+	`, legacyTaskID, publicTaskID, nullableString(upstreamTaskID), task.APIKeyID, task.UserID, task.AccountID,
+		task.GroupID, task.SubscriptionID, task.Model, task.RequestedModel, task.UpstreamModel, task.Endpoint,
+		task.InboundEndpoint, task.UpstreamEndpoint, task.ChannelID, task.ChannelMappedModel,
+		task.BillingModelSource, task.ModelMappingChain, task.RequestFingerprint,
+		task.RequestPayloadHash, task.IdempotencyKeyHash, nullableInt(task.ResponseStatus),
+		task.ResponseContentType, task.ResponseBody, task.UpstreamResultURL, status,
+		nullableInt(task.DurationSeconds), task.Resolution, task.SizeTier, task.BillingMode, mediaType)
 	return err
 }
 
-func (r *usageBillingRepository) UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, status string, durationSeconds int) error {
+func (r *usageBillingRepository) UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, upstreamResultURL, status string, durationSeconds int) error {
 	if r == nil || r.db == nil {
 		return errors.New("usage billing repository db is nil")
 	}
@@ -129,11 +167,13 @@ func (r *usageBillingRepository) UpdateMediaGenerationTaskResponse(ctx context.C
 		SET response_status = COALESCE($3, response_status),
 			response_content_type = COALESCE(NULLIF($4, ''), response_content_type),
 			response_body = COALESCE(NULLIF($5, ''), response_body),
-			status = COALESCE(NULLIF($6, ''), status),
-			duration_seconds = COALESCE($7, duration_seconds),
+			upstream_result_url = COALESCE(NULLIF($6, ''), upstream_result_url),
+			status = COALESCE(NULLIF($7, ''), status),
+			duration_seconds = COALESCE($8, duration_seconds),
 			updated_at = NOW()
-		WHERE api_key_id = $1 AND task_id = $2
-	`, apiKeyID, taskID, nullableInt(responseStatus), strings.TrimSpace(responseContentType), responseBody, status, nullableInt(durationSeconds))
+		WHERE api_key_id = $1 AND public_task_id = $2
+	`, apiKeyID, taskID, nullableInt(responseStatus), strings.TrimSpace(responseContentType), responseBody,
+		strings.TrimSpace(upstreamResultURL), status, nullableInt(durationSeconds))
 	return err
 }
 
@@ -153,43 +193,123 @@ func (r *usageBillingRepository) MarkMediaGenerationTaskTerminal(ctx context.Con
 		UPDATE media_generation_tasks
 		SET status = $3,
 			finalized_at = COALESCE($4, finalized_at),
+			finalization_lease_token = NULL,
+			finalization_lease_until = NULL,
 			finalization_error = NULLIF($5, ''),
 			updated_at = NOW()
-		WHERE api_key_id = $1 AND task_id = $2
+		WHERE api_key_id = $1 AND public_task_id = $2
 	`, apiKeyID, strings.TrimSpace(taskID), status, finalizedAt, strings.TrimSpace(finalizationError))
 	return err
 }
 
+func (r *usageBillingRepository) TryAcquireMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, errors.New("usage billing repository db is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	leaseToken = strings.TrimSpace(leaseToken)
+	if taskID == "" || leaseToken == "" {
+		return false, nil
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE media_generation_tasks
+		SET finalization_lease_token = $3,
+			finalization_lease_until = $4,
+			finalization_error = NULL,
+			updated_at = NOW()
+		WHERE api_key_id = $1
+		  AND (public_task_id = $2 OR task_id = $2)
+		  AND finalized_at IS NULL
+		  AND usage_recorded_at IS NULL
+		  AND (finalization_lease_until IS NULL OR finalization_lease_until <= NOW())
+	`, apiKeyID, taskID, leaseToken, leaseUntil.UTC())
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func (r *usageBillingRepository) CompleteMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, errors.New("usage billing repository db is nil")
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE media_generation_tasks
+		SET status = $4,
+			usage_recorded_at = NOW(),
+			finalized_at = NOW(),
+			finalization_lease_token = NULL,
+			finalization_lease_until = NULL,
+			finalization_error = NULL,
+			updated_at = NOW()
+		WHERE api_key_id = $1
+		  AND (public_task_id = $2 OR task_id = $2)
+		  AND finalization_lease_token = $3
+		  AND usage_recorded_at IS NULL
+	`, apiKeyID, strings.TrimSpace(taskID), strings.TrimSpace(leaseToken), service.MediaGenerationStatusCompleted)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func (r *usageBillingRepository) ReleaseMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken, finalizationError string) error {
+	if r == nil || r.db == nil {
+		return errors.New("usage billing repository db is nil")
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE media_generation_tasks
+		SET finalization_lease_token = NULL,
+			finalization_lease_until = NULL,
+			finalization_error = NULLIF($4, ''),
+			updated_at = NOW()
+		WHERE api_key_id = $1
+		  AND (public_task_id = $2 OR task_id = $2)
+		  AND finalization_lease_token = $3
+	`, apiKeyID, strings.TrimSpace(taskID), strings.TrimSpace(leaseToken), strings.TrimSpace(finalizationError))
+	return err
+}
+
 const mediaGenerationTaskSelectSQL = `
-	SELECT id, task_id, api_key_id, user_id, account_id, group_id, subscription_id, model,
-		requested_model, upstream_model, endpoint, inbound_endpoint, upstream_endpoint,
-		channel_id, channel_mapped_model, billing_model_source, model_mapping_chain,
-		request_fingerprint, request_payload_hash, idempotency_key_hash, response_status,
-		response_content_type, response_body, status, duration_seconds, resolution,
-		size_tier, billing_mode, media_type, finalized_at, finalization_error, created_at, updated_at
+	SELECT id, task_id, public_task_id, upstream_task_id, api_key_id, user_id, account_id,
+		group_id, subscription_id, model, requested_model, upstream_model, endpoint,
+		inbound_endpoint, upstream_endpoint, channel_id, channel_mapped_model,
+		billing_model_source, model_mapping_chain, request_fingerprint,
+		request_payload_hash, idempotency_key_hash, response_status,
+		response_content_type, response_body, upstream_result_url, status, duration_seconds,
+		resolution, size_tier, billing_mode, media_type, finalized_at, finalization_lease_token,
+		finalization_lease_until, usage_recorded_at, finalization_error, created_at, updated_at
 	FROM media_generation_tasks
 `
 
 func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error) {
 	var task service.MediaGenerationTask
+	var publicTaskID, upstreamTaskID sql.NullString
 	var groupID, subID, channelID sql.NullInt64
 	var requestedModel, upstreamModel, endpoint, inboundEndpoint, upstreamEndpoint sql.NullString
 	var channelMappedModel, billingModelSource, mappingChain sql.NullString
-	var payloadHash, idempotencyHash, responseContentType, responseBody sql.NullString
+	var payloadHash, idempotencyHash, responseContentType, responseBody, upstreamResultURL sql.NullString
 	var responseStatus, durationSeconds sql.NullInt64
 	var resolution, sizeTier, billingMode, mediaType, finalizationError sql.NullString
-	var finalizedAt sql.NullTime
+	var finalizedAt, finalizationLeaseUntil, usageRecordedAt sql.NullTime
+	var finalizationLeaseToken sql.NullString
 	err := row.Scan(
-		&task.ID, &task.TaskID, &task.APIKeyID, &task.UserID, &task.AccountID, &groupID, &subID, &task.Model,
-		&requestedModel, &upstreamModel, &endpoint, &inboundEndpoint, &upstreamEndpoint,
-		&channelID, &channelMappedModel, &billingModelSource, &mappingChain,
-		&task.RequestFingerprint, &payloadHash, &idempotencyHash, &responseStatus,
-		&responseContentType, &responseBody, &task.Status, &durationSeconds, &resolution,
-		&sizeTier, &billingMode, &mediaType, &finalizedAt, &finalizationError, &task.CreatedAt, &task.UpdatedAt,
+		&task.ID, &task.TaskID, &publicTaskID, &upstreamTaskID, &task.APIKeyID, &task.UserID, &task.AccountID,
+		&groupID, &subID, &task.Model, &requestedModel, &upstreamModel, &endpoint,
+		&inboundEndpoint, &upstreamEndpoint, &channelID, &channelMappedModel,
+		&billingModelSource, &mappingChain, &task.RequestFingerprint,
+		&payloadHash, &idempotencyHash, &responseStatus,
+		&responseContentType, &responseBody, &upstreamResultURL, &task.Status, &durationSeconds, &resolution,
+		&sizeTier, &billingMode, &mediaType, &finalizedAt, &finalizationLeaseToken,
+		&finalizationLeaseUntil, &usageRecordedAt, &finalizationError, &task.CreatedAt, &task.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	task.PublicTaskID = publicTaskID.String
+	task.UpstreamTaskID = upstreamTaskID.String
 	task.GroupID = nullableInt64Ptr(groupID)
 	task.SubscriptionID = nullableInt64Ptr(subID)
 	task.ChannelID = nullableInt64Ptr(channelID)
@@ -208,6 +328,7 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 	}
 	task.ResponseContentType = responseContentType.String
 	task.ResponseBody = responseBody.String
+	task.UpstreamResultURL = upstreamResultURL.String
 	if durationSeconds.Valid {
 		task.DurationSeconds = int(durationSeconds.Int64)
 	}
@@ -218,8 +339,23 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 	if finalizedAt.Valid {
 		task.FinalizedAt = &finalizedAt.Time
 	}
+	task.FinalizationLeaseToken = finalizationLeaseToken.String
+	if finalizationLeaseUntil.Valid {
+		task.FinalizationLeaseUntil = &finalizationLeaseUntil.Time
+	}
+	if usageRecordedAt.Valid {
+		task.UsageRecordedAt = &usageRecordedAt.Time
+	}
 	task.FinalizationError = finalizationError.String
 	return &task, nil
+}
+
+func nullableString(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func nullableInt(value int) any {

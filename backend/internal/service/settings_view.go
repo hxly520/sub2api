@@ -133,6 +133,7 @@ type SystemSettings struct {
 	APIBaseURL                  string
 	ContactInfo                 string
 	DocURL                      string
+	QQGroupURL                  string
 	HomeContent                 string
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
@@ -288,6 +289,7 @@ type PublicSettings struct {
 	APIBaseURL                       string
 	ContactInfo                      string
 	DocURL                           string
+	QQGroupURL                       string
 	HomeContent                      string
 	HideCcsImportButton              bool
 

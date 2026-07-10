@@ -465,6 +465,9 @@ export default {
     empty: 'No available channels',
     noModels: 'No models configured',
     noPricing: 'Pricing not configured',
+    modelCount: '{count} models',
+    showAllModels: 'Show all {count} models',
+    collapseModels: 'Collapse models',
     exclusive: 'Exclusive',
     public: 'Public',
     exclusiveTooltip: 'Exclusive groups granted to you by an admin',
@@ -488,9 +491,11 @@ export default {
       cacheReadPrice: 'Cache Read',
       imageOutputPrice: 'Image Output',
       perRequestPrice: 'Per Request',
+      videoPrice: 'Video Price',
       intervals: 'Tiered Pricing',
       unitPerMillion: '/ 1M tokens',
-      unitPerRequest: '/ request'
+      unitPerRequest: '/ request',
+      unitPerSecond: '/ second',
     }
   },
 

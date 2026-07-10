@@ -212,6 +212,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		APIBaseURL:                                             settings.APIBaseURL,
 		ContactInfo:                                            settings.ContactInfo,
 		DocURL:                                                 settings.DocURL,
+		QQGroupURL:                                             settings.QQGroupURL,
 		HomeContent:                                            settings.HomeContent,
 		HideCcsImportButton:                                    settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:                            settings.PurchaseSubscriptionEnabled,

@@ -6,7 +6,7 @@ on:
       version:
         description: 'Image version tag to publish'
         required: true
-        default: '0.1.149'
+        default: '0.1.151'
         type: string
       publish_latest:
         description: 'Also publish latest tag'

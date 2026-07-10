@@ -42,6 +42,7 @@
           :no-pricing-label="t('availableChannels.noPricing')"
           :no-models-label="t('availableChannels.noModels')"
           :empty-label="t('availableChannels.empty')"
+          :force-expand-models="searchQuery.trim().length > 0"
         />
       </template>
     </TablePageLayout>

@@ -175,9 +175,19 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		return nil, err
 	}
 
-	// 执行请求
-	resp, err := entry.client.Do(req)
+	// 执行请求。媒体内容代理等敏感场景按请求克隆 Transport，
+	// 将已验证 DNS 结果绑定到实际 DialContext，避免校验后再次解析。
+	client, requestCleanup, err := s.clientForRequest(req, proxyURL, entry)
 	if err != nil {
+		atomic.AddInt64(&entry.inFlight, -1)
+		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		if requestCleanup != nil {
+			requestCleanup()
+		}
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -192,6 +202,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
 	resp.Body = wrapTrackedBody(resp.Body, func() {
+		if requestCleanup != nil {
+			requestCleanup()
+		}
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 	})
@@ -206,6 +219,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	if profile == nil {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
+	}
+	if req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context()) {
+		return nil, errors.New("resolved-ip pinning is unavailable with TLS fingerprint transport")
 	}
 	upstreamProfile := service.HTTPUpstreamProfileDefault
 	if req != nil {
@@ -232,7 +248,15 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		return nil, err
 	}
 
-	resp, err := entry.client.Do(req)
+	client := entry.client
+	if req != nil && service.HTTPUpstreamRedirectsDisabled(req.Context()) {
+		clientCopy := *entry.client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
@@ -346,6 +370,94 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	return entry, nil
 }
 
+func (s *httpUpstreamService) clientForRequest(req *http.Request, proxyURL string, entry *upstreamClientEntry) (*http.Client, func(), error) {
+	if entry == nil || entry.client == nil {
+		return nil, nil, errors.New("upstream client is unavailable")
+	}
+
+	client := entry.client
+	var cleanup func()
+	if req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context()) {
+		if strings.TrimSpace(proxyURL) != "" {
+			return nil, nil, errors.New("resolved-ip pinning requires a direct connection")
+		}
+		if req.URL == nil {
+			return nil, nil, errors.New("request url is nil")
+		}
+		host := strings.TrimSpace(req.URL.Hostname())
+		if host == "" {
+			return nil, nil, errors.New("request host is empty")
+		}
+		ips, err := urlvalidator.ResolvePublicIPs(req.Context(), host)
+		if err != nil {
+			return nil, nil, err
+		}
+		baseTransport, ok := entry.client.Transport.(*http.Transport)
+		if !ok || baseTransport == nil {
+			return nil, nil, errors.New("resolved-ip pinning requires an HTTP transport")
+		}
+		transport := baseTransport.Clone()
+		transport.Proxy = nil
+		transport.DialTLS = nil
+		transport.DialTLSContext = nil
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		transport.DialContext = pinnedDialContext(host, ips, dialer.DialContext)
+		clientCopy := *entry.client
+		clientCopy.Transport = transport
+		client = &clientCopy
+		cleanup = transport.CloseIdleConnections
+	}
+
+	if req != nil && service.HTTPUpstreamRedirectsDisabled(req.Context()) {
+		clientCopy := *client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
+	return client, cleanup, nil
+}
+
+type dialContextFunc func(context.Context, string, string) (net.Conn, error)
+
+func pinnedDialContext(expectedHost string, ips []net.IP, dial dialContextFunc) dialContextFunc {
+	expectedHost = strings.TrimSpace(expectedHost)
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dial address: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(host), expectedHost) {
+			return nil, fmt.Errorf("unexpected dial host %q", host)
+		}
+		if len(ips) == 0 {
+			return nil, errors.New("no validated dial addresses")
+		}
+		if dial == nil {
+			return nil, errors.New("dialer is unavailable")
+		}
+
+		var lastErr error
+		for _, ip := range ips {
+			if err := urlvalidator.ValidatePublicIP(ip); err != nil {
+				return nil, err
+			}
+			conn, dialErr := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+			if ctx != nil && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+		}
+		if lastErr == nil {
+			lastErr = errors.New("all validated dial addresses failed")
+		}
+		return nil, lastErr
+	}
+}
+
 func (s *httpUpstreamService) shouldValidateResolvedIP() bool {
 	if s.cfg == nil {
 		return false
@@ -357,7 +469,8 @@ func (s *httpUpstreamService) shouldValidateResolvedIP() bool {
 }
 
 func (s *httpUpstreamService) validateRequestHost(req *http.Request) error {
-	if !s.shouldValidateResolvedIP() {
+	forceValidation := req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context())
+	if !forceValidation && !s.shouldValidateResolvedIP() {
 		return nil
 	}
 	if req == nil || req.URL == nil {

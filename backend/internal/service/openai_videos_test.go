@@ -24,7 +24,7 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 	writer := multipart.NewWriter(&buf)
 	require.NoError(t, writer.WriteField("model", "sora-public"))
 	require.NoError(t, writer.WriteField("prompt", "waves"))
-	require.NoError(t, writer.WriteField("seconds", "6"))
+	require.NoError(t, writer.WriteField("seconds", "8"))
 	part, err := writer.CreateFormFile("input_reference[]", "ref.png")
 	require.NoError(t, err)
 	_, _ = part.Write([]byte("png"))
@@ -72,7 +72,8 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 	require.Equal(t, "sora-public", result.Model)
 	require.Equal(t, "sora-upstream", result.UpstreamModel)
 	require.Equal(t, "sora-upstream", result.BillingModel)
-	require.Equal(t, 1, result.ImageCount)
+	require.Zero(t, result.ImageCount)
+	require.Equal(t, 1, result.VideoCount)
 
 	upstreamReader := multipart.NewReader(bytes.NewReader(upstream.lastBody), strings.TrimPrefix(strings.Split(upstream.lastReq.Header.Get("Content-Type"), "boundary=")[1], `"`))
 	foundModel := ""
@@ -89,14 +90,14 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 		_ = part.Close()
 	}
 	require.Equal(t, "sora-upstream", foundModel)
-	require.JSONEq(t, `{"id":"video-task-123","status":"queued","usage":{"input_tokens":2,"output_tokens":0}}`, recorder.Body.String())
+	require.Empty(t, recorder.Body.String())
 }
 
 func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
 
-	body := []byte(`{"model":"119337-grok-video","prompt":"city","duration":5}`)
+	body := []byte(`{"model":"119337-grok-video","prompt":"city","duration":6}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(body))
@@ -128,14 +129,15 @@ func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T)
 	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "video-request-456", result.ResponseID)
-	require.Equal(t, 1, result.ImageCount)
+	require.Zero(t, result.ImageCount)
+	require.Equal(t, 1, result.VideoCount)
 }
 
 func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
 
-	body := []byte(`{"model":"grok-imagine-video-1.5","prompt":"city","seconds":6}`)
+	body := []byte(`{"model":"grok-imagine-video-1.5","prompt":"city","seconds":6,"image_url":"https://images.test/ref.png","aspect_ratio":"16:9","resolution":"720p"}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(body))
@@ -165,10 +167,11 @@ func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testin
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/videos/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "grok-video-request-789", result.ResponseID)
-	require.Equal(t, 1, result.ImageCount)
+	require.Zero(t, result.ImageCount)
+	require.Equal(t, 1, result.VideoCount)
 }
 
 func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
@@ -212,10 +215,13 @@ func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
 	require.Equal(t, localOpenAIVideoSynchronousTaskID("sync-upstream-req", responseBody), result.ResponseID)
 	require.Equal(t, MediaGenerationStatusCompleted, result.VideoStatus)
 	require.Equal(t, 8, result.MediaDurationSeconds)
-	require.Equal(t, 1, result.ImageCount)
+	require.Zero(t, result.ImageCount)
+	require.Equal(t, 1, result.VideoCount)
 	require.JSONEq(t, string(responseBody), string(result.ResponseBody))
-	require.NotContains(t, recorder.Body.String(), "https://cdn.test/video.mp4")
-	require.JSONEq(t, `{"video_url":"/v1/videos/`+result.ResponseID+`/content","duration":8}`, recorder.Body.String())
+	require.Empty(t, recorder.Body.String())
+	rewritten := RewriteOpenAIVideoClientResponseBody(result.ResponseBody, "video-public-123")
+	require.NotContains(t, string(rewritten), "https://cdn.test/video.mp4")
+	require.JSONEq(t, `{"id":"video-public-123","video_url":"/v1/videos/video-public-123/content","duration":8}`, string(rewritten))
 }
 
 func TestOpenAIVideoHasResultURLSupportsNestedOutput(t *testing.T) {
@@ -318,7 +324,7 @@ func TestOpenAIVideoTaskExtractorsSupportNestedTaskShapes(t *testing.T) {
 	require.Equal(t, 12, extractOpenAIVideoDurationSeconds(body))
 }
 
-func TestForwardOpenAIVideoContentTaskUsesVersionedPlanBaseURL(t *testing.T) {
+func TestForwardOpenAIVideoLegacyContentTaskUsesRelayVideosPath(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
 
@@ -354,10 +360,11 @@ func TestForwardOpenAIVideoContentTaskUsesVersionedPlanBaseURL(t *testing.T) {
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/api/plan/v3/contents/generations/tasks", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/api/plan/v3/videos", upstream.lastReq.URL.String())
 	require.JSONEq(t, `{"model":"seedance-upstream","prompt":"city","stream":false}`, string(upstream.lastBody))
 	require.Equal(t, "plan-task-789", result.ResponseID)
-	require.Equal(t, 1, result.ImageCount)
+	require.Zero(t, result.ImageCount)
+	require.Equal(t, 1, result.VideoCount)
 }
 
 func TestForwardOpenAIVideoStatusAndContentUseGETWithoutBillingUnit(t *testing.T) {
@@ -393,7 +400,8 @@ func TestForwardOpenAIVideoStatusAndContentUseGETWithoutBillingUnit(t *testing.T
 	require.Equal(t, http.MethodGet, statusUpstream.lastReq.Method)
 	require.Empty(t, statusUpstream.lastBody)
 	require.Zero(t, result.ImageCount)
-	require.JSONEq(t, `{"id":"video-task-123","status":"completed"}`, statusRecorder.Body.String())
+	require.Empty(t, statusRecorder.Body.String())
+	require.JSONEq(t, `{"id":"video-task-123","status":"completed"}`, string(result.ResponseBody))
 
 	contentRecorder := httptest.NewRecorder()
 	contentCtx, _ := gin.CreateTestContext(contentRecorder)
@@ -427,4 +435,340 @@ func TestOpenAIVideoTaskSessionHashAndBind(t *testing.T) {
 	accountID, err := svc.getStickySessionAccountID(ctx, &groupID, hash)
 	require.NoError(t, err)
 	require.Equal(t, int64(73), accountID)
+}
+
+func TestOpenAIVideoUseUpstreamTaskIDPrefersStoredProtocol(t *testing.T) {
+	req := &OpenAIVideoRequest{
+		Endpoint:       openAIVideosEndpoint,
+		Model:          "opaque-upstream-model",
+		ContentRequest: true,
+	}
+
+	err := req.UseUpstreamTaskIDAtEndpoint("provider-task-123", openAIVideoGenerationsEndpoint)
+	require.NoError(t, err)
+	require.Equal(t, "/v1/video/generations/provider-task-123/content", req.UpstreamPath)
+}
+
+func TestOpenAIVideoUseUpstreamTaskIDRejectsUnknownStoredProtocol(t *testing.T) {
+	req := &OpenAIVideoRequest{Endpoint: openAIVideosEndpoint, Model: "seedance-2.0"}
+
+	err := req.UseUpstreamTaskIDAtEndpoint("provider-task-123", "https://unexpected.example/private")
+	require.NoError(t, err)
+	require.Equal(t, "/v1/videos/provider-task-123", req.UpstreamPath)
+}
+
+func TestParseOpenAIVideoRequestRejectsAmbiguousEndpointPaths(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"model":"seedance-pro","prompt":"city","duration":6}`)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "similar prefix", method: http.MethodPost, path: "/v1/videos-evil"},
+		{name: "duplicate separator", method: http.MethodGet, path: "/v1/videos//task-123"},
+		{name: "extra segment", method: http.MethodGet, path: "/v1/videos/task-123/content/extra"},
+		{name: "unsupported method", method: http.MethodDelete, path: "/v1/videos/task-123"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(tt.method, tt.path, bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			_, err := svc.ParseOpenAIVideoRequest(c, body)
+			require.Error(t, err)
+		})
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task-123/", nil)
+	parsed, err := svc.ParseOpenAIVideoRequest(c, nil)
+	require.NoError(t, err)
+	require.Equal(t, "task-123", parsed.RequestID)
+}
+
+func TestParseOpenAIVideoRequestRejectsStreamingGeneration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"seedance-pro","prompt":"city","stream":true}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	_, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body)
+	require.EqualError(t, err, "streaming video generation is not supported")
+}
+
+func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
+	tests := []struct {
+		name    string
+		request OpenAIVideoRequest
+		wantErr string
+	}{
+		{name: "grok valid", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 15}},
+		{name: "grok invalid duration", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 7}, wantErr: "duration"},
+		{name: "grok multi image too long", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 12, ReferenceImageCount: 2}, wantErr: "multi-image"},
+		{name: "grok 1.5 missing image", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, AspectRatio: "16:9", Resolution: "720p"}, wantErr: "exactly one"},
+		{name: "grok 1.5 invalid ratio", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "1:1", Resolution: "720p"}, wantErr: "aspect_ratio"},
+		{name: "grok 1.5 invalid resolution", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "16:9", Resolution: "1080p"}, wantErr: "resolution"},
+		{name: "grok 1.5 valid", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "9:16", Resolution: "480p"}},
+		{name: "seedance invalid duration", request: OpenAIVideoRequest{Model: "seedance-2.0", DurationSeconds: 16}, wantErr: "between 4 and 15"},
+		{name: "seedance invalid resolution", request: OpenAIVideoRequest{Model: "seedance-2.0", DurationSeconds: 6, Resolution: "360p"}, wantErr: "resolution"},
+		{name: "seedance per-second valid 4k", request: OpenAIVideoRequest{Model: "seedance-2.0-4k", DurationSeconds: 6, Resolution: "4K"}},
+		{name: "omni v2v missing video", request: OpenAIVideoRequest{Model: "omni-v2v"}, wantErr: "exactly one"},
+		{name: "omni v2v multiple videos", request: OpenAIVideoRequest{Model: "omni-v2v", ReferenceVideoCount: 2}, wantErr: "exactly one"},
+		{name: "omni v2v valid", request: OpenAIVideoRequest{Model: "omni-v2v", ReferenceVideoCount: 1}},
+		{name: "omni too many images", request: OpenAIVideoRequest{Model: "omni-fast", ReferenceImageCount: 6}, wantErr: "at most five"},
+		{name: "sora invalid duration", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 10}, wantErr: "8 or 12"},
+		{name: "sora invalid size", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 8, Size: "1920x1080"}, wantErr: "size"},
+		{name: "sora too many images", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 8, Size: "1280x720", ReferenceImageCount: 2}, wantErr: "at most one"},
+		{name: "sora valid", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 12, Size: "720x1280", ReferenceImageCount: 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateOpenAIVideoModelRequest(&tt.request)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestParseOpenAIVideoRequestValidatesJSONProtocolProfiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name: "grok accepts seven images",
+			body: `{"model":"grok-video","duration":10,"resolution":"720p","image_urls":["1","2","3","4","5","6","7"]}`,
+		},
+		{
+			name:    "grok rejects eight images",
+			body:    `{"model":"grok-video","duration":10,"image_urls":["1","2","3","4","5","6","7","8"]}`,
+			wantErr: "at most seven",
+		},
+		{
+			name:    "grok 1.5 rejects video reference",
+			body:    `{"model":"grok-imagine-video-1.5","duration":6,"resolution":"720p","aspect_ratio":"16:9","image_url":"image","video_url":"video"}`,
+			wantErr: "does not accept a video reference",
+		},
+		{
+			name: "seedance per-second suffix accepts 4k",
+			body: `{"model":"seedance-2.0-4k","duration":15,"resolution":"4k","image_urls":["1","2","3","4","5","6","7","8","9"],"audio_urls":["1","2","3"]}`,
+		},
+		{
+			name:    "seedance standard rejects unpaired frame",
+			body:    `{"model":"seedance-2.0","duration":6,"resolution":"720p","first_frame_url":"image"}`,
+			wantErr: "must be provided together",
+		},
+		{
+			name:    "seedance standard rejects frames with other references",
+			body:    `{"model":"seedance-2.0","duration":6,"resolution":"720p","first_frame_url":"first","last_frame_url":"last","audio_url":"audio"}`,
+			wantErr: "cannot be combined",
+		},
+		{
+			name: "omni root profile accepts one image",
+			body: `{"model":"omni-fast","duration":10,"resolution":"720p","aspect_ratio":"16:9","image_url":"image"}`,
+		},
+		{
+			name: "sora accepts documented shape",
+			body: `{"model":"sora-2","seconds":12,"size":"1024x1024","input_reference":"image"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(tt.body)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+		})
+	}
+}
+
+func TestParseOpenAIVideoRequestAcceptsOmniMultipartInputReferenceArray(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "omni-fast"))
+	require.NoError(t, writer.WriteField("duration", "10"))
+	require.NoError(t, writer.WriteField("resolution", "720p"))
+	require.NoError(t, writer.WriteField("aspect_ratio", "16:9"))
+	for _, name := range []string{"first.png", "second.png"} {
+		part, err := writer.CreateFormFile("input_reference[]", name)
+		require.NoError(t, err)
+		_, err = part.Write([]byte("png"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, 2, parsed.ReferenceImageCount)
+	require.Equal(t, 2, parsed.InputReferenceFileCount)
+}
+
+func TestForwardOpenAIVideoRequiresConfiguredAccountBaseURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"seedance-pro","prompt":"city","duration":6}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	svc := &OpenAIGatewayService{httpUpstream: &httpUpstreamRecorder{}}
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	_, err = svc.ForwardVideo(context.Background(), c, &Account{
+		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "secret"},
+	}, parsed, "")
+	require.ErrorContains(t, err, "base_url is required")
+	require.Empty(t, recorder.Body.String())
+}
+
+func TestForwardOpenAIVideoRejectsNilUpstreamResponse(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"seedance-pro","prompt":"city","duration":6}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	svc := &OpenAIGatewayService{httpUpstream: &httpUpstreamRecorder{}}
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	_, err = svc.ForwardVideo(context.Background(), c, &Account{
+		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "secret",
+			"base_url": "https://video-upstream.test/v1",
+		},
+	}, parsed, "")
+	require.EqualError(t, err, "video upstream response is unavailable")
+	require.Empty(t, recorder.Body.String())
+}
+
+func TestForwardOpenAIVideoUpstreamErrorDoesNotWriteProviderDetails(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"seedance-pro","prompt":"city","duration":6}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header: http.Header{
+			"Location":     []string{"https://upstream.test/private/task"},
+			"X-Request-Id": []string{"upstream-request-id"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"error":{"message":"https://upstream.test/v1/videos upstream-task-id"}}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	_, err = svc.ForwardVideo(context.Background(), c, &Account{
+		ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "secret", "base_url": "https://video-upstream.test/v1"},
+	}, parsed, "")
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "upstream.test")
+	require.NotContains(t, err.Error(), "upstream-task-id")
+	require.Empty(t, recorder.Body.String())
+	require.Empty(t, recorder.Header().Get("Location"))
+	require.Empty(t, recorder.Header().Get("X-Request-Id"))
+}
+
+func TestRewriteOpenAIVideoClientResponseBodyAddsPublicIDAndRewritesRawData(t *testing.T) {
+	body := []byte(`{"status":"succeeded","raw_data":{"video_url":"https://cdn.test/private.mp4"},"data":{"raw_data":{"content_url":"https://cdn.test/private-2.mp4"}}}`)
+	rewritten := RewriteOpenAIVideoClientResponseBody(body, "video-public-123")
+
+	require.Equal(t, "video-public-123", gjson.GetBytes(rewritten, "id").String())
+	require.Equal(t, "/v1/videos/video-public-123/content", gjson.GetBytes(rewritten, "raw_data.video_url").String())
+	require.Equal(t, "/v1/videos/video-public-123/content", gjson.GetBytes(rewritten, "data.raw_data.content_url").String())
+	require.NotContains(t, string(rewritten), "cdn.test")
+}
+
+func TestRewriteOpenAIVideoClientResponseBodyUsesPublicBaseURL(t *testing.T) {
+	body := []byte(`{"id":"upstream-task","data":{"result_url":"https://signed.upstream.test/video.mp4"}}`)
+
+	rewritten := RewriteOpenAIVideoClientResponseBodyWithBaseURL(
+		body,
+		"video-public-123",
+		"https://api.52token.example/v1",
+		"upstream-task",
+	)
+
+	require.Equal(t, "video-public-123", gjson.GetBytes(rewritten, "id").String())
+	require.Equal(t, "https://api.52token.example/v1/videos/video-public-123/content", gjson.GetBytes(rewritten, "data.result_url").String())
+	require.NotContains(t, string(rewritten), "signed.upstream.test")
+	require.NotContains(t, string(rewritten), "upstream-task")
+}
+
+func TestRewriteOpenAIVideoClientResponseBodyRejectsUnsafePublicBaseURL(t *testing.T) {
+	body := []byte(`{"video_url":"https://signed.upstream.test/video.mp4"}`)
+
+	rewritten := RewriteOpenAIVideoClientResponseBodyWithBaseURL(body, "video-public-123", "javascript:alert(1)")
+
+	require.Equal(t, "/v1/videos/video-public-123/content", gjson.GetBytes(rewritten, "video_url").String())
+}
+
+func TestStreamOpenAIVideoTaskContentRejectsUnsafeMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name   string
+		header http.Header
+	}{
+		{name: "unsupported mime", header: http.Header{"Content-Type": []string{"text/html"}}},
+		{name: "oversized content length", header: http.Header{"Content-Type": []string{"video/mp4"}, "Content-Length": []string{"4294967297"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/video-public/content", nil)
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     tt.header,
+				Body:       io.NopCloser(strings.NewReader("provider-body")),
+			}}
+			svc := &OpenAIGatewayService{httpUpstream: upstream}
+			handled, err := svc.StreamOpenAIVideoTaskContent(context.Background(), c, &MediaGenerationTask{
+				PublicTaskID: "video-public",
+				AccountID:    7,
+				ResponseBody: `{"video_url":"https://cdn.test/private.mp4"}`,
+			})
+			require.True(t, handled)
+			require.Error(t, err)
+			require.Empty(t, recorder.Body.String())
+			require.True(t, HTTPUpstreamRedirectsDisabled(upstream.lastReq.Context()))
+		})
+	}
 }

@@ -26,6 +26,18 @@
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
+        <!-- QQ Group Link -->
+        <a
+          v-if="qqGroupUrl"
+          :href="qqGroupUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+        >
+          <Icon name="users" size="sm" />
+          <span class="hidden sm:inline">{{ t('nav.joinQQGroup') }}</span>
+        </a>
+
         <!-- Docs Link -->
         <a
           v-if="docUrl"
@@ -263,6 +275,7 @@ const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
+const qqGroupUrl = computed(() => sanitizeUrl(appStore.qqGroupUrl))
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))

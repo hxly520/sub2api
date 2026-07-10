@@ -105,24 +105,83 @@ func ValidateHTTPSURL(raw string, opts ValidationOptions) (string, error) {
 	return ValidateHTTPURL(raw, false, opts)
 }
 
-// ValidateResolvedIP 验证 DNS 解析后的 IP 地址是否安全
-// 用于防止 DNS Rebinding 攻击：在实际 HTTP 请求时调用此函数验证解析后的 IP
+var carrierGradeNAT = &net.IPNet{
+	IP:   net.IPv4(100, 64, 0, 0),
+	Mask: net.CIDRMask(10, 32),
+}
+
+// ResolvePublicIPs resolves host once and returns only addresses that are safe
+// for an outbound public HTTP request. Callers that need DNS-rebinding
+// protection must dial one of the returned IPs directly rather than resolving
+// host again inside net/http.
+func ResolvePublicIPs(ctx context.Context, host string) ([]net.IP, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return nil, errors.New("host is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if literal := net.ParseIP(host); literal != nil {
+		if err := ValidatePublicIP(literal); err != nil {
+			return nil, err
+		}
+		return []net.IP{literal}, nil
+	}
+
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("dns resolution failed: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, errors.New("dns resolution returned no addresses")
+	}
+
+	ips := make([]net.IP, 0, len(addresses))
+	seen := make(map[string]struct{}, len(addresses))
+	for _, address := range addresses {
+		ip := address.IP
+		if err := ValidatePublicIP(ip); err != nil {
+			// Reject mixed public/private answers as a whole. Selecting only the
+			// public entries would let an attacker race later resolutions.
+			return nil, err
+		}
+		key := ip.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("dns resolution returned no usable addresses")
+	}
+	return ips, nil
+}
+
+// ValidatePublicIP rejects local, private, metadata/link-local, multicast,
+// unspecified and carrier-grade NAT destinations.
+func ValidatePublicIP(ip net.IP) error {
+	if ip == nil {
+		return errors.New("resolved ip is invalid")
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() ||
+		carrierGradeNAT.Contains(ip) {
+		return fmt.Errorf("resolved ip %s is not allowed", ip.String())
+	}
+	return nil
+}
+
+// ValidateResolvedIP validates DNS answers for compatibility with existing
+// call sites. Security-sensitive callers should use ResolvePublicIPs and bind
+// the returned addresses to their actual DialContext.
 func ValidateResolvedIP(host string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
-		return fmt.Errorf("dns resolution failed: %w", err)
-	}
-
-	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-			return fmt.Errorf("resolved ip %s is not allowed", ip.String())
-		}
-	}
-	return nil
+	_, err := ResolvePublicIPs(ctx, host)
+	return err
 }
 
 func normalizeAllowlist(values []string) []string {

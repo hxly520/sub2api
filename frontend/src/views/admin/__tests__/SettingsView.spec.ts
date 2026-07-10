@@ -180,6 +180,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
+    "admin.settings.site.qqGroupUrlInvalid": "加入 Q 群链接格式不正确",
     "admin.settings.platformQuota.platform": "平台",
     "admin.settings.platformQuota.daily": "日限额 (USD)",
     "admin.settings.platformQuota.weekly": "周限额 (USD)",
@@ -324,6 +325,7 @@ const baseSettingsResponse = {
   api_base_url: "",
   contact_info: "",
   doc_url: "",
+  qq_group_url: "",
   home_content: "",
   hide_ccs_import_button: false,
   table_default_page_size: 20,
@@ -833,6 +835,36 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(paymentHelpImageUpload).toBeDefined();
     expect(paymentHelpImageUpload?.attributes("data-upload-label")).toBe("上传图片");
     expect(paymentHelpImageUpload?.attributes("data-remove-label")).toBe("移除");
+  });
+
+  it("trims and submits the configured QQ group URL", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="qq-group-url-input"]').setValue(
+      "  https://qm.qq.com/cgi-bin/qm/qr?k=frontend  ",
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings.mock.calls[0]?.[0]).toMatchObject({
+      qq_group_url: "https://qm.qq.com/cgi-bin/qm/qr?k=frontend",
+    });
+  });
+
+  it("rejects unsafe QQ group protocols before calling the backend", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="qq-group-url-input"]')
+      .setValue("javascript:alert(1)");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith("加入 Q 群链接格式不正确");
   });
 
   it("normalizes null supported_types from API so provider card stays visible", async () => {

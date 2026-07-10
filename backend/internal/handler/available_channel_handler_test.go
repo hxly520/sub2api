@@ -177,3 +177,108 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Len(t, sections[0].SupportedModels, 1)
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
 }
+
+func TestBuildPlatformSections_UsesOnlyVisibleGroupModels(t *testing.T) {
+	ch := service.AvailableChannel{
+		Name: "video-channel",
+		SupportedModels: []service.SupportedModel{
+			{Name: "public-seedance", Platform: "openai"},
+			{Name: "private-grok", Platform: "openai"},
+		},
+		SupportedModelsByGroup: map[int64][]service.SupportedModel{
+			10: {{Name: "public-seedance", Platform: "openai"}},
+			20: {{Name: "private-grok", Platform: "openai"}},
+		},
+	}
+
+	sections := buildPlatformSections(ch, []userAvailableGroup{
+		{ID: 10, Name: "visible", Platform: "openai"},
+	})
+
+	require.Len(t, sections, 1)
+	require.Equal(t, []userSupportedModel{
+		{Name: "public-seedance", Platform: "openai", Pricing: nil},
+	}, sections[0].SupportedModels)
+}
+
+func TestVisibleGroupSupportedModels_DoesNotFallbackWhenSnapshotExists(t *testing.T) {
+	ch := service.AvailableChannel{
+		SupportedModels: []service.SupportedModel{
+			{Name: "channel-wide-private-model", Platform: "openai"},
+		},
+		SupportedModelsByGroup: map[int64][]service.SupportedModel{
+			99: {{Name: "other-group-model", Platform: "openai"}},
+		},
+	}
+
+	models := visibleGroupSupportedModels(
+		ch,
+		[]userAvailableGroup{{ID: 10, Platform: "openai"}},
+		"openai",
+	)
+	require.Empty(t, models)
+}
+
+func TestUserAvailableChannel_ResponseDoesNotExposeUpstreamMetadata(t *testing.T) {
+	row := userAvailableChannel{
+		Name:        "video-channel",
+		Description: "public description",
+		Platforms: []userChannelPlatformSection{{
+			Platform: "openai",
+			Groups: []userAvailableGroup{{
+				ID:       10,
+				Name:     "video",
+				Platform: "openai",
+			}},
+			SupportedModels: []userSupportedModel{{
+				Name:     "grok-video",
+				Platform: "openai",
+				Pricing: &userSupportedModelPricing{
+					BillingMode: string(service.BillingModeVideo),
+				},
+			}},
+		}},
+	}
+
+	raw, err := json.Marshal(row)
+	require.NoError(t, err)
+	payload := string(raw)
+	for _, forbiddenValue := range []string{
+		"https://upstream.example.internal/v1/videos",
+		"provider/internal/grok-video-v3",
+		"Bearer upstream-secret",
+	} {
+		require.NotContains(t, payload, forbiddenValue)
+	}
+
+	var decoded any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	assertNoForbiddenUserChannelKeys(t, decoded)
+}
+
+func assertNoForbiddenUserChannelKeys(t *testing.T, value any) {
+	t.Helper()
+	forbidden := map[string]struct{}{
+		"credentials":          {},
+		"base_url":             {},
+		"upstream_url":         {},
+		"upstream_model":       {},
+		"model_mapping":        {},
+		"account_id":           {},
+		"auth_header":          {},
+		"billing_model_source": {},
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			_, denied := forbidden[key]
+			require.Falsef(t, denied, "user DTO must not expose %q", key)
+			assertNoForbiddenUserChannelKeys(t, child)
+		}
+	case []any:
+		for _, child := range typed {
+			assertNoForbiddenUserChannelKeys(t, child)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -196,14 +197,50 @@ func buildPlatformSections(
 
 	sections := make([]userChannelPlatformSection, 0, len(platforms))
 	for _, platform := range platforms {
-		platformSet := map[string]struct{}{platform: {}}
+		platformGroups := groupsByPlatform[platform]
 		sections = append(sections, userChannelPlatformSection{
 			Platform:        platform,
-			Groups:          groupsByPlatform[platform],
-			SupportedModels: toUserSupportedModels(ch.SupportedModels, platformSet),
+			Groups:          platformGroups,
+			SupportedModels: visibleGroupSupportedModels(ch, platformGroups, platform),
 		})
 	}
 	return sections
+}
+
+// visibleGroupSupportedModels 只合并当前用户实际可见分组对应的模型快照。
+//
+// SupportedModelsByGroup 由 service 层按分组聚合账号公开别名。只要该快照存在，
+// 就不能回退到渠道全量 SupportedModels，否则同平台下其他专属分组独有的账号模型
+// 会被串给当前用户。手工构造的旧测试数据没有快照时，保留原全量列表兼容行为。
+func visibleGroupSupportedModels(
+	ch service.AvailableChannel,
+	visibleGroups []userAvailableGroup,
+	platform string,
+) []userSupportedModel {
+	platformSet := map[string]struct{}{platform: {}}
+	if len(ch.SupportedModelsByGroup) == 0 {
+		return toUserSupportedModels(ch.SupportedModels, platformSet)
+	}
+
+	models := make([]service.SupportedModel, 0)
+	seen := make(map[string]struct{})
+	for _, group := range visibleGroups {
+		for _, model := range ch.SupportedModelsByGroup[group.ID] {
+			if model.Platform != platform {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(model.Platform)) + "\x00" + strings.ToLower(strings.TrimSpace(model.Name))
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			models = append(models, model)
+		}
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return toUserSupportedModels(models, platformSet)
 }
 
 // filterUserVisibleGroups 仅保留用户可访问的分组。

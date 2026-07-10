@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	MediaGenerationStatusCreating  = "creating"
 	MediaGenerationStatusPending   = "pending"
 	MediaGenerationStatusRunning   = "running"
 	MediaGenerationStatusCompleted = "completed"
@@ -19,39 +20,47 @@ const (
 )
 
 type MediaGenerationTask struct {
-	ID                  int64
-	TaskID              string
-	APIKeyID            int64
-	UserID              int64
-	AccountID           int64
-	GroupID             *int64
-	SubscriptionID      *int64
-	Model               string
-	RequestedModel      string
-	UpstreamModel       string
-	Endpoint            string
-	InboundEndpoint     string
-	UpstreamEndpoint    string
-	ChannelID           *int64
-	ChannelMappedModel  string
-	BillingModelSource  string
-	ModelMappingChain   string
-	RequestFingerprint  string
-	RequestPayloadHash  string
-	IdempotencyKeyHash  string
-	ResponseStatus      int
-	ResponseContentType string
-	ResponseBody        string
-	Status              string
-	DurationSeconds     int
-	Resolution          string
-	SizeTier            string
-	BillingMode         string
-	MediaType           string
-	FinalizedAt         *time.Time
-	FinalizationError   string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	ID int64
+	// TaskID remains the legacy lookup key. New rows store the public task ID
+	// here as well, while migrated rows retain their historical identifier.
+	TaskID                 string
+	PublicTaskID           string
+	UpstreamTaskID         string
+	APIKeyID               int64
+	UserID                 int64
+	AccountID              int64
+	GroupID                *int64
+	SubscriptionID         *int64
+	Model                  string
+	RequestedModel         string
+	UpstreamModel          string
+	Endpoint               string
+	InboundEndpoint        string
+	UpstreamEndpoint       string
+	ChannelID              *int64
+	ChannelMappedModel     string
+	BillingModelSource     string
+	ModelMappingChain      string
+	RequestFingerprint     string
+	RequestPayloadHash     string
+	IdempotencyKeyHash     string
+	ResponseStatus         int
+	ResponseContentType    string
+	ResponseBody           string
+	UpstreamResultURL      string
+	Status                 string
+	DurationSeconds        int
+	Resolution             string
+	SizeTier               string
+	BillingMode            string
+	MediaType              string
+	FinalizedAt            *time.Time
+	FinalizationLeaseToken string
+	FinalizationLeaseUntil *time.Time
+	UsageRecordedAt        *time.Time
+	FinalizationError      string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type MediaGenerationTaskRepository interface {
@@ -59,8 +68,37 @@ type MediaGenerationTaskRepository interface {
 	GetMediaGenerationTaskByIdempotency(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (*MediaGenerationTask, error)
 	AcquireMediaGenerationIdempotencyLock(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (func(), error)
 	CreateMediaGenerationTask(ctx context.Context, task *MediaGenerationTask) error
-	UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, status string, durationSeconds int) error
+	UpdateMediaGenerationTaskResponse(ctx context.Context, apiKeyID int64, taskID string, responseStatus int, responseContentType, responseBody, upstreamResultURL, status string, durationSeconds int) error
 	MarkMediaGenerationTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error
+	TryAcquireMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error)
+	CompleteMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string) (bool, error)
+	ReleaseMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken, finalizationError string) error
+}
+
+func (t *MediaGenerationTask) ClientTaskID() string {
+	if t == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(t.PublicTaskID); value != "" {
+		return value
+	}
+	return strings.TrimSpace(t.TaskID)
+}
+
+func (t *MediaGenerationTask) ProviderTaskID() string {
+	if t == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(t.UpstreamTaskID); value != "" {
+		return value
+	}
+	// Only pre-migration legacy rows may use task_id as the provider ID. New
+	// rows always carry a public_task_id, and creation intents intentionally
+	// have no provider ID until the upstream accepts the request.
+	if strings.TrimSpace(t.PublicTaskID) == "" {
+		return strings.TrimSpace(t.TaskID)
+	}
+	return ""
 }
 
 func HashMediaGenerationIdempotencyKey(key string) string {
@@ -88,6 +126,8 @@ func NormalizeMediaGenerationStatus(status string) string {
 		return MediaGenerationStatusCancelled
 	case "expire", "expired", "timeout", "timed_out":
 		return MediaGenerationStatusExpired
+	case "creating", "initializing", "submitting":
+		return MediaGenerationStatusCreating
 	case "running", "processing", "in_progress", "generating":
 		return MediaGenerationStatusRunning
 	default:

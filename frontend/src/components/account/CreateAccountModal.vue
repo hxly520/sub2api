@@ -3650,7 +3650,8 @@ const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
-const defaultOpenAIEndpointCapabilities: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
+const supportedOpenAIEndpointCapabilities: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
+const defaultOpenAIEndpointCapabilities: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>([...defaultOpenAIEndpointCapabilities])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3738,9 +3739,8 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = defaultOpenAIEndpointCapabilities
-  const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
+  const selected = supportedOpenAIEndpointCapabilities.filter((value) => values.includes(value))
+  return selected.length > 0 ? selected : [...defaultOpenAIEndpointCapabilities]
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
@@ -3766,7 +3766,10 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
 
 const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) => {
   const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === defaultOpenAIEndpointCapabilities.length) {
+  if (
+    capabilities.length === defaultOpenAIEndpointCapabilities.length &&
+    defaultOpenAIEndpointCapabilities.every((capability) => capabilities.includes(capability))
+  ) {
     delete credentials.openai_capabilities
     return
   }

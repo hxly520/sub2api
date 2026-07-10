@@ -221,7 +221,7 @@ func isOpenAICompatibleAccountEligibleForRequest(ctx context.Context, account *A
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
 		return false
 	}
-	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
+	if !account.SupportsOpenAIEndpointCapabilityForModel(requiredCapability, requestedModel) {
 		return false
 	}
 	if requireCompact && (!account.IsOpenAI() || openAICompactSupportTier(account) == 0) {

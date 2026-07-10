@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -133,6 +134,7 @@ type UpdateSettingsRequest struct {
 	APIBaseURL                  string                `json:"api_base_url"`
 	ContactInfo                 string                `json:"contact_info"`
 	DocURL                      string                `json:"doc_url"`
+	QQGroupURL                  string                `json:"qq_group_url"`
 	HomeContent                 string                `json:"home_content"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
@@ -919,11 +921,35 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// QQ 群链接为空时隐藏；非空时必须是绝对 HTTP(S) URL。
+	req.QQGroupURL = strings.TrimSpace(req.QQGroupURL)
+	if req.QQGroupURL != "" {
+		if err := config.ValidateAbsoluteHTTPURL(req.QQGroupURL); err != nil {
+			response.BadRequest(c, "QQ Group URL must be an absolute http(s) URL")
+			return
+		}
+	}
+
 	// Frontend URL 验证
 	req.FrontendURL = strings.TrimSpace(req.FrontendURL)
 	if req.FrontendURL != "" {
 		if err := config.ValidateAbsoluteHTTPURL(req.FrontendURL); err != nil {
 			response.BadRequest(c, "Frontend URL must be an absolute http(s) URL")
+			return
+		}
+	}
+
+	// API Base URL is embedded into client-facing media download URLs. Keep it
+	// absolute and query-free so responses cannot inherit an invalid host/path.
+	req.APIBaseURL = strings.TrimRight(strings.TrimSpace(req.APIBaseURL), "/")
+	if req.APIBaseURL != "" {
+		if err := config.ValidateAbsoluteHTTPURL(req.APIBaseURL); err != nil {
+			response.BadRequest(c, "API Base URL must be an absolute http(s) URL")
+			return
+		}
+		parsedAPIBaseURL, err := url.Parse(req.APIBaseURL)
+		if err != nil || parsedAPIBaseURL.RawQuery != "" || parsedAPIBaseURL.User != nil {
+			response.BadRequest(c, "API Base URL must not include query parameters or user info")
 			return
 		}
 	}
@@ -1265,6 +1291,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		APIBaseURL:                             req.APIBaseURL,
 		ContactInfo:                            req.ContactInfo,
 		DocURL:                                 req.DocURL,
+		QQGroupURL:                             req.QQGroupURL,
 		HomeContent:                            req.HomeContent,
 		HideCcsImportButton:                    req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            purchaseEnabled,
@@ -1772,6 +1799,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		APIBaseURL:                                             updatedSettings.APIBaseURL,
 		ContactInfo:                                            updatedSettings.ContactInfo,
 		DocURL:                                                 updatedSettings.DocURL,
+		QQGroupURL:                                             updatedSettings.QQGroupURL,
 		HomeContent:                                            updatedSettings.HomeContent,
 		HideCcsImportButton:                                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:                            updatedSettings.PurchaseSubscriptionEnabled,

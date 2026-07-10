@@ -470,6 +470,9 @@ export default {
     empty: '暂无可用渠道',
     noModels: '未配置模型',
     noPricing: '未配置定价',
+    modelCount: '共 {count} 个模型',
+    showAllModels: '显示全部 {count} 个模型',
+    collapseModels: '收起模型',
     exclusive: '专属',
     public: '公开',
     exclusiveTooltip: '管理员授权给你的专属分组',
@@ -493,9 +496,11 @@ export default {
       cacheReadPrice: '缓存读取',
       imageOutputPrice: '图片输出',
       perRequestPrice: '每次请求',
+      videoPrice: '视频单价',
       intervals: '阶梯定价',
       unitPerMillion: '/ 1M token',
-      unitPerRequest: '/ 次'
+      unitPerRequest: '/ 次',
+      unitPerSecond: '/ 秒',
     }
   },
 

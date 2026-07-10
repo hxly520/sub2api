@@ -783,6 +783,9 @@ type GatewayConfig struct {
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
+	// VideoProxy: 视频结果交付策略。origin 保持源站流式代理；edge 使用
+	// 自有边缘域名和加密令牌，让视频字节不经过 sub2api 服务器。
+	VideoProxy VideoProxyConfig `mapstructure:"video_proxy"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -857,6 +860,18 @@ type GatewayConfig struct {
 	// UserMessageQueue: 用户消息串行队列配置
 	// 对 role:"user" 的真实用户消息实施账号级串行化 + RPM 自适应延迟
 	UserMessageQueue UserMessageQueueConfig `mapstructure:"user_message_queue"`
+}
+
+const (
+	VideoProxyModeOrigin = "origin"
+	VideoProxyModeEdge   = "edge"
+)
+
+type VideoProxyConfig struct {
+	Mode            string `mapstructure:"mode"`
+	EdgeBaseURL     string `mapstructure:"edge_base_url"`
+	EncryptionKey   string `mapstructure:"encryption_key"`
+	TokenTTLSeconds int    `mapstructure:"token_ttl_seconds"`
 }
 
 // GatewayOpenAIHTTP2Config OpenAI HTTP 上游协议配置。
@@ -1531,6 +1546,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.StacktraceLevel = strings.ToLower(strings.TrimSpace(cfg.Log.StacktraceLevel))
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
+	cfg.Gateway.VideoProxy.Mode = strings.ToLower(strings.TrimSpace(cfg.Gateway.VideoProxy.Mode))
+	cfg.Gateway.VideoProxy.EdgeBaseURL = strings.TrimRight(strings.TrimSpace(cfg.Gateway.VideoProxy.EdgeBaseURL), "/")
+	cfg.Gateway.VideoProxy.EncryptionKey = strings.TrimSpace(cfg.Gateway.VideoProxy.EncryptionKey)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
 		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 		if err != nil {
@@ -1941,6 +1959,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
+	viper.SetDefault("gateway.video_proxy.mode", VideoProxyModeOrigin)
+	viper.SetDefault("gateway.video_proxy.edge_base_url", "")
+	viper.SetDefault("gateway.video_proxy.encryption_key", "")
+	viper.SetDefault("gateway.video_proxy.token_ttl_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
@@ -2634,6 +2656,26 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
+	}
+	switch c.Gateway.VideoProxy.Mode {
+	case "", VideoProxyModeOrigin:
+		// Origin mode does not issue edge tokens. Keep zero-value Config values
+		// valid so the opt-in media feature cannot break existing deployments or
+		// tests that construct Config directly.
+	case VideoProxyModeEdge:
+		parsed, err := url.Parse(c.Gateway.VideoProxy.EdgeBaseURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("gateway.video_proxy.edge_base_url must be an absolute HTTPS URL without credentials, query, or fragment")
+		}
+		key, err := hex.DecodeString(c.Gateway.VideoProxy.EncryptionKey)
+		if err != nil || len(key) != 32 {
+			return fmt.Errorf("gateway.video_proxy.encryption_key must be 64 hexadecimal characters")
+		}
+		if c.Gateway.VideoProxy.TokenTTLSeconds < 60 || c.Gateway.VideoProxy.TokenTTLSeconds > 86400 {
+			return fmt.Errorf("gateway.video_proxy.token_ttl_seconds must be between 60 and 86400")
+		}
+	default:
+		return fmt.Errorf("gateway.video_proxy.mode must be one of: %s/%s", VideoProxyModeOrigin, VideoProxyModeEdge)
 	}
 	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
 		switch c.Gateway.ConnectionPoolIsolation {

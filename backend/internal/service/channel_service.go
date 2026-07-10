@@ -143,7 +143,8 @@ type ChannelService struct {
 	repo                 ChannelRepository
 	groupRepo            GroupRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
-	pricingService       *PricingService // 用于「可用渠道」展示时回落到全局定价；可为 nil（测试场景）
+	pricingService       *PricingService                   // 用于「可用渠道」展示时回落到全局定价；可为 nil（测试场景）
+	availableAccountRepo availableChannelAccountRepository // 用于合并实际可调度账号的公开模型别名
 
 	cache   atomic.Value // *channelCache
 	cacheSF singleflight.Group
@@ -159,6 +160,20 @@ func NewChannelService(repo ChannelRepository, groupRepo GroupRepository, authCa
 		authCacheInvalidator: authCacheInvalidator,
 		pricingService:       pricingService,
 	}
+	return s
+}
+
+// ProvideChannelService 是生产环境 Wire provider：在保持 NewChannelService 测试兼容性的同时，
+// 注入「可用渠道」模型聚合所需的账号仓库。
+func ProvideChannelService(
+	repo ChannelRepository,
+	groupRepo GroupRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	pricingService *PricingService,
+	accountRepo AccountRepository,
+) *ChannelService {
+	s := NewChannelService(repo, groupRepo, authCacheInvalidator, pricingService)
+	s.availableAccountRepo = accountRepo
 	return s
 }
 

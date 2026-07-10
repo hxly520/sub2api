@@ -483,6 +483,37 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
+		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+	})
+
+	t.Run("legacy video account requires an exact public model mapping", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"seedance-2.0": "relay/seedance-2.0",
+					"text-*":       "relay/text-*",
+				},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "seedance-2.0"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "text-model"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "grok-video"))
+	})
+
+	t.Run("explicit video capability supports passthrough models", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"openai_capabilities": []any{"videos"},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "custom-video-model"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityChatCompletions, "gpt-5"))
 	})
 
 	t.Run("OpenAI OAuth 默认仅兼容 chat", func(t *testing.T) {

@@ -522,9 +522,10 @@ func stringMappingFromRaw(raw any) map[string]string {
 
 func (a *Account) GetModelMapping() map[string]string {
 	credentialsPtr := mapPtr(a.Credentials)
-	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
+	rawValue := a.Credentials["model_mapping"]
+	rawMapping, _ := rawValue.(map[string]any)
 	rawPtr := mapPtr(rawMapping)
-	rawLen := len(rawMapping)
+	rawLen := modelMappingRawLen(rawValue)
 	rawSig := uint64(0)
 	rawSigReady := false
 
@@ -532,16 +533,16 @@ func (a *Account) GetModelMapping() map[string]string {
 		a.modelMappingCacheCredentialsPtr == credentialsPtr &&
 		a.modelMappingCacheRawPtr == rawPtr &&
 		a.modelMappingCacheRawLen == rawLen {
-		rawSig = modelMappingSignature(rawMapping)
+		rawSig = modelMappingRawSignature(rawValue)
 		rawSigReady = true
 		if a.modelMappingCacheRawSig == rawSig {
 			return a.modelMappingCache
 		}
 	}
 
-	mapping := a.resolveModelMapping(rawMapping)
+	mapping := a.resolveModelMapping(stringMappingFromRaw(rawValue))
 	if !rawSigReady {
-		rawSig = modelMappingSignature(rawMapping)
+		rawSig = modelMappingRawSignature(rawValue)
 	}
 
 	a.modelMappingCache = mapping
@@ -553,7 +554,7 @@ func (a *Account) GetModelMapping() map[string]string {
 	return mapping
 }
 
-func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
+func (a *Account) resolveModelMapping(rawMapping map[string]string) map[string]string {
 	if a.Credentials == nil {
 		// Antigravity 平台使用默认映射
 		if a.Platform == domain.PlatformAntigravity {
@@ -576,11 +577,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return nil
 	}
 
-	result := make(map[string]string)
+	result := make(map[string]string, len(rawMapping))
 	for k, v := range rawMapping {
-		if s, ok := v.(string); ok {
-			result[k] = s
-		}
+		result[k] = v
 	}
 	if len(result) > 0 {
 		if a.Platform == domain.PlatformAntigravity {
@@ -602,6 +601,32 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return xai.DefaultModelMapping()
 	}
 	return nil
+}
+
+func modelMappingRawLen(raw any) int {
+	switch mapping := raw.(type) {
+	case map[string]any:
+		return len(mapping)
+	case map[string]string:
+		return len(mapping)
+	default:
+		return 0
+	}
+}
+
+func modelMappingRawSignature(raw any) uint64 {
+	switch mapping := raw.(type) {
+	case map[string]any:
+		return modelMappingSignature(mapping)
+	case map[string]string:
+		converted := make(map[string]any, len(mapping))
+		for key, value := range mapping {
+			converted[key] = value
+		}
+		return modelMappingSignature(converted)
+	default:
+		return 0
+	}
 }
 
 func mapPtr(m map[string]any) uintptr {
@@ -1414,9 +1439,35 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 
 	configured, found := a.openAIEndpointCapabilitySet()
 	if !found {
-		return true
+		return capability != OpenAIEndpointCapabilityVideos
 	}
 	return configured[string(capability)]
+}
+
+// SupportsOpenAIEndpointCapabilityForModel preserves video accounts created
+// before the explicit videos capability existed. A legacy account is eligible
+// only when its public model mapping declares the requested model exactly;
+// empty mappings and wildcard text mappings never opt an account into video.
+func (a *Account) SupportsOpenAIEndpointCapabilityForModel(capability OpenAIEndpointCapability, requestedModel string) bool {
+	if a.SupportsOpenAIEndpointCapability(capability) {
+		return true
+	}
+	if capability != OpenAIEndpointCapabilityVideos || a == nil || a.Type != AccountTypeAPIKey {
+		return false
+	}
+	if _, explicitlyConfigured := a.openAIEndpointCapabilitySet(); explicitlyConfigured {
+		return false
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return false
+	}
+	for publicModel := range a.GetModelMapping() {
+		if strings.EqualFold(strings.TrimSpace(publicModel), requestedModel) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Account) openAIEndpointCapabilitySet() (map[string]bool, bool) {

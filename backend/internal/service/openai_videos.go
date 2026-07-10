@@ -3,8 +3,13 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -15,9 +20,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -27,26 +33,43 @@ const (
 	openAIVideosGenerationsEndpoint   = "/v1/videos/generations"
 	openAIVideoGenerationsEndpoint    = "/v1/video/generations"
 	openAIContentsGenerationTasksPath = "/contents/generations/tasks"
+	openAIVideoMaxContentBytes        = int64(4 << 30)
+	openAIVideoEdgeTokenAAD           = "sub2api-video-proxy-v1"
 )
 
+type openAIVideoEdgeTokenPayload struct {
+	Version   int    `json:"v"`
+	URL       string `json:"u"`
+	ExpiresAt int64  `json:"e"`
+}
+
 type OpenAIVideoRequest struct {
-	Endpoint          string
-	UpstreamPath      string
-	Method            string
-	ContentType       string
-	Multipart         bool
-	Model             string
-	ExplicitModel     bool
-	Prompt            string
-	Size              string
-	Resolution        string
-	DurationSeconds   int
-	Stream            bool
-	GenerationRequest bool
-	ContentRequest    bool
-	RequestID         string
-	Body              []byte
-	bodyHash          string
+	Endpoint                string
+	UpstreamPath            string
+	Method                  string
+	ContentType             string
+	Multipart               bool
+	Model                   string
+	ExplicitModel           bool
+	Prompt                  string
+	Size                    string
+	Resolution              string
+	DurationSeconds         int
+	Stream                  bool
+	GenerationRequest       bool
+	ContentRequest          bool
+	RequestID               string
+	UpstreamRequestID       string
+	ReferenceImageCount     int
+	ReferenceVideoCount     int
+	ReferenceAudioCount     int
+	InputReferenceFileCount int
+	ReferenceVideoBytes     int64
+	HasFirstFrame           bool
+	HasLastFrame            bool
+	AspectRatio             string
+	Body                    []byte
+	bodyHash                string
 }
 
 func (r *OpenAIVideoRequest) StickySessionSeed() string {
@@ -120,101 +143,136 @@ func (s *OpenAIGatewayService) ParseOpenAIVideoRequest(c *gin.Context, body []by
 		if strings.TrimSpace(req.Model) == "" {
 			return nil, fmt.Errorf("model is required")
 		}
+		if req.Stream {
+			return nil, fmt.Errorf("streaming video generation is not supported")
+		}
+		if err := validateOpenAIVideoModelRequest(req); err != nil {
+			return nil, err
+		}
+		req.UpstreamPath = OpenAIVideoUpstreamEndpointForModel(req.Model, req.UpstreamPath)
 	}
 	return req, nil
 }
 
 func normalizeOpenAIVideoEndpointPath(method, path string) *OpenAIVideoRequest {
-	trimmed := "/" + strings.Trim(strings.TrimSpace(path), "/")
-	if trimmed == "/" {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	// Accept one conventional trailing slash, but reject duplicate separators.
+	// Collapsing // would let a visually similar path bypass the exact endpoint
+	// grammar and can also turn an encoded slash into a different task ID.
+	if len(trimmed) > 1 && strings.HasSuffix(trimmed, "/") {
+		trimmed = strings.TrimSuffix(trimmed, "/")
+	}
+	if trimmed == "/" || strings.Contains(trimmed, "//") {
 		return nil
 	}
 	method = strings.ToUpper(strings.TrimSpace(method))
-
-	if strings.Contains(trimmed, openAIContentsGenerationTasksPath) {
-		suffix := suffixAfterPath(trimmed, openAIContentsGenerationTasksPath)
-		requestID, content := openAIVideoTaskIDAndContent(suffix)
-		return &OpenAIVideoRequest{
-			Endpoint:          openAIContentsGenerationTasksPath,
-			UpstreamPath:      openAIContentsGenerationTasksPath + suffix,
-			Method:            methodOrDefault(method),
-			GenerationRequest: method == http.MethodPost && suffix == "",
-			ContentRequest:    content,
-			RequestID:         requestID,
-		}
+	if method != http.MethodGet && method != http.MethodPost {
+		return nil
 	}
 
-	if strings.Contains(trimmed, openAIVideosGenerationsEndpoint) || strings.Contains(trimmed, "/videos/generations") {
-		suffix := suffixAfterPath(trimmed, "/videos/generations")
-		requestID, content := openAIVideoTaskIDAndContent(suffix)
-		return &OpenAIVideoRequest{
-			Endpoint:          openAIVideosGenerationsEndpoint,
-			UpstreamPath:      openAIVideosGenerationsEndpoint + suffix,
-			Method:            methodOrDefault(method),
-			GenerationRequest: method == http.MethodPost && suffix == "",
-			ContentRequest:    content,
-			RequestID:         requestID,
+	type endpointCandidate struct {
+		paths    []string
+		endpoint string
+	}
+	candidates := []endpointCandidate{
+		{paths: []string{"/v1/contents/generations/tasks", "/contents/generations/tasks"}, endpoint: openAIContentsGenerationTasksPath},
+		{paths: []string{"/v1/videos/generations", "/videos/generations"}, endpoint: openAIVideosGenerationsEndpoint},
+		{paths: []string{"/v1/video/generations", "/video/generations"}, endpoint: openAIVideoGenerationsEndpoint},
+		{paths: []string{"/v1/videos", "/videos"}, endpoint: openAIVideosEndpoint},
+	}
+	for _, candidate := range candidates {
+		for _, basePath := range candidate.paths {
+			if trimmed != basePath && !strings.HasPrefix(trimmed, basePath+"/") {
+				continue
+			}
+			suffix := strings.TrimPrefix(trimmed, basePath)
+			parts := splitOpenAIVideoSuffix(suffix)
+			switch {
+			case len(parts) == 0 && method == http.MethodPost:
+				return &OpenAIVideoRequest{
+					Endpoint:          candidate.endpoint,
+					UpstreamPath:      candidate.endpoint,
+					Method:            method,
+					GenerationRequest: true,
+				}
+			case len(parts) == 1 && method == http.MethodGet:
+				return &OpenAIVideoRequest{
+					Endpoint:     candidate.endpoint,
+					UpstreamPath: candidate.endpoint + "/" + url.PathEscape(parts[0]),
+					Method:       method,
+					RequestID:    parts[0],
+				}
+			case len(parts) == 2 && method == http.MethodGet && strings.EqualFold(parts[1], "content"):
+				return &OpenAIVideoRequest{
+					Endpoint:       candidate.endpoint,
+					UpstreamPath:   candidate.endpoint + "/" + url.PathEscape(parts[0]) + "/content",
+					Method:         method,
+					ContentRequest: true,
+					RequestID:      parts[0],
+				}
+			default:
+				return nil
+			}
 		}
 	}
-
-	if strings.Contains(trimmed, openAIVideoGenerationsEndpoint) || strings.Contains(trimmed, "/video/generations") {
-		suffix := suffixAfterPath(trimmed, "/video/generations")
-		requestID, content := openAIVideoTaskIDAndContent(suffix)
-		return &OpenAIVideoRequest{
-			Endpoint:          openAIVideoGenerationsEndpoint,
-			UpstreamPath:      openAIVideoGenerationsEndpoint + suffix,
-			Method:            methodOrDefault(method),
-			GenerationRequest: method == http.MethodPost && suffix == "",
-			ContentRequest:    content,
-			RequestID:         requestID,
-		}
-	}
-
-	if strings.Contains(trimmed, openAIVideosEndpoint) || strings.HasPrefix(trimmed, "/videos") {
-		suffix := suffixAfterPath(trimmed, "/videos")
-		requestID, content := openAIVideoTaskIDAndContent(suffix)
-		return &OpenAIVideoRequest{
-			Endpoint:          openAIVideosEndpoint,
-			UpstreamPath:      openAIVideosEndpoint + suffix,
-			Method:            methodOrDefault(method),
-			GenerationRequest: method == http.MethodPost && suffix == "",
-			ContentRequest:    content,
-			RequestID:         requestID,
-		}
-	}
-
 	return nil
 }
 
-func methodOrDefault(method string) string {
-	if method == "" {
-		return http.MethodGet
-	}
-	return method
-}
-
-func suffixAfterPath(path, marker string) string {
-	idx := strings.Index(path, marker)
-	if idx < 0 {
-		return ""
-	}
-	suffix := strings.TrimRight(path[idx+len(marker):], "/")
-	if suffix == "/" {
-		return ""
-	}
-	return suffix
-}
-
-func openAIVideoTaskIDAndContent(suffix string) (string, bool) {
+func splitOpenAIVideoSuffix(suffix string) []string {
 	trimmed := strings.Trim(suffix, "/")
 	if trimmed == "" {
-		return "", false
+		return nil
 	}
 	parts := strings.Split(trimmed, "/")
-	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
-		return "", false
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return nil
+		}
 	}
-	return strings.TrimSpace(parts[0]), len(parts) > 1 && strings.EqualFold(parts[1], "content")
+	return parts
+}
+
+func (r *OpenAIVideoRequest) UseUpstreamTaskID(taskID string) error {
+	return r.UseUpstreamTaskIDAtEndpoint(taskID, "")
+}
+
+func (r *OpenAIVideoRequest) UseUpstreamTaskIDAtEndpoint(taskID, storedEndpoint string) error {
+	if r == nil {
+		return fmt.Errorf("video request is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return fmt.Errorf("upstream video task id is missing")
+	}
+	r.UpstreamRequestID = taskID
+	endpoint := normalizeOpenAIVideoTaskEndpoint(storedEndpoint)
+	if endpoint == "" {
+		endpoint = OpenAIVideoUpstreamEndpointForModel(r.Model, r.Endpoint)
+	}
+	if endpoint == "" {
+		return fmt.Errorf("upstream video task endpoint is unavailable")
+	}
+	r.UpstreamPath = strings.TrimRight(endpoint, "/") + "/" + url.PathEscape(taskID)
+	if r.ContentRequest {
+		r.UpstreamPath += "/content"
+	}
+	return nil
+}
+
+func normalizeOpenAIVideoTaskEndpoint(endpoint string) string {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	switch endpoint {
+	case openAIVideosEndpoint, openAIVideosGenerationsEndpoint, openAIVideoGenerationsEndpoint, openAIContentsGenerationTasksPath:
+		return endpoint
+	default:
+		return ""
+	}
 }
 
 func parseOpenAIVideoBody(req *OpenAIVideoRequest) error {
@@ -233,9 +291,21 @@ func parseOpenAIVideoBody(req *OpenAIVideoRequest) error {
 		req.Prompt = strings.TrimSpace(gjson.GetBytes(req.Body, "content.#(type==\"text\").text").String())
 	}
 	req.Size = strings.TrimSpace(gjson.GetBytes(req.Body, "size").String())
-	if req.Size == "" {
-		req.Size = strings.TrimSpace(gjson.GetBytes(req.Body, "ratio").String())
+	req.AspectRatio = strings.TrimSpace(gjson.GetBytes(req.Body, "aspect_ratio").String())
+	if req.AspectRatio == "" {
+		req.AspectRatio = strings.TrimSpace(gjson.GetBytes(req.Body, "ratio").String())
 	}
+	req.HasFirstFrame = openAIVideoJSONReferenceExists(req.Body, []string{"first_image_url", "first_frame", "first_frame_url"})
+	req.HasLastFrame = openAIVideoJSONReferenceExists(req.Body, []string{"last_image_url", "last_frame", "last_frame_url"})
+	req.ReferenceImageCount = countOpenAIVideoJSONReferences(req.Body, []string{"image", "image_url", "image_urls", "images", "input_reference", "reference_image_urls", "reference_images"})
+	if req.HasFirstFrame {
+		req.ReferenceImageCount++
+	}
+	if req.HasLastFrame {
+		req.ReferenceImageCount++
+	}
+	req.ReferenceVideoCount = countOpenAIVideoJSONReferences(req.Body, []string{"video", "video_url", "video_urls", "videos", "reference_videos", "input_video"})
+	req.ReferenceAudioCount = countOpenAIVideoJSONReferences(req.Body, []string{"audio", "audio_url", "audio_urls", "audios", "reference_audios", "input_audio"})
 	req.Resolution = strings.TrimSpace(gjson.GetBytes(req.Body, "resolution_name").String())
 	if req.Resolution == "" {
 		req.Resolution = strings.TrimSpace(gjson.GetBytes(req.Body, "resolution").String())
@@ -266,8 +336,34 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 			return fmt.Errorf("read multipart body: %w", err)
 		}
 		name := strings.TrimSpace(part.FormName())
+		lowerName := strings.TrimSuffix(strings.ToLower(name), "[]")
 		fileName := strings.TrimSpace(part.FileName())
 		if fileName != "" {
+			switch {
+			case strings.Contains(lowerName, "video"):
+				req.ReferenceVideoCount++
+				read, copyErr := io.Copy(io.Discard, io.LimitReader(part, (5<<20)+1))
+				if copyErr != nil {
+					_ = part.Close()
+					return fmt.Errorf("read multipart video: %w", copyErr)
+				}
+				if read > req.ReferenceVideoBytes {
+					req.ReferenceVideoBytes = read
+				}
+			case strings.Contains(lowerName, "audio"):
+				req.ReferenceAudioCount++
+			case lowerName == "first_frame" || lowerName == "first_image":
+				req.HasFirstFrame = true
+				req.ReferenceImageCount++
+			case lowerName == "last_frame" || lowerName == "last_image":
+				req.HasLastFrame = true
+				req.ReferenceImageCount++
+			case lowerName == "input_reference":
+				req.InputReferenceFileCount++
+				req.ReferenceImageCount++
+			case strings.Contains(lowerName, "image") || strings.Contains(lowerName, "reference"):
+				req.ReferenceImageCount++
+			}
 			_ = part.Close()
 			continue
 		}
@@ -277,7 +373,7 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 			return fmt.Errorf("read multipart field: %w", readErr)
 		}
 		value := strings.TrimSpace(string(valueBytes))
-		switch name {
+		switch lowerName {
 		case "model":
 			req.Model = value
 			req.ExplicitModel = value != ""
@@ -285,6 +381,24 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 			req.Prompt = value
 		case "size":
 			req.Size = value
+		case "ratio", "aspect_ratio":
+			req.AspectRatio = value
+		case "first_image_url", "first_frame", "first_frame_url":
+			if value != "" {
+				req.HasFirstFrame = true
+				req.ReferenceImageCount++
+			}
+		case "last_image_url", "last_frame", "last_frame_url":
+			if value != "" {
+				req.HasLastFrame = true
+				req.ReferenceImageCount++
+			}
+		case "image", "image_url", "image_urls", "images", "input_reference", "reference_image_urls", "reference_images":
+			req.ReferenceImageCount += countOpenAIVideoFieldValues(value)
+		case "video", "video_url", "video_urls", "videos", "input_video", "reference_videos":
+			req.ReferenceVideoCount += countOpenAIVideoFieldValues(value)
+		case "audio", "audio_url", "audio_urls", "audios", "input_audio", "reference_audios":
+			req.ReferenceAudioCount += countOpenAIVideoFieldValues(value)
 		case "resolution", "resolution_name":
 			req.Resolution = value
 		case "duration", "seconds", "video_duration", "sora2_duration":
@@ -294,6 +408,223 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 		}
 	}
 	return nil
+}
+
+func countOpenAIVideoJSONReferences(body []byte, paths []string) int {
+	count := 0
+	for _, path := range paths {
+		value := gjson.GetBytes(body, path)
+		if !value.Exists() {
+			continue
+		}
+		if value.IsArray() {
+			count += len(value.Array())
+			continue
+		}
+		if value.IsObject() || strings.TrimSpace(value.String()) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func openAIVideoJSONReferenceExists(body []byte, paths []string) bool {
+	return countOpenAIVideoJSONReferences(body, paths) > 0
+}
+
+func countOpenAIVideoFieldValues(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if gjson.Valid(value) {
+		parsed := gjson.Parse(value)
+		if parsed.IsArray() {
+			return len(parsed.Array())
+		}
+	}
+	return 1
+}
+
+func openAIVideoFrameCount(req *OpenAIVideoRequest) int {
+	if req == nil {
+		return 0
+	}
+	count := 0
+	if req.HasFirstFrame {
+		count++
+	}
+	if req.HasLastFrame {
+		count++
+	}
+	return count
+}
+
+func seedanceFixedResolutionFromModel(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, candidate := range []string{"2160p", "4k", "1080p", "720p", "480p"} {
+		if strings.Contains(model, "-"+candidate) || strings.HasSuffix(model, candidate) {
+			if candidate == "2160p" {
+				return "4k"
+			}
+			return candidate
+		}
+	}
+	return ""
+}
+
+// OpenAIVideoUpstreamEndpointForModel maps the local compatibility surface to
+// the relay provider's documented task protocol. It never returns an official
+// vendor host; only the path below the account's configured relay base URL.
+func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"):
+		return openAIVideoGenerationsEndpoint
+	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"):
+		return openAIVideosEndpoint
+	default:
+		return strings.TrimSpace(fallback)
+	}
+}
+
+func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
+	if req == nil {
+		return fmt.Errorf("video request is nil")
+	}
+	model := strings.ToLower(strings.TrimSpace(req.Model))
+	resolution := strings.ToLower(strings.TrimSpace(req.Resolution))
+	ratio := strings.ToLower(strings.TrimSpace(req.AspectRatio))
+	duration := req.DurationSeconds
+	frameCount := openAIVideoFrameCount(req)
+	nonFrameImageCount := req.ReferenceImageCount - frameCount
+	if nonFrameImageCount < 0 {
+		nonFrameImageCount = 0
+	}
+
+	isGrok := strings.Contains(model, "grok") && strings.Contains(model, "video")
+	isGrok15 := isGrok && strings.Contains(model, "1.5")
+	if isGrok {
+		if duration > 0 && !containsOpenAIVideoInt([]int{4, 6, 8, 10, 12, 15}, duration) {
+			return fmt.Errorf("grok video duration must be one of 4, 6, 8, 10, 12, or 15 seconds")
+		}
+		if req.ReferenceImageCount > 7 {
+			return fmt.Errorf("grok video supports at most seven reference images")
+		}
+		if req.ReferenceImageCount > 1 && duration > 10 {
+			return fmt.Errorf("grok multi-image video duration cannot exceed 10 seconds")
+		}
+		if resolution != "" && resolution != "480p" && resolution != "720p" {
+			return fmt.Errorf("grok video resolution must be 480p or 720p")
+		}
+	}
+	if isGrok15 {
+		if req.ReferenceImageCount != 1 {
+			return fmt.Errorf("grok video 1.5 requires exactly one reference image")
+		}
+		if req.ReferenceVideoCount != 0 {
+			return fmt.Errorf("grok video 1.5 does not accept a video reference")
+		}
+		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
+			return fmt.Errorf("grok video 1.5 aspect_ratio must be 16:9 or 9:16")
+		}
+	}
+
+	if strings.Contains(model, "seedance") {
+		if duration > 0 && (duration < 4 || duration > 15) {
+			return fmt.Errorf("seedance video duration must be between 4 and 15 seconds")
+		}
+		fixedResolution := seedanceFixedResolutionFromModel(model)
+		if fixedResolution == "" {
+			if resolution != "" && resolution != "480p" && resolution != "720p" {
+				return fmt.Errorf("seedance standard video resolution must be 480p or 720p")
+			}
+			if req.ReferenceImageCount > 4 || req.ReferenceVideoCount > 3 || req.ReferenceAudioCount > 1 {
+				return fmt.Errorf("seedance standard video supports at most 4 images, 3 videos, and 1 audio reference")
+			}
+			if frameCount > 0 && (nonFrameImageCount > 0 || req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0) {
+				return fmt.Errorf("seedance first/last frames cannot be combined with multimodal references")
+			}
+		} else {
+			if resolution != "" && resolution != fixedResolution && !(resolution == "2160p" && fixedResolution == "4k") {
+				return fmt.Errorf("seedance resolution is fixed by the selected model")
+			}
+			if req.ReferenceImageCount > 9 || req.ReferenceVideoCount > 3 || req.ReferenceAudioCount > 3 {
+				return fmt.Errorf("seedance per-second video supports at most 9 images, 3 videos, and 3 audio references")
+			}
+		}
+		if req.HasFirstFrame != req.HasLastFrame {
+			return fmt.Errorf("seedance first and last frames must be provided together")
+		}
+	}
+
+	if strings.Contains(model, "omni-fast") {
+		if duration > 0 && duration != 10 {
+			return fmt.Errorf("omni fast video duration must be 10 seconds")
+		}
+		if resolution != "" && resolution != "720p" {
+			return fmt.Errorf("omni fast video resolution must be 720p")
+		}
+		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
+			return fmt.Errorf("omni fast aspect_ratio must be 16:9 or 9:16")
+		}
+		if req.ReferenceImageCount > 5 {
+			return fmt.Errorf("omni video supports at most five reference images")
+		}
+		if req.ReferenceImageCount > 1 && (!req.Multipart || req.InputReferenceFileCount != req.ReferenceImageCount) {
+			return fmt.Errorf("omni multi-image video requires multipart input_reference files")
+		}
+		if req.HasFirstFrame != req.HasLastFrame {
+			return fmt.Errorf("omni first and last frames must be provided together")
+		}
+	}
+
+	if strings.Contains(model, "omni-v2v") {
+		if req.ReferenceVideoCount != 1 {
+			return fmt.Errorf("omni v2v requires exactly one source video")
+		}
+		if req.ReferenceVideoBytes > 5<<20 {
+			return fmt.Errorf("omni v2v source video must not exceed 5MB")
+		}
+		if duration > 0 && duration != 10 {
+			return fmt.Errorf("omni v2v duration must be 10 seconds")
+		}
+		if resolution != "" && resolution != "720p" {
+			return fmt.Errorf("omni v2v output resolution must be 720p")
+		}
+	}
+
+	if strings.Contains(model, "sora") {
+		if duration > 0 && duration != 8 && duration != 12 {
+			return fmt.Errorf("sora video duration must be 8 or 12 seconds")
+		}
+		size := strings.ToLower(strings.TrimSpace(req.Size))
+		if size != "" && !containsOpenAIVideoString([]string{"1280x720", "720x1280", "1024x1024"}, size) {
+			return fmt.Errorf("sora video size is unsupported")
+		}
+		if req.ReferenceImageCount > 1 {
+			return fmt.Errorf("sora video supports at most one reference image")
+		}
+	}
+	return nil
+}
+
+func containsOpenAIVideoInt(values []int, target int) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsOpenAIVideoString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) ForwardVideo(
@@ -311,6 +642,9 @@ func (s *OpenAIGatewayService) ForwardVideo(
 	}
 	if account.Type != AccountTypeAPIKey {
 		return nil, fmt.Errorf("videos endpoint requires an OpenAI API key account")
+	}
+	if parsed.Stream {
+		return nil, fmt.Errorf("streaming video generation is not supported")
 	}
 
 	startTime := time.Now()
@@ -330,7 +664,7 @@ func (s *OpenAIGatewayService) ForwardVideo(
 		}
 	}
 
-	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, parsed.Stream || parsed.ContentRequest)
+	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, parsed.ContentRequest)
 	defer releaseUpstreamCtx()
 
 	token, _, err := s.GetAccessToken(upstreamCtx, account)
@@ -360,9 +694,13 @@ func (s *OpenAIGatewayService) ForwardVideo(
 			Message:     safeErr,
 			UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
 		})
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		return nil, fmt.Errorf("video upstream request failed")
 	}
-	if resp.StatusCode >= 400 {
+	if resp == nil || resp.Body == nil {
+		setOpsUpstreamError(c, 0, "video upstream response is unavailable", "")
+		return nil, fmt.Errorf("video upstream response is unavailable")
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -382,7 +720,6 @@ func (s *OpenAIGatewayService) ForwardVideo(
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
-				ResponseHeaders:        resp.Header.Clone(),
 				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
@@ -395,39 +732,21 @@ func (s *OpenAIGatewayService) ForwardVideo(
 			return nil, err
 		}
 		return &OpenAIForwardResult{
-			RequestID:       resp.Header.Get("x-request-id"),
-			Model:           requestModel,
-			UpstreamModel:   upstreamModel,
-			ResponseHeaders: resp.Header.Clone(),
-			Duration:        time.Since(startTime),
-			ResponseStatus:  resp.StatusCode,
-			MediaType:       "video",
+			RequestID:      resp.Header.Get("x-request-id"),
+			Model:          requestModel,
+			UpstreamModel:  upstreamModel,
+			Duration:       time.Since(startTime),
+			ResponseStatus: resp.StatusCode,
+			MediaType:      "video",
 		}, nil
-	}
-
-	if parsed.Stream && isEventStreamResponse(resp.Header) {
-		usage, _, _, ttft, err := s.handleOpenAIImagesStreamingResponse(resp, c, startTime)
-		return &OpenAIForwardResult{
-			RequestID:            resp.Header.Get("x-request-id"),
-			Usage:                usage,
-			Model:                requestModel,
-			BillingModel:         upstreamModel,
-			UpstreamModel:        upstreamModel,
-			Stream:               true,
-			ResponseHeaders:      resp.Header.Clone(),
-			Duration:             time.Since(startTime),
-			FirstTokenMs:         ttft,
-			ImageCount:           boolToMediaCount(parsed.GenerationRequest),
-			ImageSize:            parsed.BillingSizeTier(),
-			MediaDurationSeconds: parsed.DurationSeconds,
-			MediaType:            "video",
-			ResponseStatus:       resp.StatusCode,
-		}, err
 	}
 
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
+	}
+	if !gjson.ValidBytes(body) {
+		return nil, fmt.Errorf("video upstream returned an invalid response")
 	}
 	usage, _ := extractOpenAIUsageFromJSONBytes(body)
 	responseID := extractOpenAIVideoTaskID(body)
@@ -438,24 +757,14 @@ func (s *OpenAIGatewayService) ForwardVideo(
 	if responseID == "" && parsed.GenerationRequest && IsMediaGenerationSuccessStatus(videoStatus) {
 		responseID = localOpenAIVideoSynchronousTaskID(resp.Header.Get("x-request-id"), body)
 	}
+	if parsed.GenerationRequest && strings.TrimSpace(responseID) == "" {
+		return nil, fmt.Errorf("video upstream response did not include a task id")
+	}
 	durationSeconds := parsed.DurationSeconds
 	if durationSeconds <= 0 {
 		durationSeconds = extractOpenAIVideoDurationSeconds(body)
 	}
-
-	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"
-	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
-		if upstreamType := resp.Header.Get("Content-Type"); upstreamType != "" {
-			contentType = upstreamType
-		}
-	}
-	clientTaskID := responseID
-	if strings.TrimSpace(parsed.RequestID) != "" {
-		clientTaskID = parsed.RequestID
-	}
-	clientBody := RewriteOpenAIVideoClientResponseBody(body, clientTaskID)
-	c.Data(resp.StatusCode, contentType, clientBody)
 
 	return &OpenAIForwardResult{
 		RequestID:            resp.Header.Get("x-request-id"),
@@ -465,29 +774,35 @@ func (s *OpenAIGatewayService) ForwardVideo(
 		BillingModel:         upstreamModel,
 		UpstreamModel:        upstreamModel,
 		Stream:               false,
-		ResponseHeaders:      resp.Header.Clone(),
 		Duration:             time.Since(startTime),
-		ImageCount:           boolToMediaCount(parsed.GenerationRequest),
+		ImageCount:           0,
+		VideoCount:           boolToMediaCount(parsed.GenerationRequest),
 		ImageSize:            parsed.BillingSizeTier(),
+		VideoResolution:      parsed.Resolution,
+		VideoDurationSeconds: parsed.DurationSeconds,
 		MediaDurationSeconds: durationSeconds,
 		MediaType:            "video",
 		ResponseStatus:       resp.StatusCode,
 		ResponseBody:         body,
 		ResponseContentType:  contentType,
+		MediaResultURL:       OpenAIVideoResultURLFromBody(body),
 		VideoStatus:          videoStatus,
 	}, nil
 }
 
 func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *gin.Context, account *Account, parsed *OpenAIVideoRequest, body []byte, contentType, token string) (*http.Request, error) {
-	baseURL := account.GetOpenAIBaseURL()
-	targetURL := buildOpenAIEndpointURL("https://api.openai.com", parsed.UpstreamPath)
-	if baseURL != "" {
-		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
-		if err != nil {
-			return nil, err
-		}
-		targetURL = buildOpenAIEndpointURL(validatedURL, parsed.UpstreamPath)
+	// Video generation is intentionally relay-only. Unlike general OpenAI API-key
+	// traffic, never fall back to the official OpenAI host when the account has
+	// no explicit upstream configured.
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		return nil, fmt.Errorf("video account base_url is required")
 	}
+	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	targetURL := buildOpenAIEndpointURL(validatedURL, parsed.UpstreamPath)
 
 	var reader io.Reader
 	if parsed.Method != http.MethodGet && len(body) > 0 {
@@ -498,6 +813,9 @@ func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *g
 		return nil, err
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	if parsed.ContentRequest {
+		req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(req.Context()))
+	}
 	applyOpenAICompatibleAPIKeyAuth(req, account, token)
 	for key, values := range c.Request.Header {
 		if !openaiPassthroughAllowedHeaders[strings.ToLower(key)] {
@@ -505,6 +823,15 @@ func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *g
 		}
 		for _, value := range values {
 			req.Header.Add(key, value)
+		}
+	}
+	if parsed.GenerationRequest {
+		idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		if idempotencyKey == "" {
+			idempotencyKey = strings.TrimSpace(c.GetHeader("X-Idempotency-Key"))
+		}
+		if idempotencyKey != "" {
+			req.Header.Set("Idempotency-Key", idempotencyKey)
 		}
 	}
 	customUA := account.GetOpenAIUserAgent()
@@ -535,20 +862,49 @@ func rewriteOpenAIVideoModel(body []byte, contentType string, model string) ([]b
 }
 
 func (s *OpenAIGatewayService) streamOpenAIVideoContentResponse(resp *http.Response, c *gin.Context) error {
+	if resp == nil || resp.Body == nil || c == nil || c.Writer == nil {
+		return fmt.Errorf("video content response is unavailable")
+	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		return fmt.Errorf("video content redirect is unavailable")
 	}
-	headers := resp.Header.Clone()
-	headers.Del("Location")
-	responseheaders.WriteFilteredHeaders(c.Writer.Header(), headers, s.responseHeaderFilter)
+	if resp.StatusCode != http.StatusNotModified && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		return fmt.Errorf("video content is unavailable")
+	}
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
-	if contentType == "" {
-		contentType = "video/mp4"
+	if resp.StatusCode != http.StatusNotModified {
+		if !isAllowedOpenAIVideoContentType(contentType) {
+			return fmt.Errorf("video content type is unavailable")
+		}
+	}
+	if contentLength := strings.TrimSpace(resp.Header.Get("Content-Length")); contentLength != "" {
+		parsedLength, err := strconv.ParseInt(contentLength, 10, 64)
+		if err != nil || parsedLength < 0 || parsedLength > openAIVideoMaxContentBytes {
+			return fmt.Errorf("video content is too large")
+		}
+	}
+	for _, header := range []string{
+		"Content-Type",
+		"Content-Length",
+		"Content-Range",
+		"Accept-Ranges",
+		"Last-Modified",
+		"Cache-Control",
+	} {
+		if value := strings.TrimSpace(resp.Header.Get(header)); value != "" {
+			c.Header(header, value)
+		}
 	}
 	c.Status(resp.StatusCode)
-	c.Header("Content-Type", contentType)
-	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+	if resp.StatusCode == http.StatusNotModified {
+		return nil
+	}
+	written, err := io.Copy(c.Writer, io.LimitReader(resp.Body, openAIVideoMaxContentBytes+1))
+	if err != nil {
 		return err
+	}
+	if written > openAIVideoMaxContentBytes {
+		return fmt.Errorf("video content is too large")
 	}
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()
@@ -556,11 +912,27 @@ func (s *OpenAIGatewayService) streamOpenAIVideoContentResponse(resp *http.Respo
 	return nil
 }
 
+func isAllowedOpenAIVideoContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	return strings.HasPrefix(mediaType, "video/") ||
+		mediaType == "application/octet-stream" ||
+		mediaType == "binary/octet-stream" ||
+		mediaType == "application/mp4"
+}
+
 func (s *OpenAIGatewayService) StreamOpenAIVideoTaskContent(ctx context.Context, c *gin.Context, task *MediaGenerationTask) (bool, error) {
 	if task == nil {
 		return false, nil
 	}
-	mediaURL := OpenAIVideoResultURLFromBody([]byte(task.ResponseBody))
+	mediaURL := strings.TrimSpace(task.UpstreamResultURL)
+	if mediaURL == "" {
+		// Legacy fallback for rows created before upstream_result_url existed.
+		mediaURL = OpenAIVideoResultURLFromBody([]byte(task.ResponseBody))
+	}
 	if strings.TrimSpace(mediaURL) == "" {
 		return false, nil
 	}
@@ -579,6 +951,8 @@ func (s *OpenAIGatewayService) StreamOpenAIVideoTaskContent(ctx context.Context,
 		return true, fmt.Errorf("video content proxy request failed")
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(req.Context()))
+	req = req.WithContext(WithHTTPUpstreamResolvedIPValidation(req.Context()))
 	if c != nil && c.Request != nil {
 		for _, header := range []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since"} {
 			if value := strings.TrimSpace(c.GetHeader(header)); value != "" {
@@ -601,33 +975,29 @@ func (s *OpenAIGatewayService) StreamOpenAIVideoTaskContent(ctx context.Context,
 }
 
 func validateOpenAIVideoContentProxyURL(rawURL string) (string, error) {
-	normalized, err := urlvalidator.ValidateHTTPSURL(rawURL, urlvalidator.ValidationOptions{})
+	rawURL = strings.TrimSpace(rawURL)
+	_, err := urlvalidator.ValidateHTTPSURL(rawURL, urlvalidator.ValidationOptions{})
 	if err != nil {
 		return "", fmt.Errorf("invalid video content url")
 	}
-	return normalized, nil
+	// Preserve the exact signed URL. The generic validator normalizes trailing
+	// slashes, which can invalidate provider signatures even though validation
+	// itself succeeds.
+	return rawURL, nil
 }
 
 func (s *OpenAIGatewayService) handleOpenAIVideoErrorResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, upstreamModel string) (*OpenAIForwardResult, error) {
 	statusCode := resp.StatusCode
-	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	body, err := readUpstreamResponseBodyLimited(resp.Body, resolveUpstreamResponseReadLimit(s.cfg))
 	if err != nil {
-		return nil, err
+		body = nil
 	}
-	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	contentType := "application/json"
-	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
-		if upstreamType := resp.Header.Get("Content-Type"); upstreamType != "" {
-			contentType = upstreamType
-		}
-	}
-	c.Data(statusCode, contentType, body)
 	s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, resp.Header, body, upstreamModel)
+	setOpsUpstreamError(c, statusCode, "video upstream request failed", "")
 	return nil, &OpenAIImagesUpstreamError{
 		StatusCode: statusCode,
-		ErrorType:  strings.TrimSpace(gjson.GetBytes(body, "error.type").String()),
-		Code:       strings.TrimSpace(gjson.GetBytes(body, "error.code").String()),
-		Message:    sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body))),
+		ErrorType:  "upstream_error",
+		Message:    "Video upstream request failed",
 	}
 }
 
@@ -710,43 +1080,205 @@ func OpenAIVideoResultURLFromBody(body []byte) string {
 	return ""
 }
 
-func RewriteOpenAIVideoClientResponseBody(body []byte, taskID string) []byte {
+func RewriteOpenAIVideoClientResponseBody(body []byte, taskID string, upstreamTaskIDs ...string) []byte {
+	return RewriteOpenAIVideoClientResponseBodyWithBaseURL(body, taskID, "", upstreamTaskIDs...)
+}
+
+func RewriteOpenAIVideoClientResponseBodyWithBaseURL(body []byte, taskID, publicBaseURL string, upstreamTaskIDs ...string) []byte {
+	return RewriteOpenAIVideoClientResponseBodyWithContentURL(
+		body,
+		taskID,
+		openAIVideoContentProxyURL(publicBaseURL, taskID),
+		upstreamTaskIDs...,
+	)
+}
+
+func RewriteOpenAIVideoClientResponseBodyWithContentURL(body []byte, taskID, contentURL string, upstreamTaskIDs ...string) []byte {
 	taskID = strings.TrimSpace(taskID)
-	if taskID == "" || !gjson.ValidBytes(body) || OpenAIVideoResultURLFromBody(body) == "" {
-		return body
+	if taskID == "" {
+		return []byte(`{"status":"processing"}`)
 	}
-	contentURL := openAIVideoContentProxyPath(taskID)
-	rewritten := append([]byte(nil), body...)
-	for _, path := range openAIVideoResultURLPaths() {
-		if strings.TrimSpace(gjson.GetBytes(rewritten, path).String()) == "" {
-			continue
-		}
-		next, err := sjson.SetBytes(rewritten, path, contentURL)
-		if err == nil {
-			rewritten = next
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	var payload any
+	if err := decoder.Decode(&payload); err != nil {
+		safe, _ := json.Marshal(map[string]any{"id": taskID, "status": MediaGenerationStatusRunning})
+		return safe
+	}
+	state := openAIVideoClientRewriteState{
+		publicTaskID:    taskID,
+		contentURL:      strings.TrimSpace(contentURL),
+		upstreamTaskIDs: make([]string, 0, len(upstreamTaskIDs)),
+	}
+	for _, upstreamTaskID := range upstreamTaskIDs {
+		if value := strings.TrimSpace(upstreamTaskID); value != "" && value != taskID {
+			state.upstreamTaskIDs = append(state.upstreamTaskIDs, value)
 		}
 	}
-	for _, path := range openAIVideoResultURLArrayPaths() {
-		for index, item := range gjson.GetBytes(rewritten, path).Array() {
-			if item.Type == gjson.String && strings.TrimSpace(item.String()) != "" {
-				next, err := sjson.SetBytes(rewritten, fmt.Sprintf("%s.%d", path, index), contentURL)
-				if err == nil {
-					rewritten = next
-				}
-				continue
-			}
-			for _, field := range []string{"video_url", "url", "result_url"} {
-				if strings.TrimSpace(item.Get(field).String()) == "" {
-					continue
-				}
-				next, err := sjson.SetBytes(rewritten, fmt.Sprintf("%s.%d.%s", path, index, field), contentURL)
-				if err == nil {
-					rewritten = next
-				}
-			}
-		}
+	payload = state.rewrite(payload, "", "")
+	if object, ok := payload.(map[string]any); ok && !state.rewroteTaskID {
+		object["id"] = taskID
+	}
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		safe, _ := json.Marshal(map[string]any{"id": taskID, "status": MediaGenerationStatusRunning})
+		return safe
 	}
 	return rewritten
+}
+
+type openAIVideoClientRewriteState struct {
+	publicTaskID    string
+	contentURL      string
+	upstreamTaskIDs []string
+	rewroteTaskID   bool
+}
+
+func (s *openAIVideoClientRewriteState) rewrite(value any, path, parentKey string) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			childPath := key
+			if path != "" {
+				childPath = path + "." + key
+			}
+			if isOpenAIVideoTaskIDPath(childPath) {
+				typed[key] = s.publicTaskID
+				s.rewroteTaskID = true
+				continue
+			}
+			typed[key] = s.rewrite(child, childPath, key)
+		}
+		return typed
+	case []any:
+		for index, child := range typed {
+			typed[index] = s.rewrite(child, path, parentKey)
+		}
+		return typed
+	case string:
+		return s.rewriteString(typed, parentKey, path)
+	default:
+		return value
+	}
+}
+
+func (s *openAIVideoClientRewriteState) rewriteString(value, key, path string) string {
+	value = strings.TrimSpace(value)
+	for _, upstreamTaskID := range s.upstreamTaskIDs {
+		value = strings.ReplaceAll(value, upstreamTaskID, s.publicTaskID)
+	}
+	lowerKey := strings.ToLower(strings.TrimSpace(key))
+	if isOpenAIVideoResultURLKey(lowerKey) {
+		if value != "" {
+			return s.contentURL
+		}
+		return value
+	}
+	if isOpenAIVideoResultURLArrayPath(path) && isOpenAIVideoExternalURL(value) {
+		return s.contentURL
+	}
+	if isOpenAIVideoSensitiveLocationKey(lowerKey) {
+		return ""
+	}
+	if isOpenAIVideoExternalURL(value) {
+		return ""
+	}
+	if strings.HasPrefix(value, "//") || strings.Contains(value, "://") {
+		return ""
+	}
+	return value
+}
+
+func isOpenAIVideoExternalURL(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	return err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.Host != ""
+}
+
+func isOpenAIVideoResultURLArrayPath(path string) bool {
+	for _, candidate := range openAIVideoResultURLArrayPaths() {
+		if path == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenAIVideoTaskIDPath(path string) bool {
+	for _, candidate := range openAIVideoTaskIDPaths() {
+		if path == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenAIVideoResultURLKey(key string) bool {
+	switch key {
+	case "url", "video_url", "result_url", "content_url", "download_url", "file_url", "output_url":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenAIVideoSensitiveLocationKey(key string) bool {
+	if strings.Contains(key, "upstream") {
+		return true
+	}
+	switch key {
+	case "location", "host", "hostname", "path", "endpoint", "status_url", "task_url":
+		return true
+	default:
+		return strings.HasSuffix(key, "_url")
+	}
+}
+
+// SanitizeOpenAIVideoStoredResponseBody removes upstream failure payloads
+// before persistence. Successful and in-progress bodies are subsequently run
+// through RewriteOpenAIVideoClientResponseBody; signed media URLs are retained
+// only in MediaGenerationTask.UpstreamResultURL.
+func SanitizeOpenAIVideoStoredResponseBody(body []byte, status string) []byte {
+	if !IsMediaGenerationFailureStatus(status) {
+		return body
+	}
+	safeBody := []byte(`{"status":"failed","error":{"message":"Video generation failed","type":"upstream_error","param":null,"code":null}}`)
+	normalized := NormalizeMediaGenerationStatus(status)
+	if normalized != "" {
+		safeBody, _ = sjson.SetBytes(safeBody, "status", normalized)
+	}
+	return safeBody
+}
+
+func openAIVideoTaskIDPaths() []string {
+	return []string{
+		"id",
+		"request_id",
+		"task_id",
+		"data.id",
+		"data.request_id",
+		"data.task_id",
+		"data.task.id",
+		"data.task.request_id",
+		"data.task.task_id",
+		"data.video.id",
+		"data.video.request_id",
+		"data.video.task_id",
+		"data.result.id",
+		"data.result.request_id",
+		"data.result.task_id",
+		"result.id",
+		"result.request_id",
+		"result.task_id",
+		"result.task.id",
+		"result.task.request_id",
+		"result.task.task_id",
+		"video.id",
+		"video.request_id",
+		"video.task_id",
+		"raw_data.id",
+		"raw_data.request_id",
+		"raw_data.task_id",
+	}
 }
 
 func openAIVideoResultURLPaths() []string {
@@ -781,15 +1313,111 @@ func openAIVideoResultURLPaths() []string {
 		"video.url",
 		"video.video_url",
 		"video.result_url",
+		"raw_data.url",
+		"raw_data.video_url",
+		"raw_data.result_url",
+		"raw_data.content_url",
+		"data.raw_data.url",
+		"data.raw_data.video_url",
+		"data.raw_data.result_url",
+		"data.raw_data.content_url",
 	}
 }
 
 func openAIVideoResultURLArrayPaths() []string {
-	return []string{"output", "data.output", "result.output", "data.result.output"}
+	return []string{"data", "output", "data.output", "result.output", "data.result.output"}
 }
 
 func openAIVideoContentProxyPath(taskID string) string {
 	return "/v1/videos/" + url.PathEscape(strings.TrimSpace(taskID)) + "/content"
+}
+
+func openAIVideoContentProxyURL(publicBaseURL, taskID string) string {
+	path := openAIVideoContentProxyPath(taskID)
+	publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+	if publicBaseURL == "" {
+		return path
+	}
+	parsed, err := url.Parse(publicBaseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return path
+	}
+	basePath := strings.TrimRight(parsed.EscapedPath(), "/")
+	if strings.HasSuffix(strings.ToLower(basePath), "/v1") {
+		path = strings.TrimPrefix(path, "/v1")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.Path = ""
+	parsed.RawPath = ""
+	return strings.TrimRight(parsed.String(), "/") + basePath + path
+}
+
+func (s *OpenAIGatewayService) OpenAIVideoClientContentURL(ctx context.Context, publicBaseURL, taskID, upstreamResultURL string) (string, error) {
+	if s == nil || s.cfg == nil || s.cfg.Gateway.VideoProxy.Mode != config.VideoProxyModeEdge {
+		return openAIVideoContentProxyURL(publicBaseURL, taskID), nil
+	}
+	upstreamResultURL = strings.TrimSpace(upstreamResultURL)
+	if upstreamResultURL == "" {
+		return "", nil
+	}
+	validatedURL, err := validateOpenAIVideoContentProxyURL(upstreamResultURL)
+	if err != nil {
+		return "", err
+	}
+	parsedUpstreamURL, err := url.Parse(validatedURL)
+	if err != nil || parsedUpstreamURL.Hostname() == "" {
+		return "", fmt.Errorf("invalid video content url")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	resolveCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := urlvalidator.ResolvePublicIPs(resolveCtx, parsedUpstreamURL.Hostname()); err != nil {
+		return "", fmt.Errorf("invalid video content url")
+	}
+	cfg := s.cfg.Gateway.VideoProxy
+	key, err := hex.DecodeString(strings.TrimSpace(cfg.EncryptionKey))
+	if err != nil || len(key) != 32 {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	payload, err := json.Marshal(openAIVideoEdgeTokenPayload{
+		Version:   1,
+		URL:       validatedURL,
+		ExpiresAt: time.Now().UTC().Add(time.Duration(cfg.TokenTTLSeconds) * time.Second).Unix(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	sealed := gcm.Seal(nonce, nonce, payload, []byte(openAIVideoEdgeTokenAAD))
+	token := base64.RawURLEncoding.EncodeToString(sealed)
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.EdgeBaseURL), "/")
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("video edge proxy is unavailable")
+	}
+	return baseURL + "/v1/video-content/" + token, nil
+}
+
+func (s *OpenAIGatewayService) OpenAIVideoEdgeProxyEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.VideoProxy.Mode == config.VideoProxyModeEdge
+}
+
+func NewOpenAIVideoPublicTaskID() string {
+	return "video-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }
 
 func localOpenAIVideoSynchronousTaskID(upstreamRequestID string, body []byte) string {
@@ -864,10 +1492,17 @@ func (s *OpenAIGatewayService) openAIMediaTaskRepo() (MediaGenerationTaskReposit
 	return repo, ok
 }
 
+func (s *OpenAIGatewayService) OpenAIVideoPublicBaseURL(ctx context.Context) string {
+	if s == nil || s.settingService == nil {
+		return ""
+	}
+	return s.settingService.GetAPIBaseURL(ctx)
+}
+
 func (s *OpenAIGatewayService) GetOpenAIVideoTaskByTaskID(ctx context.Context, apiKeyID int64, taskID string) (*MediaGenerationTask, error) {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.GetMediaGenerationTaskByTaskID(ctx, apiKeyID, taskID)
 }
@@ -875,7 +1510,7 @@ func (s *OpenAIGatewayService) GetOpenAIVideoTaskByTaskID(ctx context.Context, a
 func (s *OpenAIGatewayService) GetOpenAIVideoTaskByIdempotency(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (*MediaGenerationTask, error) {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.GetMediaGenerationTaskByIdempotency(ctx, apiKeyID, idempotencyKeyHash)
 }
@@ -883,7 +1518,7 @@ func (s *OpenAIGatewayService) GetOpenAIVideoTaskByIdempotency(ctx context.Conte
 func (s *OpenAIGatewayService) AcquireOpenAIVideoIdempotencyLock(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (func(), error) {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok {
-		return func() {}, nil
+		return nil, fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.AcquireMediaGenerationIdempotencyLock(ctx, apiKeyID, idempotencyKeyHash)
 }
@@ -891,7 +1526,7 @@ func (s *OpenAIGatewayService) AcquireOpenAIVideoIdempotencyLock(ctx context.Con
 func (s *OpenAIGatewayService) CreateOpenAIVideoTask(ctx context.Context, task *MediaGenerationTask) error {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok {
-		return nil
+		return fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.CreateMediaGenerationTask(ctx, task)
 }
@@ -899,7 +1534,10 @@ func (s *OpenAIGatewayService) CreateOpenAIVideoTask(ctx context.Context, task *
 func (s *OpenAIGatewayService) UpdateOpenAIVideoTaskResponse(ctx context.Context, apiKeyID int64, taskID string, result *OpenAIForwardResult) error {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok || result == nil {
-		return nil
+		if result == nil {
+			return nil
+		}
+		return fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.UpdateMediaGenerationTaskResponse(
 		ctx,
@@ -908,6 +1546,7 @@ func (s *OpenAIGatewayService) UpdateOpenAIVideoTaskResponse(ctx context.Context
 		result.ResponseStatus,
 		result.ResponseContentType,
 		string(result.ResponseBody),
+		result.MediaResultURL,
 		result.VideoStatus,
 		result.MediaDurationSeconds,
 	)
@@ -916,9 +1555,33 @@ func (s *OpenAIGatewayService) UpdateOpenAIVideoTaskResponse(ctx context.Context
 func (s *OpenAIGatewayService) MarkOpenAIVideoTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error {
 	repo, ok := s.openAIMediaTaskRepo()
 	if !ok {
-		return nil
+		return fmt.Errorf("media generation task repository is unavailable")
 	}
 	return repo.MarkMediaGenerationTaskTerminal(ctx, apiKeyID, taskID, status, finalizationError)
+}
+
+func (s *OpenAIGatewayService) TryAcquireOpenAIVideoFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return false, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.TryAcquireMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken, leaseUntil)
+}
+
+func (s *OpenAIGatewayService) CompleteOpenAIVideoFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string) (bool, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return false, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.CompleteMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken)
+}
+
+func (s *OpenAIGatewayService) ReleaseOpenAIVideoFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken, finalizationError string) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.ReleaseMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken, finalizationError)
 }
 
 func OpenAIVideoTaskSessionHash(requestID string) string {

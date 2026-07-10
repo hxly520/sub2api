@@ -1392,7 +1392,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
 		return false
 	}
-	return accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability)
+	return accountSupportsOpenAICapabilities(account, req.RequestedModel, req.RequiredCapability, req.RequiredImageCapability)
 }
 
 func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bool, firstTokenMs *int) {
@@ -1719,7 +1719,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 				if selection == nil || selection.Account == nil {
 					return selection, decision, nil
 				}
-				if accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
+				if accountSupportsOpenAICapabilities(selection.Account, requestedModel, requiredCapability, requiredImageCapability) {
 					return selection, decision, nil
 				}
 				if selection.ReleaseFunc != nil {
@@ -1745,7 +1745,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 				return selection, decision, nil
 			}
 			if s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) &&
-				accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
+				accountSupportsOpenAICapabilities(selection.Account, requestedModel, requiredCapability, requiredImageCapability) {
 				return selection, decision, nil
 			}
 			if selection.ReleaseFunc != nil {
@@ -1800,11 +1800,11 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	})
 }
 
-func accountSupportsOpenAICapabilities(account *Account, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {
+func accountSupportsOpenAICapabilities(account *Account, requestedModel string, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {
 	if account == nil {
 		return false
 	}
-	return account.SupportsOpenAIEndpointCapability(requiredCapability) &&
+	return account.SupportsOpenAIEndpointCapabilityForModel(requiredCapability, requestedModel) &&
 		account.SupportsOpenAIImageCapability(requiredImageCapability)
 }
 
