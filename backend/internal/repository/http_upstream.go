@@ -398,7 +398,6 @@ func (s *httpUpstreamService) clientForRequest(req *http.Request, proxyURL strin
 		}
 		transport := baseTransport.Clone()
 		transport.Proxy = nil
-		transport.DialTLS = nil
 		transport.DialTLSContext = nil
 		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 		transport.DialContext = pinnedDialContext(host, ips, dialer.DialContext)

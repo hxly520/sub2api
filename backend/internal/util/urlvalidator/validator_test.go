@@ -1,6 +1,9 @@
 package urlvalidator
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestValidateURLFormat(t *testing.T) {
 	if _, err := ValidateURLFormat("", false); err == nil {
@@ -83,14 +86,14 @@ func TestResolvePublicIPsRejectsPrivateAndCarrierGradeNATLiterals(t *testing.T) 
 		"::1",
 		"fc00::1",
 	} {
-		if _, err := ResolvePublicIPs(nil, host); err == nil {
+		if _, err := ResolvePublicIPs(context.Background(), host); err == nil {
 			t.Fatalf("expected %s to be rejected", host)
 		}
 	}
 }
 
 func TestResolvePublicIPsAcceptsPublicLiteralWithoutDNS(t *testing.T) {
-	ips, err := ResolvePublicIPs(nil, "8.8.8.8")
+	ips, err := ResolvePublicIPs(context.Background(), "8.8.8.8")
 	if err != nil {
 		t.Fatalf("expected public literal to pass, got %v", err)
 	}

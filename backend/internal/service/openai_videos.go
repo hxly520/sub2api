@@ -546,7 +546,7 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 				return fmt.Errorf("seedance first/last frames cannot be combined with multimodal references")
 			}
 		} else {
-			if resolution != "" && resolution != fixedResolution && !(resolution == "2160p" && fixedResolution == "4k") {
+			if resolution != "" && resolution != fixedResolution && (resolution != "2160p" || fixedResolution != "4k") {
 				return fmt.Errorf("seedance resolution is fixed by the selected model")
 			}
 			if req.ReferenceImageCount > 9 || req.ReferenceVideoCount > 3 || req.ReferenceAudioCount > 3 {
