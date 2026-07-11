@@ -589,7 +589,8 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 			return fmt.Errorf("grok video does not accept first or last frame fields")
 		}
 	}
-	if profile == openAIVideoModelGrok15 {
+	switch profile {
+	case openAIVideoModelGrok15:
 		if req.ReferenceImageCount != 1 {
 			return fmt.Errorf("grok video 1.5 requires exactly one reference image")
 		}
@@ -599,7 +600,7 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
 			return fmt.Errorf("grok video 1.5 aspect_ratio must be 16:9 or 9:16")
 		}
-	} else if profile == openAIVideoModelGrok {
+	case openAIVideoModelGrok:
 		if ratio != "" && !containsOpenAIVideoString([]string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}, ratio) {
 			return fmt.Errorf("grok video aspect_ratio is unsupported")
 		}

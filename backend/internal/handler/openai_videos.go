@@ -908,16 +908,6 @@ func applyOpenAIVideoStoredTaskToForwardResult(result *service.OpenAIForwardResu
 	result.VideoStatus = task.Status
 }
 
-func openAIVideoStoredResultURL(task *service.MediaGenerationTask) string {
-	if task == nil {
-		return ""
-	}
-	if value := strings.TrimSpace(task.UpstreamResultURL); value != "" {
-		return value
-	}
-	return service.OpenAIVideoResultURLFromBody([]byte(task.ResponseBody))
-}
-
 func writeOpenAIVideoStoredResponse(c *gin.Context, h *OpenAIGatewayHandler, task *service.MediaGenerationTask, publicBaseURL string) error {
 	if c == nil || task == nil {
 		return nil

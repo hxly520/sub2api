@@ -147,8 +147,3 @@ func invalidateOpenAIFirstResponseRuntimeConfigCache() {
 	openAIFirstResponseRuntimeConfigSF.Forget(openAIFirstResponseSettingCacheKey)
 	openAIFirstResponseRuntimeConfigCache.Store(&cachedOpenAIFirstResponseRuntimeConfig{expiresAt: 0})
 }
-
-func resetOpenAIFirstResponseRuntimeConfigCacheForTest() {
-	openAIFirstResponseRuntimeConfigCache = atomic.Value{}
-	openAIFirstResponseRuntimeConfigSF = singleflight.Group{}
-}

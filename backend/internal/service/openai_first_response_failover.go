@@ -54,17 +54,6 @@ func WithOpenAIFirstResponseTimeout(ctx context.Context, timeout time.Duration) 
 	return context.WithValue(ctx, openAIFirstResponseTimeoutContextKey{}, &openAIFirstResponseBudget{timeout: timeout})
 }
 
-func openAIFirstResponseTimeoutFromContext(ctx context.Context) time.Duration {
-	if ctx == nil {
-		return 0
-	}
-	budget, _ := ctx.Value(openAIFirstResponseTimeoutContextKey{}).(*openAIFirstResponseBudget)
-	if budget == nil || budget.timeout <= 0 {
-		return 0
-	}
-	return budget.timeout
-}
-
 func openAIFirstResponseBudgetFromContext(ctx context.Context) *openAIFirstResponseBudget {
 	if ctx == nil {
 		return nil

@@ -148,11 +148,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return
 		}
 
-		queuedCurrent := false
 		if firstResponseWatch.Waiting() {
 			if reserveOpenAIFirstResponseBuffer(firstResponseWatch, &pendingFirstResponseBytes, len(line)+1) {
 				pendingFirstResponseLines = append(pendingFirstResponseLines, line)
-				queuedCurrent = true
 				return
 			}
 			// The bounded pre-output queue is full. Commit this account rather than
@@ -165,17 +163,15 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			logger.LegacyPrintf("service.openai_gateway", "Client disconnected while flushing pending first-response events, continuing to drain upstream for billing")
 			return
 		}
-		if !queuedCurrent {
-			if _, err := bufferedWriter.WriteString(line); err != nil {
-				clientDisconnected = true
-				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-				return
-			}
-			if _, err := bufferedWriter.WriteString("\n"); err != nil {
-				clientDisconnected = true
-				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-				return
-			}
+		if _, err := bufferedWriter.WriteString(line); err != nil {
+			clientDisconnected = true
+			logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
+			return
+		}
+		if _, err := bufferedWriter.WriteString("\n"); err != nil {
+			clientDisconnected = true
+			logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
+			return
 		}
 		if shouldFlush {
 			if err := flushBuffered(); err != nil {
