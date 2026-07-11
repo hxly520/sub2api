@@ -58,6 +58,63 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
 	require.False(t, parsed.Multipart)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_FireflyFixedTiers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		model    string
+		wantTier string
+	}{
+		{model: "firefly-gpt-image-2-1k", wantTier: ImageBillingSize1K},
+		{model: "firefly-gpt-image-2-2k", wantTier: ImageBillingSize2K},
+		{model: "firefly-gpt-image-2-4k", wantTier: ImageBillingSize4K},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			body := []byte(`{"model":"` + tt.model + `","prompt":"draw a cat","size":"1:1","image_size":"` + tt.wantTier + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			require.Equal(t, tt.model, parsed.Model)
+			require.Equal(t, tt.wantTier, parsed.ImageSize)
+			require.Equal(t, tt.wantTier, parsed.SizeTier)
+			require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_FireflyRejectsConflictingTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"firefly-gpt-image-2-2k","prompt":"draw a cat","size":"1024x1024","image_size":"2K"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	_, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.EqualError(t, err, "size must match 2K for model firefly-gpt-image-2-2k")
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ImageSizeSetsBillingTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"16:9","image_size":"4K"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, "4K", parsed.ImageSize)
+	require.Equal(t, ImageBillingSize4K, parsed.SizeTier)
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

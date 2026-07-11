@@ -68,18 +68,26 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
-	for _, path := range []string{
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/images/generations",
-		"/images/edits",
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/v1/images/generations", `{"model":"gpt-image-2","prompt":"draw a cat"}`},
+		{http.MethodPost, "/v1/images/edits", `{"model":"gpt-image-2","prompt":"draw a cat"}`},
+		{http.MethodPost, "/images/generations", `{"model":"gpt-image-2","prompt":"draw a cat"}`},
+		{http.MethodPost, "/images/edits", `{"model":"gpt-image-2","prompt":"draw a cat"}`},
+		{http.MethodGet, "/v1/images/generations/image-request-123", ""},
+		{http.MethodGet, "/v1/images/edits/image-request-123", ""},
+		{http.MethodGet, "/images/generations/image-request-123", ""},
+		{http.MethodGet, "/images/edits/image-request-123", ""},
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-image-2","prompt":"draw a cat"}`))
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI images handler", path)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s should hit OpenAI images handler", tc.method, tc.path)
 	}
 }
 

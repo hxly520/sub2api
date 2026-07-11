@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -53,6 +55,8 @@ type MediaGenerationTask struct {
 	Resolution             string
 	SizeTier               string
 	BillingMode            string
+	BillingUnitPrice       *float64
+	BillingRateMultiplier  *float64
 	MediaType              string
 	FinalizedAt            *time.Time
 	FinalizationLeaseToken string
@@ -61,6 +65,12 @@ type MediaGenerationTask struct {
 	FinalizationError      string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+}
+
+type MediaGenerationPricingSnapshot struct {
+	Mode           BillingMode
+	UnitPrice      float64
+	RateMultiplier float64
 }
 
 type MediaGenerationTaskRepository interface {
@@ -73,6 +83,98 @@ type MediaGenerationTaskRepository interface {
 	TryAcquireMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error)
 	CompleteMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string) (bool, error)
 	ReleaseMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken, finalizationError string) error
+}
+
+func (s *OpenAIGatewayService) GetMediaGenerationTaskByTaskID(ctx context.Context, apiKeyID int64, taskID string) (*MediaGenerationTask, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.GetMediaGenerationTaskByTaskID(ctx, apiKeyID, taskID)
+}
+
+func (s *OpenAIGatewayService) GetMediaGenerationTaskByIdempotency(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (*MediaGenerationTask, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.GetMediaGenerationTaskByIdempotency(ctx, apiKeyID, idempotencyKeyHash)
+}
+
+func (s *OpenAIGatewayService) AcquireMediaGenerationIdempotencyLock(ctx context.Context, apiKeyID int64, idempotencyKeyHash string) (func(), error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return nil, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.AcquireMediaGenerationIdempotencyLock(ctx, apiKeyID, idempotencyKeyHash)
+}
+
+func (s *OpenAIGatewayService) CreateMediaGenerationTask(ctx context.Context, task *MediaGenerationTask) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.CreateMediaGenerationTask(ctx, task)
+}
+
+func (s *OpenAIGatewayService) UpdateMediaGenerationTaskResponse(
+	ctx context.Context,
+	apiKeyID int64,
+	taskID string,
+	responseStatus int,
+	responseContentType string,
+	responseBody []byte,
+	upstreamResultURL string,
+	status string,
+	durationSeconds int,
+) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.UpdateMediaGenerationTaskResponse(
+		ctx,
+		apiKeyID,
+		taskID,
+		responseStatus,
+		responseContentType,
+		string(responseBody),
+		upstreamResultURL,
+		status,
+		durationSeconds,
+	)
+}
+
+func (s *OpenAIGatewayService) MarkMediaGenerationTaskTerminal(ctx context.Context, apiKeyID int64, taskID, status, finalizationError string) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.MarkMediaGenerationTaskTerminal(ctx, apiKeyID, taskID, status, finalizationError)
+}
+
+func (s *OpenAIGatewayService) TryAcquireMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return false, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.TryAcquireMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken, leaseUntil)
+}
+
+func (s *OpenAIGatewayService) CompleteMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string) (bool, error) {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return false, fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.CompleteMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken)
+}
+
+func (s *OpenAIGatewayService) ReleaseMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken, finalizationError string) error {
+	repo, ok := s.openAIMediaTaskRepo()
+	if !ok {
+		return fmt.Errorf("media generation task repository is unavailable")
+	}
+	return repo.ReleaseMediaGenerationFinalization(ctx, apiKeyID, taskID, leaseToken, finalizationError)
 }
 
 func (t *MediaGenerationTask) ClientTaskID() string {
@@ -99,6 +201,27 @@ func (t *MediaGenerationTask) ProviderTaskID() string {
 		return strings.TrimSpace(t.TaskID)
 	}
 	return ""
+}
+
+func (t *MediaGenerationTask) PricingSnapshot() *MediaGenerationPricingSnapshot {
+	if t == nil || t.BillingUnitPrice == nil || t.BillingRateMultiplier == nil {
+		return nil
+	}
+	mode := BillingMode(strings.TrimSpace(t.BillingMode))
+	if mode != BillingModePerRequest && mode != BillingModeImage && mode != BillingModeVideo {
+		return nil
+	}
+	unitPrice := *t.BillingUnitPrice
+	rateMultiplier := *t.BillingRateMultiplier
+	if unitPrice < 0 || rateMultiplier < 0 || math.IsNaN(unitPrice) || math.IsNaN(rateMultiplier) ||
+		math.IsInf(unitPrice, 0) || math.IsInf(rateMultiplier, 0) {
+		return nil
+	}
+	return &MediaGenerationPricingSnapshot{
+		Mode:           mode,
+		UnitPrice:      unitPrice,
+		RateMultiplier: rateMultiplier,
+	}
 }
 
 func HashMediaGenerationIdempotencyKey(key string) string {

@@ -256,6 +256,7 @@ type OpenAIForwardResult struct {
 	ResponseBody         []byte
 	MediaResultURL       string
 	VideoStatus          string
+	MediaStatus          string
 
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool

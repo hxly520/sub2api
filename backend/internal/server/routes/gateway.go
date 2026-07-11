@@ -58,6 +58,19 @@ func RegisterGatewayRoutes(
 			})
 		}
 	}
+	imageTaskStatusHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformOpenAI {
+			h.OpenAIGateway.Images(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Image task API is not supported for this platform",
+			},
+		})
+	}
 	videoGenerationHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformGrok:
@@ -194,6 +207,8 @@ func RegisterGatewayRoutes(
 		})
 		gateway.POST("/images/generations", imagesHandler)
 		gateway.POST("/images/edits", imagesHandler)
+		gateway.GET("/images/generations/:request_id", imageTaskStatusHandler)
+		gateway.GET("/images/edits/:request_id", imageTaskStatusHandler)
 		gateway.POST("/images/batches", h.BatchImage.Submit)
 		gateway.GET("/images/batches", h.BatchImage.List)
 		gateway.GET("/images/batches/models", h.BatchImage.Models)
@@ -277,6 +292,8 @@ func RegisterGatewayRoutes(
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imagesHandler)
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imagesHandler)
+	r.GET("/images/generations/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imageTaskStatusHandler)
+	r.GET("/images/edits/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imageTaskStatusHandler)
 	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoHandler)
 	r.GET("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoStatusHandler)
 	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoStatusHandler)

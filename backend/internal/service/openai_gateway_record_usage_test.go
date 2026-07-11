@@ -2297,6 +2297,120 @@ func TestOpenAIGatewayServiceRecordUsage_Channel4KVideoBillsPerSecond(t *testing
 	require.Equal(t, VideoBillingResolution4K, *usageRepo.lastLog.VideoResolution)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_PerRequestVideoUsesCreationPricingSnapshot(t *testing.T) {
+	groupID := int64(1315)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	// The live channel price represents an administrator change after task creation.
+	svc.resolver = newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, "grok-video", BillingModePerRequest, "", 9.99)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "video:grok-snapshot-per-request",
+			Model:                "grok-video",
+			BillingModel:         "grok-video",
+			VideoCount:           1,
+			MediaType:            "video",
+			MediaDurationSeconds: 15,
+			VideoResolution:      VideoBillingResolution720P,
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      101315,
+			GroupID: i64p(groupID),
+			Group:   &Group{ID: groupID, Platform: PlatformOpenAI, RateMultiplier: 1},
+		},
+		User:    &User{ID: 201315},
+		Account: &Account{ID: 301315, Platform: PlatformOpenAI},
+		MediaPricingSnapshot: &MediaGenerationPricingSnapshot{
+			Mode:           BillingModePerRequest,
+			UnitPrice:      0.4,
+			RateMultiplier: 0.5,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 0.4, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.2, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.5, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.Equal(t, string(BillingModePerRequest), *usageRepo.lastLog.BillingMode)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_PerSecondVideoUsesCreationPricingSnapshot(t *testing.T) {
+	groupID := int64(1316)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, "seedance-2.0-fast-720p", BillingModeVideo, VideoBillingResolution720P, 9.99)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "video:seedance-snapshot-per-second",
+			Model:                "seedance-2.0-fast-720p",
+			BillingModel:         "seedance-2.0-fast-720p",
+			VideoCount:           1,
+			MediaType:            "video",
+			MediaDurationSeconds: 6,
+			VideoResolution:      VideoBillingResolution720P,
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      101316,
+			GroupID: i64p(groupID),
+			Group:   &Group{ID: groupID, Platform: PlatformOpenAI, RateMultiplier: 1},
+		},
+		User:    &User{ID: 201316},
+		Account: &Account{ID: 301316, Platform: PlatformOpenAI},
+		MediaPricingSnapshot: &MediaGenerationPricingSnapshot{
+			Mode:           BillingModeVideo,
+			UnitPrice:      0.55,
+			RateMultiplier: 0.8,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 3.3, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 2.64, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.8, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+}
+
+func TestCaptureOpenAIVideoPricingSnapshotUsesMappedModelAndVideoMultiplier(t *testing.T) {
+	groupID := int64(1317)
+	svc := newOpenAIRecordUsageServiceForTest(&openAIRecordUsageLogRepoStub{}, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, "seedance-2.0-fast-720p", BillingModeVideo, VideoBillingResolution720P, 0.55)
+
+	snapshot, err := svc.CaptureOpenAIVideoPricingSnapshot(
+		context.Background(),
+		&APIKey{
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:                   groupID,
+				Platform:             PlatformOpenAI,
+				RateMultiplier:       1.2,
+				VideoRateIndependent: true,
+				VideoRateMultiplier:  0.75,
+			},
+		},
+		201317,
+		"public-video-model",
+		"private-upstream-model",
+		VideoBillingResolution720P,
+		ChannelUsageFields{
+			OriginalModel:      "public-video-model",
+			ChannelMappedModel: "seedance-2.0-fast-720p",
+			BillingModelSource: BillingModelSourceChannelMapped,
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, snapshot)
+	require.Equal(t, BillingModeVideo, snapshot.Mode)
+	require.InDelta(t, 0.55, snapshot.UnitPrice, 1e-12)
+	require.InDelta(t, 0.75, snapshot.RateMultiplier, 1e-12)
+}
+
 // 视频请求命中渠道 token 计费时走 token 路径；此时行是 billing_mode='token'、image_count=1、
 // image_size=NULL，必须携带 video_count>0 才能通过 usage_logs 的 image_size check 约束
 // （迁移 172），否则整个计费事务会因约束违反而丢失。

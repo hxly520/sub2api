@@ -47,14 +47,19 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
+	if c.Request.Method == http.MethodGet {
+		h.handleOpenAIImageTaskStatus(c, reqLog, apiKey, subject, requestStart)
+		return
+	}
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
+		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
 		return
 	}
 	if len(body) == 0 {
@@ -106,6 +111,17 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestModel)
+	var asyncCreation *openAIImageAsyncCreation
+	if parsed.Async {
+		var handled bool
+		asyncCreation, handled = h.prepareOpenAIImageAsyncCreation(c, reqLog, apiKey, body, parsed)
+		if handled {
+			return
+		}
+		if asyncCreation != nil && asyncCreation.release != nil {
+			defer asyncCreation.release()
+		}
+	}
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -131,6 +147,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
 		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return
+	}
+	if parsed.Async {
+		h.handleOpenAIImageAsyncCreation(c, reqLog, apiKey, subject, subscription, body, parsed, channelMapping, asyncCreation, routingStart)
 		return
 	}
 

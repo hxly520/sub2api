@@ -63,11 +63,12 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		var err error
 		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
+			logRequestBodyReadFailure(reqLog, c.Request, err)
 			if maxErr, ok := extractMaxBytesError(err); ok {
 				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 				return
 			}
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
 			return
 		}
 	}
@@ -88,9 +89,11 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		zap.String("request_id", parsed.RequestID),
 	)
 
+	idempotencyKey := ""
 	idempotencyHash := ""
 	generationPublicTaskID := ""
 	var generationIntent *service.MediaGenerationTask
+	var generationPricingSnapshot *service.MediaGenerationPricingSnapshot
 	resumedGenerationIntent := false
 	inspectIdempotentTask := func(replay *service.MediaGenerationTask) (handled bool, resumable bool) {
 		if replay == nil {
@@ -108,6 +111,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if service.NormalizeMediaGenerationStatus(replay.Status) == service.MediaGenerationStatusCreating && replay.ProviderTaskID() == "" {
 			generationPublicTaskID = clientTaskID
 			generationIntent = replay
+			generationPricingSnapshot = replay.PricingSnapshot()
 			resumedGenerationIntent = true
 			return false, true
 		}
@@ -140,7 +144,8 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		return true, false
 	}
 	if parsed.GenerationRequest {
-		idempotencyHash = service.HashMediaGenerationIdempotencyKey(openAIVideoIdempotencyKey(c))
+		idempotencyKey = openAIVideoIdempotencyKey(c)
+		idempotencyHash = service.HashMediaGenerationIdempotencyKey(idempotencyKey)
 		if idempotencyHash != "" {
 			replay, err := h.gatewayService.GetOpenAIVideoTaskByIdempotency(c.Request.Context(), apiKey.ID, idempotencyHash)
 			if err == nil && replay != nil {
@@ -183,6 +188,10 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if generationPublicTaskID == "" {
 			generationPublicTaskID = service.NewOpenAIVideoPublicTaskID()
 		}
+		if idempotencyKey == "" {
+			idempotencyKey = generationPublicTaskID
+		}
+		parsed.UpstreamIdempotencyKey = idempotencyKey
 	}
 
 	if parsed.GenerationRequest {
@@ -334,12 +343,6 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 
 	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
 	routingStart := time.Now()
-	maxAccountSwitches := h.maxAccountSwitches
-	if maxAccountSwitches <= 0 {
-		maxAccountSwitches = 3
-	}
-	switchCount := 0
-	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 
 	for {
@@ -349,23 +352,19 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			"",
 			sessionHash,
 			requestModel,
-			failedAccountIDs,
+			nil,
 			service.OpenAIUpstreamTransportHTTPSSE,
 			service.OpenAIEndpointCapabilityVideos,
 			false,
 			false,
 		)
 		if err != nil {
-			reqLog.Warn("openai.videos.account_select_failed", zap.Error(err), zap.Int("excluded_account_count", len(failedAccountIDs)))
-			if len(failedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
-				if !cls.ModelNotFound {
-					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-				}
-				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, "No available compatible video accounts", streamStarted)
-				return
+			reqLog.Warn("openai.videos.account_select_failed", zap.Error(err))
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+			if !cls.ModelNotFound {
+				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 			}
-			writeOpenAIVideoSafeUpstreamError(c)
+			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, "No available compatible video accounts", streamStarted)
 			return
 		}
 		if selection == nil || selection.Account == nil {
@@ -416,7 +415,28 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				mappedModel = value
 			}
 			upstreamModel := account.GetMappedModel(mappedModel)
+			upstreamRequest, prepareErr := service.PrepareOpenAIVideoRequestForUpstream(parsed, upstreamModel)
+			if prepareErr != nil {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", prepareErr.Error())
+				return
+			}
 			usageFields := channelMapping.ToUsageFields(requestModel, upstreamModel)
+			if !resumedGenerationIntent {
+				generationPricingSnapshot, prepareErr = h.gatewayService.CaptureOpenAIVideoPricingSnapshot(
+					requestCtx,
+					apiKey,
+					subject.UserID,
+					requestModel,
+					upstreamModel,
+					upstreamRequest.Resolution,
+					usageFields,
+				)
+				if prepareErr != nil {
+					reqLog.Warn("openai.videos.capture_pricing_snapshot_failed", zap.String("model", requestModel), zap.Error(prepareErr))
+					h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video pricing is unavailable")
+					return
+				}
+			}
 			intentBody := service.RewriteOpenAIVideoClientResponseBody(
 				[]byte(`{"status":"creating"}`),
 				generationPublicTaskID,
@@ -433,7 +453,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				UpstreamModel:       upstreamModel,
 				Endpoint:            parsed.Endpoint,
 				InboundEndpoint:     GetInboundEndpoint(c),
-				UpstreamEndpoint:    parsed.UpstreamPath,
+				UpstreamEndpoint:    upstreamRequest.UpstreamPath,
 				RequestFingerprint:  requestFingerprint,
 				RequestPayloadHash:  service.HashUsageRequestPayload(body),
 				IdempotencyKeyHash:  idempotencyHash,
@@ -441,13 +461,18 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				ResponseContentType: "application/json",
 				ResponseBody:        string(intentBody),
 				Status:              service.MediaGenerationStatusCreating,
-				DurationSeconds:     parsed.DurationSeconds,
-				Resolution:          parsed.Resolution,
-				SizeTier:            parsed.BillingSizeTier(),
+				DurationSeconds:     upstreamRequest.DurationSeconds,
+				Resolution:          upstreamRequest.Resolution,
+				SizeTier:            upstreamRequest.BillingSizeTier(),
 				MediaType:           "video",
 				ChannelMappedModel:  usageFields.ChannelMappedModel,
 				BillingModelSource:  usageFields.BillingModelSource,
 				ModelMappingChain:   usageFields.ModelMappingChain,
+			}
+			if generationPricingSnapshot != nil {
+				intent.BillingMode = string(generationPricingSnapshot.Mode)
+				intent.BillingUnitPrice = &generationPricingSnapshot.UnitPrice
+				intent.BillingRateMultiplier = &generationPricingSnapshot.RateMultiplier
 			}
 			if usageFields.ChannelID > 0 {
 				intent.ChannelID = &usageFields.ChannelID
@@ -532,20 +557,12 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 						continue
 					}
 				}
-				h.gatewayService.RecordOpenAIAccountSwitch()
-				failedAccountIDs[account.ID] = struct{}{}
-				if switchCount >= maxAccountSwitches {
-					writeOpenAIVideoSafeUpstreamError(c)
-					return
-				}
-				switchCount++
-				reqLog.Warn("openai.videos.upstream_failover_switching",
-					zap.Int64("account_id", account.ID),
-					zap.Int("upstream_status", failoverErr.StatusCode),
-					zap.Int("switch_count", switchCount),
-					zap.Int("max_switches", maxAccountSwitches),
-				)
-				continue
+				// Once a media request has been dispatched, switching accounts can
+				// create a second long-running task if the first upstream accepted it
+				// before returning an ambiguous gateway error. Keep the local intent
+				// resumable with the same account and idempotency key instead.
+				writeOpenAIVideoSafeUpstreamError(c)
+				return
 			}
 			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
@@ -588,7 +605,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				UpstreamModel:       upstreamModel,
 				Endpoint:            parsed.Endpoint,
 				InboundEndpoint:     GetInboundEndpoint(c),
-				UpstreamEndpoint:    parsed.UpstreamPath,
+				UpstreamEndpoint:    service.OpenAIVideoUpstreamEndpointForModel(upstreamModel, parsed.UpstreamPath),
 				RequestFingerprint:  requestFingerprint,
 				RequestPayloadHash:  service.HashUsageRequestPayload(body),
 				IdempotencyKeyHash:  idempotencyHash,
@@ -598,12 +615,17 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				UpstreamResultURL:   result.MediaResultURL,
 				Status:              status,
 				DurationSeconds:     result.MediaDurationSeconds,
-				Resolution:          parsed.Resolution,
-				SizeTier:            parsed.BillingSizeTier(),
+				Resolution:          result.VideoResolution,
+				SizeTier:            result.ImageSize,
 				MediaType:           "video",
 				ChannelMappedModel:  usageFields.ChannelMappedModel,
 				BillingModelSource:  usageFields.BillingModelSource,
 				ModelMappingChain:   usageFields.ModelMappingChain,
+			}
+			if generationPricingSnapshot != nil {
+				task.BillingMode = string(generationPricingSnapshot.Mode)
+				task.BillingUnitPrice = &generationPricingSnapshot.UnitPrice
+				task.BillingRateMultiplier = &generationPricingSnapshot.RateMultiplier
 			}
 			if usageFields.ChannelID > 0 {
 				task.ChannelID = &usageFields.ChannelID
@@ -634,13 +656,13 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				reqLog.Warn("openai.videos.forward_edge_url_failed", zap.String("request_id", publicTaskID), zap.Error(err))
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
 			}
-			reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount))
+			reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
 			return
 		}
 
 		if parsed.ContentRequest {
 			streamStarted = result != nil
-			reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount))
+			reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
 			return
 		}
 
@@ -669,7 +691,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			reqLog.Warn("openai.videos.status_edge_url_failed", zap.String("request_id", clientTaskID), zap.Error(err))
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
 		}
-		reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount))
+		reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
 		return
 	}
 }
@@ -787,19 +809,20 @@ func recordOpenAIVideoFinalUsage(
 	}
 	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             recordResult,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    strings.TrimSpace(task.InboundEndpoint),
-			UpstreamEndpoint:   strings.TrimSpace(task.UpstreamEndpoint),
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: strings.TrimSpace(task.RequestPayloadHash),
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
-			ChannelUsageFields: usageFields,
+			Result:               recordResult,
+			APIKey:               apiKey,
+			User:                 apiKey.User,
+			Account:              account,
+			Subscription:         subscription,
+			InboundEndpoint:      strings.TrimSpace(task.InboundEndpoint),
+			UpstreamEndpoint:     strings.TrimSpace(task.UpstreamEndpoint),
+			UserAgent:            userAgent,
+			IPAddress:            clientIP,
+			RequestPayloadHash:   strings.TrimSpace(task.RequestPayloadHash),
+			APIKeyService:        h.apiKeyService,
+			QuotaPlatform:        quotaPlatform,
+			MediaPricingSnapshot: task.PricingSnapshot(),
+			ChannelUsageFields:   usageFields,
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", "handler.openai_gateway.videos"),

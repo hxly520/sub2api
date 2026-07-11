@@ -1527,6 +1527,8 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	switch capability {
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	case OpenAIImagesCapabilityAsync:
+		return a.Type == AccountTypeAPIKey && strings.TrimSpace(a.GetCredential("base_url")) != ""
 	default:
 		return true
 	}

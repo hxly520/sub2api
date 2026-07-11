@@ -70,6 +70,7 @@ type OpenAIVideoRequest struct {
 	HasFirstFrame           bool
 	HasLastFrame            bool
 	AspectRatio             string
+	UpstreamIdempotencyKey  string
 	Body                    []byte
 	bodyHash                string
 }
@@ -544,6 +545,30 @@ func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
 	}
 }
 
+// PrepareOpenAIVideoRequestForUpstream applies the final account model mapping
+// before validating the provider-specific contract and selecting its endpoint.
+func PrepareOpenAIVideoRequestForUpstream(req *OpenAIVideoRequest, upstreamModel string) (*OpenAIVideoRequest, error) {
+	if req == nil {
+		return nil, fmt.Errorf("video request is nil")
+	}
+	prepared := *req
+	if model := strings.TrimSpace(upstreamModel); model != "" {
+		prepared.Model = model
+	}
+	if !prepared.GenerationRequest {
+		return &prepared, nil
+	}
+	normalizeOpenAIVideoDerivedFields(&prepared)
+	if err := validateOpenAIVideoModelRequest(&prepared); err != nil {
+		return nil, err
+	}
+	prepared.UpstreamPath = OpenAIVideoUpstreamEndpointForModel(prepared.Model, prepared.UpstreamPath)
+	if strings.TrimSpace(prepared.UpstreamPath) == "" {
+		return nil, fmt.Errorf("video upstream endpoint is unavailable")
+	}
+	return &prepared, nil
+}
+
 func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 	if req == nil {
 		return fmt.Errorf("video request is nil")
@@ -774,12 +799,19 @@ func (s *OpenAIGatewayService) ForwardVideo(
 		requestModel = mapped
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
+	var err error
+	effectiveParsed := parsed
+	if parsed.GenerationRequest {
+		effectiveParsed, err = PrepareOpenAIVideoRequestForUpstream(parsed, upstreamModel)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	forwardBody := parsed.Body
 	forwardContentType := parsed.ContentType
-	var err error
 	if parsed.GenerationRequest && strings.TrimSpace(upstreamModel) != "" {
-		forwardBody, forwardContentType, err = rewriteOpenAIVideoModel(parsed.Body, parsed.ContentType, upstreamModel)
+		forwardBody, forwardContentType, err = rewriteOpenAIVideoRequest(parsed.Body, parsed.ContentType, upstreamModel, effectiveParsed)
 		if err != nil {
 			return nil, err
 		}
@@ -792,7 +824,7 @@ func (s *OpenAIGatewayService) ForwardVideo(
 	if err != nil {
 		return nil, err
 	}
-	upstreamReq, err := s.buildOpenAIVideoRequest(upstreamCtx, c, account, parsed, forwardBody, forwardContentType, token)
+	upstreamReq, err := s.buildOpenAIVideoRequest(upstreamCtx, c, account, effectiveParsed, forwardBody, forwardContentType, token)
 	if err != nil {
 		return nil, err
 	}
@@ -848,7 +880,7 @@ func (s *OpenAIGatewayService) ForwardVideo(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if parsed.ContentRequest {
+	if effectiveParsed.ContentRequest {
 		if err := s.streamOpenAIVideoContentResponse(resp, c); err != nil {
 			return nil, err
 		}
@@ -875,13 +907,13 @@ func (s *OpenAIGatewayService) ForwardVideo(
 	if videoStatus == "" && openAIVideoHasResultURL(body) {
 		videoStatus = MediaGenerationStatusCompleted
 	}
-	if responseID == "" && parsed.GenerationRequest && IsMediaGenerationSuccessStatus(videoStatus) {
+	if responseID == "" && effectiveParsed.GenerationRequest && IsMediaGenerationSuccessStatus(videoStatus) {
 		responseID = localOpenAIVideoSynchronousTaskID(resp.Header.Get("x-request-id"), body)
 	}
-	if parsed.GenerationRequest && strings.TrimSpace(responseID) == "" {
+	if effectiveParsed.GenerationRequest && strings.TrimSpace(responseID) == "" {
 		return nil, fmt.Errorf("video upstream response did not include a task id")
 	}
-	durationSeconds := parsed.DurationSeconds
+	durationSeconds := effectiveParsed.DurationSeconds
 	if durationSeconds <= 0 {
 		durationSeconds = extractOpenAIVideoDurationSeconds(body)
 	}
@@ -897,10 +929,10 @@ func (s *OpenAIGatewayService) ForwardVideo(
 		Stream:               false,
 		Duration:             time.Since(startTime),
 		ImageCount:           0,
-		VideoCount:           boolToMediaCount(parsed.GenerationRequest),
-		ImageSize:            parsed.BillingSizeTier(),
-		VideoResolution:      parsed.Resolution,
-		VideoDurationSeconds: parsed.DurationSeconds,
+		VideoCount:           boolToMediaCount(effectiveParsed.GenerationRequest),
+		ImageSize:            effectiveParsed.BillingSizeTier(),
+		VideoResolution:      effectiveParsed.Resolution,
+		VideoDurationSeconds: effectiveParsed.DurationSeconds,
 		MediaDurationSeconds: durationSeconds,
 		MediaType:            "video",
 		ResponseStatus:       resp.StatusCode,
@@ -947,7 +979,10 @@ func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *g
 		}
 	}
 	if parsed.GenerationRequest {
-		idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		idempotencyKey := strings.TrimSpace(parsed.UpstreamIdempotencyKey)
+		if idempotencyKey == "" {
+			idempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		}
 		if idempotencyKey == "" {
 			idempotencyKey = strings.TrimSpace(c.GetHeader("X-Idempotency-Key"))
 		}
@@ -966,7 +1001,7 @@ func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *g
 	return req, nil
 }
 
-func rewriteOpenAIVideoModel(body []byte, contentType string, model string) ([]byte, string, error) {
+func rewriteOpenAIVideoRequest(body []byte, contentType string, model string, parsed *OpenAIVideoRequest) ([]byte, string, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return body, contentType, nil
@@ -978,6 +1013,18 @@ func rewriteOpenAIVideoModel(body []byte, contentType string, model string) ([]b
 	rewritten, err := sjson.SetBytes(body, "model", model)
 	if err != nil {
 		return nil, "", fmt.Errorf("rewrite video request model: %w", err)
+	}
+	if parsed != nil && classifyOpenAIVideoModel(model) == openAIVideoModelGrok && parsed.ReferenceImageCount > 1 && parsed.DurationSeconds > 10 {
+		rewritten, err = sjson.SetBytes(rewritten, "seconds", 10)
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite grok video seconds: %w", err)
+		}
+		if gjson.GetBytes(rewritten, "duration").Exists() {
+			rewritten, err = sjson.SetBytes(rewritten, "duration", 10)
+			if err != nil {
+				return nil, "", fmt.Errorf("rewrite grok video duration: %w", err)
+			}
+		}
 	}
 	return rewritten, contentType, nil
 }

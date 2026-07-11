@@ -174,6 +174,64 @@ func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testin
 	require.Equal(t, 1, result.VideoCount)
 }
 
+func TestForwardOpenAIVideoMappedGrokUsesMappedContractAndStableIdempotency(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"public-video","prompt":"city","duration":6}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          77,
+		Name:        "mapped-grok-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://video-upstream.test/v1",
+			"model_mapping": map[string]any{
+				"public-video": "grok-video",
+			},
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"mapped-grok-task","status":"queued"}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	parsed.UpstreamIdempotencyKey = "video-public-task"
+	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
+	require.NoError(t, err)
+
+	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "video-public-task", upstream.lastReq.Header.Get("Idempotency-Key"))
+	require.Equal(t, "grok-video", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "mapped-grok-task", result.ResponseID)
+}
+
+func TestRewriteOpenAIVideoRequestClampsGrokMultiImageDuration(t *testing.T) {
+	body := []byte(`{"model":"grok-video","prompt":"city","duration":15,"image_urls":["a","b"]}`)
+	parsed := &OpenAIVideoRequest{
+		Model:               "grok-video",
+		DurationSeconds:     15,
+		ReferenceImageCount: 2,
+	}
+
+	rewritten, contentType, err := rewriteOpenAIVideoRequest(body, "application/json", "grok-video", parsed)
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.Equal(t, int64(10), gjson.GetBytes(rewritten, "seconds").Int())
+	require.Equal(t, int64(10), gjson.GetBytes(rewritten, "duration").Int())
+}
+
 func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
