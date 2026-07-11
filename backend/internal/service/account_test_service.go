@@ -812,7 +812,7 @@ func (s *AccountTestService) openAIChatCompletionsTestURL(account *Account, norm
 	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
 		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
 		if err != nil {
-			return "", fmt.Errorf("Invalid Chat Completions URL: %s", err.Error())
+			return "", fmt.Errorf("invalid Chat Completions URL: %s", err.Error())
 		}
 		return validatedURL, nil
 	}
