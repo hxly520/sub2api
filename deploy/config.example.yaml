@@ -338,6 +338,26 @@ gateway:
     sticky_escape_ttft_ms: 15000
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
+  # 流式文本请求首事件超时切号。仅在有同组替代账号、且尚未向客户端写出语义字节时生效。
+  openai_first_response:
+    # 默认关闭；可在后台系统设置动态开启。
+    enabled: false
+    # 单个上游账号等待首个有效 SSE 事件的上限（毫秒）。
+    timeout_ms: 5000
+    # 包含首次账号在内的最大尝试数；2 表示最多切换一次。
+    max_attempts: 2
+    # 是否把首事件超时计入账号错误率；false 时仍记录慢 TTFT 并短暂摘除故障账号。
+    count_as_error: false
+  # 视频成片交付。origin 由本服务转发字节；edge 只返回自有边缘域名的加密短期 URL。
+  video_proxy:
+    # 部署并验证 deploy/video-edge-worker 后再切换为 edge。
+    mode: "origin"
+    # edge 模式必须为自有 HTTPS Worker/CDN 地址，不带 query 或 fragment。
+    edge_base_url: ""
+    # edge 模式必填：与 Worker VIDEO_PROXY_KEY_HEX 相同的 32-byte 十六进制密钥。
+    encryption_key: ""
+    # 不透明媒体 URL 有效期，允许 60-86400 秒；重新查询任务会签发新 URL。
+    token_ttl_seconds: 3600
   # OpenAI HTTP upstream protocol strategy.
   # OpenAI HTTP 上游协议策略（默认 HTTP/2；代理明确不兼容时可临时回退 HTTP/1.1）。
   openai_http2:

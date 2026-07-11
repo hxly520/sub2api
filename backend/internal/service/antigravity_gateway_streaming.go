@@ -692,7 +692,7 @@ func (s *AntigravityGatewayService) writeMappedClaudeError(c *gin.Context, accou
 	case 400:
 		statusCode = http.StatusBadRequest
 		errType = "invalid_request_error"
-		errMsg = getPassthroughOrDefault(upstreamMsg, "Invalid request")
+		errMsg = sanitizeClientUpstreamErrorMessage(getPassthroughOrDefault(upstreamMsg, "Invalid request"))
 	case 401:
 		statusCode = http.StatusBadGateway
 		errType = "authentication_error"

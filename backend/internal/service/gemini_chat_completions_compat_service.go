@@ -140,7 +140,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 				continue
 			}
 			setOpsUpstreamError(c, 0, safeErr, "")
-			return nil, s.writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed after retries: "+safeErr)
+			return nil, s.writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed after retries: "+sanitizeClientUpstreamErrorMessage(safeErr))
 		}
 
 		if matched, rebuilt := s.checkErrorPolicyInLoop(ctx, account, resp); matched {
@@ -873,7 +873,7 @@ func (s *GeminiMessagesCompatService) writeGeminiChatCompletionsMappedError(
 	}
 
 	if upstreamMsg != "" && errMsg == "Upstream request failed" {
-		errMsg = upstreamMsg
+		errMsg = sanitizeClientUpstreamErrorMessage(upstreamMsg)
 	}
 	return s.writeChatCompletionsError(c, statusCode, errType, errMsg)
 }

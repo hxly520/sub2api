@@ -120,15 +120,18 @@ func NormalizeMediaGenerationStatus(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "complete", "completed", "success", "succeeded", "done":
 		return MediaGenerationStatusCompleted
-	case "fail", "failed", "error":
+	case "fail", "failed", "failure", "error", "rejected", "denied", "aborted",
+		"generation_failed", "prompt_blocked", "no_account", "content_policy_violation":
 		return MediaGenerationStatusFailed
 	case "cancel", "cancelled", "canceled":
 		return MediaGenerationStatusCancelled
 	case "expire", "expired", "timeout", "timed_out":
 		return MediaGenerationStatusExpired
-	case "creating", "initializing", "submitting":
+	case "creating", "created", "initializing", "submitting", "submitted", "not_started":
 		return MediaGenerationStatusCreating
-	case "running", "processing", "in_progress", "generating":
+	case "queued", "queueing", "in_queue", "waiting", "scheduled", "pending":
+		return MediaGenerationStatusPending
+	case "running", "processing", "in_progress", "generating", "cancelling", "canceling":
 		return MediaGenerationStatusRunning
 	default:
 		if strings.TrimSpace(status) == "" {

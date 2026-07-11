@@ -602,6 +602,8 @@ func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverE
 			msg := service.ExtractUpstreamErrorMessage(responseBody)
 			if !rule.PassthroughBody && rule.CustomMessage != nil {
 				msg = *rule.CustomMessage
+			} else {
+				msg = service.SanitizeClientUpstreamErrorMessage(msg)
 			}
 
 			if rule.SkipMonitoring {

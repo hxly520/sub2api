@@ -46,8 +46,8 @@ var openaiCCRawAllowedHeaders = map[string]bool{
 //
 //   - 不调用 apicompat.ChatCompletionsToResponses，body 仅做模型 ID 改写
 //   - 上游 URL 拼到 /v1/chat/completions 而非 /v1/responses
-//   - 流式响应 SSE 直接透传给客户端（上游 chunk 已是 CC 格式）
-//   - 非流式响应 JSON 直接透传，仅按需提取 usage
+//   - 流式响应 SSE 保持 CC 格式，仅将精确匹配的上游 model 回显还原为请求模型
+//   - 非流式响应 JSON 保持原样，仅提取 usage 并还原精确匹配的 model 回显
 //   - 不应用 codex OAuth transform（APIKey 路径无 OAuth）
 //   - 不注入 prompt_cache_key（OAuth 专属机制）
 //
@@ -196,7 +196,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	var result *OpenAIForwardResult
 	var forwardErr error
 	if clientStream {
-		result, forwardErr = s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+		result, forwardErr = s.streamRawChatCompletions(ctx, c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
 	} else {
 		result, forwardErr = s.bufferRawChatCompletions(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
@@ -225,6 +225,7 @@ func (s *OpenAIGatewayService) rawChatCompletionsURL(account *Account) (string, 
 // 网关会对上游强制打开 include_usage 以保证计费完整，并原样向下游透传 usage，
 // 让级联代理或下游计费系统也能拿到完整用量。
 func (s *OpenAIGatewayService) streamRawChatCompletions(
+	ctx context.Context,
 	c *gin.Context,
 	resp *http.Response,
 	account *Account,
@@ -239,21 +240,40 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 	scanner := s.newUpstreamSSEScanner(resp.Body)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
+	pendingLineBytes := 0
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
+	resultWithUsage := func() *OpenAIForwardResult {
+		return &OpenAIForwardResult{
+			RequestID:       requestID,
+			Usage:           usage,
+			Model:           originalModel,
+			BillingModel:    billingModel,
+			UpstreamModel:   upstreamModel,
+			ReasoningEffort: reasoningEffort,
+			ServiceTier:     serviceTier,
+			Stream:          true,
+			Duration:        time.Since(startTime),
+			FirstTokenMs:    firstTokenMs,
+		}
+	}
 
 	writeLine := func(line string) {
 		if clientDisconnected {
 			return
 		}
-		if !clientOutputStarted && !refusalDetector.ShouldReleaseClientOutput() {
-			pendingLines = append(pendingLines, line)
-			return
+		if !clientOutputStarted && (firstResponseWatch.Waiting() || !refusalDetector.ShouldReleaseClientOutput()) {
+			if reserveOpenAIFirstResponseBuffer(firstResponseWatch, &pendingLineBytes, len(line)+1) {
+				pendingLines = append(pendingLines, line)
+				return
+			}
 		}
 		if !clientOutputStarted {
 			writeStreamHeaders()
@@ -268,6 +288,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				}
 			}
 			pendingLines = pendingLines[:0]
+			pendingLineBytes = 0
 			clientOutputStarted = true
 		}
 		if _, werr := c.Writer.WriteString(line + "\n"); werr != nil {
@@ -281,19 +302,22 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		firstResponseWatch.ObserveLine(line)
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
-				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
 				}
-				if firstTokenMs == nil && !usageOnlyChunk {
+				if firstTokenMs == nil && openAIStreamPayloadCountsAsFirstResponse(payload) {
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}
 			}
+		}
+		if upstreamModel != originalModel {
+			line = s.replaceModelInSSELine(line, upstreamModel, originalModel)
 		}
 
 		writeLine(line)
@@ -309,13 +333,24 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	if err := scanner.Err(); err != nil {
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
+		}
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			logger.L().Warn("openai chat_completions raw: stream read error",
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
 		}
-	} else if !clientDisconnected && !clientOutputStarted {
+		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+			return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, false, requestID, nil, "OpenAI chat completions stream disconnected before producing output")
+		}
+		return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+	}
+	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, clientOutputStarted); failoverErr != nil {
+		return resultWithUsage(), failoverErr
+	}
+	if !clientDisconnected && !clientOutputStarted {
 		if refusalDetector.IsSilentRefusal() {
 			return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
 		}
@@ -331,6 +366,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					break
 				}
 			}
+			pendingLineBytes = 0
 			if !clientDisconnected {
 				c.Writer.Flush()
 				clientOutputStarted = true
@@ -338,18 +374,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
-	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     serviceTier,
-		Stream:          true,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
-	}, nil
+	return resultWithUsage(), nil
 }
 
 // ensureOpenAIChatStreamUsage 确保 raw Chat Completions 流式请求会让上游返回 usage。
@@ -412,6 +437,9 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 	var usage OpenAIUsage
 	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(respBody); ok {
 		usage = parsedUsage
+	}
+	if upstreamModel != originalModel {
+		respBody = s.replaceModelInResponseBody(respBody, upstreamModel, originalModel)
 	}
 
 	if s.responseHeaderFilter != nil {

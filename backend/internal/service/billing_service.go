@@ -1299,7 +1299,7 @@ type ImagePriceConfig struct {
 	Price4K *float64 // 4K 尺寸价格（nil 表示使用默认值）
 }
 
-// VideoPriceConfig 视频生成计费配置。所有价格均为**每秒**单价（USD/s），与 xAI 官方计费口径一致。
+// VideoPriceConfig 视频生成计费配置。所有价格均为每秒单价（USD/s）；按次视频使用渠道 per_request 定价。
 type VideoPriceConfig struct {
 	Price480P  *float64 // 480p 每秒价格（nil 表示使用默认值）
 	Price720P  *float64 // 720p 每秒价格（nil 表示使用默认值）
@@ -1353,7 +1353,7 @@ func (s *BillingService) CalculateImageCost(model string, imageSize string, imag
 	}
 }
 
-// CalculateVideoCost 计算视频生成费用（按秒计费，与 xAI 口径一致）。
+// CalculateVideoCost 计算 BillingModeVideo 的按秒视频费用。
 // model: 请求的模型名称（用于获取默认价格）
 // resolution: 视频分辨率 "480p", "720p", "1080p"
 // videoCount: 生成的视频数量

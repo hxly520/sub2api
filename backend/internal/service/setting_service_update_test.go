@@ -165,6 +165,57 @@ func TestSettingService_UpdateSettings_DefaultSubscriptions_ValidGroup(t *testin
 	}, got)
 }
 
+func TestSettingServiceUpdateSettingsPersistsOpenAIFirstResponse(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIFirstResponseEnabled:   true,
+		OpenAIFirstResponseTimeoutMS: 3200,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyOpenAIFirstResponseEnabled])
+	require.Equal(t, "3200", repo.updates[SettingKeyOpenAIFirstResponseTimeoutMS])
+}
+
+func TestSettingServiceUpdateSettingsValidatesOpenAIFirstResponseTimeout(t *testing.T) {
+	tests := []struct {
+		name      string
+		timeoutMS int
+	}{
+		{name: "below minimum", timeoutMS: 499},
+		{name: "above maximum", timeoutMS: 60001},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				OpenAIFirstResponseEnabled:   true,
+				OpenAIFirstResponseTimeoutMS: tt.timeoutMS,
+			})
+
+			require.Error(t, err)
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
+func TestSettingServiceParseSettingsDefaultsOpenAIFirstResponseTimeout(t *testing.T) {
+	svc := NewSettingService(&settingGetAllRepoStub{}, &config.Config{})
+
+	settings := svc.parseSettings(map[string]string{
+		SettingKeyOpenAIFirstResponseEnabled:   "true",
+		SettingKeyOpenAIFirstResponseTimeoutMS: "invalid",
+	})
+
+	require.True(t, settings.OpenAIFirstResponseEnabled)
+	require.Equal(t, openAIFirstResponseTimeoutDefaultMS, settings.OpenAIFirstResponseTimeoutMS)
+}
+
 func TestSettingService_UpdateSettings_DefaultSubscriptions_RejectsNonSubscriptionGroup(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	groupReader := &defaultSubGroupReaderStub{

@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 func TestOpenAIRequestView_ExtractsRawScalars(t *testing.T) {
@@ -115,7 +116,13 @@ func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing
 	// 合成路径默认 instructions 现按模型填入真实 Codex base prompt（此处 inbound model=gpt-5）。
 	encodedInstr, _ := json.Marshal(defaultCodexSynthInstructions("gpt-5"))
 	expectedBody := fmt.Sprintf(`{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"instructions":%s,"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`, string(encodedInstr))
-	require.JSONEq(t, expectedBody, string(upstream.lastBody))
+	promptCacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.NotEmpty(t, promptCacheKey)
+	require.True(t, strings.HasPrefix(promptCacheKey, compatAutoPromptCacheKeyPrefix))
+	withoutPromptCacheKey, deleteErr := sjson.DeleteBytes(upstream.lastBody, "prompt_cache_key")
+	require.NoError(t, deleteErr)
+	require.JSONEq(t, expectedBody, string(withoutPromptCacheKey))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(0, promptCacheKey)), upstream.lastReq.Header.Get("session_id"))
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.lastBody, "input.0.content.0.nonce").Raw)
 }
 
@@ -236,6 +243,7 @@ func TestOpenAIGatewayService_Forward_TextResponsesSetsBillingModelToMappedModel
 	require.Equal(t, "gpt-5.5", result.BillingModel)
 	require.Equal(t, "gpt-5.5", result.UpstreamModel)
 	require.Equal(t, "gpt-5.5", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-5.4", gjson.Get(rec.Body.String(), "model").String())
 	require.Equal(t, 0, result.ImageCount)
 }
 
@@ -332,6 +340,8 @@ func TestOpenAIGatewayService_Forward_TextResponsesBillingModelMatchesChatComple
 	require.Equal(t, chatResult.BillingModel, responsesResult.BillingModel)
 	require.Equal(t, "gpt-5.5", responsesResult.BillingModel)
 	require.Equal(t, "gpt-5.5", chatResult.BillingModel)
+	require.Equal(t, "gpt-5.4", gjson.Get(responsesRecorder.Body.String(), "model").String())
+	require.Equal(t, "gpt-5.4", gjson.Get(chatRecorder.Body.String(), "model").String())
 }
 
 func TestOpenAIGatewayService_Forward_TextDataImageDoesNotForceMapMarshal(t *testing.T) {

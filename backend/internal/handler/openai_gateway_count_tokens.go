@@ -101,7 +101,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		currentRoutingModel = preferredMappedModel
 	}
 	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		c.Request.Context(),
+		openAIAccountScheduleSelectionContext(c, currentRoutingModel),
 		apiKey.GroupID,
 		"",
 		sessionHash,

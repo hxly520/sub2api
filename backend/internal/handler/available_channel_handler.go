@@ -207,11 +207,8 @@ func buildPlatformSections(
 	return sections
 }
 
-// visibleGroupSupportedModels 只合并当前用户实际可见分组对应的模型快照。
-//
-// SupportedModelsByGroup 由 service 层按分组聚合账号公开别名。只要该快照存在，
-// 就不能回退到渠道全量 SupportedModels，否则同平台下其他专属分组独有的账号模型
-// 会被串给当前用户。手工构造的旧测试数据没有快照时，保留原全量列表兼容行为。
+// visibleGroupSupportedModels 只合并当前用户实际可见分组对应的渠道定价模型快照。
+// 快照按分组平台隔离；手工构造的旧测试数据没有快照时，保留全量列表兼容行为。
 func visibleGroupSupportedModels(
 	ch service.AvailableChannel,
 	visibleGroups []userAvailableGroup,

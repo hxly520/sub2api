@@ -56,12 +56,13 @@ function mountTable() {
 }
 
 describe('AvailableChannelsTable', () => {
-  it('uses content-driven desktop columns and renders a mobile card alternative', () => {
+  it('keeps the desktop table within its original footprint and renders a mobile card alternative', () => {
     const wrapper = mountTable()
     const table = wrapper.get('table')
 
-    expect(table.classes()).not.toContain('table-fixed')
-    expect(table.classes()).toContain('min-w-[1040px]')
+    expect(table.classes()).toContain('table-fixed')
+    expect(table.classes()).not.toContain('min-w-[1040px]')
+    expect(wrapper.find('.overflow-x-auto').exists()).toBe(false)
     expect(wrapper.find('article.card').exists()).toBe(true)
     expect(wrapper.text()).toContain('grok-video')
     expect(wrapper.text()).toContain('seedance-2.0')

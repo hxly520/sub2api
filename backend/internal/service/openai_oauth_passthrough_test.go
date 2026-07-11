@@ -120,6 +120,176 @@ func TestOpenAIGatewayService_ResponsesUnknownModelDoesNotFallbackToGPT54(t *tes
 	require.True(t, rec.Code >= http.StatusBadRequest)
 }
 
+func TestOpenAIGatewayService_APIKeyResponsesAutoDerivesPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalBody := []byte(`{"model":"gpt-5.6-sol","stream":false,"instructions":"coding agent","input":[{"role":"user","content":"inspect"}],"tools":[{"type":"function","name":"zeta","parameters":{"type":"object"}},{"type":"function","name":"alpha","parameters":{"type":"object"}}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 501})
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop after capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 456, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{openai_compat.ExtraKeyResponsesSupported: true},
+		Status:      StatusActive, Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Error(t, err)
+	require.Nil(t, result)
+	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(501, cacheKey)), upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, "alpha", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesPreservesExplicitPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.6-sol","stream":false,"prompt_cache_key":"client-key","input":"hello","tools":[{"type":"function","name":"zeta"},{"type":"function","name":"alpha"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Set("api_key", &APIKey{ID: 502})
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 457, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-test"}, Extra: map[string]any{openai_compat.ExtraKeyResponsesSupported: true}}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Equal(t, "client-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, "zeta", gjson.GetBytes(upstream.lastBody, "tools.0.name").String(), "explicit client keys retain tool order")
+}
+
+func TestOpenAIGatewayService_APIKeyResponsesExplicitHeaderPreservesToolOrderAndIsolatesSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.6-sol","stream":false,"input":"hello","tools":[{"type":"function","name":"zeta"},{"type":"function","name":"alpha"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("session_id", "client-session")
+	c.Set("api_key", &APIKey{ID: 503})
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 458, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-test"}, Extra: map[string]any{openai_compat.ExtraKeyResponsesSupported: true}}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Equal(t, "zeta", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(503, "client-session")), upstream.lastReq.Header.Get("session_id"))
+	require.NotEqual(t, "client-session", upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestOpenAIGatewayService_APIKeyPassthroughAutoDerivesCacheAffinity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"instructions":"coding agent","input":[{"role":"user","content":"inspect"}],"tools":[{"type":"function","name":"zeta"},{"type":"function","name":"alpha"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Set("api_key", &APIKey{ID: 504})
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 459, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesSupported: true,
+			"openai_passthrough":                     true,
+		},
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
+	require.Equal(t, "alpha", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(504, cacheKey)), upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestOpenAIGatewayService_APIKeyPassthroughPreservesExplicitCacheKeyAndToolOrder(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"prompt_cache_key":"client-key","input":"hello","tools":[{"type":"function","name":"zeta"},{"type":"function","name":"alpha"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Set("api_key", &APIKey{ID: 505})
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 460, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesSupported: true,
+			"openai_passthrough":                     true,
+		},
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.Equal(t, "client-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, "zeta", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(505, "client-key")), upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestOpenAIGatewayService_APIKeyPassthroughImageIntentSkipsCacheMutation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"input":"draw","tools":[{"type":"function","name":"zeta"},{"type":"image_generation"},{"type":"function","name":"alpha"}]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Set("api_key", &APIKey{ID: 506})
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"stop"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 461, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesSupported: true,
+			"openai_passthrough":                     true,
+		},
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.Error(t, err)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
+	require.Equal(t, "zeta", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+}
+
 func TestOpenAIGatewayService_NativeResponsesBodyModificationPreservesHTMLChars(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -213,6 +383,48 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstruction
 	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Empty(t, upstream.lastReq.Header.Get("originator"))
+}
+
+func TestForwardAsAnthropic_OAuthCanonicalizesOnlyDigestSessionTools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		promptCacheKey string
+		wantFirstTool  string
+	}{
+		{name: "gateway digest session", wantFirstTool: "alpha"},
+		{name: "explicit client cache key", promptCacheKey: "client-key", wantFirstTool: "zeta"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-5.6-luna","max_tokens":128,"messages":[{"role":"user","content":"inspect"}],"tools":[{"name":"zeta","description":"z","input_schema":{"type":"object"}},{"name":"alpha","description":"a","input_schema":{"type":"object"}}],"stream":false}`)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("api_key", &APIKey{ID: 101})
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"capture"}}`)),
+			}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			account := &Account{
+				ID: 124, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
+				Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+				Status:      StatusActive, Schedulable: true,
+			}
+
+			result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, tt.promptCacheKey, "gpt-5.6-luna")
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Equal(t, tt.wantFirstTool, gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+			require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
+		})
+	}
 }
 
 type openAIPassthroughFailoverRepo struct {
@@ -1406,7 +1618,11 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.NotNil(t, result.ServiceTier)
 	require.Equal(t, "flex", *result.ServiceTier)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, originalBody, upstream.lastBody)
+	require.Equal(t, "gpt-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "flex", gjson.GetBytes(upstream.lastBody, "service_tier").String())
+	require.Equal(t, int64(128), gjson.GetBytes(upstream.lastBody, "max_output_tokens").Int())
+	require.Equal(t, "hi", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
+	require.True(t, strings.HasPrefix(gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String(), compatAutoPromptCacheKeyPrefix))
 	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))

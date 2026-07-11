@@ -140,3 +140,5 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+# Local browser automation artifacts
+frontend/.playwright-cli/

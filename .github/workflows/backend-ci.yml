@@ -48,6 +48,18 @@ jobs:
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 
+  video-edge-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Test opaque video delivery worker
+        working-directory: deploy/video-edge-worker
+        run: npm test
+
   golangci-lint:
     runs-on: ubuntu-latest
     steps:

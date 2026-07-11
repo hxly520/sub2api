@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,9 +151,104 @@ func TestForwardAsRawChatCompletions_PreservesMappedGPT56MaxEffort(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "sol", gjson.Get(rec.Body.String(), "model").String())
 	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
 	require.NotNil(t, result.ReasoningEffort)
 	require.Equal(t, "max", *result.ReasoningEffort)
+}
+
+func TestForwardAsRawChatCompletions_RewritesOnlyMappedModelInStreamingResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_mapped","object":"chat.completion.chunk","model":"private-upstream-model","choices":[{"index":0,"delta":{"content":"private-upstream-model remains content"}}]}`,
+		"",
+		`data: {"id":"chatcmpl_mapped","object":"chat.completion.chunk","model":"private-upstream-model","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+	account := rawChatCompletionsTestAccount()
+	account.Credentials["model_mapping"] = map[string]any{"public-model": "private-upstream-model"}
+
+	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "private-upstream-model", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.NotContains(t, rec.Body.String(), `"model":"private-upstream-model"`)
+	require.Equal(t, 2, strings.Count(rec.Body.String(), `"model":"public-model"`))
+	require.Contains(t, rec.Body.String(), `"content":"private-upstream-model remains content"`)
+	require.Contains(t, rec.Body.String(), "data: [DONE]")
+}
+
+func TestForwardAsRawChatCompletions_DoesNotRewriteUnmappedModelResponses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		stream       bool
+		contentType  string
+		upstreamBody string
+	}{
+		{
+			name:        "non-streaming",
+			stream:      false,
+			contentType: "application/json",
+			upstreamBody: `{"id":"chatcmpl_same","object":"chat.completion","model":"public-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],` +
+				`"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`,
+		},
+		{
+			name:        "streaming",
+			stream:      true,
+			contentType: "text/event-stream",
+			upstreamBody: strings.Join([]string{
+				`data: {"id":"chatcmpl_same","object":"chat.completion.chunk","model":"public-model","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
+				"",
+				`data: {"id":"chatcmpl_same","object":"chat.completion.chunk","model":"public-model","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`,
+				"",
+				"data: [DONE]",
+				"",
+			}, "\n"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"stream":%t}`, tt.stream))
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{tt.contentType}},
+				Body:       io.NopCloser(strings.NewReader(tt.upstreamBody)),
+			}}
+			svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+
+			result, err := svc.forwardAsRawChatCompletions(context.Background(), c, rawChatCompletionsTestAccount(), body, "")
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, "public-model", gjson.GetBytes(upstream.lastBody, "model").String())
+			require.Contains(t, rec.Body.String(), `"model":"public-model"`)
+		})
+	}
 }
 
 func TestForwardAsRawChatCompletions_NonStreamingCapturesCacheWriteUsage(t *testing.T) {
@@ -433,6 +529,7 @@ func TestHandleChatStreamingResponse_SilentRefusalReasoningSummaryExempt(t *test
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
 
 	result, err := svc.handleChatStreamingResponse(
+		context.Background(),
 		resp,
 		c,
 		rawChatCompletionsTestAccount(),

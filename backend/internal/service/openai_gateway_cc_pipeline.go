@@ -195,9 +195,9 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAIUpstreamWithFirstResponseBudget(ctx, c, account, upstreamReq, proxyURL, false)
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		return nil, err
 	}
 	return resp, nil
 }
@@ -222,6 +222,9 @@ type ccStreamScanState struct {
 // emit 回调做各自的协议转换与写出。读错误按既有约定过滤 context 取消类噪声后
 // 记入 Warn 日志。
 func (s *OpenAIGatewayService) scanCCStream(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
@@ -231,6 +234,30 @@ func (s *OpenAIGatewayService) scanCCStream(
 	var st ccStreamScanState
 
 	scanner := s.newUpstreamSSEScanner(resp.Body)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
+	pendingChunks := make([]apicompat.ChatCompletionsChunk, 0, 2)
+	pendingChunkBytes := 0
+	emitPendingChunks := func() {
+		for i := range pendingChunks {
+			emit(&pendingChunks[i])
+		}
+		pendingChunks = pendingChunks[:0]
+		pendingChunkBytes = 0
+	}
+	emitChunk := func(chunk *apicompat.ChatCompletionsChunk, serializedBytes int) {
+		if chunk == nil {
+			return
+		}
+		if firstResponseWatch.Waiting() {
+			if reserveOpenAIFirstResponseBuffer(firstResponseWatch, &pendingChunkBytes, serializedBytes) {
+				pendingChunks = append(pendingChunks, *chunk)
+				return
+			}
+		}
+		emitPendingChunks()
+		emit(chunk)
+	}
 	for scanner.Scan() {
 		line := scanner.Text()
 		payload, ok := extractOpenAISSEDataLine(line)
@@ -242,9 +269,12 @@ func (s *OpenAIGatewayService) scanCCStream(
 			continue
 		}
 		if payload == "[DONE]" {
+			firstResponseWatch.observe()
+			emitPendingChunks()
 			st.SawDone = true
 			break
 		}
+		firstResponseWatch.ObservePayload(payload)
 
 		if u := extractCCStreamUsage(payload); u != nil {
 			st.Usage = *u
@@ -262,10 +292,14 @@ func (s *OpenAIGatewayService) scanCCStream(
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
-		emit(&chunk)
+		emitChunk(&chunk, len(payload)+len("data: \n\n"))
 	}
 
 	if err := scanner.Err(); err != nil {
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, false); failoverErr != nil {
+			st.Err = failoverErr
+			return st
+		}
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			logger.L().Warn(logPrefix+": stream read error",
 				zap.Error(err),
@@ -273,6 +307,9 @@ func (s *OpenAIGatewayService) scanCCStream(
 			)
 		}
 		st.Err = err
+	}
+	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, false); failoverErr != nil {
+		st.Err = failoverErr
 	}
 	return st
 }

@@ -242,6 +242,8 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string
 	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string
 	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string
+	OpenAIFirstResponseEnabled                             bool
+	OpenAIFirstResponseTimeoutMS                           int
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool

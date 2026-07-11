@@ -15,6 +15,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 // Forward forwards request to OpenAI API
@@ -439,6 +441,41 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			requestView = newOpenAIRequestView(body)
 		}
 	}
+	if requestPromptCacheKey := strings.TrimSpace(requestView.PromptCacheKey); requestPromptCacheKey != "" || promptCacheKey == "" {
+		promptCacheKey = requestPromptCacheKey
+	}
+	if (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && !imageIntent && promptCacheKey == "" {
+		// A client-provided session signal is authoritative. Keep its tool order so
+		// compatibility mode never changes explicit client semantics. Stateless
+		// third-party requests are canonicalized to keep their actual cache prefix
+		// stable when the client rebuilds the same tool registry in a new order.
+		if explicitOpenAISessionID(c, body) == "" {
+			canonicalBody, changed, canonicalErr := canonicalizeOpenAICompatToolOrder(body)
+			if canonicalErr != nil {
+				return nil, canonicalErr
+			}
+			if changed {
+				body = canonicalBody
+				requestView = newOpenAIRequestView(body)
+				reqBody = nil
+			}
+		}
+		if autoKey := deriveAutoPromptCacheKeyFromBody(c, body, upstreamModel, getAPIKeyIDFromContext(c)); autoKey != "" {
+			var injectErr error
+			body, injectErr = sjson.SetBytes(body, "prompt_cache_key", autoKey)
+			if injectErr != nil {
+				return nil, fmt.Errorf("inject prompt cache key: %w", injectErr)
+			}
+			requestView = newOpenAIRequestView(body)
+			reqBody = nil
+			promptCacheKey = autoKey
+			logger.L().Debug("openai responses: compat prompt_cache_key injected",
+				zap.Int64("account_id", account.ID),
+				zap.String("model", upstreamModel),
+				zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
+			)
+		}
+	}
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
@@ -701,13 +738,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Send request
 		upstreamStart := time.Now()
-		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err := s.doOpenAIUpstreamWithFirstResponseBudget(ctx, c, account, upstreamReq, proxyURL, false)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
-			// a failover so the handler switches to a healthy account, and temporarily
-			// unschedule the account on durable faults (e.g. rejected proxy credentials).
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			return nil, err
 		}
 
 		// Handle error response
@@ -922,10 +956,15 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("conversation_id", isolated)
 			}
 		}
-	} else if isOpenAIResponsesCompactPath(c) {
-		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
-		// 避免 OpenAI 兼容网关按 SSE 返回（#3777 期望行为 4）。
-		req.Header.Set("accept", "application/json")
+	} else {
+		if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
+			isolateOpenAIAPIKeyRequestSessionHeaders(req, getAPIKeyIDFromContext(c), promptCacheKey)
+		}
+		if isOpenAIResponsesCompactPath(c) {
+			// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
+			// 避免 OpenAI 兼容网关按 SSE 返回（#3777 期望行为 4）。
+			req.Header.Set("accept", "application/json")
+		}
 	}
 
 	// Apply custom User-Agent if configured

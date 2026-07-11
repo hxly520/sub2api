@@ -589,7 +589,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 		"Upstream request failed",
 	); matched {
 		MarkResponseCommitted(c)
-		writeGrokMediaErrorResponse(c, status, errType, errMsg)
+		writeGrokMediaErrorResponse(c, status, errType, errMsg, false)
 		return nil, fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, upstreamMsg)
 	}
 
@@ -605,7 +605,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 			Detail:             upstreamDetail,
 		})
 		MarkResponseCommitted(c)
-		writeGrokMediaErrorResponse(c, http.StatusInternalServerError, "upstream_error", "Upstream gateway error")
+		writeGrokMediaErrorResponse(c, http.StatusInternalServerError, "upstream_error", "Upstream gateway error", false)
 		return nil, fmt.Errorf("upstream error: %d (not in custom error codes) message=%s", resp.StatusCode, upstreamMsg)
 	}
 
@@ -633,7 +633,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 	}
 
 	MarkResponseCommitted(c)
-	writeGrokMediaErrorResponse(c, resp.StatusCode, grokMediaErrorType(resp.StatusCode), upstreamMsg)
+	writeGrokMediaErrorResponse(c, resp.StatusCode, grokMediaErrorType(resp.StatusCode), upstreamMsg, true)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 }
 
@@ -650,9 +650,12 @@ func grokMediaErrorType(statusCode int) string {
 	}
 }
 
-func writeGrokMediaErrorResponse(c *gin.Context, statusCode int, errType, message string) {
+func writeGrokMediaErrorResponse(c *gin.Context, statusCode int, errType, message string, sanitizeUpstream bool) {
 	if c == nil || c.Writer == nil || c.Writer.Written() {
 		return
+	}
+	if sanitizeUpstream {
+		message = sanitizeClientUpstreamErrorMessage(message)
 	}
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{

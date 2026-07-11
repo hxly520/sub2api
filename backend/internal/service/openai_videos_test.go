@@ -22,9 +22,9 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	require.NoError(t, writer.WriteField("model", "sora-public"))
+	require.NoError(t, writer.WriteField("model", "omni-fast-public"))
 	require.NoError(t, writer.WriteField("prompt", "waves"))
-	require.NoError(t, writer.WriteField("seconds", "8"))
+	require.NoError(t, writer.WriteField("seconds", "10"))
 	part, err := writer.CreateFormFile("input_reference[]", "ref.png")
 	require.NoError(t, err)
 	_, _ = part.Write([]byte("png"))
@@ -45,7 +45,7 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 			"api_key":  "api-key",
 			"base_url": "https://video-upstream.test/v1",
 			"model_mapping": map[string]any{
-				"sora-public": "sora-upstream",
+				"omni-fast-public": "omni-fast-upstream",
 			},
 		},
 	}
@@ -69,9 +69,9 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 	require.Equal(t, "Bearer api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Contains(t, upstream.lastReq.Header.Get("Content-Type"), "multipart/form-data")
 	require.Equal(t, "video-task-123", result.ResponseID)
-	require.Equal(t, "sora-public", result.Model)
-	require.Equal(t, "sora-upstream", result.UpstreamModel)
-	require.Equal(t, "sora-upstream", result.BillingModel)
+	require.Equal(t, "omni-fast-public", result.Model)
+	require.Equal(t, "omni-fast-upstream", result.UpstreamModel)
+	require.Equal(t, "omni-fast-upstream", result.BillingModel)
 	require.Zero(t, result.ImageCount)
 	require.Equal(t, 1, result.VideoCount)
 
@@ -89,7 +89,7 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 		}
 		_ = part.Close()
 	}
-	require.Equal(t, "sora-upstream", foundModel)
+	require.Equal(t, "omni-fast-upstream", foundModel)
 	require.Empty(t, recorder.Body.String())
 }
 
@@ -174,6 +174,192 @@ func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testin
 	require.Equal(t, 1, result.VideoCount)
 }
 
+func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	createBody := []byte(`{"model":"grok-video","prompt":"city in rain","duration":15,"resolution":"720p","aspect_ratio":"16:9"}`)
+	createCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	createCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(createBody))
+	createCtx.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          77,
+		Name:        "cangyuan-grok-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://cangyuan-upstream.test/v1",
+		},
+	}
+	upstreamTaskID := "task_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"created_at":1780000000,
+				"id":"task_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+				"model":"grok-video",
+				"object":"video",
+				"progress":0,
+				"status":"queued",
+				"task_id":"task_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+			}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"code":"success",
+				"data":{
+					"fail_reason":"",
+					"progress":"100%",
+					"result_url":"https://upstream-media.test/generated-video.mp4",
+					"status":"SUCCESS",
+					"task_id":"task_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+				}
+			}`)),
+		},
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(createCtx, createBody)
+	require.NoError(t, err)
+	created, err := svc.ForwardVideo(context.Background(), createCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations", upstream.requests[0].URL.String())
+	require.Equal(t, upstreamTaskID, created.ResponseID)
+	require.Equal(t, MediaGenerationStatusPending, created.VideoStatus)
+	require.Equal(t, 15, created.VideoDurationSeconds)
+
+	statusCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	statusCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/video/generations/"+upstreamTaskID, nil)
+	parsed, err = svc.ParseOpenAIVideoRequest(statusCtx, nil)
+	require.NoError(t, err)
+	statusResult, err := svc.ForwardVideo(context.Background(), statusCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations/"+upstreamTaskID, upstream.requests[1].URL.String())
+	require.Equal(t, upstreamTaskID, statusResult.ResponseID)
+	require.Equal(t, MediaGenerationStatusCompleted, statusResult.VideoStatus)
+	require.Equal(t, "https://upstream-media.test/generated-video.mp4", statusResult.MediaResultURL)
+
+	clientBody := RewriteOpenAIVideoClientResponseBodyWithBaseURL(
+		statusResult.ResponseBody,
+		"video-public-grok",
+		"https://api.52token.org",
+		upstreamTaskID,
+	)
+	require.Equal(t, "video-public-grok", gjson.GetBytes(clientBody, "data.task_id").String())
+	require.Equal(t, "https://api.52token.org/v1/videos/video-public-grok/content", gjson.GetBytes(clientBody, "data.result_url").String())
+	require.NotContains(t, string(clientBody), "cangyuan-upstream.test")
+	require.NotContains(t, string(clientBody), "upstream-media.test")
+	require.NotContains(t, string(clientBody), upstreamTaskID)
+}
+
+func TestForwardOpenAIVideoCangyuanSeedanceContractLifecycle(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	createBody := []byte(`{"aspect_ratio":"16:9","duration":8,"model":"seedance-2.0-fast-720p","prompt":"rainy neon street"}`)
+	createCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	createCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(createBody))
+	createCtx.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          78,
+		Name:        "cangyuan-seedance-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://cangyuan-upstream.test/v1",
+		},
+	}
+	upstreamTaskID := "task_01HZX8A2"
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"created_at":"2026-05-17T08:00:00Z",
+				"id":"task_01HZX8A2",
+				"progress":0,
+				"status":"queued"
+			}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"task_01HZX8A2",
+				"progress":100,
+				"status":"completed",
+				"video_url":"https://upstream-media.test/output.mp4"
+			}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"error":{"code":"400017","message":"reference image rejected"},
+				"error_code":"400017",
+				"id":"task_01HZX8A2",
+				"status":"failed",
+				"video_url":null
+			}`)),
+		},
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(createCtx, createBody)
+	require.NoError(t, err)
+	created, err := svc.ForwardVideo(context.Background(), createCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos", upstream.requests[0].URL.String())
+	require.Equal(t, upstreamTaskID, created.ResponseID)
+	require.Equal(t, MediaGenerationStatusPending, created.VideoStatus)
+	require.Equal(t, VideoBillingResolution720P, created.VideoResolution)
+	require.Equal(t, 8, created.VideoDurationSeconds)
+
+	statusRequest := func() *gin.Context {
+		statusCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		statusCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/"+upstreamTaskID, nil)
+		return statusCtx
+	}
+	statusCtx := statusRequest()
+	parsed, err = svc.ParseOpenAIVideoRequest(statusCtx, nil)
+	require.NoError(t, err)
+	statusResult, err := svc.ForwardVideo(context.Background(), statusCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, MediaGenerationStatusCompleted, statusResult.VideoStatus)
+	require.Equal(t, "https://upstream-media.test/output.mp4", statusResult.MediaResultURL)
+	clientBody := RewriteOpenAIVideoClientResponseBodyWithBaseURL(
+		statusResult.ResponseBody,
+		"video-public-seedance",
+		"https://api.52token.org/v1",
+		upstreamTaskID,
+	)
+	require.Equal(t, "video-public-seedance", gjson.GetBytes(clientBody, "id").String())
+	require.Equal(t, "https://api.52token.org/v1/videos/video-public-seedance/content", gjson.GetBytes(clientBody, "video_url").String())
+	require.NotContains(t, string(clientBody), "upstream-media.test")
+
+	failedCtx := statusRequest()
+	parsed, err = svc.ParseOpenAIVideoRequest(failedCtx, nil)
+	require.NoError(t, err)
+	failedResult, err := svc.ForwardVideo(context.Background(), failedCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, MediaGenerationStatusFailed, failedResult.VideoStatus)
+	require.Empty(t, failedResult.MediaResultURL)
+	require.Zero(t, failedResult.VideoCount)
+	safeFailure := SanitizeOpenAIVideoStoredResponseBody(failedResult.ResponseBody, failedResult.VideoStatus)
+	require.NotContains(t, string(safeFailure), "reference image rejected")
+	require.JSONEq(t, `{"status":"failed","error":{"message":"Video generation failed","type":"upstream_error","param":null,"code":null}}`, string(safeFailure))
+}
+
 func TestForwardOpenAIVideoSynchronousURLResponseGetsLocalTaskID(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
@@ -231,6 +417,14 @@ func TestOpenAIVideoHasResultURLSupportsNestedOutput(t *testing.T) {
 	require.True(t, openAIVideoHasResultURL([]byte(`{"data":{"result":{"result_url":"https://cdn.test/video.mp4"}}}`)))
 	require.True(t, openAIVideoHasResultURL([]byte(`{"data":{"content":{"video_url":"https://cdn.test/video.mp4"}}}`)))
 	require.False(t, openAIVideoHasResultURL([]byte(`{"status":"completed"}`)))
+}
+
+func TestExtractOpenAIVideoTaskMetadataSupportsNestedResult(t *testing.T) {
+	body := []byte(`{"data":{"result":{"task_id":"nested-task","status":"GENERATION_FAILED","duration_seconds":12}}}`)
+
+	require.Equal(t, "nested-task", extractOpenAIVideoTaskID(body))
+	require.Equal(t, MediaGenerationStatusFailed, extractOpenAIVideoStatus(body))
+	require.Equal(t, 12, extractOpenAIVideoDurationSeconds(body))
 }
 
 func TestRewriteOpenAIVideoClientResponseBodyReplacesAllResultURLs(t *testing.T) {
@@ -509,24 +703,28 @@ func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 		request OpenAIVideoRequest
 		wantErr string
 	}{
-		{name: "grok valid", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 15}},
-		{name: "grok invalid duration", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 7}, wantErr: "duration"},
-		{name: "grok multi image too long", request: OpenAIVideoRequest{Model: "grok-video", DurationSeconds: 12, ReferenceImageCount: 2}, wantErr: "multi-image"},
-		{name: "grok 1.5 missing image", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, AspectRatio: "16:9", Resolution: "720p"}, wantErr: "exactly one"},
-		{name: "grok 1.5 invalid ratio", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "1:1", Resolution: "720p"}, wantErr: "aspect_ratio"},
-		{name: "grok 1.5 invalid resolution", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "16:9", Resolution: "1080p"}, wantErr: "resolution"},
-		{name: "grok 1.5 valid", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "9:16", Resolution: "480p"}},
-		{name: "seedance invalid duration", request: OpenAIVideoRequest{Model: "seedance-2.0", DurationSeconds: 16}, wantErr: "between 4 and 15"},
-		{name: "seedance invalid resolution", request: OpenAIVideoRequest{Model: "seedance-2.0", DurationSeconds: 6, Resolution: "360p"}, wantErr: "resolution"},
-		{name: "seedance per-second valid 4k", request: OpenAIVideoRequest{Model: "seedance-2.0-4k", DurationSeconds: 6, Resolution: "4K"}},
-		{name: "omni v2v missing video", request: OpenAIVideoRequest{Model: "omni-v2v"}, wantErr: "exactly one"},
-		{name: "omni v2v multiple videos", request: OpenAIVideoRequest{Model: "omni-v2v", ReferenceVideoCount: 2}, wantErr: "exactly one"},
-		{name: "omni v2v valid", request: OpenAIVideoRequest{Model: "omni-v2v", ReferenceVideoCount: 1}},
-		{name: "omni too many images", request: OpenAIVideoRequest{Model: "omni-fast", ReferenceImageCount: 6}, wantErr: "at most five"},
-		{name: "sora invalid duration", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 10}, wantErr: "8 or 12"},
-		{name: "sora invalid size", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 8, Size: "1920x1080"}, wantErr: "size"},
-		{name: "sora too many images", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 8, Size: "1280x720", ReferenceImageCount: 2}, wantErr: "at most one"},
-		{name: "sora valid", request: OpenAIVideoRequest{Model: "sora-2", DurationSeconds: 12, Size: "720x1280", ReferenceImageCount: 1}},
+		{name: "grok valid", request: OpenAIVideoRequest{Model: "grok-video", Prompt: "motion", DurationSeconds: 15}},
+		{name: "grok invalid duration", request: OpenAIVideoRequest{Model: "grok-video", Prompt: "motion", DurationSeconds: 7}, wantErr: "duration"},
+		{name: "grok multi image clamps upstream", request: OpenAIVideoRequest{Model: "grok-video", Prompt: "motion", DurationSeconds: 12, ReferenceImageCount: 2}},
+		{name: "grok invalid ratio", request: OpenAIVideoRequest{Model: "grok-video", Prompt: "motion", AspectRatio: "21:9"}, wantErr: "aspect_ratio"},
+		{name: "grok 1.5 missing image", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", Prompt: "motion", DurationSeconds: 6, AspectRatio: "16:9", Resolution: "720p"}, wantErr: "exactly one"},
+		{name: "grok 1.5 invalid ratio", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "1:1", Resolution: "720p"}, wantErr: "aspect_ratio"},
+		{name: "grok 1.5 invalid resolution", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "16:9", Resolution: "1080p"}, wantErr: "resolution"},
+		{name: "grok 1.5 valid", request: OpenAIVideoRequest{Model: "grok-imagine-video-1.5", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 1, AspectRatio: "9:16", Resolution: "480p"}},
+		{name: "seedance invalid duration", request: OpenAIVideoRequest{Model: "seedance-2.0", Prompt: "motion", DurationSeconds: 16}, wantErr: "between 4 and 15"},
+		{name: "seedance invalid resolution", request: OpenAIVideoRequest{Model: "seedance-2.0", Prompt: "motion", DurationSeconds: 6, Resolution: "360p"}, wantErr: "resolution"},
+		{name: "seedance per-second valid 4k", request: OpenAIVideoRequest{Model: "seedance-2.0-4k", Prompt: "motion", DurationSeconds: 6, Resolution: "4K"}},
+		{name: "seedance per-second requires duration", request: OpenAIVideoRequest{Model: "seedance-2.0-720p", Prompt: "motion", Resolution: "720p"}, wantErr: "duration is required"},
+		{name: "omni v2v missing video", request: OpenAIVideoRequest{Model: "omni-v2v", Prompt: "motion"}, wantErr: "exactly one"},
+		{name: "omni v2v multiple videos", request: OpenAIVideoRequest{Model: "omni-v2v", Prompt: "motion", ReferenceVideoCount: 2}, wantErr: "exactly one"},
+		{name: "omni v2v valid", request: OpenAIVideoRequest{Model: "omni-v2v", Prompt: "motion", ReferenceVideoCount: 1}},
+		{name: "omni too many images", request: OpenAIVideoRequest{Model: "omni-fast", Prompt: "motion", ReferenceImageCount: 6}, wantErr: "at most five"},
+		{name: "sora invalid duration", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 10}, wantErr: "4, 8, or 12"},
+		{name: "sora invalid size", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, Size: "1920x1080"}, wantErr: "size"},
+		{name: "sora rejects reference images", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, Size: "1280x720", ReferenceImageCount: 1}, wantErr: "does not accept reference media"},
+		{name: "sora valid", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 4, AspectRatio: "9:16"}},
+		{name: "veo valid", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 6, AspectRatio: "16:9", Resolution: "1080p"}},
+		{name: "veo invalid duration", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 5}, wantErr: "duration"},
 	}
 
 	for _, tt := range tests {
@@ -541,6 +739,75 @@ func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 	}
 }
 
+func TestOpenAIVideoCangyuanModelRoutingAndDerivedResolution(t *testing.T) {
+	require.Equal(t, openAIVideoGenerationsEndpoint, OpenAIVideoUpstreamEndpointForModel("grok-video", openAIVideosEndpoint))
+	require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel("veo-3-1", openAIVideoGenerationsEndpoint))
+	require.Equal(t, VideoBillingResolution4K, NormalizeVideoBillingResolutionOrDefault("2160p"))
+
+	req := &OpenAIVideoRequest{Model: "seedance-2.0-fast-720p", Prompt: "motion", DurationSeconds: 6}
+	normalizeOpenAIVideoDerivedFields(req)
+	require.Equal(t, VideoBillingResolution720P, req.Resolution)
+	require.NoError(t, validateOpenAIVideoModelRequest(req))
+}
+
+func TestOpenAIVideoCangyuanPublishedModelProfiles(t *testing.T) {
+	models := []string{
+		"seedance-2.0-mini",
+		"omni-fast",
+		"omni-fast-no-water",
+		"seedance-2.0-fast-480p",
+		"sora-2",
+		"seedance-2.0-mini-720p",
+		"seedance-2.0-720p",
+		"grok-video-1.5",
+		"seedance-2.0",
+		"seedance-2.0-fast",
+		"seedance-2.0-mini-480p",
+		"seedance-2.0-fast-720p",
+		"veo-3-1",
+		"seedance-2.0-4k",
+		"seedance-2.0-1080p",
+		"sora-2-pro",
+		"omni-v2v-no-water",
+		"seedance-2.0-480p",
+		"grok-video",
+		"omni-v2v",
+		"veo-3-1-ref",
+		"veo-3-1-fast",
+	}
+	require.Len(t, models, 22)
+
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			profile := classifyOpenAIVideoModel(model)
+			require.NotEqual(t, openAIVideoModelUnknown, profile)
+			req := &OpenAIVideoRequest{Model: model, Prompt: "motion"}
+			switch profile {
+			case openAIVideoModelGrok15:
+				req.ReferenceImageCount = 1
+				req.DurationSeconds = 4
+			case openAIVideoModelGrok:
+				req.DurationSeconds = 4
+			case openAIVideoModelSeedanceStandard:
+				req.DurationSeconds = 4
+			case openAIVideoModelSeedancePerSecond:
+				req.DurationSeconds = 4
+			case openAIVideoModelOmniV2V:
+				req.ReferenceVideoCount = 1
+			case openAIVideoModelSora, openAIVideoModelVeo:
+				req.DurationSeconds = 4
+			}
+			normalizeOpenAIVideoDerivedFields(req)
+			require.NoError(t, validateOpenAIVideoModelRequest(req))
+			expectedEndpoint := openAIVideosEndpoint
+			if profile == openAIVideoModelGrok || profile == openAIVideoModelGrok15 {
+				expectedEndpoint = openAIVideoGenerationsEndpoint
+			}
+			require.Equal(t, expectedEndpoint, OpenAIVideoUpstreamEndpointForModel(model, "/unexpected"))
+		})
+	}
+}
+
 func TestParseOpenAIVideoRequestValidatesJSONProtocolProfiles(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
@@ -550,39 +817,67 @@ func TestParseOpenAIVideoRequestValidatesJSONProtocolProfiles(t *testing.T) {
 	}{
 		{
 			name: "grok accepts seven images",
-			body: `{"model":"grok-video","duration":10,"resolution":"720p","image_urls":["1","2","3","4","5","6","7"]}`,
+			body: `{"model":"grok-video","prompt":"motion","duration":10,"resolution":"720p","image_urls":["1","2","3","4","5","6","7"]}`,
 		},
 		{
 			name:    "grok rejects eight images",
-			body:    `{"model":"grok-video","duration":10,"image_urls":["1","2","3","4","5","6","7","8"]}`,
+			body:    `{"model":"grok-video","prompt":"motion","duration":10,"image_urls":["1","2","3","4","5","6","7","8"]}`,
 			wantErr: "at most seven",
 		},
 		{
 			name:    "grok 1.5 rejects video reference",
-			body:    `{"model":"grok-imagine-video-1.5","duration":6,"resolution":"720p","aspect_ratio":"16:9","image_url":"image","video_url":"video"}`,
+			body:    `{"model":"grok-imagine-video-1.5","prompt":"motion","duration":6,"resolution":"720p","aspect_ratio":"16:9","image_url":"image","video_url":"video"}`,
 			wantErr: "does not accept a video reference",
 		},
 		{
 			name: "seedance per-second suffix accepts 4k",
-			body: `{"model":"seedance-2.0-4k","duration":15,"resolution":"4k","image_urls":["1","2","3","4","5","6","7","8","9"],"audio_urls":["1","2","3"]}`,
+			body: `{"model":"seedance-2.0-4k","prompt":"motion","duration":15,"resolution":"4k","image_urls":["1","2","3","4","5","6","7","8","9"],"audio_urls":["1","2","3"]}`,
 		},
 		{
 			name:    "seedance standard rejects unpaired frame",
-			body:    `{"model":"seedance-2.0","duration":6,"resolution":"720p","first_frame_url":"image"}`,
+			body:    `{"model":"seedance-2.0","prompt":"motion","duration":6,"resolution":"720p","first_frame_url":"image"}`,
 			wantErr: "must be provided together",
 		},
 		{
 			name:    "seedance standard rejects frames with other references",
-			body:    `{"model":"seedance-2.0","duration":6,"resolution":"720p","first_frame_url":"first","last_frame_url":"last","audio_url":"audio"}`,
+			body:    `{"model":"seedance-2.0","prompt":"motion","duration":6,"resolution":"720p","first_frame_url":"first","last_frame_url":"last","audio_url":"audio"}`,
 			wantErr: "cannot be combined",
 		},
 		{
 			name: "omni root profile accepts one image",
-			body: `{"model":"omni-fast","duration":10,"resolution":"720p","aspect_ratio":"16:9","image_url":"image"}`,
+			body: `{"model":"omni-fast","prompt":"motion","duration":10,"resolution":"720p","aspect_ratio":"16:9","image_url":"image"}`,
+		},
+		{
+			name: "omni root profile accepts one frame",
+			body: `{"model":"omni-fast","prompt":"motion","aspect_ratio":"16:9","first_image_url":"image"}`,
+		},
+		{
+			name:    "seedance per-second media reference requires image",
+			body:    `{"model":"seedance-2.0-fast-720p","prompt":"motion","duration":6,"reference_videos":["video"]}`,
+			wantErr: "require at least one image",
 		},
 		{
 			name: "sora accepts documented shape",
-			body: `{"model":"sora-2","seconds":12,"size":"1024x1024","input_reference":"image"}`,
+			body: `{"model":"sora-2","prompt":"motion","seconds":12,"size":"1024x1024","aspect_ratio":"16:9"}`,
+		},
+		{
+			name:    "sora rejects reference media",
+			body:    `{"model":"sora-2","prompt":"motion","seconds":8,"image_url":"image"}`,
+			wantErr: "does not accept reference media",
+		},
+		{
+			name: "veo accepts three reference images",
+			body: `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"resolution":"1080p","aspect_ratio":"16:9","reference_image_urls":["1","2","3"]}`,
+		},
+		{
+			name:    "veo rejects four reference images",
+			body:    `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"reference_image_urls":["1","2","3","4"]}`,
+			wantErr: "at most three",
+		},
+		{
+			name:    "veo rejects video reference",
+			body:    `{"model":"veo-3-1","prompt":"motion","duration":6,"video_url":"video"}`,
+			wantErr: "does not accept video or audio",
 		},
 	}
 
@@ -610,6 +905,7 @@ func TestParseOpenAIVideoRequestAcceptsOmniMultipartInputReferenceArray(t *testi
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	require.NoError(t, writer.WriteField("model", "omni-fast"))
+	require.NoError(t, writer.WriteField("prompt", "motion"))
 	require.NoError(t, writer.WriteField("duration", "10"))
 	require.NoError(t, writer.WriteField("resolution", "720p"))
 	require.NoError(t, writer.WriteField("aspect_ratio", "16:9"))

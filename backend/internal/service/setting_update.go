@@ -73,6 +73,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err := s.normalizeOpenAIAdvancedSchedulerOverrides(settings); err != nil {
 		return nil, err
 	}
+	if settings.OpenAIFirstResponseTimeoutMS == 0 {
+		settings.OpenAIFirstResponseTimeoutMS = openAIFirstResponseTimeoutDefaultMS
+	}
+	if err := validateOpenAIFirstResponseTimeoutMS(settings.OpenAIFirstResponseTimeoutMS); err != nil {
+		return nil, err
+	}
 	settings.PaymentVisibleMethodAlipaySource = alipaySource
 	settings.PaymentVisibleMethodWxpaySource = wxpaySource
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
@@ -394,6 +400,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom] = settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse] = settings.OpenAIAdvancedSchedulerWeightPreviousResponse
 	updates[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky] = settings.OpenAIAdvancedSchedulerWeightSessionSticky
+	updates[SettingKeyOpenAIFirstResponseEnabled] = strconv.FormatBool(settings.OpenAIFirstResponseEnabled)
+	updates[SettingKeyOpenAIFirstResponseTimeoutMS] = strconv.Itoa(settings.OpenAIFirstResponseTimeoutMS)
 
 	// 余额、订阅到期与账号限额通知
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -558,6 +566,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		}),
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
+	invalidateOpenAIFirstResponseRuntimeConfigCache()
 	// Invalidate the quota auto-pause cache and let the next read trigger a fresh load.
 	// We can't know from here whether ops_advanced_settings was also touched, so be
 	// defensive: store an expired entry — GetOpenAIQuotaAutoPauseSettings will serve

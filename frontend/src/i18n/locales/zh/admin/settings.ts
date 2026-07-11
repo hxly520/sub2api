@@ -1119,6 +1119,12 @@ export default {
         previousResponseWeight: 'previous_response 粘性',
         sessionStickyWeight: 'session_hash 粘性'
       },
+      openaiFirstResponse: {
+        title: '流式首字超时切号',
+        description: '首个有效输出超时且同组存在可用账号时，在响应写出前自动切换账号。',
+        timeout: '首字等待上限（毫秒）',
+        timeoutHint: '范围 500-60000，建议 3000-8000。'
+      },
       usageRecords: {
         title: '使用记录',
         description: '与终端用户可见的用量及失败请求记录相关的设置。',

@@ -630,6 +630,8 @@ export interface SystemSettings {
   openai_advanced_scheduler_effective_weight_quota_headroom?: string;
   openai_advanced_scheduler_effective_weight_previous_response?: string;
   openai_advanced_scheduler_effective_weight_session_sticky?: string;
+  openai_first_response_enabled?: boolean;
+  openai_first_response_timeout_ms?: number;
 
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled: boolean;
@@ -893,6 +895,8 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_weight_quota_headroom?: string;
   openai_advanced_scheduler_weight_previous_response?: string;
   openai_advanced_scheduler_weight_session_sticky?: string;
+  openai_first_response_enabled?: boolean;
+  openai_first_response_timeout_ms?: number;
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;

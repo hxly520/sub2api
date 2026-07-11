@@ -6,10 +6,12 @@ const (
 	VideoBillingResolution480P  = "480p"
 	VideoBillingResolution720P  = "720p"
 	VideoBillingResolution1080P = "1080p"
+	VideoBillingResolution4K    = "4k"
 )
 
-// xAI 视频生成按秒计费，duration 请求参数允许 1-15 秒；未指定时上游默认生成 8 秒。
-// 计费时长必须与上游实际消耗对齐，否则用户可通过拉长 duration 套利（提交时长由用户控制）。
+// BillingModeVideo uses a per-second rate. Relay models configured as
+// BillingModePerRequest bypass this multiplier. The 8-second default is retained
+// only for legacy results that did not persist a requested or returned duration.
 const (
 	VideoBillingMinDurationSeconds     = 1
 	VideoBillingMaxDurationSeconds     = 15
@@ -39,6 +41,8 @@ func NormalizeVideoBillingResolutionOrDefault(resolution string) string {
 		return VideoBillingResolution720P
 	case "1080", "1080p", "full_hd", "full-hd", "fhd":
 		return VideoBillingResolution1080P
+	case "2160", "2160p", "4k", "uhd":
+		return VideoBillingResolution4K
 	default:
 		return VideoBillingResolution480P
 	}

@@ -223,6 +223,7 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 		"173_allow_cyber_blocked_usage_request_type.sql": -1,
 		"173_media_generation_tasks.sql":                 -1,
 		"174_media_generation_task_public_ids.sql":       -1,
+		"175_openai_first_response_settings.sql":         -1,
 	}
 	for i, entry := range entries {
 		if _, tracked := indexes[entry.Name()]; tracked {
@@ -235,6 +236,7 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 	require.Less(t, indexes["172_video_per_second_billing_metadata.sql"], indexes["173_allow_cyber_blocked_usage_request_type.sql"])
 	require.Less(t, indexes["173_allow_cyber_blocked_usage_request_type.sql"], indexes["173_media_generation_tasks.sql"])
 	require.Less(t, indexes["173_media_generation_tasks.sql"], indexes["174_media_generation_task_public_ids.sql"])
+	require.Less(t, indexes["174_media_generation_task_public_ids.sql"], indexes["175_openai_first_response_settings.sql"])
 
 	content, err := FS.ReadFile("173_allow_cyber_blocked_usage_request_type.sql")
 	require.NoError(t, err)
@@ -243,4 +245,16 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 	require.Contains(t, sql, "DROP CONSTRAINT IF EXISTS usage_logs_request_type_check")
 	require.Contains(t, sql, "ADD CONSTRAINT usage_logs_request_type_check")
 	require.Contains(t, sql, "CHECK (request_type IN (0, 1, 2, 3, 4)) NOT VALID")
+}
+
+func TestMigration175EnablesFirstResponseOnlyForAdvancedSchedulerInstalls(t *testing.T) {
+	content, err := FS.ReadFile("175_openai_first_response_settings.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "'openai_first_response_enabled'")
+	require.Contains(t, sql, "key = 'openai_advanced_scheduler_enabled' AND value = 'true'")
+	require.Contains(t, sql, "ELSE 'false'")
+	require.Contains(t, sql, "'openai_first_response_timeout_ms', '5000'")
+	require.Contains(t, sql, "ON CONFLICT (key) DO NOTHING")
 }

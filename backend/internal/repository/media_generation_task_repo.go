@@ -172,6 +172,15 @@ func (r *usageBillingRepository) UpdateMediaGenerationTaskResponse(ctx context.C
 			duration_seconds = COALESCE($8, duration_seconds),
 			updated_at = NOW()
 		WHERE api_key_id = $1 AND public_task_id = $2
+		  AND (
+			LOWER(BTRIM(status)) NOT IN (
+				'complete', 'completed', 'success', 'succeeded', 'done',
+				'fail', 'failed', 'failure', 'error', 'rejected', 'denied', 'aborted',
+				'cancel', 'cancelled', 'canceled',
+				'expire', 'expired', 'timeout', 'timed_out'
+			)
+			OR LOWER(BTRIM(status)) = LOWER(BTRIM($7))
+		  )
 	`, apiKeyID, taskID, nullableInt(responseStatus), strings.TrimSpace(responseContentType), responseBody,
 		strings.TrimSpace(upstreamResultURL), status, nullableInt(durationSeconds))
 	return err
@@ -198,9 +207,31 @@ func (r *usageBillingRepository) MarkMediaGenerationTaskTerminal(ctx context.Con
 			finalization_error = NULLIF($5, ''),
 			updated_at = NOW()
 		WHERE api_key_id = $1 AND public_task_id = $2
+		  AND (
+			LOWER(BTRIM(status)) NOT IN (
+				'complete', 'completed', 'success', 'succeeded', 'done',
+				'fail', 'failed', 'failure', 'error', 'rejected', 'denied', 'aborted',
+				'cancel', 'cancelled', 'canceled',
+				'expire', 'expired', 'timeout', 'timed_out'
+			)
+			OR LOWER(BTRIM(status)) = LOWER(BTRIM($3))
+		  )
 	`, apiKeyID, strings.TrimSpace(taskID), status, finalizedAt, strings.TrimSpace(finalizationError))
 	return err
 }
+
+const tryAcquireMediaGenerationFinalizationSQL = `
+	UPDATE media_generation_tasks
+	SET finalization_lease_token = $3,
+		finalization_lease_until = $4,
+		finalization_error = NULL,
+		updated_at = NOW()
+	WHERE api_key_id = $1
+	  AND (public_task_id = $2 OR task_id = $2)
+	  AND usage_recorded_at IS NULL
+	  AND LOWER(BTRIM(status)) IN ('complete', 'completed', 'success', 'succeeded', 'done')
+	  AND (finalization_lease_until IS NULL OR finalization_lease_until <= NOW())
+`
 
 func (r *usageBillingRepository) TryAcquireMediaGenerationFinalization(ctx context.Context, apiKeyID int64, taskID, leaseToken string, leaseUntil time.Time) (bool, error) {
 	if r == nil || r.db == nil {
@@ -211,18 +242,7 @@ func (r *usageBillingRepository) TryAcquireMediaGenerationFinalization(ctx conte
 	if taskID == "" || leaseToken == "" {
 		return false, nil
 	}
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE media_generation_tasks
-		SET finalization_lease_token = $3,
-			finalization_lease_until = $4,
-			finalization_error = NULL,
-			updated_at = NOW()
-		WHERE api_key_id = $1
-		  AND (public_task_id = $2 OR task_id = $2)
-		  AND finalized_at IS NULL
-		  AND usage_recorded_at IS NULL
-		  AND (finalization_lease_until IS NULL OR finalization_lease_until <= NOW())
-	`, apiKeyID, taskID, leaseToken, leaseUntil.UTC())
+	result, err := r.db.ExecContext(ctx, tryAcquireMediaGenerationFinalizationSQL, apiKeyID, taskID, leaseToken, leaseUntil.UTC())
 	if err != nil {
 		return false, err
 	}

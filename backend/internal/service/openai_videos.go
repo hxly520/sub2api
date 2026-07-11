@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -38,9 +39,10 @@ const (
 )
 
 type openAIVideoEdgeTokenPayload struct {
-	Version   int    `json:"v"`
-	URL       string `json:"u"`
-	ExpiresAt int64  `json:"e"`
+	Version   int               `json:"v"`
+	URL       string            `json:"u"`
+	ExpiresAt int64             `json:"e"`
+	Headers   map[string]string `json:"h,omitempty"`
 }
 
 type OpenAIVideoRequest struct {
@@ -71,6 +73,20 @@ type OpenAIVideoRequest struct {
 	Body                    []byte
 	bodyHash                string
 }
+
+type openAIVideoModelProfile int
+
+const (
+	openAIVideoModelUnknown openAIVideoModelProfile = iota
+	openAIVideoModelGrok
+	openAIVideoModelGrok15
+	openAIVideoModelSeedanceStandard
+	openAIVideoModelSeedancePerSecond
+	openAIVideoModelOmniFast
+	openAIVideoModelOmniV2V
+	openAIVideoModelSora
+	openAIVideoModelVeo
+)
 
 func (r *OpenAIVideoRequest) StickySessionSeed() string {
 	if r == nil {
@@ -146,6 +162,7 @@ func (s *OpenAIGatewayService) ParseOpenAIVideoRequest(c *gin.Context, body []by
 		if req.Stream {
 			return nil, fmt.Errorf("streaming video generation is not supported")
 		}
+		normalizeOpenAIVideoDerivedFields(req)
 		if err := validateOpenAIVideoModelRequest(req); err != nil {
 			return nil, err
 		}
@@ -473,6 +490,45 @@ func seedanceFixedResolutionFromModel(model string) string {
 	return ""
 }
 
+// classifyOpenAIVideoModel groups the public model names exposed by the relay's
+// model-api-doc-v1 video catalog. Family matching also covers administrator
+// aliases such as cy-gv1-grok-video without coupling the gateway to one prefix.
+func classifyOpenAIVideoModel(model string) openAIVideoModelProfile {
+	model = strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case strings.Contains(model, "grok") && strings.Contains(model, "video") && strings.Contains(model, "1.5"):
+		return openAIVideoModelGrok15
+	case strings.Contains(model, "grok") && strings.Contains(model, "video"):
+		return openAIVideoModelGrok
+	case strings.Contains(model, "seedance") && seedanceFixedResolutionFromModel(model) != "":
+		return openAIVideoModelSeedancePerSecond
+	case strings.Contains(model, "seedance"):
+		return openAIVideoModelSeedanceStandard
+	case strings.Contains(model, "omni-v2v"):
+		return openAIVideoModelOmniV2V
+	case strings.Contains(model, "omni-fast"):
+		return openAIVideoModelOmniFast
+	case strings.Contains(model, "sora"):
+		return openAIVideoModelSora
+	case strings.Contains(model, "veo"):
+		return openAIVideoModelVeo
+	default:
+		return openAIVideoModelUnknown
+	}
+}
+
+func normalizeOpenAIVideoDerivedFields(req *OpenAIVideoRequest) {
+	if req == nil || strings.TrimSpace(req.Resolution) != "" {
+		return
+	}
+	switch classifyOpenAIVideoModel(req.Model) {
+	case openAIVideoModelSeedancePerSecond:
+		req.Resolution = seedanceFixedResolutionFromModel(req.Model)
+	case openAIVideoModelOmniFast, openAIVideoModelOmniV2V:
+		req.Resolution = VideoBillingResolution720P
+	}
+}
+
 // OpenAIVideoUpstreamEndpointForModel maps the local compatibility surface to
 // the relay provider's documented task protocol. It never returns an official
 // vendor host; only the path below the account's configured relay base URL.
@@ -481,7 +537,7 @@ func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
 	switch {
 	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"):
 		return openAIVideoGenerationsEndpoint
-	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"):
+	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
 		return openAIVideosEndpoint
 	default:
 		return strings.TrimSpace(fallback)
@@ -493,6 +549,7 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		return fmt.Errorf("video request is nil")
 	}
 	model := strings.ToLower(strings.TrimSpace(req.Model))
+	profile := classifyOpenAIVideoModel(model)
 	resolution := strings.ToLower(strings.TrimSpace(req.Resolution))
 	ratio := strings.ToLower(strings.TrimSpace(req.AspectRatio))
 	duration := req.DurationSeconds
@@ -502,23 +559,37 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		nonFrameImageCount = 0
 	}
 
-	isGrok := strings.Contains(model, "grok") && strings.Contains(model, "video")
-	isGrok15 := isGrok && strings.Contains(model, "1.5")
-	if isGrok {
+	if profile != openAIVideoModelUnknown && strings.TrimSpace(req.Prompt) == "" {
+		return fmt.Errorf("prompt is required for the selected video model")
+	}
+	if (profile == openAIVideoModelGrok || profile == openAIVideoModelGrok15) && utf8.RuneCountInString(req.Prompt) > 4096 {
+		return fmt.Errorf("grok video prompt must not exceed 4096 characters")
+	}
+	if (profile == openAIVideoModelSeedanceStandard || profile == openAIVideoModelSeedancePerSecond) && utf8.RuneCountInString(req.Prompt) > 5000 {
+		return fmt.Errorf("seedance video prompt must not exceed 5000 characters")
+	}
+
+	if profile == openAIVideoModelGrok || profile == openAIVideoModelGrok15 {
 		if duration > 0 && !containsOpenAIVideoInt([]int{4, 6, 8, 10, 12, 15}, duration) {
 			return fmt.Errorf("grok video duration must be one of 4, 6, 8, 10, 12, or 15 seconds")
 		}
 		if req.ReferenceImageCount > 7 {
 			return fmt.Errorf("grok video supports at most seven reference images")
 		}
-		if req.ReferenceImageCount > 1 && duration > 10 {
-			return fmt.Errorf("grok multi-image video duration cannot exceed 10 seconds")
-		}
 		if resolution != "" && resolution != "480p" && resolution != "720p" {
 			return fmt.Errorf("grok video resolution must be 480p or 720p")
 		}
+		if req.ReferenceVideoCount > 1 {
+			return fmt.Errorf("grok video supports at most one video reference")
+		}
+		if req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("grok video does not accept audio references")
+		}
+		if frameCount > 0 {
+			return fmt.Errorf("grok video does not accept first or last frame fields")
+		}
 	}
-	if isGrok15 {
+	if profile == openAIVideoModelGrok15 {
 		if req.ReferenceImageCount != 1 {
 			return fmt.Errorf("grok video 1.5 requires exactly one reference image")
 		}
@@ -528,11 +599,18 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
 			return fmt.Errorf("grok video 1.5 aspect_ratio must be 16:9 or 9:16")
 		}
+	} else if profile == openAIVideoModelGrok {
+		if ratio != "" && !containsOpenAIVideoString([]string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}, ratio) {
+			return fmt.Errorf("grok video aspect_ratio is unsupported")
+		}
 	}
 
-	if strings.Contains(model, "seedance") {
+	if profile == openAIVideoModelSeedanceStandard || profile == openAIVideoModelSeedancePerSecond {
 		if duration > 0 && (duration < 4 || duration > 15) {
 			return fmt.Errorf("seedance video duration must be between 4 and 15 seconds")
+		}
+		if ratio != "" && !containsOpenAIVideoString([]string{"16:9", "9:16", "1:1", "21:9", "3:4", "4:3"}, ratio) {
+			return fmt.Errorf("seedance video aspect_ratio is unsupported")
 		}
 		fixedResolution := seedanceFixedResolutionFromModel(model)
 		if fixedResolution == "" {
@@ -545,12 +623,24 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 			if frameCount > 0 && (nonFrameImageCount > 0 || req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0) {
 				return fmt.Errorf("seedance first/last frames cannot be combined with multimodal references")
 			}
+			if frameCount == 0 && (req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0) && nonFrameImageCount == 0 {
+				return fmt.Errorf("seedance video or audio references require at least one image reference")
+			}
 		} else {
+			if duration <= 0 {
+				return fmt.Errorf("seedance per-second video duration is required")
+			}
 			if resolution != "" && resolution != fixedResolution && (resolution != "2160p" || fixedResolution != "4k") {
 				return fmt.Errorf("seedance resolution is fixed by the selected model")
 			}
 			if req.ReferenceImageCount > 9 || req.ReferenceVideoCount > 3 || req.ReferenceAudioCount > 3 {
 				return fmt.Errorf("seedance per-second video supports at most 9 images, 3 videos, and 3 audio references")
+			}
+			if frameCount > 0 && (nonFrameImageCount > 0 || req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0) {
+				return fmt.Errorf("seedance first/last frames cannot be combined with multimodal references")
+			}
+			if frameCount == 0 && (req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0) && nonFrameImageCount == 0 {
+				return fmt.Errorf("seedance video or audio references require at least one image reference")
 			}
 		}
 		if req.HasFirstFrame != req.HasLastFrame {
@@ -558,7 +648,7 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		}
 	}
 
-	if strings.Contains(model, "omni-fast") {
+	if profile == openAIVideoModelOmniFast {
 		if duration > 0 && duration != 10 {
 			return fmt.Errorf("omni fast video duration must be 10 seconds")
 		}
@@ -571,15 +661,15 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if req.ReferenceImageCount > 5 {
 			return fmt.Errorf("omni video supports at most five reference images")
 		}
-		if req.ReferenceImageCount > 1 && (!req.Multipart || req.InputReferenceFileCount != req.ReferenceImageCount) {
+		if nonFrameImageCount > 1 && (!req.Multipart || req.InputReferenceFileCount != nonFrameImageCount) {
 			return fmt.Errorf("omni multi-image video requires multipart input_reference files")
 		}
-		if req.HasFirstFrame != req.HasLastFrame {
-			return fmt.Errorf("omni first and last frames must be provided together")
+		if req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("omni fast does not accept video or audio references")
 		}
 	}
 
-	if strings.Contains(model, "omni-v2v") {
+	if profile == openAIVideoModelOmniV2V {
 		if req.ReferenceVideoCount != 1 {
 			return fmt.Errorf("omni v2v requires exactly one source video")
 		}
@@ -592,18 +682,48 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if resolution != "" && resolution != "720p" {
 			return fmt.Errorf("omni v2v output resolution must be 720p")
 		}
+		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
+			return fmt.Errorf("omni v2v aspect_ratio must be 16:9 or 9:16")
+		}
+		if req.ReferenceImageCount > 0 || req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("omni v2v only accepts a source video reference")
+		}
 	}
 
-	if strings.Contains(model, "sora") {
-		if duration > 0 && duration != 8 && duration != 12 {
-			return fmt.Errorf("sora video duration must be 8 or 12 seconds")
+	if profile == openAIVideoModelSora {
+		if duration > 0 && duration != 4 && duration != 8 && duration != 12 {
+			return fmt.Errorf("sora video duration must be 4, 8, or 12 seconds")
+		}
+		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
+			return fmt.Errorf("sora video aspect_ratio must be 16:9 or 9:16")
 		}
 		size := strings.ToLower(strings.TrimSpace(req.Size))
 		if size != "" && !containsOpenAIVideoString([]string{"1280x720", "720x1280", "1024x1024"}, size) {
 			return fmt.Errorf("sora video size is unsupported")
 		}
-		if req.ReferenceImageCount > 1 {
-			return fmt.Errorf("sora video supports at most one reference image")
+		if req.ReferenceImageCount > 0 || req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("sora video does not accept reference media")
+		}
+	}
+
+	if profile == openAIVideoModelVeo {
+		if duration > 0 && !containsOpenAIVideoInt([]int{4, 6, 8}, duration) {
+			return fmt.Errorf("veo video duration must be 4, 6, or 8 seconds")
+		}
+		if ratio != "" && ratio != "16:9" && ratio != "9:16" {
+			return fmt.Errorf("veo video aspect_ratio must be 16:9 or 9:16")
+		}
+		if resolution != "" && resolution != "720p" && resolution != "1080p" {
+			return fmt.Errorf("veo video resolution must be 720p or 1080p")
+		}
+		if req.ReferenceImageCount > 3 {
+			return fmt.Errorf("veo video supports at most three reference images")
+		}
+		if req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("veo video does not accept video or audio references")
+		}
+		if frameCount > 0 {
+			return fmt.Errorf("veo video does not accept first or last frame fields")
 		}
 	}
 	return nil
@@ -1013,9 +1133,18 @@ func extractOpenAIVideoTaskID(body []byte) string {
 		"data.task.request_id",
 		"data.task.task_id",
 		"data.video.id",
+		"data.result.id",
+		"data.result.request_id",
+		"data.result.task_id",
 		"result.id",
 		"result.request_id",
 		"result.task_id",
+		"raw_data.id",
+		"raw_data.request_id",
+		"raw_data.task_id",
+		"data.raw_data.id",
+		"data.raw_data.request_id",
+		"data.raw_data.task_id",
 	} {
 		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
 			return value
@@ -1034,10 +1163,16 @@ func extractOpenAIVideoStatus(body []byte) string {
 		"data.task.state",
 		"data.video.status",
 		"data.video.state",
+		"data.result.status",
+		"data.result.state",
 		"result.status",
 		"result.state",
 		"video.status",
 		"video.state",
+		"raw_data.status",
+		"raw_data.state",
+		"data.raw_data.status",
+		"data.raw_data.state",
 	} {
 		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
 			return NormalizeMediaGenerationStatus(value)
@@ -1354,16 +1489,30 @@ func openAIVideoContentProxyURL(publicBaseURL, taskID string) string {
 }
 
 func (s *OpenAIGatewayService) OpenAIVideoClientContentURL(ctx context.Context, publicBaseURL, taskID, upstreamResultURL string) (string, error) {
+	return s.openAIVideoClientContentURL(ctx, publicBaseURL, taskID, upstreamResultURL, nil)
+}
+
+func (s *OpenAIGatewayService) OpenAIVideoClientContentURLForTask(ctx context.Context, publicBaseURL string, task *MediaGenerationTask) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("video task is required")
+	}
+	upstreamResultURL := strings.TrimSpace(task.UpstreamResultURL)
+	if upstreamResultURL == "" {
+		upstreamResultURL = OpenAIVideoResultURLFromBody([]byte(task.ResponseBody))
+	}
+	return s.openAIVideoClientContentURL(ctx, publicBaseURL, task.ClientTaskID(), upstreamResultURL, task)
+}
+
+func (s *OpenAIGatewayService) openAIVideoClientContentURL(ctx context.Context, publicBaseURL, taskID, upstreamResultURL string, task *MediaGenerationTask) (string, error) {
 	if s == nil || s.cfg == nil || s.cfg.Gateway.VideoProxy.Mode != config.VideoProxyModeEdge {
 		return openAIVideoContentProxyURL(publicBaseURL, taskID), nil
 	}
-	upstreamResultURL = strings.TrimSpace(upstreamResultURL)
-	if upstreamResultURL == "" {
-		return "", nil
-	}
-	validatedURL, err := validateOpenAIVideoContentProxyURL(upstreamResultURL)
+	validatedURL, edgeHeaders, err := s.resolveOpenAIVideoEdgeTarget(ctx, upstreamResultURL, task)
 	if err != nil {
 		return "", err
+	}
+	if validatedURL == "" {
+		return "", nil
 	}
 	parsedUpstreamURL, err := url.Parse(validatedURL)
 	if err != nil || parsedUpstreamURL.Hostname() == "" {
@@ -1394,6 +1543,7 @@ func (s *OpenAIGatewayService) OpenAIVideoClientContentURL(ctx context.Context, 
 		Version:   1,
 		URL:       validatedURL,
 		ExpiresAt: time.Now().UTC().Add(time.Duration(cfg.TokenTTLSeconds) * time.Second).Unix(),
+		Headers:   edgeHeaders,
 	})
 	if err != nil {
 		return "", fmt.Errorf("video edge proxy is unavailable")
@@ -1410,6 +1560,73 @@ func (s *OpenAIGatewayService) OpenAIVideoClientContentURL(ctx context.Context, 
 		return "", fmt.Errorf("video edge proxy is unavailable")
 	}
 	return baseURL + "/v1/video-content/" + token, nil
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIVideoEdgeTarget(ctx context.Context, upstreamResultURL string, task *MediaGenerationTask) (string, map[string]string, error) {
+	upstreamResultURL = strings.TrimSpace(upstreamResultURL)
+	if isOpenAIVideoExternalURL(upstreamResultURL) {
+		validatedURL, err := validateOpenAIVideoContentProxyURL(upstreamResultURL)
+		return validatedURL, nil, err
+	}
+	if task == nil {
+		if upstreamResultURL == "" {
+			return "", nil, nil
+		}
+		return "", nil, fmt.Errorf("invalid video content url")
+	}
+	providerTaskID := task.ProviderTaskID()
+	endpoint := normalizeOpenAIVideoTaskEndpoint(task.UpstreamEndpoint)
+	if providerTaskID == "" || endpoint == "" || task.AccountID <= 0 {
+		return "", nil, fmt.Errorf("video edge proxy target is unavailable")
+	}
+	if s == nil || s.accountRepo == nil {
+		return "", nil, fmt.Errorf("video edge proxy account is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	account, err := s.accountRepo.GetByID(ctx, task.AccountID)
+	if err != nil || account == nil || account.Type != AccountTypeAPIKey {
+		return "", nil, fmt.Errorf("video edge proxy account is unavailable")
+	}
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		return "", nil, fmt.Errorf("video edge proxy account base_url is unavailable")
+	}
+	validatedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return "", nil, fmt.Errorf("video edge proxy account base_url is unavailable")
+	}
+	contentPath := strings.TrimRight(endpoint, "/") + "/" + url.PathEscape(providerTaskID) + "/content"
+	targetURL := buildOpenAIEndpointURL(validatedBaseURL, contentPath)
+	validatedTargetURL, err := validateOpenAIVideoContentProxyURL(targetURL)
+	if err != nil {
+		return "", nil, err
+	}
+	token, _, err := s.GetAccessToken(ctx, account)
+	if err != nil {
+		return "", nil, fmt.Errorf("video edge proxy authorization is unavailable")
+	}
+	authRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedTargetURL, nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("video edge proxy authorization is unavailable")
+	}
+	applyOpenAICompatibleAPIKeyAuth(authRequest, account, token)
+	headers := make(map[string]string, 4)
+	for _, name := range []string{
+		OpenAICompatibleAuthHeaderAuthorization,
+		OpenAICompatibleAuthHeaderAPIKey,
+		OpenAICompatibleAuthHeaderXAPIKey,
+		"X-Goog-API-Key",
+	} {
+		if value := strings.TrimSpace(authRequest.Header.Get(name)); value != "" {
+			headers[name] = value
+		}
+	}
+	if len(headers) == 0 {
+		return "", nil, fmt.Errorf("video edge proxy authorization is unavailable")
+	}
+	return validatedTargetURL, headers, nil
 }
 
 func (s *OpenAIGatewayService) OpenAIVideoEdgeProxyEnabled() bool {
@@ -1447,12 +1664,21 @@ func extractOpenAIVideoDurationSeconds(body []byte) int {
 		"data.video.duration",
 		"data.video.seconds",
 		"data.video.duration_seconds",
+		"data.result.duration",
+		"data.result.seconds",
+		"data.result.duration_seconds",
 		"video.duration",
 		"video.seconds",
 		"video.duration_seconds",
 		"result.duration",
 		"result.seconds",
 		"result.duration_seconds",
+		"raw_data.duration",
+		"raw_data.seconds",
+		"raw_data.duration_seconds",
+		"data.raw_data.duration",
+		"data.raw_data.seconds",
+		"data.raw_data.duration_seconds",
 	} {
 		value := gjson.GetBytes(body, path)
 		if !value.Exists() {

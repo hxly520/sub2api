@@ -10,17 +10,16 @@
     </div>
 
     <template v-else>
-      <!-- Desktop/tablet-wide: content-driven columns plus horizontal overflow as a final safety net. -->
+      <!-- Desktop/tablet-wide: keep the original fixed table footprint; model overflow expands vertically. -->
       <div class="card hidden overflow-hidden lg:block">
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[1040px] border-collapse text-sm">
+        <table class="w-full table-fixed border-collapse text-sm">
             <thead>
               <tr class="border-b border-gray-100 bg-gray-50/50 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/50 dark:text-gray-400">
-                <th class="w-[160px] px-4 py-3 text-center">{{ columns.name }}</th>
+                <th class="w-[180px] px-4 py-3 text-center">{{ columns.name }}</th>
                 <th class="w-[200px] px-4 py-3 text-left">{{ columns.description }}</th>
-                <th class="w-[130px] px-4 py-3 text-left">{{ columns.platform }}</th>
-                <th class="min-w-[280px] px-4 py-3 text-left">{{ columns.groups }}</th>
-                <th class="min-w-[360px] px-4 py-3 text-left">{{ columns.supportedModels }}</th>
+                <th class="w-[140px] px-4 py-3 text-left">{{ columns.platform }}</th>
+                <th class="px-4 py-3 text-left">{{ columns.groups }}</th>
+                <th class="px-4 py-3 text-left">{{ columns.supportedModels }}</th>
               </tr>
             </thead>
             <tbody
@@ -70,8 +69,7 @@
                 </td>
               </tr>
             </tbody>
-          </table>
-        </div>
+        </table>
       </div>
 
       <!-- Mobile/tablet: cards avoid fixed table widths and preserve every model/group. -->

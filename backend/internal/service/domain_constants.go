@@ -446,6 +446,9 @@ const (
 	SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom         = "openai_advanced_scheduler_weight_quota_headroom"
 	SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse      = "openai_advanced_scheduler_weight_previous_response"
 	SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky         = "openai_advanced_scheduler_weight_session_sticky"
+	// SettingKeyOpenAIFirstResponseEnabled controls pre-output stream failover.
+	SettingKeyOpenAIFirstResponseEnabled   = "openai_first_response_enabled"
+	SettingKeyOpenAIFirstResponseTimeoutMS = "openai_first_response_timeout_ms"
 
 	// SettingKeyBackendModeEnabled Backend 模式：禁用用户注册和自助服务，仅管理员可登录
 	SettingKeyBackendModeEnabled = "backend_mode_enabled"

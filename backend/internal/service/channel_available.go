@@ -7,20 +7,6 @@ import (
 	"strings"
 )
 
-// availableChannelAccountRepository 是「可用渠道」模型聚合所需的最小账号仓库接口。
-// 生产环境由 AccountRepository 注入，测试可使用只实现该方法的窄 stub。
-type availableChannelAccountRepository interface {
-	ListSchedulableByGroupID(ctx context.Context, groupID int64) ([]Account, error)
-}
-
-// availableAccountModel 只在服务内部保留账号映射目标，用于判断限制与匹配定价。
-// 对外 DTO 只使用 Name，绝不能序列化 UpstreamModel。
-type availableAccountModel struct {
-	Name          string
-	UpstreamModel string
-	Platform      string
-}
-
 // AvailableGroupRef 渠道视图中关联分组的简要信息。
 //
 // 用户侧「可用渠道」页面据此展示：专属分组 vs 公开分组（IsExclusive）、
@@ -55,20 +41,15 @@ type AvailableChannel struct {
 
 // ListAvailable 返回所有渠道的可用视图：每个渠道附带关联分组信息与支持模型列表。
 //
-// 模型来源为：
-//  1. 渠道级 mapping ∪ pricing；
-//  2. 渠道所绑定活跃分组下，实际可调度账号 model_mapping 的公开 key。
-//
-// 账号 mapping 的 value 仅在服务内部用于判断真实计费模型和匹配定价，绝不进入用户 DTO。
-// 模型同时按分组保存，避免用户只能访问同平台的部分分组时看到其他分组独有的模型。
-// 对于渠道未配置定价的模型，进一步用 PricingService 的全局 LiteLLM 数据合成
-// 一份展示用定价，让用户看到默认价格而非「未配置」。
+// 模型只来自渠道定价中配置的具体模型名，不读取上游账号 model_mapping，也不读取
+// 分组自定义 /v1/models 列表。这样页面与管理员的渠道定价配置保持一致，同时避免暴露
+// 上游账号能力。模型按分组平台保存，防止跨平台展示。
 //
 // 关联分组信息通过 groupRepo.ListActive 查询后按 ID 映射；渠道 GroupIDs 中未在活跃列表中
 // 的分组（已停用或删除）会被忽略。
 //
 // 前置条件：s.groupRepo 必须非 nil（由 wire DI 保证）。直接 nil-deref 用于 fail-fast，
-// 避免静默掩盖注入缺失。availableAccountRepo 可为 nil，直接构造服务的测试场景将保持旧行为。
+// 避免静默掩盖注入缺失。
 func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel, error) {
 	channels, err := s.repo.ListAll(ctx)
 	if err != nil {
@@ -96,11 +77,6 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		}
 	}
 
-	accountModelsByGroup, err := s.listAvailableAccountModels(ctx, channels, groupByID)
-	if err != nil {
-		return nil, err
-	}
-
 	out := make([]AvailableChannel, 0, len(channels))
 	for i := range channels {
 		ch := &channels[i]
@@ -115,18 +91,15 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		})
 
 		ch.normalizeBillingModelSource()
-		channelModels := ch.SupportedModels()
+		channelModels := configuredChannelPricingModels(ch)
 		supportedByGroup := make(map[int64][]SupportedModel, len(attachedGroups))
-		allSupported := append([]SupportedModel(nil), channelModels...)
 
 		for _, group := range attachedGroups {
 			groupModels := supportedModelsForPlatform(channelModels, group.Platform)
-			groupModels = mergeAvailableAccountModels(ch, groupModels, accountModelsByGroup[group.ID])
 			s.fillGlobalPricingFallback(groupModels)
 			supportedByGroup[group.ID] = groupModels
-			allSupported = mergeSupportedModels(allSupported, groupModels)
 		}
-		s.fillGlobalPricingFallback(allSupported)
+		s.fillGlobalPricingFallback(channelModels)
 
 		out = append(out, AvailableChannel{
 			ID:                     ch.ID,
@@ -136,7 +109,7 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 			BillingModelSource:     ch.BillingModelSource,
 			RestrictModels:         ch.RestrictModels,
 			Groups:                 attachedGroups,
-			SupportedModels:        allSupported,
+			SupportedModels:        channelModels,
 			SupportedModelsByGroup: supportedByGroup,
 		})
 	}
@@ -147,85 +120,49 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 	return out, nil
 }
 
-func (s *ChannelService) listAvailableAccountModels(
-	ctx context.Context,
-	channels []Channel,
-	activeGroups map[int64]AvailableGroupRef,
-) (map[int64][]availableAccountModel, error) {
-	if s.availableAccountRepo == nil {
-		return nil, nil
+// configuredChannelPricingModels returns only concrete models explicitly listed
+// in channel pricing. Channel mappings, account mappings and group model lists
+// are deliberately not part of the user-facing model catalogue.
+func configuredChannelPricingModels(ch *Channel) []SupportedModel {
+	if ch == nil || len(ch.ModelPricing) == 0 {
+		return nil
 	}
 
-	groupIDs := make([]int64, 0)
-	seenGroups := make(map[int64]struct{})
-	for i := range channels {
-		for _, groupID := range channels[i].GroupIDs {
-			if _, active := activeGroups[groupID]; !active {
-				continue
-			}
-			if _, exists := seenGroups[groupID]; exists {
-				continue
-			}
-			seenGroups[groupID] = struct{}{}
-			groupIDs = append(groupIDs, groupID)
+	models := make([]SupportedModel, 0)
+	seen := make(map[string]struct{})
+	for i := range ch.ModelPricing {
+		pricing := &ch.ModelPricing[i]
+		platform := strings.TrimSpace(pricing.Platform)
+		if platform == "" {
+			continue
 		}
-	}
-	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
-
-	result := make(map[int64][]availableAccountModel, len(groupIDs))
-	for _, groupID := range groupIDs {
-		group := activeGroups[groupID]
-		accounts, err := s.availableAccountRepo.ListSchedulableByGroupID(ctx, groupID)
-		if err != nil {
-			return nil, fmt.Errorf("list schedulable accounts for group %d: %w", groupID, err)
-		}
-
-		models := make([]availableAccountModel, 0)
-		seenModels := make(map[string]struct{})
-		for i := range accounts {
-			account := &accounts[i]
-			if !account.IsSchedulable() || !strings.EqualFold(strings.TrimSpace(account.Platform), strings.TrimSpace(group.Platform)) {
+		for _, configuredName := range pricing.Models {
+			name := strings.TrimSpace(configuredName)
+			if name == "" || strings.Contains(name, wildcardSuffix) {
 				continue
 			}
-
-			mapping := account.GetModelMapping()
-			publicNames := make([]string, 0, len(mapping))
-			for publicName := range mapping {
-				publicNames = append(publicNames, publicName)
+			key := strings.ToLower(platform) + "\x00" + strings.ToLower(name)
+			if _, exists := seen[key]; exists {
+				continue
 			}
-			sort.SliceStable(publicNames, func(i, j int) bool {
-				return strings.ToLower(publicNames[i]) < strings.ToLower(publicNames[j])
+			seen[key] = struct{}{}
+			clone := pricing.Clone()
+			models = append(models, SupportedModel{
+				Name:     name,
+				Platform: platform,
+				Pricing:  &clone,
 			})
-
-			for _, rawPublicName := range publicNames {
-				publicName := strings.TrimSpace(rawPublicName)
-				upstreamName := strings.TrimSpace(mapping[rawPublicName])
-				if !isConcreteAvailableModel(publicName) || !isConcreteAvailableModel(upstreamName) {
-					continue
-				}
-				key := strings.ToLower(publicName)
-				if _, exists := seenModels[key]; exists {
-					continue
-				}
-				seenModels[key] = struct{}{}
-				models = append(models, availableAccountModel{
-					Name:          publicName,
-					UpstreamModel: upstreamName,
-					Platform:      group.Platform,
-				})
-			}
 		}
-		sort.SliceStable(models, func(i, j int) bool {
-			return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
-		})
-		result[groupID] = models
 	}
-	return result, nil
-}
-
-func isConcreteAvailableModel(model string) bool {
-	model = strings.TrimSpace(model)
-	return model != "" && !strings.Contains(model, wildcardSuffix)
+	sort.SliceStable(models, func(i, j int) bool {
+		leftPlatform := strings.ToLower(models[i].Platform)
+		rightPlatform := strings.ToLower(models[j].Platform)
+		if leftPlatform != rightPlatform {
+			return leftPlatform < rightPlatform
+		}
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return models
 }
 
 func supportedModelsForPlatform(models []SupportedModel, platform string) []SupportedModel {
@@ -236,153 +173,6 @@ func supportedModelsForPlatform(models []SupportedModel, platform string) []Supp
 		}
 	}
 	return out
-}
-
-func mergeAvailableAccountModels(
-	ch *Channel,
-	base []SupportedModel,
-	accountModels []availableAccountModel,
-) []SupportedModel {
-	out := append([]SupportedModel(nil), base...)
-	seen := make(map[string]struct{}, len(out)+len(accountModels))
-	for i := range out {
-		seen[supportedModelDedupKey(out[i].Platform, out[i].Name)] = struct{}{}
-	}
-
-	for _, model := range accountModels {
-		pricing := availableAccountModelPricing(ch, model)
-		if ch.RestrictModels && pricing == nil {
-			continue
-		}
-		key := supportedModelDedupKey(model.Platform, model.Name)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, SupportedModel{
-			Name:     model.Name,
-			Platform: model.Platform,
-			Pricing:  pricing,
-		})
-	}
-
-	sortSupportedModels(out)
-	return out
-}
-
-func mergeSupportedModels(base, additions []SupportedModel) []SupportedModel {
-	out := append([]SupportedModel(nil), base...)
-	seen := make(map[string]struct{}, len(out)+len(additions))
-	for i := range out {
-		seen[supportedModelDedupKey(out[i].Platform, out[i].Name)] = struct{}{}
-	}
-	for i := range additions {
-		key := supportedModelDedupKey(additions[i].Platform, additions[i].Name)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, additions[i])
-	}
-	sortSupportedModels(out)
-	return out
-}
-
-func supportedModelDedupKey(platform, model string) string {
-	return strings.ToLower(strings.TrimSpace(platform)) + "\x00" + strings.ToLower(strings.TrimSpace(model))
-}
-
-func sortSupportedModels(models []SupportedModel) {
-	sort.SliceStable(models, func(i, j int) bool {
-		if models[i].Platform != models[j].Platform {
-			return models[i].Platform < models[j].Platform
-		}
-		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
-	})
-}
-
-// availableAccountModelPricing 按真实计费基准查找账号公开别名的渠道定价。
-// mapping value 只参与内部查找；返回的 SupportedModel.Name 始终是公开别名。
-func availableAccountModelPricing(ch *Channel, model availableAccountModel) *ChannelModelPricing {
-	if ch == nil {
-		return nil
-	}
-
-	billingModel := model.Name
-	switch ch.BillingModelSource {
-	case BillingModelSourceRequested:
-		billingModel = model.Name
-	case BillingModelSourceUpstream:
-		billingModel = model.UpstreamModel
-	case BillingModelSourceChannelMapped:
-		if mapped := matchAvailableChannelMapping(ch, model.Platform, model.Name); mapped != "" {
-			billingModel = mapped
-		}
-	default:
-		if mapped := matchAvailableChannelMapping(ch, model.Platform, model.Name); mapped != "" {
-			billingModel = mapped
-		}
-	}
-	return matchAvailableChannelPricing(ch, model.Platform, billingModel)
-}
-
-func matchAvailableChannelMapping(ch *Channel, platform, model string) string {
-	if ch == nil {
-		return ""
-	}
-	mapping := ch.ModelMapping[platform]
-	modelLower := strings.ToLower(model)
-	for source, target := range mapping {
-		if _, wildcard := splitWildcardSuffix(source); wildcard {
-			continue
-		}
-		if strings.ToLower(source) == modelLower {
-			return strings.TrimSpace(target)
-		}
-	}
-	for source, target := range mapping {
-		prefix, wildcard := splitWildcardSuffix(source)
-		if wildcard && strings.HasPrefix(modelLower, strings.ToLower(prefix)) {
-			return strings.TrimSpace(target)
-		}
-	}
-	return ""
-}
-
-func matchAvailableChannelPricing(ch *Channel, platform, model string) *ChannelModelPricing {
-	if ch == nil || strings.TrimSpace(model) == "" {
-		return nil
-	}
-	modelLower := strings.ToLower(model)
-	for i := range ch.ModelPricing {
-		pricing := &ch.ModelPricing[i]
-		if pricing.Platform != platform {
-			continue
-		}
-		for _, configured := range pricing.Models {
-			if _, wildcard := splitWildcardSuffix(configured); wildcard {
-				continue
-			}
-			if strings.ToLower(configured) == modelLower {
-				clone := pricing.Clone()
-				return &clone
-			}
-		}
-	}
-	for i := range ch.ModelPricing {
-		pricing := &ch.ModelPricing[i]
-		if pricing.Platform != platform {
-			continue
-		}
-		for _, configured := range pricing.Models {
-			prefix, wildcard := splitWildcardSuffix(configured)
-			if wildcard && strings.HasPrefix(modelLower, strings.ToLower(prefix)) {
-				clone := pricing.Clone()
-				return &clone
-			}
-		}
-	}
-	return nil
 }
 
 // fillGlobalPricingFallback 对未命中渠道定价的支持模型，从全局 LiteLLM 数据合成一份

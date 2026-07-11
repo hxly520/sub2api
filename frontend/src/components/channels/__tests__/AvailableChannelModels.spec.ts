@@ -52,21 +52,22 @@ function mountModels(models: UserSupportedModel[], forceExpand = false) {
 
 describe('AvailableChannelModels', () => {
   it('keeps every model in the DOM while applying mobile and desktop limits', () => {
-    const wrapper = mountModels(createModels(10))
+    const wrapper = mountModels(createModels(24))
     const items = wrapper.findAll('[data-model-index]')
 
-    expect(items).toHaveLength(10)
-    expect(wrapper.text()).toContain('10 models')
+    expect(items).toHaveLength(24)
+    expect(wrapper.text()).toContain('24 models')
     expect(items[3].classes()).toContain('inline-flex')
     expect(items[4].classes()).toContain('hidden')
     expect(items[4].classes()).toContain('lg:inline-flex')
     expect(items[7].classes()).toContain('lg:inline-flex')
     expect(items[8].classes()).toContain('hidden')
     expect(items[8].classes()).not.toContain('lg:inline-flex')
+    expect(items[23].classes()).toContain('hidden')
   })
 
   it('reveals all models and can collapse them again', async () => {
-    const wrapper = mountModels(createModels(10))
+    const wrapper = mountModels(createModels(24))
     const toggle = wrapper.get('button[aria-expanded]')
 
     expect(toggle.attributes('aria-expanded')).toBe('false')
@@ -74,11 +75,12 @@ describe('AvailableChannelModels', () => {
 
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.findAll('[data-model-index]').every((item) => item.classes().includes('inline-flex'))).toBe(true)
+    expect(wrapper.find('[data-model-index="23"]').classes()).toContain('inline-flex')
     expect(wrapper.text()).toContain('Collapse models')
 
     await toggle.trigger('click')
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('[data-model-index="8"]').classes()).toContain('hidden')
+    expect(wrapper.find('[data-model-index="23"]').classes()).toContain('hidden')
   })
 
   it('force-expands search results without rendering a collapse control', () => {

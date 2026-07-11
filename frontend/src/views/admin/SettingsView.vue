@@ -4160,6 +4160,39 @@
                   </label>
                 </div>
               </div>
+
+              <div class="border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiFirstResponse.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiFirstResponse.description") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_first_response_enabled" />
+                </div>
+                <label
+                  v-if="form.openai_first_response_enabled"
+                  class="mt-4 block max-w-xs"
+                >
+                  <span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                    {{ t("admin.settings.openaiFirstResponse.timeout") }}
+                  </span>
+                  <input
+                    v-model.number="form.openai_first_response_timeout_ms"
+                    class="input mt-1"
+                    type="number"
+                    min="500"
+                    max="60000"
+                    step="100"
+                  />
+                  <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiFirstResponse.timeoutHint") }}
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -8108,6 +8141,8 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_quota_headroom: string;
   openai_advanced_scheduler_weight_previous_response: string;
   openai_advanced_scheduler_weight_session_sticky: string;
+  openai_first_response_enabled: boolean;
+  openai_first_response_timeout_ms: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
@@ -8313,6 +8348,8 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_weight_quota_headroom: "",
   openai_advanced_scheduler_weight_previous_response: "",
   openai_advanced_scheduler_weight_session_sticky: "",
+  openai_first_response_enabled: false,
+  openai_first_response_timeout_ms: 5000,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -9710,6 +9747,9 @@ async function saveSettings() {
         form.openai_advanced_scheduler_weight_previous_response.trim(),
       openai_advanced_scheduler_weight_session_sticky:
         form.openai_advanced_scheduler_weight_session_sticky.trim(),
+      openai_first_response_enabled: form.openai_first_response_enabled,
+      openai_first_response_timeout_ms:
+        Number(form.openai_first_response_timeout_ms) || 5000,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

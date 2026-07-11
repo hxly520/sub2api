@@ -1124,6 +1124,12 @@ export default {
         previousResponseWeight: 'previous_response sticky',
         sessionStickyWeight: 'session_hash sticky'
       },
+      openaiFirstResponse: {
+        title: 'Streaming first-output failover',
+        description: 'Switches to another eligible account before output is committed when the first useful event times out.',
+        timeout: 'First-output timeout (ms)',
+        timeoutHint: 'Range: 500-60000. Recommended: 3000-8000.'
+      },
       usageRecords: {
         title: 'Usage Records',
         description: 'Settings for usage and failed-request records visible to end users.',

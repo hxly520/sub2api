@@ -2219,6 +2219,84 @@ func TestOpenAIGatewayServiceRecordUsage_ChannelVideoBillingUsesDurationSeconds(
 	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_ChannelPerRequestVideoBillsOnce(t *testing.T) {
+	groupID := int64(1313)
+	channelPrice := 0.504
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, "grok-video-1.5", BillingModePerRequest, "", channelPrice)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "video:grok-task-per-request",
+			Model:                "grok-video-1.5",
+			BillingModel:         "grok-video-1.5",
+			VideoCount:           1,
+			MediaType:            "video",
+			MediaDurationSeconds: 15,
+			VideoResolution:      VideoBillingResolution720P,
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      101313,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformOpenAI,
+				RateMultiplier: 1,
+			},
+		},
+		User:    &User{ID: 201313},
+		Account: &Account{ID: 301313, Platform: PlatformOpenAI},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, channelPrice, usageRepo.lastLog.TotalCost, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModePerRequest), *usageRepo.lastLog.BillingMode)
+	require.Equal(t, 15, *usageRepo.lastLog.VideoDurationSeconds)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_Channel4KVideoBillsPerSecond(t *testing.T) {
+	groupID := int64(1314)
+	perSecondPrice := 3.0
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, "seedance-2.0-4k", BillingModeVideo, VideoBillingResolution4K, perSecondPrice)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "video:seedance-4k-per-second",
+			Model:                "seedance-2.0-4k",
+			BillingModel:         "seedance-2.0-4k",
+			VideoCount:           1,
+			MediaType:            "video",
+			MediaDurationSeconds: 4,
+			VideoResolution:      VideoBillingResolution4K,
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      101314,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformOpenAI,
+				RateMultiplier: 1,
+			},
+		},
+		User:    &User{ID: 201314},
+		Account: &Account{ID: 301314, Platform: PlatformOpenAI},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 12.0, usageRepo.lastLog.TotalCost, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.Equal(t, VideoBillingResolution4K, *usageRepo.lastLog.VideoResolution)
+}
+
 // 视频请求命中渠道 token 计费时走 token 路径；此时行是 billing_mode='token'、image_count=1、
 // image_size=NULL，必须携带 video_count>0 才能通过 usage_logs 的 image_size check 约束
 // （迁移 172），否则整个计费事务会因约束违反而丢失。
@@ -2358,15 +2436,20 @@ func newOpenAIImageChannelPricingResolverForTest(t *testing.T, groupID int64, mo
 }
 
 func newOpenAIVideoChannelPricingResolverForTest(t *testing.T, groupID int64, model string, price float64) *ModelPricingResolver {
+	return newOpenAIVideoChannelPricingResolverWithModeForTest(t, groupID, model, BillingModeVideo, VideoBillingResolution720P, price)
+}
+
+func newOpenAIVideoChannelPricingResolverWithModeForTest(t *testing.T, groupID int64, model string, mode BillingMode, tier string, price float64) *ModelPricingResolver {
 	t.Helper()
 	cache := newEmptyChannelCache()
-	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}] = &ChannelModelPricing{
-		BillingMode:     BillingModeVideo,
+	pricing := &ChannelModelPricing{
+		BillingMode:     mode,
 		PerRequestPrice: &price,
-		Intervals: []PricingInterval{
-			{TierLabel: VideoBillingResolution720P, PerRequestPrice: &price},
-		},
 	}
+	if tier != "" {
+		pricing.Intervals = []PricingInterval{{TierLabel: tier, PerRequestPrice: &price}}
+	}
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}] = pricing
 	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}
 	cache.groupPlatform[groupID] = ""
 	cache.loadedAt = time.Now()

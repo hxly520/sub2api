@@ -127,6 +127,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			clientTaskID,
 			replay.UpstreamResultURL,
 			videoResponseBaseURL,
+			replay,
 			replay.ProviderTaskID(),
 		)
 		if err != nil {
@@ -296,8 +297,12 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 
 		if parsed.ContentRequest {
+			if !service.IsMediaGenerationSuccessStatus(storedTask.Status) {
+				h.errorResponse(c, http.StatusConflict, "invalid_request_error", "Video content is unavailable")
+				return
+			}
 			if h.gatewayService.OpenAIVideoEdgeProxyEnabled() {
-				edgeURL, edgeErr := h.gatewayService.OpenAIVideoClientContentURL(c.Request.Context(), videoResponseBaseURL, clientTaskID, openAIVideoStoredResultURL(storedTask))
+				edgeURL, edgeErr := h.gatewayService.OpenAIVideoClientContentURLForTask(c.Request.Context(), videoResponseBaseURL, storedTask)
 				if edgeErr != nil || edgeURL == "" {
 					reqLog.Warn("openai.videos.edge_content_url_failed", zap.String("request_id", clientTaskID), zap.Error(edgeErr))
 					h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Video content is unavailable")
@@ -318,11 +323,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				}
 				return
 			}
-			if service.IsMediaGenerationFailureStatus(storedTask.Status) {
-				h.errorResponse(c, http.StatusConflict, "invalid_request_error", "Video content is unavailable")
-				return
-			}
-		} else if isOpenAIVideoTerminalStatus(storedTask.Status) && strings.TrimSpace(storedTask.ResponseBody) != "" {
+		} else if isOpenAIVideoTerminalStatus(storedTask.Status) && strings.TrimSpace(storedTask.ResponseBody) != "" && !openAIVideoTaskNeedsFinalization(storedTask) {
 			if err := writeOpenAIVideoStoredResponse(c, h, storedTask, videoResponseBaseURL); err != nil {
 				reqLog.Warn("openai.videos.stored_edge_url_failed", zap.String("request_id", clientTaskID), zap.Error(err))
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
@@ -331,7 +332,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 	}
 
-	requestCtx := c.Request.Context()
+	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
 	routingStart := time.Now()
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
@@ -389,6 +390,15 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				zap.Int64("selected_account_id", account.ID),
 			)
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task routing is unavailable")
+			return
+		}
+		if storedTask != nil && !parsed.ContentRequest && openAIVideoTaskNeedsFinalization(storedTask) {
+			storedResult := openAIVideoForwardResultFromStoredTask(storedTask)
+			finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, storedResult, storedTask)
+			if err := writeOpenAIVideoStoredResponse(c, h, storedTask, videoResponseBaseURL); err != nil {
+				reqLog.Warn("openai.videos.recovered_edge_url_failed", zap.String("request_id", storedTask.ClientTaskID()), zap.Error(err))
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
+			}
 			return
 		}
 		if parsed.GenerationRequest {
@@ -486,7 +496,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if err != nil {
 			var upstreamUserErr *service.OpenAIImagesUpstreamError
 			if errors.As(err, &upstreamUserErr) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
+				h.reportOpenAIAccountScheduleResult(c, account, requestModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
 				reqLog.Warn("openai.videos.upstream_user_error",
 					zap.Int64("account_id", account.ID),
 					zap.Int("status_code", upstreamUserErr.StatusCode),
@@ -499,7 +509,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) && parsed.GenerationRequest {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 				if c.Writer.Size() != writerSizeBeforeForward {
 					c.Abort()
 					return
@@ -537,7 +547,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				writeOpenAIVideoSafeUpstreamError(c)
 			} else {
@@ -548,9 +558,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
+			h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+			h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
 		}
 		if parsed.GenerationRequest {
 			if result == nil || strings.TrimSpace(result.ResponseID) == "" || len(result.ResponseBody) == 0 {
@@ -620,7 +630,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			if service.IsMediaGenerationSuccessStatus(status) {
 				finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, task)
 			}
-			if err := writeOpenAIVideoForwardResponse(c, h, result, publicTaskID, videoResponseBaseURL); err != nil {
+			if err := writeOpenAIVideoForwardResponse(c, h, result, task, videoResponseBaseURL); err != nil {
 				reqLog.Warn("openai.videos.forward_edge_url_failed", zap.String("request_id", publicTaskID), zap.Error(err))
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
 			}
@@ -646,16 +656,16 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task update failed")
 			return
 		}
-		storedTask.ResponseStatus = result.ResponseStatus
-		storedTask.ResponseContentType = result.ResponseContentType
-		storedTask.ResponseBody = string(result.ResponseBody)
-		storedTask.UpstreamResultURL = result.MediaResultURL
-		storedTask.Status = service.NormalizeMediaGenerationStatus(result.VideoStatus)
-		if result.MediaDurationSeconds > 0 {
-			storedTask.DurationSeconds = result.MediaDurationSeconds
+		freshTask, err := h.gatewayService.GetOpenAIVideoTaskByTaskID(requestCtx, apiKey.ID, clientTaskID)
+		if err != nil || freshTask == nil {
+			reqLog.Warn("openai.videos.reload_task_after_update_failed", zap.String("request_id", clientTaskID), zap.Error(err))
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task update verification failed")
+			return
 		}
+		storedTask = freshTask
+		applyOpenAIVideoStoredTaskToForwardResult(result, storedTask)
 		finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, storedTask)
-		if err := writeOpenAIVideoForwardResponse(c, h, result, clientTaskID, videoResponseBaseURL); err != nil {
+		if err := writeOpenAIVideoForwardResponse(c, h, result, storedTask, videoResponseBaseURL); err != nil {
 			reqLog.Warn("openai.videos.status_edge_url_failed", zap.String("request_id", clientTaskID), zap.Error(err))
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
 		}
@@ -689,7 +699,7 @@ func finalizeOpenAIVideoTaskFromStatus(
 		}
 		return
 	}
-	if !service.IsMediaGenerationSuccessStatus(status) || task.FinalizedAt != nil || task.UsageRecordedAt != nil {
+	if !service.IsMediaGenerationSuccessStatus(status) || task.UsageRecordedAt != nil {
 		return
 	}
 	leaseToken := uuid.NewString()
@@ -851,6 +861,53 @@ func isOpenAIVideoTerminalStatus(status string) bool {
 	return service.IsMediaGenerationSuccessStatus(status) || service.IsMediaGenerationFailureStatus(status)
 }
 
+func openAIVideoTaskNeedsFinalization(task *service.MediaGenerationTask) bool {
+	return task != nil && service.IsMediaGenerationSuccessStatus(task.Status) && task.UsageRecordedAt == nil
+}
+
+func openAIVideoForwardResultFromStoredTask(task *service.MediaGenerationTask) *service.OpenAIForwardResult {
+	if task == nil {
+		return nil
+	}
+	return &service.OpenAIForwardResult{
+		RequestID:            task.ClientTaskID(),
+		ResponseID:           task.ProviderTaskID(),
+		Model:                task.RequestedModel,
+		BillingModel:         task.UpstreamModel,
+		UpstreamModel:        task.UpstreamModel,
+		Duration:             0,
+		VideoCount:           1,
+		VideoResolution:      task.Resolution,
+		VideoDurationSeconds: task.DurationSeconds,
+		MediaDurationSeconds: task.DurationSeconds,
+		MediaType:            "video",
+		ResponseStatus:       task.ResponseStatus,
+		ResponseBody:         []byte(task.ResponseBody),
+		ResponseContentType:  task.ResponseContentType,
+		MediaResultURL:       task.UpstreamResultURL,
+		VideoStatus:          task.Status,
+	}
+}
+
+func applyOpenAIVideoStoredTaskToForwardResult(result *service.OpenAIForwardResult, task *service.MediaGenerationTask) {
+	if result == nil || task == nil {
+		return
+	}
+	result.ResponseID = task.ProviderTaskID()
+	result.Model = task.RequestedModel
+	result.BillingModel = task.UpstreamModel
+	result.UpstreamModel = task.UpstreamModel
+	result.VideoResolution = task.Resolution
+	result.VideoDurationSeconds = task.DurationSeconds
+	result.MediaDurationSeconds = task.DurationSeconds
+	result.MediaType = "video"
+	result.ResponseStatus = task.ResponseStatus
+	result.ResponseBody = []byte(task.ResponseBody)
+	result.ResponseContentType = task.ResponseContentType
+	result.MediaResultURL = task.UpstreamResultURL
+	result.VideoStatus = task.Status
+}
+
 func openAIVideoStoredResultURL(task *service.MediaGenerationTask) string {
 	if task == nil {
 		return ""
@@ -873,7 +930,7 @@ func writeOpenAIVideoStoredResponse(c *gin.Context, h *OpenAIGatewayHandler, tas
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	body, err := openAIVideoClientResponseBody(c.Request.Context(), h, []byte(task.ResponseBody), task.Status, task.ClientTaskID(), task.UpstreamResultURL, publicBaseURL, task.ProviderTaskID())
+	body, err := openAIVideoClientResponseBody(c.Request.Context(), h, []byte(task.ResponseBody), task.Status, task.ClientTaskID(), task.UpstreamResultURL, publicBaseURL, task, task.ProviderTaskID())
 	if err != nil {
 		return err
 	}
@@ -881,8 +938,8 @@ func writeOpenAIVideoStoredResponse(c *gin.Context, h *OpenAIGatewayHandler, tas
 	return nil
 }
 
-func writeOpenAIVideoForwardResponse(c *gin.Context, h *OpenAIGatewayHandler, result *service.OpenAIForwardResult, clientTaskID, publicBaseURL string) error {
-	if c == nil || result == nil {
+func writeOpenAIVideoForwardResponse(c *gin.Context, h *OpenAIGatewayHandler, result *service.OpenAIForwardResult, task *service.MediaGenerationTask, publicBaseURL string) error {
+	if c == nil || result == nil || task == nil {
 		return nil
 	}
 	statusCode := result.ResponseStatus
@@ -893,7 +950,7 @@ func writeOpenAIVideoForwardResponse(c *gin.Context, h *OpenAIGatewayHandler, re
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	body, err := openAIVideoClientResponseBody(c.Request.Context(), h, result.ResponseBody, result.VideoStatus, clientTaskID, result.MediaResultURL, publicBaseURL, result.ResponseID)
+	body, err := openAIVideoClientResponseBody(c.Request.Context(), h, result.ResponseBody, result.VideoStatus, task.ClientTaskID(), result.MediaResultURL, publicBaseURL, task, result.ResponseID)
 	if err != nil {
 		return err
 	}
@@ -909,6 +966,7 @@ func openAIVideoClientResponseBody(
 	clientTaskID string,
 	upstreamResultURL string,
 	publicBaseURL string,
+	task *service.MediaGenerationTask,
 	upstreamTaskIDs ...string,
 ) ([]byte, error) {
 	if h == nil || h.gatewayService == nil {
@@ -917,7 +975,15 @@ func openAIVideoClientResponseBody(
 	if strings.TrimSpace(upstreamResultURL) == "" {
 		upstreamResultURL = service.OpenAIVideoResultURLFromBody(body)
 	}
-	contentURL, err := h.gatewayService.OpenAIVideoClientContentURL(ctx, publicBaseURL, clientTaskID, upstreamResultURL)
+	var contentURL string
+	var err error
+	if strings.TrimSpace(upstreamResultURL) == "" {
+		contentURL = ""
+	} else if task != nil {
+		contentURL, err = h.gatewayService.OpenAIVideoClientContentURLForTask(ctx, publicBaseURL, task)
+	} else {
+		contentURL, err = h.gatewayService.OpenAIVideoClientContentURL(ctx, publicBaseURL, clientTaskID, upstreamResultURL)
+	}
 	if err != nil {
 		return nil, err
 	}

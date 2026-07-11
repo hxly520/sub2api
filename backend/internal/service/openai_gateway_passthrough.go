@@ -100,7 +100,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	body = updatedBody
 
 	apiKey := getAPIKeyFromContext(c)
-	if IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body) && !GroupAllowsImageGeneration(apiKeyGroup(apiKey)) {
+	imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body)
+	if imageIntent && !GroupAllowsImageGeneration(apiKeyGroup(apiKey)) {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": gin.H{
@@ -113,7 +114,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
-	if IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body) {
+	if imageIntent {
 		var imageCfgErr error
 		imageCfg, imageCfgErr := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body, reqModel)
 		if imageCfgErr != nil {
@@ -130,6 +131,37 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		imageBillingModel = imageCfg.Model
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
+	}
+
+	if account != nil && (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && !imageIntent {
+		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		if promptCacheKey == "" {
+			if explicitOpenAISessionID(c, body) == "" {
+				canonicalBody, changed, canonicalErr := canonicalizeOpenAICompatToolOrder(body)
+				if canonicalErr != nil {
+					return nil, canonicalErr
+				}
+				if changed {
+					body = canonicalBody
+				}
+			}
+			policyModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+			if policyModel == "" {
+				policyModel = reqModel
+			}
+			promptCacheKey = deriveAutoPromptCacheKeyFromBody(c, body, policyModel, getAPIKeyIDFromContext(c))
+			if promptCacheKey != "" {
+				body, err = sjson.SetBytes(body, "prompt_cache_key", promptCacheKey)
+				if err != nil {
+					return nil, fmt.Errorf("inject passthrough prompt cache key: %w", err)
+				}
+				logger.L().Debug("openai passthrough: compat prompt_cache_key injected",
+					zap.Int64("account_id", account.ID),
+					zap.String("model", policyModel),
+					zap.String("compat_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)),
+				)
+			}
+		}
 	}
 
 	logger.LegacyPrintf("service.openai_gateway",
@@ -178,13 +210,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAIUpstreamWithFirstResponseBudget(ctx, c, account, upstreamReq, proxyURL, true)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
-		// a failover so the handler switches to a healthy account, and temporarily
-		// unschedule the account on durable faults (e.g. rejected proxy credentials).
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -381,11 +410,20 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if clientConversationID != "" {
 			req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, clientConversationID))
 		}
-	} else if isOpenAIResponsesCompactPath(c) {
-		// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
-		// unary JSON 协议，API-key 账号同样强制 Accept，避免上游按 SSE 返回
-		// （#3777 期望行为 4）。
-		req.Header.Set("accept", "application/json")
+	} else {
+		if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
+			isolateOpenAIAPIKeyRequestSessionHeaders(
+				req,
+				getAPIKeyIDFromContext(c),
+				strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()),
+			)
+		}
+		if isOpenAIResponsesCompactPath(c) {
+			// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
+			// unary JSON 协议，API-key 账号同样强制 Accept，避免上游按 SSE 返回
+			// （#3777 期望行为 4）。
+			req.Header.Set("accept", "application/json")
+		}
 	}
 
 	// 透传模式也支持账户自定义 User-Agent 与 ForceCodexCLI 兜底。
@@ -415,6 +453,26 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	account.ApplyHeaderOverrides(req.Header)
 
 	return req, nil
+}
+
+func isolateOpenAIAPIKeyRequestSessionHeaders(req *http.Request, apiKeyID int64, promptCacheKey string) {
+	if req == nil {
+		return
+	}
+	clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
+	clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
+	req.Header.Del("session_id")
+	req.Header.Del("conversation_id")
+
+	if clientSessionID == "" {
+		clientSessionID = strings.TrimSpace(promptCacheKey)
+	}
+	if clientSessionID != "" {
+		req.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, clientSessionID)))
+	}
+	if clientConversationID != "" {
+		req.Header.Set("conversation_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, clientConversationID)))
+	}
 }
 
 func shouldFailoverOpenAIPassthroughResponse(statusCode int) bool {
@@ -527,7 +585,7 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	c.Data(resp.StatusCode, contentType, body)
+	c.Data(resp.StatusCode, contentType, sanitizeUpstreamErrorResponseBody(body))
 
 	if upstreamMsg == "" {
 		return fmt.Errorf("upstream error: %d", resp.StatusCode)
@@ -617,7 +675,7 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	if strings.TrimSpace(eventType) == "response.failed" {
 		return false
 	}
-	return !openAIStreamEventIsPreamble(eventType)
+	return openAIResponsesPayloadStartsSemanticOutput(trimmed, eventType)
 }
 
 func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
@@ -863,6 +921,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	pendingLines := make([]string, 0, 8)
+	pendingLineBytes := 0
 	writePendingLines := func() bool {
 		for _, pending := range pendingLines {
 			if _, err := fmt.Fprintln(w, pending); err != nil {
@@ -872,6 +931,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 		}
 		pendingLines = pendingLines[:0]
+		pendingLineBytes = 0
 		return true
 	}
 
@@ -883,6 +943,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
 	defer putSSEScannerBuf64K(scanBuf)
+	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
+	defer firstResponseWatch.Stop()
+	earlyFlushPreamble := openAIFirstResponseEarlyFlushFromContext(ctx)
 
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
 	resultWithUsage := func() *openaiStreamingResultPassthrough {
@@ -897,8 +960,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		firstResponseWatch.ObserveLine(line)
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
+		if eventType, ok := extractOpenAISSEEventLine(line); ok && earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) {
+			lineStartsClientOutput = true
+		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
 			trimmedData := strings.TrimSpace(data)
@@ -973,8 +1040,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				trimmedData = strings.TrimSpace(string(sanitizedData))
 				line = "data: " + string(sanitizedData)
 			}
-			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
-			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
+			semanticOutput := openAIStreamDataStartsClientOutput(trimmedData, eventType)
+			lineStartsClientOutput = forceFlushFailedEvent || semanticOutput || (earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && trimmedData != "")
+			if firstTokenMs == nil && semanticOutput && trimmedData != "[DONE]" {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}
@@ -983,8 +1051,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 		if !clientDisconnected {
 			if !clientOutputStarted && !lineStartsClientOutput {
-				pendingLines = append(pendingLines, line)
-				continue
+				if reserveOpenAIFirstResponseBuffer(firstResponseWatch, &pendingLineBytes, len(line)+1) {
+					pendingLines = append(pendingLines, line)
+					continue
+				}
+				// The preamble exceeded the shared cap. The timeout watch has been
+				// stopped, so flush the retained preamble and commit this stream.
 			}
 			if !clientOutputStarted && len(pendingLines) > 0 {
 				if !writePendingLines() {
@@ -1001,6 +1073,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, true, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+			return resultWithUsage(), failoverErr
+		}
 		if sawTerminalEvent && !sawFailedEvent {
 			return resultWithUsage(), nil
 		}
@@ -1032,6 +1107,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			err,
 		)
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
+	}
+	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, true, upstreamRequestID, clientOutputStarted); failoverErr != nil {
+		return resultWithUsage(), failoverErr
 	}
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)

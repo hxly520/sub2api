@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -115,9 +117,10 @@ func TestOpenAIRuntimeBlock_DoesNotShortenExistingBlock(t *testing.T) {
 
 	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.True(t, ok)
-	actualUntil, ok := value.(time.Time)
+	block, ok := openAIAccountRuntimeBlockFromValue(value)
 	require.True(t, ok)
-	require.WithinDuration(t, longUntil, actualUntil, time.Second)
+	require.WithinDuration(t, longUntil, block.Until, time.Second)
+	require.Equal(t, "oauth_401", block.Reason)
 }
 
 func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
@@ -128,6 +131,48 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 
 	svc.ClearAccountSchedulingBlock(account.ID)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorBlocksServerStatus(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 48, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterFailoverError(account, &UpstreamFailoverError{StatusCode: 524})
+
+	require.True(t, blocked)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorSkips429AndClientStatus(t *testing.T) {
+	for _, statusCode := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: int64(4900 + statusCode), Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+		blocked := svc.MaybeBlockOpenAIAccountAfterFailoverError(account, &UpstreamFailoverError{StatusCode: statusCode})
+
+		require.False(t, blocked)
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	}
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorBlocksStreamRead(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 50, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF))
+
+	require.True(t, blocked)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsClientCancel(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 51, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, context.Canceled)
+
+	require.False(t, blocked)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 

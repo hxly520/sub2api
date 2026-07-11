@@ -22,6 +22,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 type anthropicPassthroughForwardInput struct {
@@ -263,7 +264,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	var firstTokenMs *int
 	var clientDisconnect bool
 	if input.RequestStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel, input.OriginalModel)
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +272,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
 	} else {
-		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
+		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.RequestModel, input.OriginalModel)
 		if err != nil {
 			return nil, err
 		}
@@ -368,7 +369,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	c *gin.Context,
 	account *Account,
 	startTime time.Time,
-	model string,
+	upstreamModel string,
+	originalModel string,
 ) (*streamingResult, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -539,6 +541,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 			if !clientDisconnected {
+				line = rewriteAnthropicPassthroughSSEModelLine(line, upstreamModel, originalModel)
 				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
 				if _, err := io.WriteString(w, restored); err != nil {
 					clientDisconnected = true
@@ -565,9 +568,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
 			}
-			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
+			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, upstreamModel, streamInterval)
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleStreamTimeout(ctx, account, model)
+				s.rateLimitService.HandleStreamTimeout(ctx, account, upstreamModel)
 			}
 			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
 
@@ -607,6 +610,38 @@ func extractAnthropicSSEDataLine(line string) (string, bool) {
 		start++
 	}
 	return line[start:], true
+}
+
+func rewriteAnthropicPassthroughSSEModelLine(line, upstreamModel, originalModel string) string {
+	data, ok := extractAnthropicSSEDataLine(line)
+	if !ok {
+		return line
+	}
+	rewritten := rewriteAnthropicPassthroughResponseModel([]byte(data), upstreamModel, originalModel, "message.model", "model")
+	if bytes.Equal(rewritten, []byte(data)) {
+		return line
+	}
+	return line[:len(line)-len(data)] + string(rewritten)
+}
+
+func rewriteAnthropicPassthroughResponseModel(body []byte, upstreamModel, originalModel string, paths ...string) []byte {
+	if upstreamModel == "" || originalModel == "" || upstreamModel == originalModel || !gjson.ValidBytes(body) {
+		return body
+	}
+
+	rewritten := body
+	for _, path := range paths {
+		model := gjson.GetBytes(rewritten, path)
+		if model.Type != gjson.String || model.String() != upstreamModel {
+			continue
+		}
+		next, err := sjson.SetBytes(rewritten, path, originalModel)
+		if err != nil {
+			return body
+		}
+		rewritten = next
+	}
+	return rewritten
 }
 
 func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsage) {
@@ -764,6 +799,8 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
+	upstreamModel string,
+	originalModel string,
 ) (*ClaudeUsage, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -788,6 +825,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
+	body = rewriteAnthropicPassthroughResponseModel(body, upstreamModel, originalModel, "model")
 	body = reverseToolNamesIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil

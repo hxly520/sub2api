@@ -30,12 +30,12 @@ func deriveOpenAIContentSessionSeed(body []byte) string {
 
 	if tools := gjson.GetBytes(body, "tools"); tools.Exists() && tools.IsArray() && tools.Raw != "[]" {
 		_, _ = b.WriteString("|tools=")
-		_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(tools.Raw)))
+		_, _ = b.WriteString(normalizeCompatToolSeedJSON(json.RawMessage(tools.Raw)))
 	}
 
 	if funcs := gjson.GetBytes(body, "functions"); funcs.Exists() && funcs.IsArray() && funcs.Raw != "[]" {
 		_, _ = b.WriteString("|functions=")
-		_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(funcs.Raw)))
+		_, _ = b.WriteString(normalizeCompatToolSeedJSON(json.RawMessage(funcs.Raw)))
 	}
 
 	if instr := gjson.GetBytes(body, "instructions").String(); instr != "" {

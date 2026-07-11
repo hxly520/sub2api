@@ -85,7 +85,9 @@ func (e *OpenAIImagesUpstreamError) clientMessage() string {
 		return "Upstream request failed"
 	}
 	if trimmed := strings.TrimSpace(e.Message); trimmed != "" {
-		return trimmed
+		if sanitized := sanitizeClientUpstreamErrorMessage(trimmed); sanitized != "" {
+			return sanitized
+		}
 	}
 	if trimmed := strings.TrimSpace(e.Code); trimmed != "" {
 		return trimmed

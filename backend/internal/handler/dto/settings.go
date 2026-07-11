@@ -232,6 +232,8 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string `json:"openai_advanced_scheduler_effective_weight_quota_headroom"`
 	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string `json:"openai_advanced_scheduler_effective_weight_previous_response"`
 	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string `json:"openai_advanced_scheduler_effective_weight_session_sticky"`
+	OpenAIFirstResponseEnabled                             bool   `json:"openai_first_response_enabled"`
+	OpenAIFirstResponseTimeoutMS                           int    `json:"openai_first_response_timeout_ms"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

@@ -227,6 +227,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom:         "",
 		SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse:      "",
 		SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:         "",
+		SettingKeyOpenAIFirstResponseEnabled:                         "false",
+		SettingKeyOpenAIFirstResponseTimeoutMS:                       strconv.Itoa(openAIFirstResponseTimeoutDefaultMS),
 
 		SettingKeyAllowUserViewErrorRequests: "false",
 	}
@@ -813,6 +815,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.QuotaHeadroom)
 	result.OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.PreviousResponse)
 	result.OpenAIAdvancedSchedulerEffectiveWeightSessionSticky = formatOpenAIAdvancedSchedulerFloat(effectiveWeights.SessionSticky)
+	result.OpenAIFirstResponseEnabled = settings[SettingKeyOpenAIFirstResponseEnabled] == "true"
+	result.OpenAIFirstResponseTimeoutMS = parseOpenAIFirstResponseTimeoutMS(
+		settings[SettingKeyOpenAIFirstResponseTimeoutMS],
+		openAIFirstResponseTimeoutDefaultMS,
+	)
 
 	// 余额、订阅到期与账号限额通知
 	result.BalanceLowNotifyEnabled = settings[SettingKeyBalanceLowNotifyEnabled] == "true"
