@@ -532,6 +532,13 @@ export default {
         responsesModeForceResponses: '强制 Responses',
         responsesModeForceChatCompletions: '强制 Chat Completions',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
+        authHeader: '上游认证头',
+        authHeaderDesc: '默认使用 Authorization: Bearer。部分兼容上游需要 api-key 或 x-api-key。',
+        authHeaderAuthorization: 'Authorization: Bearer',
+        authHeaderAPIKey: 'api-key',
+        authHeaderXAPIKey: 'x-api-key',
+        chatCompletionsUrl: 'Chat Completions URL',
+        chatCompletionsUrlDesc: '可选。留空时使用 Base URL 自动拼接 /v1/chat/completions。',
         endpointCapabilities: '端点能力',
         endpointCapabilitiesDesc:
           '用于调度筛选。文本端点会跟随上方 Responses API 支持显示为 Responses、Chat Completions 或自动模式；Embeddings 控制 /v1/embeddings，Videos 控制 /v1/videos 等视频任务接口。',

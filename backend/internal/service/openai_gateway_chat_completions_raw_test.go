@@ -333,6 +333,42 @@ func TestForwardAsRawChatCompletions_PreservesDeepSeekReasoningContentNonStreami
 	require.Equal(t, "final answer", gjson.Get(rec.Body.String(), "choices.0.message.content").String())
 }
 
+func TestForwardAsRawChatCompletions_UsesConfiguredURLAndAuthHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"compat-model","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Authorization", "Bearer inbound-platform-key")
+	c.Request.Header.Set("X-API-Key", "inbound-x-key")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_exact_cc"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"chatcmpl_exact","object":"chat.completion","model":"compat-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := rawChatCompletionsTestAccount()
+	account.Credentials["base_url"] = "http://wrong.example"
+	account.Credentials["chat_completions_url"] = "http://compat.example/custom/chat/completions?api-version=2026-01-01"
+	account.Credentials["auth_header"] = OpenAICompatibleAuthHeaderAPIKey
+
+	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "http://compat.example/custom/chat/completions?api-version=2026-01-01", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-test", upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderAPIKey))
+	require.Empty(t, upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderAuthorization))
+	require.Empty(t, upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderXAPIKey))
+	require.Contains(t, rec.Body.String(), `"content":"ok"`)
+}
+
 func TestForwardAsRawChatCompletions_PreservesDeepSeekReasoningContentStreaming(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

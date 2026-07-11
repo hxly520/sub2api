@@ -432,6 +432,15 @@ export default {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        authHeader: 'Upstream auth header',
+        authHeaderDesc:
+          'Defaults to Authorization: Bearer. Some compatible upstreams require api-key or x-api-key.',
+        authHeaderAuthorization: 'Authorization: Bearer',
+        authHeaderAPIKey: 'api-key',
+        authHeaderXAPIKey: 'x-api-key',
+        chatCompletionsUrl: 'Chat Completions URL',
+        chatCompletionsUrlDesc:
+          'Optional. When empty, Base URL is used to build /v1/chat/completions.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings controls /v1/embeddings and Videos controls /v1/videos-style task APIs.',

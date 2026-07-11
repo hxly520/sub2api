@@ -102,6 +102,39 @@ func TestForwardResponses_ForceChatCompletionsRoutesStreamingToChatCompletions(t
 	require.NotNil(t, result.FirstTokenMs)
 }
 
+func TestForwardResponses_ForceChatCompletionsUsesConfiguredURLAndAuthHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"compat-model","input":"hello","stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_resp_exact_chat"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_json","object":"chat.completion","model":"compat-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := forceChatResponsesFallbackAccount()
+	account.Credentials["chat_completions_url"] = "http://compat.example/custom/chat/completions"
+	account.Credentials["auth_header"] = OpenAICompatibleAuthHeaderXAPIKey
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "http://compat.example/custom/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-test", upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderXAPIKey))
+	require.Empty(t, upstream.lastReq.Header.Get(OpenAICompatibleAuthHeaderAuthorization))
+	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "output.0.content.0.text").String())
+}
+
 func TestForwardResponses_DeepSeekReasoningOnlyStreamProducesVisibleText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -495,6 +495,7 @@ export interface SyncUpstreamPreviewParams {
   type: string
   base_url?: string
   api_key: string
+  auth_header?: string
 }
 
 /**

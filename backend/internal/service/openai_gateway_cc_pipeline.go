@@ -119,6 +119,14 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 
 // openAIChatCompletionsTargetURL 解析账号的（非 Grok）Chat Completions 上游端点。
 func (s *OpenAIGatewayService) openAIChatCompletionsTargetURL(account *Account) (string, error) {
+	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
+		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid chat_completions_url: %w", err)
+		}
+		return validatedURL, nil
+	}
+
 	baseURL := account.GetOpenAIBaseURL()
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
