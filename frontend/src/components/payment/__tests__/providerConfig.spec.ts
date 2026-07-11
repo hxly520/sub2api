@@ -58,6 +58,15 @@ describe('PROVIDER_CONFIG_FIELDS.stripe', () => {
   })
 })
 
+describe('PROVIDER_CONFIG_FIELDS.keyingpay', () => {
+  it('uses V2 RSA credentials and the official API base', () => {
+    expect(findField('keyingpay', 'merchantPrivateKey')?.sensitive).toBe(true)
+    expect(findField('keyingpay', 'platformPublicKey')?.sensitive).toBe(true)
+    expect(findField('keyingpay', 'apiBase')?.defaultValue).toBe('https://api.keyingpay.org')
+    expect(findField('keyingpay', 'apiBase')?.hintKey).toBe('admin.settings.payment.field_keyingpayApiBaseHint')
+  })
+})
+
 describe('EasyPay custom methods config', () => {
   it('parses customMethods from the JSON string stored in provider config', () => {
     expect(parseEasyPayCustomMethods(

@@ -60,6 +60,7 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
       editing: options.editing ?? null,
       allKeyOptions: [
         { value: 'easypay', label: 'EasyPay' },
+        { value: 'keyingpay', label: 'KeyingPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'stripe', label: 'Stripe' },
@@ -67,6 +68,7 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
       ],
       enabledKeyOptions: [
         { value: 'easypay', label: 'EasyPay' },
+        { value: 'keyingpay', label: 'KeyingPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'airwallex', label: 'Airwallex' },
@@ -136,6 +138,18 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(wrapper.text()).toContain(messages['admin.settings.payment.stripeWebhookHint'])
     expect(wrapper.text()).toContain(`Use Stripe API version ${STRIPE_SDK_API_VERSION}.`)
     expect(wrapper.text()).toContain('/api/v1/payment/webhook/stripe')
+  })
+
+  it('shows fixed KeyingPay callback paths and V2 credential fields', async () => {
+    const wrapper = mountDialog()
+
+    ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('keyingpay')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('/api/v1/payment/webhook/keyingpay')
+    expect(wrapper.text()).toContain('/payment/result')
+    expect(wrapper.text()).toContain('admin.settings.payment.field_merchantPrivateKey')
+    expect(wrapper.text()).toContain('admin.settings.payment.field_platformPublicKey')
   })
 
   it('emits an empty Airwallex accountId when the admin clears it', async () => {

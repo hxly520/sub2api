@@ -322,6 +322,7 @@ export default {
     createOrder: '确认支付',
     methods: {
       easypay: '易支付',
+      keyingpay: '可盈Pay',
       alipay: '支付宝',
       wxpay: '微信支付',
       stripe: 'Stripe',
