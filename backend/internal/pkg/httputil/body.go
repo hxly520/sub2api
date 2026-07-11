@@ -4,14 +4,77 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"syscall"
 
 	"github.com/klauspost/compress/zstd"
 )
+
+const (
+	RequestBodyReadStageTransport = "transport"
+	RequestBodyReadStageDecode    = "decode"
+)
+
+// RequestBodyReadError keeps payload-free diagnostics for request uploads.
+// Callers can log the transfer stage and byte count without logging user data.
+type RequestBodyReadError struct {
+	Stage           string
+	BytesRead       int64
+	ContentLength   int64
+	ContentEncoding string
+	Err             error
+}
+
+func (e *RequestBodyReadError) Error() string {
+	if e == nil || e.Err == nil {
+		return "request body read failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *RequestBodyReadError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func IsInterruptedRequestBodyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var detail *RequestBodyReadError
+	if errors.As(err, &detail) && detail.Stage != RequestBodyReadStageTransport {
+		return false
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"unexpected eof",
+		"connection reset by peer",
+		"broken pipe",
+		"client disconnected",
+		"context canceled",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	requestBodyReadInitCap    = 512
@@ -43,24 +106,35 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, capHint))
-	if _, err := io.Copy(buf, req.Body); err != nil {
-		return nil, err
+	bytesRead, err := io.Copy(buf, req.Body)
+	if err != nil {
+		return buf.Bytes(), &RequestBodyReadError{
+			Stage:           RequestBodyReadStageTransport,
+			BytesRead:       bytesRead,
+			ContentLength:   req.ContentLength,
+			ContentEncoding: normalizedRequestContentEncoding(req),
+			Err:             err,
+		}
 	}
 	raw := buf.Bytes()
 
-	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
+	enc := normalizedRequestContentEncoding(req)
 	if enc == "" || enc == "identity" {
 		return raw, nil
 	}
 
 	decoded, err := decompressRequestBody(enc, raw)
 	if err != nil {
-		return nil, fmt.Errorf("decode Content-Encoding %q: %w", enc, err)
+		return nil, &RequestBodyReadError{
+			Stage:           RequestBodyReadStageDecode,
+			BytesRead:       int64(len(raw)),
+			ContentLength:   req.ContentLength,
+			ContentEncoding: enc,
+			Err:             fmt.Errorf("decode Content-Encoding %q: %w", enc, err),
+		}
 	}
 
-	req.Header.Del("Content-Encoding")
-	req.Header.Del("Content-Length")
-	req.ContentLength = int64(len(decoded))
+	markRequestBodyDecoded(req, decoded)
 
 	return decoded, nil
 }
@@ -70,9 +144,66 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
 	body, err := ReadRequestBodyWithPrealloc(req)
 	if err != nil {
+		if recovered, ok := recoverCompleteJSONRequestBody(req, body, err, maxNormalizedBytes); ok {
+			return recovered, nil
+		}
 		return nil, err
 	}
 	return NormalizeLenientJSONRequestBody(body, maxNormalizedBytes)
+}
+
+func recoverCompleteJSONRequestBody(req *http.Request, raw []byte, readErr error, maxNormalizedBytes int64) ([]byte, bool) {
+	if req == nil || len(raw) == 0 || readErr == nil || req.Context().Err() != nil {
+		return nil, false
+	}
+	var maxErr *http.MaxBytesError
+	if errors.As(readErr, &maxErr) {
+		return nil, false
+	}
+	var detail *RequestBodyReadError
+	if !errors.As(readErr, &detail) || detail.Stage != RequestBodyReadStageTransport || !IsInterruptedRequestBodyError(readErr) {
+		return nil, false
+	}
+	// JSON validity alone cannot prove that an interrupted upload is complete:
+	// a valid object may only be a prefix of the body the client intended to
+	// send. Only recover when every declared transport byte was received.
+	if detail.ContentLength <= 0 || detail.BytesRead != detail.ContentLength {
+		return nil, false
+	}
+
+	decoded := raw
+	enc := normalizedRequestContentEncoding(req)
+	if enc != "" && enc != "identity" {
+		var err error
+		decoded, err = decompressRequestBody(enc, raw)
+		if err != nil {
+			return nil, false
+		}
+	}
+	normalized, err := NormalizeLenientJSONRequestBody(decoded, maxNormalizedBytes)
+	if err != nil || !json.Valid(normalized) {
+		return nil, false
+	}
+	if enc != "" && enc != "identity" {
+		markRequestBodyDecoded(req, normalized)
+	}
+	return normalized, true
+}
+
+func normalizedRequestContentEncoding(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
+}
+
+func markRequestBodyDecoded(req *http.Request, decoded []byte) {
+	if req == nil {
+		return
+	}
+	req.Header.Del("Content-Encoding")
+	req.Header.Del("Content-Length")
+	req.ContentLength = int64(len(decoded))
 }
 
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
@@ -83,24 +214,38 @@ func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		defer dec.Close()
-		return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+		return readDecompressedRequestBody(dec, maxDecompressedBodySize)
 	case "gzip", "x-gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = gr.Close() }()
-		return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+		return readDecompressedRequestBody(gr, maxDecompressedBodySize)
 	case "deflate":
 		zr, err := zlib.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+		return readDecompressedRequestBody(zr, maxDecompressedBodySize)
 	default:
 		return nil, errors.New("unsupported Content-Encoding")
 	}
+}
+
+func readDecompressedRequestBody(reader io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, &http.MaxBytesError{Limit: limit}
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, &http.MaxBytesError{Limit: limit}
+	}
+	return body, nil
 }
 
 // NormalizeLenientJSONRequestBody escapes raw control bytes that broken

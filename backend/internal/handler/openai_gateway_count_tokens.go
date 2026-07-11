@@ -48,11 +48,12 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
+		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
 		return
 	}
 	if len(body) == 0 {

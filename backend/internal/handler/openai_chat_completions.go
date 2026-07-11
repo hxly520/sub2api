@@ -50,11 +50,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
+		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
 		return
 	}
 	if len(body) == 0 {
