@@ -75,6 +75,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
+	imageIntent := service.IsImageGenerationIntent("/v1/chat/completions", reqModel, body)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -238,7 +239,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
-					if !retryBudget.tryConsume(account, failoverErr) {
+					if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						reqLog.Warn("openai_chat_completions.automatic_replay_suppressed",
 							zap.Int64("account_id", account.ID),

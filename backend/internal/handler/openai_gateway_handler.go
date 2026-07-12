@@ -451,7 +451,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
-					if !retryBudget.tryConsume(account, failoverErr) {
+					if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						reqLog.Warn("openai.automatic_replay_suppressed",
 							zap.Int64("account_id", account.ID),
@@ -1331,7 +1331,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 
-	if service.IsImageGenerationIntent("/v1/responses", reqModel, firstMessage) && !service.GroupAllowsImageGeneration(apiKey.Group) {
+	imageIntent := service.IsImageGenerationIntent("/v1/responses", reqModel, firstMessage)
+	if imageIntent && !service.GroupAllowsImageGeneration(apiKey.Group) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
 	}
@@ -1649,7 +1650,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			if errors.As(err, &failoverErr) {
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
 				releaseAccountSlot()
-				if !retryBudget.tryConsume(account, failoverErr) {
+				if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 					reqLog.Warn("openai.websocket_automatic_replay_suppressed",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),

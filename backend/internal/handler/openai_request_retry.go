@@ -12,6 +12,13 @@ type openAIRequestRetryBudget struct {
 	used int
 }
 
+func (b *openAIRequestRetryBudget) tryConsumeIfAllowed(allowed bool, account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
+	if !allowed {
+		return false
+	}
+	return b.tryConsume(account, failoverErr)
+}
+
 func (b *openAIRequestRetryBudget) tryConsume(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
 	if b == nil || account == nil ||
 		!failoverErr.CanSafelyReplayRequest() || b.used >= openAIMaxAutomaticReplayAttempts {

@@ -154,161 +154,120 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		sessionHash = service.GrokMediaVideoRequestSessionHash(requestID)
 	}
 	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
-	failedAccountIDs := make(map[int64]struct{})
-	retryBudget := openAIRequestRetryBudget{}
-	var lastFailoverErr *service.UpstreamFailoverError
-	switchCount := 0
-	maxAccountSwitches := h.maxAccountSwitches
-	if maxAccountSwitches <= 0 {
-		maxAccountSwitches = 3
-	}
 	routingStart := time.Now()
 
-	for {
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			requestCtx,
-			apiKey.GroupID,
-			"",
-			sessionHash,
-			requestModel,
-			failedAccountIDs,
-			service.OpenAIUpstreamTransportHTTPSSE,
-			"",
-			false,
-			false,
-			service.PlatformGrok,
+	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		requestCtx,
+		apiKey.GroupID,
+		"",
+		sessionHash,
+		requestModel,
+		nil,
+		service.OpenAIUpstreamTransportHTTPSSE,
+		"",
+		false,
+		false,
+		service.PlatformGrok,
+	)
+	if err != nil {
+		reqLog.Warn("grok_media.account_select_failed",
+			zap.Error(err),
 		)
-		if err != nil {
-			reqLog.Warn("grok_media.account_select_failed",
-				zap.Error(err),
-				zap.Int("excluded_account_count", len(failedAccountIDs)),
-			)
-			if len(failedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformGrok)
-				if !cls.ModelNotFound {
-					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-				}
-				h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformGrok)
+		if !cls.ModelNotFound {
+			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		}
+		h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
+		return
+	}
+	if selection == nil || selection.Account == nil {
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformGrok)
+		if !cls.ModelNotFound {
+			markOpsRoutingCapacityLimited(c)
+		}
+		h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
+		return
+	}
+
+	reqLog.Debug("grok_media.account_schedule_decision",
+		zap.String("layer", scheduleDecision.Layer),
+		zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
+		zap.Int("candidate_count", scheduleDecision.CandidateCount),
+		zap.Int("top_k", scheduleDecision.TopK),
+		zap.Int64("latency_ms", scheduleDecision.LatencyMs),
+		zap.Float64("load_skew", scheduleDecision.LoadSkew),
+	)
+
+	account := selection.Account
+	sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+
+	accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+	if !accountAcquired {
+		return
+	}
+
+	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+	forwardStart := time.Now()
+	writerSizeBeforeForward := c.Writer.Size()
+	result, err := func() (*service.OpenAIForwardResult, error) {
+		defer func() {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+		}()
+		return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
+	}()
+
+	forwardDurationMs := time.Since(forwardStart).Milliseconds()
+	upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
+	responseLatencyMs := forwardDurationMs
+	if upstreamLatencyMs > 0 && forwardDurationMs > upstreamLatencyMs {
+		responseLatencyMs = forwardDurationMs - upstreamLatencyMs
+	}
+	service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
+
+	if err != nil {
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(err, &failoverErr) {
+			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+			if c.Writer.Size() != writerSizeBeforeForward {
+				h.handleFailoverExhausted(c, failoverErr, true)
 				return
 			}
-			if lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, false)
-			} else {
-				h.errorResponse(c, http.StatusBadGateway, "api_error", "Upstream request failed")
-			}
-			return
-		}
-		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformGrok)
-			if !cls.ModelNotFound {
-				markOpsRoutingCapacityLimited(c)
-			}
-			h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
-			return
-		}
-
-		reqLog.Debug("grok_media.account_schedule_decision",
-			zap.String("layer", scheduleDecision.Layer),
-			zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
-			zap.Int("candidate_count", scheduleDecision.CandidateCount),
-			zap.Int("top_k", scheduleDecision.TopK),
-			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
-			zap.Float64("load_skew", scheduleDecision.LoadSkew),
-		)
-
-		account := selection.Account
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
-		setOpsSelectedAccount(c, account.ID, account.Platform)
-
-		accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
-		if !accountAcquired {
-			return
-		}
-
-		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
-		forwardStart := time.Now()
-		writerSizeBeforeForward := c.Writer.Size()
-		result, err := func() (*service.OpenAIForwardResult, error) {
-			defer func() {
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
-				}
-			}()
-			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
-		}()
-
-		forwardDurationMs := time.Since(forwardStart).Milliseconds()
-		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
-		responseLatencyMs := forwardDurationMs
-		if upstreamLatencyMs > 0 && forwardDurationMs > upstreamLatencyMs {
-			responseLatencyMs = forwardDurationMs - upstreamLatencyMs
-		}
-		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
-
-		if err != nil {
-			var failoverErr *service.UpstreamFailoverError
-			if errors.As(err, &failoverErr) {
-				h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
-				if c.Writer.Size() != writerSizeBeforeForward {
-					h.handleFailoverExhausted(c, failoverErr, true)
-					return
-				}
-				if !retryBudget.tryConsume(account, failoverErr) {
-					reqLog.Warn("grok_media.automatic_replay_suppressed",
-						zap.Int64("account_id", account.ID),
-						zap.Int("upstream_status", failoverErr.StatusCode),
-						zap.Bool("pool_mode", account.IsPoolMode()),
-						zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
-					)
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
-				h.gatewayService.RecordOpenAIAccountSwitch()
-				failedAccountIDs[account.ID] = struct{}{}
-				lastFailoverErr = failoverErr
-				if switchCount >= maxAccountSwitches {
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
-				switchCount++
-				reqLog.Warn("grok_media.upstream_failover_switching",
-					zap.Int64("account_id", account.ID),
-					zap.Int("upstream_status", failoverErr.StatusCode),
-					zap.Int("switch_count", switchCount),
-					zap.Int("max_switches", maxAccountSwitches),
-				)
-				continue
-			}
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
-			if c.Writer.Size() == writerSizeBeforeForward {
-				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
-			}
-			reqLog.Warn("grok_media.forward_failed",
+			reqLog.Warn("grok_media.automatic_replay_suppressed",
 				zap.Int64("account_id", account.ID),
-				zap.Error(err),
+				zap.Int("upstream_status", failoverErr.StatusCode),
+				zap.Bool("media_generation", endpoint.IsGenerationRequest()),
 			)
+			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
-
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
-		if endpoint == service.GrokMediaEndpointVideosGenerations && strings.TrimSpace(result.ResponseID) != "" {
-			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(requestCtx, apiKey.GroupID, result.ResponseID, account.ID); err != nil {
-				reqLog.Warn("grok_media.bind_video_request_account_failed",
-					zap.Int64("account_id", account.ID),
-					zap.String("request_id", result.ResponseID),
-					zap.Error(err),
-				)
-			}
+		h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+		if c.Writer.Size() == writerSizeBeforeForward {
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 		}
-		if shouldRecordGrokMediaUsage(endpoint, requestModel) {
-			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
-		}
-		reqLog.Debug("grok_media.request_completed",
+		reqLog.Warn("grok_media.forward_failed",
 			zap.Int64("account_id", account.ID),
-			zap.Int("switch_count", switchCount),
+			zap.Error(err),
 		)
 		return
 	}
+
+	h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
+	if endpoint == service.GrokMediaEndpointVideosGenerations && strings.TrimSpace(result.ResponseID) != "" {
+		if err := h.gatewayService.BindGrokMediaVideoRequestAccount(requestCtx, apiKey.GroupID, result.ResponseID, account.ID); err != nil {
+			reqLog.Warn("grok_media.bind_video_request_account_failed",
+				zap.Int64("account_id", account.ID),
+				zap.String("request_id", result.ResponseID),
+				zap.Error(err),
+			)
+		}
+	}
+	if shouldRecordGrokMediaUsage(endpoint, requestModel) {
+		recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
+	}
+	reqLog.Debug("grok_media.request_completed", zap.Int64("account_id", account.ID))
 }
 
 func shouldRecordGrokMediaUsage(endpoint service.GrokMediaEndpoint, requestModel string) bool {

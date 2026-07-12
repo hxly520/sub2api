@@ -76,6 +76,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
+	imageIntent := service.IsImageGenerationIntent("/v1/chat/completions", reqModel, body)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -157,6 +158,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	if groupPlatform == service.PlatformGemini {
 		fs = NewFailoverState(h.maxAccountSwitchesGemini, false)
+	}
+	if imageIntent {
+		fs.DisableAutomaticReplay()
 	}
 
 	for {

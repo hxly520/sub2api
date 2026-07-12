@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -128,6 +129,22 @@ func TestSleepWithContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleFailoverError_BasicSwitch(t *testing.T) {
+	t.Run("媒体请求禁用自动重放", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, false)
+		fs.DisableAutomaticReplay()
+		err := newTestFailoverErr(http.StatusTooManyRequests, true, false)
+
+		action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformOpenAI, err)
+
+		require.Equal(t, FailoverExhausted, action)
+		require.Zero(t, fs.SwitchCount)
+		require.Empty(t, fs.FailedAccountIDs)
+		require.Empty(t, fs.SameAccountRetryCount)
+		require.Empty(t, mock.calls)
+		require.Same(t, err, fs.LastFailoverErr)
+	})
+
 	t.Run("非重试错误_非Antigravity_直接切换", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, false)

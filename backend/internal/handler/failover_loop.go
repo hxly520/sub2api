@@ -48,6 +48,7 @@ type FailoverState struct {
 	LastFailoverErr       *service.UpstreamFailoverError
 	ForceCacheBilling     bool
 	hasBoundSession       bool
+	automaticReplay       bool
 }
 
 // NewFailoverState 创建 failover 状态
@@ -57,6 +58,15 @@ func NewFailoverState(maxSwitches int, hasBoundSession bool) *FailoverState {
 		FailedAccountIDs:      make(map[int64]struct{}),
 		SameAccountRetryCount: make(map[int64]int),
 		hasBoundSession:       hasBoundSession,
+		automaticReplay:       true,
+	}
+}
+
+// DisableAutomaticReplay keeps non-idempotent media creation requests on a
+// single upstream submission while preserving the normal text failover policy.
+func (s *FailoverState) DisableAutomaticReplay() {
+	if s != nil {
+		s.automaticReplay = false
 	}
 }
 
@@ -70,6 +80,9 @@ func (s *FailoverState) HandleFailoverError(
 	failoverErr *service.UpstreamFailoverError,
 ) FailoverAction {
 	s.LastFailoverErr = failoverErr
+	if !s.automaticReplay {
+		return FailoverExhausted
+	}
 
 	// 缓存计费判断
 	if needForceCacheBilling(s.hasBoundSession, failoverErr) {

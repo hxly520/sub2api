@@ -126,6 +126,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		imageBillingModel  string
 		imageSizeTier      string
 		imageInputSize     string
+		imageIntent        bool
 		payloadBytes       int
 	}
 	ingressSessionOriginalModel := ""
@@ -349,6 +350,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageBillingModel:  imageBillingModel,
 			imageSizeTier:      imageSizeTier,
 			imageInputSize:     imageInputSize,
+			imageIntent:        imageIntent,
 			payloadBytes:       len(normalized),
 		}, nil
 	}
@@ -948,6 +950,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentImageBillingModel := firstPayload.imageBillingModel
 	currentImageSizeTier := firstPayload.imageSizeTier
 	currentImageInputSize := firstPayload.imageInputSize
+	currentImageIntent := firstPayload.imageIntent
 	currentPayloadBytes := firstPayload.payloadBytes
 	isStrictAffinityTurn := func(payload []byte) bool {
 		if !storeDisabled {
@@ -1036,7 +1039,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		preferredConnID = ""
 	}
 	recoverIngressPrevResponseNotFound := func(relayErr error, turn int, connID string) bool {
-		if !openAIWSIngressAllowsAutomaticReplay(account) {
+		if currentImageIntent || !openAIWSIngressAllowsAutomaticReplay(account) {
 			return false
 		}
 		if !isOpenAIWSIngressPreviousResponseNotFound(relayErr) {
@@ -1106,7 +1109,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	retryIngressTurn := func(relayErr error, turn int, connID string) bool {
-		if !openAIWSIngressAllowsAutomaticReplay(account) {
+		if currentImageIntent || !openAIWSIngressAllowsAutomaticReplay(account) {
 			return false
 		}
 		if !isOpenAIWSIngressTurnRetryable(relayErr) || turnRetry >= 1 {
@@ -1335,7 +1338,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					hasReplayToolContext := hasFCOutput &&
 						currentTurnReplayInputExists &&
 						openAIWSRawItemsHaveToolCallContextForOutputs(currentTurnReplayInput)
-					if !turnPrevRecoveryTried && currentPreviousResponseID != "" && (!hasFCOutput || hasReplayToolContext) {
+					if !currentImageIntent && openAIWSIngressAllowsAutomaticReplay(account) && !turnPrevRecoveryTried && currentPreviousResponseID != "" && (!hasFCOutput || hasReplayToolContext) {
 						updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
 						if dropErr != nil || !removed {
 							reason := "not_removed"
@@ -1575,6 +1578,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentImageBillingModel = nextPayload.imageBillingModel
 		currentImageSizeTier = nextPayload.imageSizeTier
 		currentImageInputSize = nextPayload.imageInputSize
+		currentImageIntent = nextPayload.imageIntent
 		currentPayloadBytes = nextPayload.payloadBytes
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(currentPayload, account)
 		if !storeDisabled {

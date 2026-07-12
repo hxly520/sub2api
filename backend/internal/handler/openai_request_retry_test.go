@@ -36,6 +36,22 @@ func TestOpenAIPoolModeHandlersDoNotContainLocalSameAccountReplay(t *testing.T) 
 	}
 }
 
+func TestOpenAIMediaCreationHandlersDoNotUseAutomaticReplayBudget(t *testing.T) {
+	for _, file := range []string{
+		"openai_images.go",
+		"openai_image_tasks.go",
+		"openai_videos.go",
+		"grok_media.go",
+	} {
+		t.Run(file, func(t *testing.T) {
+			source, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.NotContains(t, string(source), "retryBudget.tryConsume")
+			require.NotContains(t, string(source), "upstream_failover_switching")
+		})
+	}
+}
+
 func TestOpenAIRequestRetryBudget_PoolModeAllowsOnlyBoundedExplicitRejectionFailover(t *testing.T) {
 	budget := openAIRequestRetryBudget{}
 	account := &service.Account{
@@ -77,4 +93,15 @@ func TestOpenAIRequestRetryBudget_DoesNotReplayUncertainAttempt(t *testing.T) {
 		require.False(t, budget.tryConsume(account, err))
 		require.Zero(t, budget.used)
 	}
+}
+
+func TestOpenAIRequestRetryBudget_DisabledMediaReplayDoesNotConsumeBudget(t *testing.T) {
+	budget := openAIRequestRetryBudget{}
+	account := &service.Account{ID: 4, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
+	err := &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests}
+
+	require.False(t, budget.tryConsumeIfAllowed(false, account, err))
+	require.Zero(t, budget.used)
+	require.True(t, budget.tryConsumeIfAllowed(true, account, err))
+	require.Equal(t, 1, budget.used)
 }
