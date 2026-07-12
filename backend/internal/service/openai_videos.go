@@ -272,8 +272,10 @@ func (r *OpenAIVideoRequest) UseUpstreamTaskIDAtEndpoint(taskID, storedEndpoint 
 	}
 	r.UpstreamRequestID = taskID
 	endpoint := normalizeOpenAIVideoTaskEndpoint(storedEndpoint)
-	if endpoint == "" {
-		endpoint = OpenAIVideoUpstreamEndpointForModel(r.Model, r.Endpoint)
+	if modelEndpoint := normalizeOpenAIVideoTaskEndpoint(OpenAIVideoUpstreamEndpointForModel(r.Model, endpoint)); modelEndpoint != "" {
+		endpoint = modelEndpoint
+	} else if endpoint == "" {
+		endpoint = normalizeOpenAIVideoTaskEndpoint(r.Endpoint)
 	}
 	if endpoint == "" {
 		return fmt.Errorf("upstream video task endpoint is unavailable")
@@ -555,12 +557,14 @@ func normalizeOpenAIVideoDerivedFields(req *OpenAIVideoRequest) {
 }
 
 // OpenAIVideoUpstreamEndpointForModel keeps all supported client path aliases
-// while routing the relay catalog through its deployed unified task endpoint.
+// while routing each relay model family through its documented task endpoint.
 // It never returns a vendor host, only a path below the configured base URL.
 func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
 	lowerModel := strings.ToLower(strings.TrimSpace(model))
 	switch {
-	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"), strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
+	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"):
+		return openAIVideoGenerationsEndpoint
+	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
 		return openAIVideosEndpoint
 	default:
 		return strings.TrimSpace(fallback)
