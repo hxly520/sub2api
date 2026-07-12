@@ -70,6 +70,7 @@ type OpenAIVideoRequest struct {
 	ReferenceVideoBytes     int64
 	HasFirstFrame           bool
 	HasLastFrame            bool
+	ReferenceMode           string
 	AspectRatio             string
 	UpstreamIdempotencyKey  string
 	Body                    []byte
@@ -325,6 +326,7 @@ func parseOpenAIVideoBody(req *OpenAIVideoRequest) error {
 	}
 	req.ReferenceVideoCount = countOpenAIVideoJSONReferences(req.Body, []string{"video", "video_url", "video_urls", "videos", "reference_videos", "input_video"})
 	req.ReferenceAudioCount = countOpenAIVideoJSONReferences(req.Body, []string{"audio", "audio_url", "audio_urls", "audios", "reference_audios", "input_audio"})
+	req.ReferenceMode = strings.TrimSpace(gjson.GetBytes(req.Body, "reference_mode").String())
 	req.Resolution = strings.TrimSpace(gjson.GetBytes(req.Body, "resolution_name").String())
 	if req.Resolution == "" {
 		req.Resolution = strings.TrimSpace(gjson.GetBytes(req.Body, "resolution").String())
@@ -416,8 +418,14 @@ func parseOpenAIVideoMultipartBody(req *OpenAIVideoRequest) error {
 			req.ReferenceImageCount += countOpenAIVideoFieldValues(value)
 		case "video", "video_url", "video_urls", "videos", "input_video", "reference_videos":
 			req.ReferenceVideoCount += countOpenAIVideoFieldValues(value)
-		case "audio", "audio_url", "audio_urls", "audios", "input_audio", "reference_audios":
+		case "audio":
+			if !strings.EqualFold(value, "true") && !strings.EqualFold(value, "false") {
+				req.ReferenceAudioCount += countOpenAIVideoFieldValues(value)
+			}
+		case "audio_url", "audio_urls", "audios", "input_audio", "reference_audios":
 			req.ReferenceAudioCount += countOpenAIVideoFieldValues(value)
+		case "reference_mode":
+			req.ReferenceMode = value
 		case "resolution", "resolution_name":
 			req.Resolution = value
 		case "duration", "seconds", "video_duration", "sora2_duration":
@@ -434,6 +442,9 @@ func countOpenAIVideoJSONReferences(body []byte, paths []string) int {
 	for _, path := range paths {
 		value := gjson.GetBytes(body, path)
 		if !value.Exists() {
+			continue
+		}
+		if value.IsBool() {
 			continue
 		}
 		if value.IsArray() {
@@ -519,6 +530,18 @@ func classifyOpenAIVideoModel(model string) openAIVideoModelProfile {
 	}
 }
 
+func openAIVideoModelHasToken(model, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, token := range strings.FieldsFunc(strings.ToLower(model), func(r rune) bool {
+		return r == '-' || r == '_' || r == ':' || r == '.' || r == '/'
+	}) {
+		if token == target {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeOpenAIVideoDerivedFields(req *OpenAIVideoRequest) {
 	if req == nil || strings.TrimSpace(req.Resolution) != "" {
 		return
@@ -531,15 +554,13 @@ func normalizeOpenAIVideoDerivedFields(req *OpenAIVideoRequest) {
 	}
 }
 
-// OpenAIVideoUpstreamEndpointForModel maps the local compatibility surface to
-// the relay provider's documented task protocol. It never returns an official
-// vendor host; only the path below the account's configured relay base URL.
+// OpenAIVideoUpstreamEndpointForModel keeps all supported client path aliases
+// while routing the relay catalog through its deployed unified task endpoint.
+// It never returns a vendor host, only a path below the configured base URL.
 func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
 	lowerModel := strings.ToLower(strings.TrimSpace(model))
 	switch {
-	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"):
-		return openAIVideoGenerationsEndpoint
-	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
+	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"), strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
 		return openAIVideosEndpoint
 	default:
 		return strings.TrimSpace(fallback)
@@ -578,6 +599,7 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 	profile := classifyOpenAIVideoModel(model)
 	resolution := strings.ToLower(strings.TrimSpace(req.Resolution))
 	ratio := strings.ToLower(strings.TrimSpace(req.AspectRatio))
+	referenceMode := strings.ToLower(strings.TrimSpace(req.ReferenceMode))
 	duration := req.DurationSeconds
 	frameCount := openAIVideoFrameCount(req)
 	nonFrameImageCount := req.ReferenceImageCount - frameCount
@@ -728,8 +750,17 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if size != "" && !containsOpenAIVideoString([]string{"1280x720", "720x1280", "1024x1024"}, size) {
 			return fmt.Errorf("sora video size is unsupported")
 		}
-		if req.ReferenceImageCount > 0 || req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
-			return fmt.Errorf("sora video does not accept reference media")
+		if utf8.RuneCountInString(req.Prompt) > 1200 {
+			return fmt.Errorf("sora video prompt must not exceed 1200 characters")
+		}
+		if req.ReferenceImageCount > 1 {
+			return fmt.Errorf("sora video supports at most one frame reference image")
+		}
+		if req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
+			return fmt.Errorf("sora video does not accept video or audio references")
+		}
+		if referenceMode != "" && referenceMode != "frame" {
+			return fmt.Errorf("sora video reference_mode must be frame")
 		}
 	}
 
@@ -743,14 +774,27 @@ func validateOpenAIVideoModelRequest(req *OpenAIVideoRequest) error {
 		if resolution != "" && resolution != "720p" && resolution != "1080p" {
 			return fmt.Errorf("veo video resolution must be 720p or 1080p")
 		}
-		if req.ReferenceImageCount > 3 {
-			return fmt.Errorf("veo video supports at most three reference images")
+		if utf8.RuneCountInString(req.Prompt) > 1200 {
+			return fmt.Errorf("veo video prompt must not exceed 1200 characters")
+		}
+		isReferenceModel := strings.Contains(model, "veo") && openAIVideoModelHasToken(model, "ref")
+		maxImages := 2
+		expectedReferenceMode := "frame"
+		if isReferenceModel {
+			maxImages = 3
+			expectedReferenceMode = "image"
+		}
+		if req.ReferenceImageCount > maxImages {
+			return fmt.Errorf("veo video supports at most %d reference images", maxImages)
 		}
 		if req.ReferenceVideoCount > 0 || req.ReferenceAudioCount > 0 {
 			return fmt.Errorf("veo video does not accept video or audio references")
 		}
 		if frameCount > 0 {
 			return fmt.Errorf("veo video does not accept first or last frame fields")
+		}
+		if referenceMode != "" && referenceMode != expectedReferenceMode {
+			return fmt.Errorf("veo video reference_mode must be %s", expectedReferenceMode)
 		}
 	}
 	return nil
