@@ -15,8 +15,9 @@ upstream authorization headers remain encrypted inside the short-lived token.
    Worker route is live.
 
 The Worker routes must be limited to `video.52token.org/v1/video-content/*` and
-`video.52token.org/v1/image-content/*`. All other paths remain on the restricted
-Nginx media virtual host.
+`video.52token.org/v1/image-content/*`. `image.52token.org` remains the workbench
+and image/video generation API origin. Every other `video.52token.org` path is
+rejected by the Nginx fallback and must not proxy to sub2api.
 
 ```bash
 npx wrangler secret put VIDEO_PROXY_KEY_HEX
