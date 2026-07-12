@@ -93,7 +93,7 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 	require.Empty(t, recorder.Body.String())
 }
 
-func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T) {
+func TestForwardOpenAIVideoJSONTaskMapsSingularCompatibilityPathToUnifiedVideos(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
 
@@ -126,7 +126,7 @@ func TestForwardOpenAIVideoJSONTaskSupportsSingularGenerationsPath(t *testing.T)
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "video-request-456", result.ResponseID)
 	require.Zero(t, result.ImageCount)
@@ -167,7 +167,7 @@ func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testin
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "grok-video-request-789", result.ResponseID)
 	require.Zero(t, result.ImageCount)
@@ -211,7 +211,7 @@ func TestForwardOpenAIVideoMappedGrokUsesMappedContractAndStableIdempotency(t *t
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
 	require.Equal(t, "video-public-task", upstream.lastReq.Header.Get("Idempotency-Key"))
 	require.Equal(t, "grok-video", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "mapped-grok-task", result.ResponseID)
@@ -288,7 +288,7 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	created, err := svc.ForwardVideo(context.Background(), createCtx, account, parsed, "")
 	require.NoError(t, err)
-	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations", upstream.requests[0].URL.String())
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos", upstream.requests[0].URL.String())
 	require.Equal(t, upstreamTaskID, created.ResponseID)
 	require.Equal(t, MediaGenerationStatusPending, created.VideoStatus)
 	require.Equal(t, 15, created.VideoDurationSeconds)
@@ -297,9 +297,10 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 	statusCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/video/generations/"+upstreamTaskID, nil)
 	parsed, err = svc.ParseOpenAIVideoRequest(statusCtx, nil)
 	require.NoError(t, err)
+	require.NoError(t, parsed.UseUpstreamTaskIDAtEndpoint(upstreamTaskID, openAIVideosEndpoint))
 	statusResult, err := svc.ForwardVideo(context.Background(), statusCtx, account, parsed, "")
 	require.NoError(t, err)
-	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations/"+upstreamTaskID, upstream.requests[1].URL.String())
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos/"+upstreamTaskID, upstream.requests[1].URL.String())
 	require.Equal(t, upstreamTaskID, statusResult.ResponseID)
 	require.Equal(t, MediaGenerationStatusCompleted, statusResult.VideoStatus)
 	require.Equal(t, "https://upstream-media.test/generated-video.mp4", statusResult.MediaResultURL)
@@ -755,6 +756,61 @@ func TestParseOpenAIVideoRequestRejectsStreamingGeneration(t *testing.T) {
 	require.EqualError(t, err, "streaming video generation is not supported")
 }
 
+func TestParseOpenAIVideoRequestTreatsAudioToggleSeparatelyFromAudioReferences(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, audio := range []string{"true", "false"} {
+		t.Run(audio, func(t *testing.T) {
+			body := []byte(`{"model":"seedance-2.0","prompt":"city","duration":6,"resolution":"720p","audio":` + audio + `}`)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body)
+			require.NoError(t, err)
+			require.Zero(t, parsed.ReferenceAudioCount)
+		})
+	}
+
+	body := []byte(`{"model":"seedance-2.0","prompt":"city","duration":6,"resolution":"720p","image_url":"https://media.test/ref.png","audio":"https://media.test/ref.mp3"}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, 1, parsed.ReferenceAudioCount)
+
+	body = []byte(`{"model":"seedance-2.0","prompt":"city","duration":6,"resolution":"720p","reference_audios":["https://media.test/ref.mp3"]}`)
+	recorder = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	_, err = (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body)
+	require.ErrorContains(t, err, "require at least one image")
+}
+
+func TestParseOpenAIVideoMultipartDoesNotCountAudioToggleAsReference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "seedance-2.0"))
+	require.NoError(t, writer.WriteField("prompt", "city"))
+	require.NoError(t, writer.WriteField("duration", "6"))
+	require.NoError(t, writer.WriteField("resolution", "720p"))
+	require.NoError(t, writer.WriteField("audio", "true"))
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIVideoRequest(c, body.Bytes())
+	require.NoError(t, err)
+	require.Zero(t, parsed.ReferenceAudioCount)
+}
+
 func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -779,9 +835,17 @@ func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 		{name: "omni too many images", request: OpenAIVideoRequest{Model: "omni-fast", Prompt: "motion", ReferenceImageCount: 6}, wantErr: "at most five"},
 		{name: "sora invalid duration", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 10}, wantErr: "4, 8, or 12"},
 		{name: "sora invalid size", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, Size: "1920x1080"}, wantErr: "size"},
-		{name: "sora rejects reference images", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, Size: "1280x720", ReferenceImageCount: 1}, wantErr: "does not accept reference media"},
+		{name: "sora accepts frame reference", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, ReferenceImageCount: 1, ReferenceMode: "frame"}},
+		{name: "sora rejects multiple frames", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, ReferenceImageCount: 2, ReferenceMode: "frame"}, wantErr: "at most one"},
+		{name: "sora rejects image mode", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 8, ReferenceImageCount: 1, ReferenceMode: "image"}, wantErr: "must be frame"},
 		{name: "sora valid", request: OpenAIVideoRequest{Model: "sora-2", Prompt: "motion", DurationSeconds: 4, AspectRatio: "9:16"}},
 		{name: "veo valid", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 6, AspectRatio: "16:9", Resolution: "1080p"}},
+		{name: "veo standard accepts two frames", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 2, ReferenceMode: "frame"}},
+		{name: "veo standard rejects three frames", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 3, ReferenceMode: "frame"}, wantErr: "at most 2"},
+		{name: "veo standard alias containing preferred remains frame mode", request: OpenAIVideoRequest{Model: "preferred-veo-3-1", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 3, ReferenceMode: "frame"}, wantErr: "at most 2"},
+		{name: "veo ref accepts three images", request: OpenAIVideoRequest{Model: "veo-3-1-ref", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 3, ReferenceMode: "image"}},
+		{name: "veo ref prefixed alias accepts three images", request: OpenAIVideoRequest{Model: "public-veo-3-1-ref-v2", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 3, ReferenceMode: "image"}},
+		{name: "veo ref rejects frame mode", request: OpenAIVideoRequest{Model: "veo-3-1-ref", Prompt: "motion", DurationSeconds: 6, ReferenceImageCount: 1, ReferenceMode: "frame"}, wantErr: "must be image"},
 		{name: "veo invalid duration", request: OpenAIVideoRequest{Model: "veo-3-1", Prompt: "motion", DurationSeconds: 5}, wantErr: "duration"},
 	}
 
@@ -798,7 +862,7 @@ func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 }
 
 func TestOpenAIVideoCangyuanModelRoutingAndDerivedResolution(t *testing.T) {
-	require.Equal(t, openAIVideoGenerationsEndpoint, OpenAIVideoUpstreamEndpointForModel("grok-video", openAIVideosEndpoint))
+	require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel("grok-video", openAIVideoGenerationsEndpoint))
 	require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel("veo-3-1", openAIVideoGenerationsEndpoint))
 	require.Equal(t, VideoBillingResolution4K, NormalizeVideoBillingResolutionOrDefault("2160p"))
 
@@ -857,11 +921,7 @@ func TestOpenAIVideoCangyuanPublishedModelProfiles(t *testing.T) {
 			}
 			normalizeOpenAIVideoDerivedFields(req)
 			require.NoError(t, validateOpenAIVideoModelRequest(req))
-			expectedEndpoint := openAIVideosEndpoint
-			if profile == openAIVideoModelGrok || profile == openAIVideoModelGrok15 {
-				expectedEndpoint = openAIVideoGenerationsEndpoint
-			}
-			require.Equal(t, expectedEndpoint, OpenAIVideoUpstreamEndpointForModel(model, "/unexpected"))
+			require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel(model, "/unexpected"))
 		})
 	}
 }
@@ -919,18 +979,17 @@ func TestParseOpenAIVideoRequestValidatesJSONProtocolProfiles(t *testing.T) {
 			body: `{"model":"sora-2","prompt":"motion","seconds":12,"size":"1024x1024","aspect_ratio":"16:9"}`,
 		},
 		{
-			name:    "sora rejects reference media",
-			body:    `{"model":"sora-2","prompt":"motion","seconds":8,"image_url":"image"}`,
-			wantErr: "does not accept reference media",
+			name: "sora accepts one frame reference",
+			body: `{"model":"sora-2","prompt":"motion","seconds":8,"reference_mode":"frame","images":["image"]}`,
 		},
 		{
 			name: "veo accepts three reference images",
-			body: `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"resolution":"1080p","aspect_ratio":"16:9","reference_image_urls":["1","2","3"]}`,
+			body: `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"resolution":"1080p","aspect_ratio":"16:9","reference_mode":"image","images":["1","2","3"]}`,
 		},
 		{
 			name:    "veo rejects four reference images",
-			body:    `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"reference_image_urls":["1","2","3","4"]}`,
-			wantErr: "at most three",
+			body:    `{"model":"veo-3-1-ref","prompt":"motion","duration":6,"reference_mode":"image","images":["1","2","3","4"]}`,
+			wantErr: "at most 3",
 		},
 		{
 			name:    "veo rejects video reference",
