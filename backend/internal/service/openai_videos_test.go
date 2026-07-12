@@ -93,7 +93,7 @@ func TestForwardOpenAIVideoFormTaskRewritesModelAndReturnsTaskID(t *testing.T) {
 	require.Empty(t, recorder.Body.String())
 }
 
-func TestForwardOpenAIVideoJSONTaskUsesDocumentedGrokEndpoint(t *testing.T) {
+func TestForwardOpenAIVideoJSONTaskMapsCompatibilityAliasToUnifiedVideosAndDefaultsContentType(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
 
@@ -101,7 +101,6 @@ func TestForwardOpenAIVideoJSONTaskUsesDocumentedGrokEndpoint(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
 
 	account := &Account{
 		ID:          72,
@@ -123,10 +122,12 @@ func TestForwardOpenAIVideoJSONTaskUsesDocumentedGrokEndpoint(t *testing.T) {
 
 	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
 	require.NoError(t, err)
+	require.Equal(t, "application/json", parsed.ContentType)
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "video-request-456", result.ResponseID)
 	require.Zero(t, result.ImageCount)
@@ -167,7 +168,7 @@ func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testin
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 	require.Equal(t, "grok-video-request-789", result.ResponseID)
 	require.Zero(t, result.ImageCount)
@@ -211,7 +212,7 @@ func TestForwardOpenAIVideoMappedGrokUsesMappedContractAndStableIdempotency(t *t
 	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
 	require.NoError(t, err)
 
-	require.Equal(t, "https://video-upstream.test/v1/video/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
 	require.Equal(t, "video-public-task", upstream.lastReq.Header.Get("Idempotency-Key"))
 	require.Equal(t, "grok-video", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "mapped-grok-task", result.ResponseID)
@@ -238,7 +239,7 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 
 	createBody := []byte(`{"model":"grok-video","prompt":"city in rain","duration":15,"resolution":"720p","aspect_ratio":"16:9"}`)
 	createCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	createCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(createBody))
+	createCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(createBody))
 	createCtx.Request.Header.Set("Content-Type", "application/json")
 
 	account := &Account{
@@ -281,6 +282,15 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 				}
 			}`)),
 		},
+		{
+			StatusCode: http.StatusPartialContent,
+			Header: http.Header{
+				"Content-Type":   []string{"video/mp4"},
+				"Content-Length": []string{"10"},
+				"Content-Range":  []string{"bytes 0-9/10"},
+			},
+			Body: io.NopCloser(strings.NewReader("video-data")),
+		},
 	}}
 	svc := &OpenAIGatewayService{httpUpstream: upstream}
 
@@ -288,20 +298,20 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	created, err := svc.ForwardVideo(context.Background(), createCtx, account, parsed, "")
 	require.NoError(t, err)
-	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations", upstream.requests[0].URL.String())
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos", upstream.requests[0].URL.String())
 	require.Equal(t, upstreamTaskID, created.ResponseID)
 	require.Equal(t, MediaGenerationStatusPending, created.VideoStatus)
 	require.Equal(t, 15, created.VideoDurationSeconds)
 
 	statusCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	statusCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/video/generations/"+upstreamTaskID, nil)
+	statusCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/"+upstreamTaskID, nil)
 	parsed, err = svc.ParseOpenAIVideoRequest(statusCtx, nil)
 	require.NoError(t, err)
 	parsed.Model = "grok-video"
 	require.NoError(t, parsed.UseUpstreamTaskIDAtEndpoint(upstreamTaskID, openAIVideosEndpoint))
 	statusResult, err := svc.ForwardVideo(context.Background(), statusCtx, account, parsed, "")
 	require.NoError(t, err)
-	require.Equal(t, "https://cangyuan-upstream.test/v1/video/generations/"+upstreamTaskID, upstream.requests[1].URL.String())
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos/"+upstreamTaskID, upstream.requests[1].URL.String())
 	require.Equal(t, upstreamTaskID, statusResult.ResponseID)
 	require.Equal(t, MediaGenerationStatusCompleted, statusResult.VideoStatus)
 	require.Equal(t, "https://upstream-media.test/generated-video.mp4", statusResult.MediaResultURL)
@@ -317,6 +327,22 @@ func TestForwardOpenAIVideoCangyuanGrokContractLifecycle(t *testing.T) {
 	require.NotContains(t, string(clientBody), "cangyuan-upstream.test")
 	require.NotContains(t, string(clientBody), "upstream-media.test")
 	require.NotContains(t, string(clientBody), upstreamTaskID)
+
+	contentRecorder := httptest.NewRecorder()
+	contentCtx, _ := gin.CreateTestContext(contentRecorder)
+	contentCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/"+upstreamTaskID+"/content", nil)
+	contentCtx.Request.Header.Set("Range", "bytes=0-9")
+	parsed, err = svc.ParseOpenAIVideoRequest(contentCtx, nil)
+	require.NoError(t, err)
+	parsed.Model = "grok-video"
+	require.NoError(t, parsed.UseUpstreamTaskIDAtEndpoint(upstreamTaskID, openAIVideosEndpoint))
+	_, err = svc.ForwardVideo(context.Background(), contentCtx, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, "https://cangyuan-upstream.test/v1/videos/"+upstreamTaskID+"/content", upstream.requests[2].URL.String())
+	require.Equal(t, "bytes=0-9", upstream.requests[2].Header.Get("Range"))
+	require.Equal(t, http.StatusPartialContent, contentRecorder.Code)
+	require.Equal(t, "video/mp4", contentRecorder.Header().Get("Content-Type"))
+	require.Equal(t, "video-data", contentRecorder.Body.String())
 }
 
 func TestForwardOpenAIVideoCangyuanSeedanceContractLifecycle(t *testing.T) {
@@ -703,7 +729,7 @@ func TestOpenAIVideoUseUpstreamTaskIDPrefersStoredProtocol(t *testing.T) {
 	require.Equal(t, "/v1/video/generations/provider-task-123/content", req.UpstreamPath)
 }
 
-func TestOpenAIVideoUseUpstreamTaskIDRepairsStoredGrokUnifiedEndpoint(t *testing.T) {
+func TestOpenAIVideoUseUpstreamTaskIDPreservesStoredGrokUnifiedEndpoint(t *testing.T) {
 	req := &OpenAIVideoRequest{
 		Endpoint: openAIVideosEndpoint,
 		Model:    "grok-video",
@@ -711,7 +737,7 @@ func TestOpenAIVideoUseUpstreamTaskIDRepairsStoredGrokUnifiedEndpoint(t *testing
 
 	err := req.UseUpstreamTaskIDAtEndpoint("provider-task-123", openAIVideosEndpoint)
 	require.NoError(t, err)
-	require.Equal(t, "/v1/video/generations/provider-task-123", req.UpstreamPath)
+	require.Equal(t, "/v1/videos/provider-task-123", req.UpstreamPath)
 }
 
 func TestOpenAIVideoUseUpstreamTaskIDRejectsUnknownStoredProtocol(t *testing.T) {
@@ -874,7 +900,7 @@ func TestValidateOpenAIVideoModelRequestMatrix(t *testing.T) {
 }
 
 func TestOpenAIVideoCangyuanModelRoutingAndDerivedResolution(t *testing.T) {
-	require.Equal(t, openAIVideoGenerationsEndpoint, OpenAIVideoUpstreamEndpointForModel("grok-video", openAIVideosEndpoint))
+	require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel("grok-video", openAIVideoGenerationsEndpoint))
 	require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel("veo-3-1", openAIVideoGenerationsEndpoint))
 	require.Equal(t, VideoBillingResolution4K, NormalizeVideoBillingResolutionOrDefault("2160p"))
 
@@ -933,11 +959,7 @@ func TestOpenAIVideoCangyuanPublishedModelProfiles(t *testing.T) {
 			}
 			normalizeOpenAIVideoDerivedFields(req)
 			require.NoError(t, validateOpenAIVideoModelRequest(req))
-			expectedEndpoint := openAIVideosEndpoint
-			if profile == openAIVideoModelGrok || profile == openAIVideoModelGrok15 {
-				expectedEndpoint = openAIVideoGenerationsEndpoint
-			}
-			require.Equal(t, expectedEndpoint, OpenAIVideoUpstreamEndpointForModel(model, "/unexpected"))
+			require.Equal(t, openAIVideosEndpoint, OpenAIVideoUpstreamEndpointForModel(model, "/unexpected"))
 		})
 	}
 }
