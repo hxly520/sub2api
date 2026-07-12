@@ -331,7 +331,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	sameAccountRetryCount := make(map[int64]int)
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 
 	for {
@@ -417,11 +417,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			forwardCtx := h.openAIFirstResponseForwardContext(
-				c, reqLog, apiKey.GroupID, reqModel, account.ID, failedAccountIDs, switchCount,
-				maxAccountSwitches, reqStream, service.OpenAIUpstreamTransportAny,
-				service.OpenAIEndpointCapabilityChatCompletions, requireCompact, requestPlatform,
-			)
+			forwardCtx := h.openAIFirstResponseForwardContext(c, reqLog, reqStream)
 			return h.gatewayService.Forward(forwardCtx, c, account, forwardBody)
 		}()
 		cyberBlockKeyHTTP := ""
@@ -455,24 +451,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
-					// 池模式：同账号重试
-					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
-							sameAccountRetryCount[account.ID]++
-							reqLog.Warn("openai.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", retryLimit),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(sameAccountRetryDelay):
-							}
-							continue
-						}
+					if !retryBudget.tryConsume(account, failoverErr) {
+						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
+						reqLog.Warn("openai.automatic_replay_suppressed",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+						)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
 					h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
@@ -828,7 +815,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	sameAccountRetryCount := make(map[int64]int)
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 	effectiveMappedModel := preferredMappedModel
 
@@ -906,11 +893,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			forwardCtx := h.openAIFirstResponseForwardContext(
-				c, reqLog, apiKey.GroupID, currentRoutingModel, account.ID, failedAccountIDs, switchCount,
-				maxAccountSwitches, reqStream, service.OpenAIUpstreamTransportAny,
-				service.OpenAIEndpointCapabilityChatCompletions, false, requestPlatform,
-			)
+			forwardCtx := h.openAIFirstResponseForwardContext(c, reqLog, reqStream)
 			return h.gatewayService.ForwardAsAnthropic(forwardCtx, c, account, forwardBody, promptCacheKey, defaultMappedModel)
 		}()
 		cyberBlockKeyMsg := ""
@@ -944,24 +927,15 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, currentRoutingModel, failoverErr)
-					// 池模式：同账号重试
-					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
-							sameAccountRetryCount[account.ID]++
-							reqLog.Warn("openai_messages.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", retryLimit),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(sameAccountRetryDelay):
-							}
-							continue
-						}
+					if !retryBudget.tryConsume(account, failoverErr) {
+						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
+						reqLog.Warn("openai_messages.automatic_replay_suppressed",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+						)
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
 					h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()
@@ -1443,6 +1417,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 
 	for {
@@ -1674,6 +1649,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			if errors.As(err, &failoverErr) {
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
 				releaseAccountSlot()
+				if !retryBudget.tryConsume(account, failoverErr) {
+					reqLog.Warn("openai.websocket_automatic_replay_suppressed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Bool("pool_mode", account.IsPoolMode()),
+						zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+					)
+					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+					return
+				}
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {

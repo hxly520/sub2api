@@ -54,8 +54,67 @@ test('decryptVideoToken accepts the Go-compatible AES-GCM envelope', async () =>
 test('validateTargetURL rejects private and non-allowlisted targets', () => {
   assert.throws(() => validateTargetURL('https://127.0.0.1/video.mp4'))
   assert.throws(() => validateTargetURL('http://1.1.1.1/video.mp4'))
+  assert.equal(validateTargetURL('http://1.1.1.1/image.png', '', 'image').hostname, '1.1.1.1')
+  assert.throws(() => validateTargetURL('http://127.0.0.1/image.png', '', 'image'))
   assert.throws(() => validateTargetURL('https://8.8.8.8/video.mp4', '1.1.1.1'))
   assert.equal(validateTargetURL('https://cdn.example.com/video.mp4', '*.example.com').hostname, 'cdn.example.com')
+})
+
+test('worker proxies image tokens on the dedicated media domain', { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch
+  let observedURL = ''
+  globalThis.fetch = async (url) => {
+    observedURL = String(url)
+    return new Response('image', {
+      status: 200,
+      headers: { 'content-type': 'image/png', 'content-length': '5' },
+    })
+  }
+  try {
+    const token = await encryptToken({
+      v: 1,
+      m: 'image',
+      u: 'http://1.1.1.1/generated.png?signature=secret',
+      e: Math.floor(Date.now() / 1000) + 3600,
+    })
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/image-content/${token}`), {
+      VIDEO_PROXY_KEY_HEX: KEY_HEX,
+      ALLOWED_MEDIA_HOSTS: '1.1.1.1',
+    })
+
+    assert.equal(response.status, 200)
+    assert.equal(await response.text(), 'image')
+    assert.equal(observedURL, 'http://1.1.1.1/generated.png?signature=secret')
+    assert.equal(response.headers.get('content-type'), 'image/png')
+    assert.equal(response.headers.get('access-control-allow-origin'), '*')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('worker accepts image downloads served as generic binary content', { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response('image', {
+    status: 200,
+    headers: { 'content-type': 'application/octet-stream' },
+  })
+  try {
+    const token = await encryptToken({
+      v: 1,
+      m: 'image',
+      u: 'https://1.1.1.1/generated.webp',
+      e: Math.floor(Date.now() / 1000) + 3600,
+    })
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/image-content/${token}`), {
+      VIDEO_PROXY_KEY_HEX: KEY_HEX,
+      ALLOWED_MEDIA_HOSTS: '1.1.1.1',
+    })
+
+    assert.equal(response.status, 200)
+    assert.equal(await response.text(), 'image')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('worker streams ranges and encrypted authorization without leaking upstream metadata', { concurrency: false }, async () => {
@@ -84,7 +143,7 @@ test('worker streams ranges and encrypted authorization without leaking upstream
       e: Math.floor(Date.now() / 1000) + 3600,
       h: { Authorization: 'Bearer upstream-secret' },
     })
-    const response = await worker.fetch(new Request(`https://image.52token.org/v1/video-content/${token}`, {
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/video-content/${token}`, {
       headers: { Range: 'bytes=10-13' },
     }), {
       VIDEO_PROXY_KEY_HEX: KEY_HEX,
@@ -99,6 +158,35 @@ test('worker streams ranges and encrypted authorization without leaking upstream
     assert.equal(response.headers.get('server'), null)
     assert.equal(response.headers.get('x-upstream-request-id'), null)
     assert.equal(response.headers.get('access-control-allow-origin'), '*')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('worker does not impose a generated media size limit', { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      'content-type': 'video/mp4',
+      'content-length': String(8 * 1024 * 1024 * 1024),
+      'accept-ranges': 'bytes',
+    },
+  })
+  try {
+    const token = await encryptToken({
+      v: 1,
+      m: 'video',
+      u: 'https://1.1.1.1/large-video.mp4',
+      e: Math.floor(Date.now() / 1000) + 3600,
+    })
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/video-content/${token}`, { method: 'HEAD' }), {
+      VIDEO_PROXY_KEY_HEX: KEY_HEX,
+      ALLOWED_MEDIA_HOSTS: '1.1.1.1',
+    })
+
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-length'), String(8 * 1024 * 1024 * 1024))
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -128,7 +216,7 @@ test('worker handles HEAD when the upstream only supports ranged GET', { concurr
       u: 'https://1.1.1.1/video.mp4',
       e: Math.floor(Date.now() / 1000) + 3600,
     })
-    const response = await worker.fetch(new Request(`https://image.52token.org/v1/video-content/${token}`, { method: 'HEAD' }), {
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/video-content/${token}`, { method: 'HEAD' }), {
       VIDEO_PROXY_KEY_HEX: KEY_HEX,
       ALLOWED_MEDIA_HOSTS: '1.1.1.1',
     })
@@ -157,7 +245,7 @@ test('worker follows redirects internally and never returns Location', { concurr
       u: 'https://1.1.1.1/start',
       e: Math.floor(Date.now() / 1000) + 3600,
     })
-    const response = await worker.fetch(new Request(`https://image.52token.org/v1/video-content/${token}`), {
+    const response = await worker.fetch(new Request(`https://video.52token.org/v1/video-content/${token}`), {
       VIDEO_PROXY_KEY_HEX: KEY_HEX,
       ALLOWED_MEDIA_HOSTS: '1.1.1.1,8.8.8.8',
     })
@@ -176,7 +264,7 @@ test('worker returns a generic terminal error for expired tokens', async () => {
     u: 'https://1.1.1.1/video.mp4',
     e: Math.floor(Date.now() / 1000) - 1,
   })
-  const response = await worker.fetch(new Request(`https://image.52token.org/v1/video-content/${token}`), {
+  const response = await worker.fetch(new Request(`https://video.52token.org/v1/video-content/${token}`), {
     VIDEO_PROXY_KEY_HEX: KEY_HEX,
   })
   assert.equal(response.status, 410)

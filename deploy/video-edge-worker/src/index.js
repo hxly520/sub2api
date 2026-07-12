@@ -1,7 +1,6 @@
 const TOKEN_AAD = 'sub2api-video-proxy-v1'
 const TOKEN_VERSION = 1
 const MAX_TOKEN_BYTES = 16 * 1024
-const MAX_CONTENT_BYTES = 4 * 1024 * 1024 * 1024
 const MAX_REDIRECTS = 4
 
 const CLIENT_REQUEST_HEADERS = [
@@ -32,7 +31,7 @@ function jsonError(status, message) {
   return new Response(JSON.stringify({
     error: {
       message,
-      type: 'video_proxy_error',
+      type: 'media_proxy_error',
       param: null,
       code: null,
     },
@@ -157,12 +156,15 @@ function isBlockedHostname(hostname) {
   return false
 }
 
-export function validateTargetURL(rawURL, allowedHostsValue = '') {
+export function validateTargetURL(rawURL, allowedHostsValue = '', mediaType = 'video') {
   if (typeof rawURL !== 'string' || rawURL.length === 0 || rawURL.length > 8192 || /[\r\n]/.test(rawURL)) {
     throw new Error('invalid target')
   }
   const target = new URL(rawURL)
-  if (target.protocol !== 'https:' || target.username || target.password || (target.port && target.port !== '443')) {
+  const allowHTTP = mediaType === 'image'
+  const validScheme = target.protocol === 'https:' || (allowHTTP && target.protocol === 'http:')
+  const validPort = !target.port || (target.protocol === 'https:' && target.port === '443') || (target.protocol === 'http:' && target.port === '80')
+  if (!validScheme || !validPort || target.username || target.password) {
     throw new Error('invalid target')
   }
   const hostname = target.hostname.toLowerCase()
@@ -177,7 +179,7 @@ export function validateTargetURL(rawURL, allowedHostsValue = '') {
   return target
 }
 
-function buildUpstreamHeaders(request, tokenHeaders) {
+function buildUpstreamHeaders(request, tokenHeaders, mediaType) {
   const headers = new Headers()
   for (const name of CLIENT_REQUEST_HEADERS) {
     const value = request.headers.get(name)
@@ -194,11 +196,13 @@ function buildUpstreamHeaders(request, tokenHeaders) {
       }
     }
   }
-  headers.set('accept', 'video/*, application/octet-stream;q=0.9, */*;q=0.1')
+  headers.set('accept', mediaType === 'image'
+    ? 'image/*, application/octet-stream;q=0.8, */*;q=0.1'
+    : 'video/*, application/octet-stream;q=0.9, */*;q=0.1')
   return headers
 }
 
-async function fetchFollowingRedirects(target, init, allowedHostsValue) {
+async function fetchFollowingRedirects(target, init, allowedHostsValue, mediaType) {
   let current = target
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     const response = await fetch(current.toString(), {
@@ -214,16 +218,19 @@ async function fetchFollowingRedirects(target, init, allowedHostsValue) {
       response.body?.cancel()
       throw new Error('redirect unavailable')
     }
-    const next = validateTargetURL(new URL(location, current).toString(), allowedHostsValue)
+    const next = validateTargetURL(new URL(location, current).toString(), allowedHostsValue, mediaType)
     response.body?.cancel()
     current = next
   }
   throw new Error('redirect unavailable')
 }
 
-function isAllowedContentType(value) {
-  const mediaType = String(value || '').split(';', 1)[0].trim().toLowerCase()
-  return mediaType.startsWith('video/') || mediaType === 'application/octet-stream' || mediaType === 'binary/octet-stream' || mediaType === 'application/mp4'
+function isAllowedContentType(value, mediaType) {
+  const contentMediaType = String(value || '').split(';', 1)[0].trim().toLowerCase()
+  if (mediaType === 'image') {
+    return contentMediaType.startsWith('image/') || contentMediaType === 'application/octet-stream' || contentMediaType === 'binary/octet-stream'
+  }
+  return contentMediaType.startsWith('video/') || contentMediaType === 'application/octet-stream' || contentMediaType === 'binary/octet-stream' || contentMediaType === 'application/mp4'
 }
 
 function responseHeadersFromUpstream(response, headRangeFallback = false) {
@@ -250,35 +257,29 @@ function responseHeadersFromUpstream(response, headRangeFallback = false) {
   return headers
 }
 
-async function proxyVideo(request, env, payload) {
+async function proxyMedia(request, env, payload, mediaType) {
   const allowedHosts = env.ALLOWED_MEDIA_HOSTS || ''
-  const target = validateTargetURL(payload.u, allowedHosts)
-  const headers = buildUpstreamHeaders(request, payload.h)
+  const target = validateTargetURL(payload.u, allowedHosts, mediaType)
+  const headers = buildUpstreamHeaders(request, payload.h, mediaType)
   let method = request.method
   let headRangeFallback = false
-  let response = await fetchFollowingRedirects(target, { method, headers }, allowedHosts)
+  let response = await fetchFollowingRedirects(target, { method, headers }, allowedHosts, mediaType)
 
   if (method === 'HEAD' && (response.status === 405 || response.status === 501)) {
     response.body?.cancel()
     const fallbackHeaders = new Headers(headers)
     fallbackHeaders.set('range', 'bytes=0-0')
-    response = await fetchFollowingRedirects(target, { method: 'GET', headers: fallbackHeaders }, allowedHosts)
+    response = await fetchFollowingRedirects(target, { method: 'GET', headers: fallbackHeaders }, allowedHosts, mediaType)
     headRangeFallback = true
   }
   if (response.status >= 400) {
     response.body?.cancel()
-    return jsonError(502, 'Video content is unavailable')
+    return jsonError(502, 'Media content is unavailable')
   }
-  if (response.status !== 304 && !isAllowedContentType(response.headers.get('content-type'))) {
+  if (response.status !== 304 && !isAllowedContentType(response.headers.get('content-type'), mediaType)) {
     response.body?.cancel()
-    return jsonError(502, 'Video content is unavailable')
+    return jsonError(502, 'Media content is unavailable')
   }
-  const contentLength = Number(response.headers.get('content-length'))
-  if (Number.isFinite(contentLength) && contentLength > MAX_CONTENT_BYTES) {
-    response.body?.cancel()
-    return jsonError(413, 'Video content is too large')
-  }
-
   const responseHeaders = responseHeadersFromUpstream(response, headRangeFallback)
   const status = headRangeFallback && response.status === 206 ? 200 : response.status
   const body = method === 'HEAD' || status === 304 ? null : response.body
@@ -294,20 +295,27 @@ export default {
       return jsonError(405, 'Method not allowed')
     }
     const requestURL = new URL(request.url)
-    const prefix = '/v1/video-content/'
-    if (!requestURL.pathname.startsWith(prefix) || requestURL.search || requestURL.hash) {
-      return jsonError(404, 'Video content not found')
+    const route = [
+      { prefix: '/v1/video-content/', mediaType: 'video' },
+      { prefix: '/v1/image-content/', mediaType: 'image' },
+    ].find((candidate) => requestURL.pathname.startsWith(candidate.prefix))
+    if (!route || requestURL.search || requestURL.hash) {
+      return jsonError(404, 'Media content not found')
     }
-    const token = requestURL.pathname.slice(prefix.length)
+    const token = requestURL.pathname.slice(route.prefix.length)
     if (!token || token.includes('/')) {
-      return jsonError(404, 'Video content not found')
+      return jsonError(404, 'Media content not found')
     }
     try {
       const payload = await decryptVideoToken(token, env.VIDEO_PROXY_KEY_HEX)
-      return await proxyVideo(request, env, payload)
+      const tokenMediaType = payload.m || 'video'
+      if (tokenMediaType !== route.mediaType) {
+        throw new Error('invalid media type')
+      }
+      return await proxyMedia(request, env, payload, route.mediaType)
     } catch (error) {
       const status = error instanceof Error && error.message === 'expired token' ? 410 : 404
-      return jsonError(status, status === 410 ? 'Video link has expired' : 'Video content not found')
+      return jsonError(status, status === 410 ? 'Media link has expired' : 'Media content not found')
     }
   },
 }

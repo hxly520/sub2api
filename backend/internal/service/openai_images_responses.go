@@ -1116,10 +1116,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			return OpenAIUsage{}, 0, nil, refusalErr
 		}
 		// (B) 真空响应：记录上游诊断摘要到 ops（last_event/status/model/body 片段）便于
-		// 排查，并返回 UpstreamFailoverError 触发重试。因实测为「同账号概率性失败」，优先
-		// RetryableOnSameAccount 同账号快速重试（默认 3 次，大概率某次正常出图），用尽后
-		// 由 handler 自然换账号 failover（switchCount 上限保护），既提高成功率又不无谓
-		// 消耗其它账号配额。
+		// 排查，并返回 UpstreamFailoverError。该请求已可能被上游接受并计费，
+		// handler 必须禁止自动重放；RetryableOnSameAccount 仅保留为旧协议诊断字段。
 		setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(body))
 		return OpenAIUsage{}, 0, nil, &UpstreamFailoverError{
 			StatusCode:             http.StatusBadGateway,

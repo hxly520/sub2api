@@ -343,7 +343,6 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 
 	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
 	routingStart := time.Now()
-	sameAccountRetryCount := make(map[int64]int)
 
 	for {
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
@@ -538,24 +537,6 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				if c.Writer.Size() != writerSizeBeforeForward {
 					c.Abort()
 					return
-				}
-				if failoverErr.RetryableOnSameAccount {
-					retryLimit := account.GetPoolModeRetryCount()
-					if sameAccountRetryCount[account.ID] < retryLimit {
-						sameAccountRetryCount[account.ID]++
-						reqLog.Warn("openai.videos.pool_mode_same_account_retry",
-							zap.Int64("account_id", account.ID),
-							zap.Int("upstream_status", failoverErr.StatusCode),
-							zap.Int("retry_limit", retryLimit),
-							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-						)
-						select {
-						case <-requestCtx.Done():
-							return
-						case <-time.After(sameAccountRetryDelay):
-						}
-						continue
-					}
 				}
 				// Once a media request has been dispatched, switching accounts can
 				// create a second long-running task if the first upstream accepted it

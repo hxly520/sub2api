@@ -817,7 +817,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	imageCount := parsed.N
 	var firstTokenMs *int
 	if parsed.Stream && isEventStreamResponse(resp.Header) {
-		streamUsage, streamCount, streamSizes, ttft, err := s.handleOpenAIImagesStreamingResponse(resp, c, startTime)
+		streamUsage, streamCount, streamSizes, ttft, err := s.handleOpenAIImagesStreamingResponse(upstreamCtx, resp, c, startTime)
 		if err != nil {
 			if streamCount > 0 {
 				return &OpenAIForwardResult{
@@ -856,16 +856,27 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			ImageOutputSizes: imageOutputSizes,
 		}, nil
 	} else {
-		nonStreamUsage, nonStreamCount, nonStreamSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(resp, c, !parsed.Async)
+		nonStreamUsage, nonStreamCount, nonStreamSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(resp, c, false)
 		if err != nil {
 			return nil, err
 		}
-		usage = nonStreamUsage
-		if parsed.Async {
-			imageCount = nonStreamCount
-		} else if nonStreamCount > 0 {
-			imageCount = nonStreamCount
+		PrepareOpenAIImageClientResponseHeaders(c.Writer.Header())
+		c.Writer.Header().Del("Content-Length")
+		c.Writer.Header().Del("Content-Encoding")
+		if !parsed.Async {
+			responseBody, err = s.PrepareOpenAIImageClientResponseBody(upstreamCtx, responseBody)
+			if err != nil {
+				return nil, err
+			}
+			nonStreamCount = extractOpenAIImageCountFromJSONBytes(responseBody)
+			nonStreamSizes = collectOpenAIResponseImageOutputSizesFromJSONBytes(responseBody)
+			if nonStreamCount == 0 {
+				return nil, fmt.Errorf("upstream image response did not contain an image")
+			}
+			c.Data(resp.StatusCode, responseContentType, responseBody)
 		}
+		usage = nonStreamUsage
+		imageCount = nonStreamCount
 		mediaStatus := extractOpenAIImageTaskStatus(responseBody)
 		if mediaStatus == "" && nonStreamCount > 0 {
 			mediaStatus = MediaGenerationStatusCompleted
@@ -1081,11 +1092,15 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http
 }
 
 func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	startTime time.Time,
 ) (OpenAIUsage, int, []string, *int, error) {
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	PrepareOpenAIImageClientResponseHeaders(c.Writer.Header())
+	c.Writer.Header().Del("Content-Length")
+	c.Writer.Header().Del("Content-Encoding")
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "text/event-stream"
@@ -1122,10 +1137,18 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		sseData.Flush(processSSEData)
 	}
 
-	processLine := func(line []byte) {
+	processLine := func(line []byte) error {
 		if len(line) == 0 {
-			return
+			return nil
 		}
+		safeLine, err := s.PrepareOpenAIImageClientStreamLine(ctx, line)
+		if err != nil {
+			if !clientDisconnected {
+				_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody("Image result delivery failed"))
+			}
+			return err
+		}
+		line = safeLine
 		if firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
@@ -1143,7 +1166,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		trimmedLine := strings.TrimRight(string(line), "\r\n")
 		if _, ok := extractOpenAISSEDataLine(trimmedLine); ok || strings.TrimSpace(trimmedLine) == "" {
 			sseData.AddLine(trimmedLine, processSSEData)
-			return
+			return nil
 		}
 		if !seenSSEData && !fallbackTooLarge {
 			fallbackBytes += int64(len(line))
@@ -1154,6 +1177,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 				fallbackBody.Reset()
 			}
 		}
+		return nil
 	}
 
 	finalizeFallbackBody := func() {
@@ -1174,7 +1198,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		reader := bufio.NewReader(resp.Body)
 		for {
 			line, err := reader.ReadBytes('\n')
-			processLine(line)
+			if processErr := processLine(line); processErr != nil {
+				return usage, 0, nil, firstTokenMs, processErr
+			}
 			if err == io.EOF {
 				break
 			}
@@ -1258,7 +1284,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 				flushSSEEvent()
 				return usage, imageCounter.Count(), imageCounter.Sizes(), firstTokenMs, ev.err
 			}
-			processLine(ev.line)
+			if processErr := processLine(ev.line); processErr != nil {
+				return usage, 0, nil, firstTokenMs, processErr
+			}
 		case <-intervalCh:
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
 			if time.Since(lastRead) < streamInterval {

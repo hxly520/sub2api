@@ -156,6 +156,36 @@ func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorSkips429AndClientStatus(
 	}
 }
 
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorSkipsPoolAndFirstResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		err     *UpstreamFailoverError
+	}{
+		{
+			name: "pool mode server error",
+			account: &Account{
+				ID: 4951, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"pool_mode": true},
+			},
+			err: &UpstreamFailoverError{StatusCode: http.StatusBadGateway},
+		},
+		{
+			name:    "first response timeout",
+			account: &Account{ID: 4952, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			err:     &UpstreamFailoverError{StatusCode: http.StatusGatewayTimeout, FirstResponseTimeout: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &OpenAIGatewayService{}
+			require.False(t, svc.MaybeBlockOpenAIAccountAfterFailoverError(tt.account, tt.err))
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(tt.account))
+		})
+	}
+}
+
 func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorBlocksStreamRead(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 50, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -164,6 +194,19 @@ func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorBlocksStreamRead(t *testi
 
 	require.True(t, blocked)
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsPoolMode(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		ID: 5051, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"pool_mode": true},
+	}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF))
+
+	require.False(t, blocked)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsClientCancel(t *testing.T) {

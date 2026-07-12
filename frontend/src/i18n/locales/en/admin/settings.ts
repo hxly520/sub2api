@@ -1128,10 +1128,10 @@ export default {
         sessionStickyWeight: 'session_hash sticky'
       },
       openaiFirstResponse: {
-        title: 'Streaming first-output failover',
-        description: 'Switches to another eligible account before output is committed when the first useful event times out.',
-        timeout: 'First-output timeout (ms)',
-        timeoutHint: 'Range: 500-60000. Recommended: 3000-8000.'
+        title: 'Immediate streaming first response',
+        description: 'Flushes upstream stream events earlier without cancelling, replaying, or switching accounts while waiting.',
+        timeout: 'Compatibility setting (ms)',
+        timeoutHint: 'Safe mode no longer uses this value to cancel upstream requests.'
       },
       usageRecords: {
         title: 'Usage Records',

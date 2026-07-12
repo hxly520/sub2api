@@ -202,10 +202,14 @@ func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterFailoverError(account
 	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
 		return false
 	}
+	// Pool-mode endpoints already schedule their own upstream account pool. A
+	// local transient block removes the whole pool and can exhaust the group.
+	// Slow first output is also not evidence that an account is unhealthy.
+	if account.IsPoolMode() || failoverErr.FirstResponseTimeout {
+		return false
+	}
 	reason := ""
-	if failoverErr.FirstResponseTimeout {
-		reason = "first_response_timeout"
-	} else if openAIStatusShouldRuntimeBlockAfterFailure(failoverErr.StatusCode) {
+	if openAIStatusShouldRuntimeBlockAfterFailure(failoverErr.StatusCode) {
 		if text := http.StatusText(failoverErr.StatusCode); text != "" {
 			reason = "upstream_status_" + text
 		} else {
@@ -221,6 +225,9 @@ func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterFailoverError(account
 
 func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterForwardError(account *Account, err error) bool {
 	if s == nil || account == nil || err == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	if account.IsPoolMode() {
 		return false
 	}
 	reason := openAIForwardErrorRuntimeBlockReason(err)

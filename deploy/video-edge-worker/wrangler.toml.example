@@ -5,7 +5,8 @@ workers_dev = false
 
 # Replace this example route only when the DNS/custom domain is ready.
 routes = [
-  { pattern = "image.52token.org/v1/video-content/*", zone_name = "52token.org" }
+  { pattern = "video.52token.org/v1/video-content/*", zone_name = "52token.org" },
+  { pattern = "video.52token.org/v1/image-content/*", zone_name = "52token.org" }
 ]
 
 [vars]

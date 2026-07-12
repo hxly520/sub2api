@@ -1338,8 +1338,9 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 			Concurrency: 1,
 			Priority:    1,
 			Credentials: map[string]any{
-				"api_key":  "sk-first",
-				"base_url": firstUpstream.URL,
+				"api_key":   "sk-first",
+				"base_url":  firstUpstream.URL,
+				"pool_mode": true,
 			},
 			Extra: map[string]any{
 				"openai_apikey_responses_websockets_v2_enabled": true,
@@ -1356,8 +1357,9 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 			Concurrency: 1,
 			Priority:    2,
 			Credentials: map[string]any{
-				"api_key":  "sk-second",
-				"base_url": secondUpstream.URL,
+				"api_key":   "sk-second",
+				"base_url":  secondUpstream.URL,
+				"pool_mode": true,
 			},
 			Extra: map[string]any{
 				"openai_apikey_responses_websockets_v2_enabled": true,
@@ -1472,7 +1474,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("等待第二个上游收到重放首帧超时")
 	}
-	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
+	require.Empty(t, accountRepo.rateLimitedIDs, "pool-mode 429 must not disable the whole upstream pool")
 }
 
 func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSUsageLogCase) openAIResponsesWSUsageLogResult {

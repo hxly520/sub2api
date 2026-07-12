@@ -786,8 +786,8 @@ type GatewayConfig struct {
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
-	// VideoProxy: 视频结果交付策略。origin 保持源站流式代理；edge 使用
-	// 自有边缘域名和加密令牌，让视频字节不经过 sub2api 服务器。
+	// VideoProxy: 媒体结果交付策略。origin 保持视频源站流式代理；edge 使用
+	// 自有边缘域名和加密令牌，让图片/视频上游地址不暴露给客户端。
 	VideoProxy VideoProxyConfig `mapstructure:"video_proxy"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
@@ -1053,8 +1053,9 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
 }
 
-// GatewayOpenAIFirstResponseConfig controls failover before any semantic
-// response bytes have been committed to the downstream client.
+// GatewayOpenAIFirstResponseConfig controls low-latency stream flushing. The
+// timeout fields remain for configuration compatibility but never authorize
+// replaying a request that may already have reached upstream billing.
 type GatewayOpenAIFirstResponseConfig struct {
 	Enabled      bool `mapstructure:"enabled"`
 	TimeoutMS    int  `mapstructure:"timeout_ms"`
@@ -1500,9 +1501,6 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 0.5
-	}
-	if !cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled && !viper.IsSet("gateway.openai_scheduler.sticky_escape_enabled") {
-		cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled = true
 	}
 	if cfg.Gateway.OpenAIFirstResponse.TimeoutMS == 0 {
 		cfg.Gateway.OpenAIFirstResponse.TimeoutMS = 5000

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -23,56 +22,20 @@ func (h *OpenAIGatewayHandler) openAIFirstResponseRuntimeConfig(ctx context.Cont
 func (h *OpenAIGatewayHandler) openAIFirstResponseForwardContext(
 	c *gin.Context,
 	reqLog *zap.Logger,
-	groupID *int64,
-	requestedModel string,
-	selectedAccountID int64,
-	failedAccountIDs map[int64]struct{},
-	switchCount int,
-	maxAccountSwitches int,
 	stream bool,
-	requiredTransport service.OpenAIUpstreamTransport,
-	requiredCapability service.OpenAIEndpointCapability,
-	requireCompact bool,
-	platform string,
 ) context.Context {
 	ctx := context.Background()
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
 	}
 	runtimeCfg := h.openAIFirstResponseRuntimeConfig(ctx)
-	timeout := time.Duration(runtimeCfg.TimeoutMS) * time.Millisecond
-	if !runtimeCfg.Enabled || timeout <= 0 || !stream || h == nil || h.gatewayService == nil {
+	if !runtimeCfg.Enabled || !stream || h == nil || h.gatewayService == nil {
 		return ctx
-	}
-
-	hasAlternative, err := h.gatewayService.HasOpenAIAlternativeAccountForCapability(
-		ctx,
-		groupID,
-		requestedModel,
-		selectedAccountID,
-		failedAccountIDs,
-		requiredTransport,
-		requiredCapability,
-		requireCompact,
-		platform,
-	)
-	if err != nil {
-		if reqLog != nil {
-			reqLog.Debug("openai.first_response_candidate_count_failed", zap.Error(err))
-		}
-		return ctx
-	}
-	if !hasAlternative || maxAccountSwitches <= 0 || switchCount >= maxAccountSwitches || switchCount+1 >= runtimeCfg.MaxAttempts {
-		return service.WithOpenAIFirstResponseEarlyFlush(ctx)
 	}
 	if reqLog != nil {
-		reqLog.Debug("openai.first_response_timeout_enabled",
-			zap.Duration("timeout", timeout),
-			zap.Int("switch_count", switchCount),
-			zap.Int("max_switches", maxAccountSwitches),
-		)
+		reqLog.Debug("openai.first_response_early_flush_enabled")
 	}
-	return service.WithOpenAIFirstResponseTimeout(ctx, timeout)
+	return service.WithOpenAIFirstResponseEarlyFlush(ctx)
 }
 
 func (h *OpenAIGatewayHandler) reportOpenAIAccountFailoverScheduleResult(

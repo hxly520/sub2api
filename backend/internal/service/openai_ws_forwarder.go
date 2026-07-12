@@ -143,6 +143,10 @@ func isOpenAIWSIngressTurnRetryable(err error) bool {
 	}
 }
 
+func openAIWSIngressAllowsAutomaticReplay(account *Account) bool {
+	return account == nil || !account.IsPoolMode()
+}
+
 func openAIWSIngressTurnRetryReason(err error) string {
 	var turnErr *openAIWSIngressTurnError
 	if !errors.As(err, &turnErr) || turnErr == nil {

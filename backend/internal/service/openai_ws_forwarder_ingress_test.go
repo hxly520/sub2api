@@ -62,6 +62,23 @@ func TestIsOpenAIWSIngressPreviousResponseNotFound(t *testing.T) {
 	))
 }
 
+func TestOpenAIWSIngressAllowsAutomaticReplay(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, openAIWSIngressAllowsAutomaticReplay(nil))
+	require.True(t, openAIWSIngressAllowsAutomaticReplay(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}))
+	require.False(t, openAIWSIngressAllowsAutomaticReplay(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode": true,
+		},
+	}))
+}
+
 func TestOpenAIWSIngressPreviousResponseRecoveryEnabled(t *testing.T) {
 	t.Parallel()
 

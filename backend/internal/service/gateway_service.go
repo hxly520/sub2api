@@ -574,6 +574,26 @@ func (e *UpstreamFailoverError) Error() string {
 	return fmt.Sprintf("upstream error: %d (failover)", e.StatusCode)
 }
 
+// CanSafelyReplayRequest is deliberately conservative. A timeout, transport
+// failure, 5xx response, or interrupted stream may have reached generation and
+// billing upstream even when no downstream bytes were written. Only explicit
+// rejection statuses are eligible for a tightly bounded automatic failover.
+func (e *UpstreamFailoverError) CanSafelyReplayRequest() bool {
+	if e == nil || e.FirstResponseTimeout {
+		return false
+	}
+	switch e.StatusCode {
+	case http.StatusUnauthorized,
+		http.StatusPaymentRequired,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusTooManyRequests:
+		return true
+	default:
+		return false
+	}
+}
+
 // sseStreamErrorEventError 表示上游 SSE 流体内出现 event:error 帧。
 // RawData 是该事件 data: 行的原始 JSON 字符串
 // （Anthropic 标准结构 {"type":"error","error":{"type":"...","message":"..."}}）。

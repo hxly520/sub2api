@@ -1,0 +1,137 @@
+# Dedicated image/video API origin for video.52token.org.
+# Cloudflare Worker routes intercept /v1/video-content/* and
+# /v1/image-content/* before these requests reach Nginx.
+
+server {
+    listen 80;
+    server_name video.52token.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name video.52token.org;
+    underscores_in_headers on;
+
+    ssl_certificate     /etc/nginx/cert/52token.org.pem;
+    ssl_certificate_key /etc/nginx/cert/52token.org.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Image edits may upload large source files; stream them without a gateway size cap.
+    client_max_body_size 0;
+    proxy_connect_timeout 75s;
+    proxy_send_timeout 3600s;
+    proxy_read_timeout 3600s;
+    send_timeout 3600s;
+
+    set $cors_origin "";
+    if ($http_origin = "https://image.52token.org") {
+        set $cors_origin $http_origin;
+    }
+    add_header Access-Control-Allow-Origin $cors_origin always;
+    add_header Access-Control-Expose-Headers "X-Request-Id, X-Client-Request-Id, Request-Id, Content-Type, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified" always;
+    add_header Vary Origin always;
+
+    # Image create endpoints (OpenAI-compatible, with or without /v1).
+    location ~ ^/(v1/)?images/(generations|edits)$ {
+        limit_except POST OPTIONS { deny all; }
+        if ($request_method = OPTIONS) { return 204; }
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        gzip off;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Access-Control-Allow-Methods "POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, X-API-Key, X-Goog-API-Key, Idempotency-Key, X-Idempotency-Key, X-Session-ID, X-Sub2API-Group-ID" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header Cache-Control "no-store" always;
+        add_header Vary Origin always;
+    }
+
+    # Image asynchronous status endpoints. Only one opaque task-id segment is allowed.
+    location ~ ^/(v1/)?images/(generations|edits)/[^/]+$ {
+        limit_except GET OPTIONS { deny all; }
+        if ($request_method = OPTIONS) { return 204; }
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, X-API-Key, X-Goog-API-Key, X-Session-ID, X-Sub2API-Group-ID" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header Cache-Control "no-store" always;
+        add_header Vary Origin always;
+    }
+
+    # Video creation endpoints. Status-like suffixes are not accepted here.
+    location ~ ^/(v1/)?(videos|videos/generations|video/generations|contents/generations/tasks)$ {
+        limit_except POST OPTIONS { deny all; }
+        if ($request_method = OPTIONS) { return 204; }
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        gzip off;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Access-Control-Allow-Methods "POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, Range, If-Range, If-None-Match, If-Modified-Since, X-API-Key, X-Goog-API-Key, Idempotency-Key, X-Idempotency-Key, X-Session-ID, X-Sub2API-Group-ID" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header Cache-Control "no-store" always;
+        add_header Vary Origin always;
+    }
+
+    # Video status/content endpoints. Only one opaque task-id and optional
+    # /content suffix are allowed; plural /videos/generations has no GET route.
+    location ~ ^/(v1/)?(videos/[^/]+|video/generations/[^/]+|contents/generations/tasks/[^/]+)(/content)?$ {
+        limit_except GET OPTIONS { deny all; }
+        if ($request_method = OPTIONS) { return 204; }
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, Range, If-Range, If-None-Match, If-Modified-Since, X-API-Key, X-Goog-API-Key, X-Session-ID, X-Sub2API-Group-ID" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header Cache-Control "no-store" always;
+        add_header Vary Origin always;
+    }
+
+    # Edge media paths must never fall back to the Sub2API origin.
+    location ^~ /v1/video-content/ { return 404; }
+    location ^~ /v1/image-content/ { return 404; }
+
+    # No platform UI, admin, payment, text generation, model list or other API.
+    location / { return 404; }
+}

@@ -4173,25 +4173,6 @@
                   </div>
                   <Toggle v-model="form.openai_first_response_enabled" />
                 </div>
-                <label
-                  v-if="form.openai_first_response_enabled"
-                  class="mt-4 block max-w-xs"
-                >
-                  <span class="text-xs font-medium text-gray-600 dark:text-gray-400">
-                    {{ t("admin.settings.openaiFirstResponse.timeout") }}
-                  </span>
-                  <input
-                    v-model.number="form.openai_first_response_timeout_ms"
-                    class="input mt-1"
-                    type="number"
-                    min="500"
-                    max="60000"
-                    step="100"
-                  />
-                  <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.openaiFirstResponse.timeoutHint") }}
-                  </span>
-                </label>
               </div>
             </div>
           </div>

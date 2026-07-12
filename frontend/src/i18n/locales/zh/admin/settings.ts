@@ -1123,10 +1123,10 @@ export default {
         sessionStickyWeight: 'session_hash 粘性'
       },
       openaiFirstResponse: {
-        title: '流式首字超时切号',
-        description: '首个有效输出超时且同组存在可用账号时，在响应写出前自动切换账号。',
-        timeout: '首字等待上限（毫秒）',
-        timeoutHint: '范围 500-60000，建议 3000-8000。'
+        title: '流式首响应即时刷新',
+        description: '更早向客户端刷新上游流式事件；不会因首字等待取消、重发或切换账号。',
+        timeout: '兼容配置（毫秒）',
+        timeoutHint: '安全模式不再使用该值取消上游请求。'
       },
       usageRecords: {
         title: '使用记录',

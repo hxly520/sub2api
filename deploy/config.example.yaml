@@ -332,25 +332,26 @@ gateway:
       quota_headroom: 0.0
   # OpenAI 高级调度器补充配置
   openai_scheduler:
-    # 是否允许 session_hash sticky 在账号健康度恶化时临时逃逸；false 可一键回退旧行为
-    sticky_escape_enabled: true
+    # 默认保持旧版硬粘性以提高缓存率；仅直连账号需要按历史表现逃逸时才显式开启。
+    # pool_mode 上游池即使开启也会继续等待当前粘性账号，不做本地切换。
+    sticky_escape_enabled: false
     # TTFT EWMA 超过该阈值（毫秒）时跳过 sticky，默认 15s，避免轻微抖动就逃逸
     sticky_escape_ttft_ms: 15000
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
-  # 流式文本请求首事件超时切号。仅在有同组替代账号、且尚未向客户端写出语义字节时生效。
+  # 流式文本请求首事件即时刷新。只优化下游首响应，不取消或重放上游请求。
   openai_first_response:
     # 默认关闭；可在后台系统设置动态开启。
     enabled: false
-    # 单个上游账号等待首个有效 SSE 事件的上限（毫秒）。
+    # 兼容旧配置保留，当前安全模式不再按该时限取消上游请求。
     timeout_ms: 5000
-    # 包含首次账号在内的最大尝试数；2 表示最多切换一次。
+    # 兼容旧配置保留，当前安全模式不会因首响应等待自动增加尝试。
     max_attempts: 2
-    # 是否把首事件超时计入账号错误率；false 时仍记录慢 TTFT 并短暂摘除故障账号。
+    # 兼容旧配置保留；慢首响应不计错，也不摘除账号。
     count_as_error: false
-  # 视频成片交付。origin 由本服务转发字节；edge 只返回自有边缘域名的加密短期 URL。
+  # 图片/视频媒体交付。origin 兼容旧视频源站代理；edge 返回自有边缘域名的加密短期 URL。
   video_proxy:
-    # 部署并验证 deploy/video-edge-worker 后再切换为 edge。
+    # 部署并验证 deploy/video-edge-worker 的图片/视频路由后再切换为 edge。
     mode: "origin"
     # edge 模式必须为自有 HTTPS Worker/CDN 地址，不带 query 或 fragment。
     edge_base_url: ""

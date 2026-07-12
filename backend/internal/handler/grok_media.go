@@ -155,7 +155,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
 	failedAccountIDs := make(map[int64]struct{})
-	sameAccountRetryCount := make(map[int64]int)
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
@@ -253,23 +253,15 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				if failoverErr.RetryableOnSameAccount {
-					retryLimit := account.GetPoolModeRetryCount()
-					if sameAccountRetryCount[account.ID] < retryLimit {
-						sameAccountRetryCount[account.ID]++
-						reqLog.Warn("grok_media.pool_mode_same_account_retry",
-							zap.Int64("account_id", account.ID),
-							zap.Int("upstream_status", failoverErr.StatusCode),
-							zap.Int("retry_limit", retryLimit),
-							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-						)
-						select {
-						case <-requestCtx.Done():
-							return
-						case <-time.After(sameAccountRetryDelay):
-						}
-						continue
-					}
+				if !retryBudget.tryConsume(account, failoverErr) {
+					reqLog.Warn("grok_media.automatic_replay_suppressed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Bool("pool_mode", account.IsPoolMode()),
+						zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+					)
+					h.handleFailoverExhausted(c, failoverErr, false)
+					return
 				}
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}

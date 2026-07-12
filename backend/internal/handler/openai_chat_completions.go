@@ -131,7 +131,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	sameAccountRetryCount := make(map[int64]int)
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 
 	for {
@@ -203,11 +203,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			forwardCtx := h.openAIFirstResponseForwardContext(
-				c, reqLog, apiKey.GroupID, reqModel, account.ID, failedAccountIDs, switchCount,
-				maxAccountSwitches, reqStream, service.OpenAIUpstreamTransportAny,
-				service.OpenAIEndpointCapabilityChatCompletions, false, requestPlatform,
-			)
+			forwardCtx := h.openAIFirstResponseForwardContext(c, reqLog, reqStream)
 			return h.gatewayService.ForwardAsChatCompletions(forwardCtx, c, account, forwardBody, promptCacheKey, "")
 		}()
 		cyberBlockKeyChat := ""
@@ -242,24 +238,15 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
-					// Pool mode: retry on the same account
-					if failoverErr.RetryableOnSameAccount && !failoverErr.FirstResponseTimeout {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
-							sameAccountRetryCount[account.ID]++
-							reqLog.Warn("openai_chat_completions.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", retryLimit),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(sameAccountRetryDelay):
-							}
-							continue
-						}
+					if !retryBudget.tryConsume(account, failoverErr) {
+						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
+						reqLog.Warn("openai_chat_completions.automatic_replay_suppressed",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+						)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
 					h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 					h.gatewayService.RecordOpenAIAccountSwitch()

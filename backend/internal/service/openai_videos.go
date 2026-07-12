@@ -43,6 +43,7 @@ type openAIVideoEdgeTokenPayload struct {
 	URL       string            `json:"u"`
 	ExpiresAt int64             `json:"e"`
 	Headers   map[string]string `json:"h,omitempty"`
+	MediaType string            `json:"m,omitempty"`
 }
 
 type OpenAIVideoRequest struct {
@@ -1562,9 +1563,30 @@ func (s *OpenAIGatewayService) openAIVideoClientContentURL(ctx context.Context, 
 	if validatedURL == "" {
 		return "", nil
 	}
-	parsedUpstreamURL, err := url.Parse(validatedURL)
-	if err != nil || parsedUpstreamURL.Hostname() == "" {
-		return "", fmt.Errorf("invalid video content url")
+	return s.openAIMediaEdgeProxyURL(ctx, "video", validatedURL, edgeHeaders, false)
+}
+
+func (s *OpenAIGatewayService) openAIMediaEdgeProxyURL(
+	ctx context.Context,
+	mediaType string,
+	upstreamURL string,
+	headers map[string]string,
+	allowInsecureHTTP bool,
+) (string, error) {
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	if mediaType != "video" && mediaType != "image" {
+		return "", fmt.Errorf("media edge proxy is unavailable")
+	}
+	upstreamURL = strings.TrimSpace(upstreamURL)
+	if len(upstreamURL) == 0 || len(upstreamURL) > 8192 || strings.ContainsAny(upstreamURL, "\r\n") {
+		return "", fmt.Errorf("invalid %s content url", mediaType)
+	}
+	if _, err := urlvalidator.ValidateHTTPURL(upstreamURL, allowInsecureHTTP, urlvalidator.ValidationOptions{}); err != nil {
+		return "", fmt.Errorf("invalid %s content url", mediaType)
+	}
+	parsedUpstreamURL, err := url.Parse(upstreamURL)
+	if err != nil || parsedUpstreamURL.Hostname() == "" || parsedUpstreamURL.User != nil || parsedUpstreamURL.Fragment != "" {
+		return "", fmt.Errorf("invalid %s content url", mediaType)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1572,42 +1594,43 @@ func (s *OpenAIGatewayService) openAIVideoClientContentURL(ctx context.Context, 
 	resolveCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if _, err := urlvalidator.ResolvePublicIPs(resolveCtx, parsedUpstreamURL.Hostname()); err != nil {
-		return "", fmt.Errorf("invalid video content url")
+		return "", fmt.Errorf("invalid %s content url", mediaType)
 	}
 	cfg := s.cfg.Gateway.VideoProxy
 	key, err := hex.DecodeString(strings.TrimSpace(cfg.EncryptionKey))
 	if err != nil || len(key) != 32 {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
 	payload, err := json.Marshal(openAIVideoEdgeTokenPayload{
 		Version:   1,
-		URL:       validatedURL,
+		URL:       upstreamURL,
 		ExpiresAt: time.Now().UTC().Add(time.Duration(cfg.TokenTTLSeconds) * time.Second).Unix(),
-		Headers:   edgeHeaders,
+		Headers:   headers,
+		MediaType: mediaType,
 	})
 	if err != nil {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
 	sealed := gcm.Seal(nonce, nonce, payload, []byte(openAIVideoEdgeTokenAAD))
 	token := base64.RawURLEncoding.EncodeToString(sealed)
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.EdgeBaseURL), "/")
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("video edge proxy is unavailable")
+		return "", fmt.Errorf("media edge proxy is unavailable")
 	}
-	return baseURL + "/v1/video-content/" + token, nil
+	return baseURL + "/v1/" + mediaType + "-content/" + token, nil
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIVideoEdgeTarget(ctx context.Context, upstreamResultURL string, task *MediaGenerationTask) (string, map[string]string, error) {

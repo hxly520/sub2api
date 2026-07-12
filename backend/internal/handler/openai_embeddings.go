@@ -100,6 +100,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	}
 
 	failedAccountIDs := make(map[int64]struct{})
+	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
@@ -190,6 +191,17 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					return
 				}
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+				if !retryBudget.tryConsume(account, failoverErr) {
+					h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
+					reqLog.Warn("openai_embeddings.automatic_replay_suppressed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+					)
+					h.handleFailoverExhausted(c, failoverErr, false)
+					return
+				}
+				h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr

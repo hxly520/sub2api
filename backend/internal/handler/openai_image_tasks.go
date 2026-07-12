@@ -76,7 +76,9 @@ func (h *OpenAIGatewayHandler) prepareOpenAIImageAsyncCreation(
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Image task is unavailable")
 			return true, false
 		}
-		writeOpenAIImageStoredTaskResponse(c, task)
+		if err := writeOpenAIImageStoredTaskResponse(c, h, task); err != nil {
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Image result delivery failed")
+		}
 		return true, false
 	}
 
@@ -250,7 +252,6 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 
-	sameAccountRetries := 0
 	for {
 		accountRelease, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, new(bool), reqLog)
 		if !acquired {
@@ -285,15 +286,6 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 					c.Abort()
 					return
 				}
-				if failoverErr.RetryableOnSameAccount && sameAccountRetries < account.GetPoolModeRetryCount() {
-					sameAccountRetries++
-					select {
-					case <-requestCtx.Done():
-						return
-					case <-time.After(sameAccountRetryDelay):
-					}
-					continue
-				}
 				// Do not switch accounts after dispatch: an accepted async task may
 				// otherwise be created and billed twice on different upstreams.
 				h.handleFailoverExhausted(c, failoverErr, false)
@@ -316,8 +308,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		if status == "" || status == service.MediaGenerationStatusCreating {
 			status = service.MediaGenerationStatusPending
 		}
-		publicBody := service.RewriteOpenAIImageClientResponseBody(result.ResponseBody, state.publicTaskID)
-		result.ResponseBody = publicBody
+		rawPublicBody := service.RewriteOpenAIImageClientResponseBody(result.ResponseBody, state.publicTaskID)
 		result.MediaStatus = status
 		result.ImageSize = parsed.SizeTier
 		result.ImageInputSize = billingInputSize
@@ -325,7 +316,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		outcome.UpstreamTaskID = strings.TrimSpace(result.ResponseID)
 		outcome.ResponseStatus = result.ResponseStatus
 		outcome.ResponseContentType = result.ResponseContentType
-		outcome.ResponseBody = string(publicBody)
+		outcome.ResponseBody = string(rawPublicBody)
 		outcome.Status = status
 		if err := persistOpenAIImageTaskDetached(requestCtx, h, &outcome); err != nil {
 			reqLog.Warn("openai.images.store_task_outcome_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
@@ -335,6 +326,13 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		if err := h.gatewayService.BindStickySession(requestCtx, apiKey.GroupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.images.bind_task_account_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
 		}
+		clientBody, err := h.gatewayService.PrepareOpenAIImageClientResponseBody(requestCtx, rawPublicBody)
+		if err != nil {
+			reqLog.Warn("openai.images.prepare_client_response_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Image result delivery failed")
+			return
+		}
+		result.ResponseBody = clientBody
 		finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, &outcome)
 		writeOpenAIImageForwardResponse(c, result)
 		return
@@ -402,8 +400,15 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 
 	if service.IsMediaGenerationSuccessStatus(task.Status) || service.IsMediaGenerationFailureStatus(task.Status) {
 		storedResult := service.OpenAIImageForwardResultFromStoredTask(task)
+		clientBody, deliveryErr := h.gatewayService.PrepareOpenAIImageClientResponseBody(c.Request.Context(), storedResult.ResponseBody)
+		if deliveryErr != nil {
+			reqLog.Warn("openai.images.prepare_stored_client_response_failed", zap.String("request_id", publicTaskID), zap.Error(deliveryErr))
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Image result delivery failed")
+			return
+		}
+		storedResult.ResponseBody = clientBody
 		finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, storedResult, task)
-		writeOpenAIImageStoredTaskResponse(c, task)
+		writeOpenAIImageForwardResponse(c, storedResult)
 		return
 	}
 
@@ -450,8 +455,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 		return
 	}
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
-	publicBody := service.RewriteOpenAIImageClientResponseBody(result.ResponseBody, publicTaskID)
-	result.ResponseBody = publicBody
+	rawPublicBody := service.RewriteOpenAIImageClientResponseBody(result.ResponseBody, publicTaskID)
 	result.MediaStatus = status
 	result.ImageSize = task.SizeTier
 	result.ImageInputSize = task.Resolution
@@ -461,7 +465,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 		publicTaskID,
 		result.ResponseStatus,
 		result.ResponseContentType,
-		publicBody,
+		rawPublicBody,
 		"",
 		status,
 		0,
@@ -476,6 +480,13 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Image task update verification failed")
 		return
 	}
+	clientBody, deliveryErr := h.gatewayService.PrepareOpenAIImageClientResponseBody(c.Request.Context(), rawPublicBody)
+	if deliveryErr != nil {
+		reqLog.Warn("openai.images.prepare_client_response_failed", zap.String("request_id", publicTaskID), zap.Error(deliveryErr))
+		h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Image result delivery failed")
+		return
+	}
+	result.ResponseBody = clientBody
 	finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, freshTask)
 	writeOpenAIImageForwardResponse(c, result)
 }
@@ -657,16 +668,28 @@ func writeOpenAIImageForwardResponse(c *gin.Context, result *service.OpenAIForwa
 	if contentType == "" {
 		contentType = "application/json"
 	}
+	service.PrepareOpenAIImageClientResponseHeaders(c.Writer.Header())
+	c.Writer.Header().Del("Content-Length")
+	c.Writer.Header().Del("Content-Encoding")
 	c.Data(statusCode, contentType, result.ResponseBody)
 }
 
-func writeOpenAIImageStoredTaskResponse(c *gin.Context, task *service.MediaGenerationTask) {
+func writeOpenAIImageStoredTaskResponse(c *gin.Context, h *OpenAIGatewayHandler, task *service.MediaGenerationTask) error {
 	result := service.OpenAIImageForwardResultFromStoredTask(task)
 	if result == nil {
-		return
+		return errors.New("image task response is unavailable")
 	}
 	result.ResponseBody = service.RewriteOpenAIImageClientResponseBody(result.ResponseBody, task.ClientTaskID())
+	if h == nil || h.gatewayService == nil {
+		return errors.New("image task service is unavailable")
+	}
+	clientBody, err := h.gatewayService.PrepareOpenAIImageClientResponseBody(c.Request.Context(), result.ResponseBody)
+	if err != nil {
+		return err
+	}
+	result.ResponseBody = clientBody
 	writeOpenAIImageForwardResponse(c, result)
+	return nil
 }
 
 func openAIImageIdempotencyKey(c *gin.Context) string {
