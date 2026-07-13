@@ -156,6 +156,9 @@ func (s *OpenAIGatewayService) ParseOpenAIVideoRequest(c *gin.Context, body []by
 		if len(body) == 0 {
 			return nil, fmt.Errorf("request body is empty")
 		}
+		if req.ContentType == "" {
+			req.ContentType = "application/json"
+		}
 		if err := parseOpenAIVideoBody(req); err != nil {
 			return nil, err
 		}
@@ -272,10 +275,8 @@ func (r *OpenAIVideoRequest) UseUpstreamTaskIDAtEndpoint(taskID, storedEndpoint 
 	}
 	r.UpstreamRequestID = taskID
 	endpoint := normalizeOpenAIVideoTaskEndpoint(storedEndpoint)
-	if modelEndpoint := normalizeOpenAIVideoTaskEndpoint(OpenAIVideoUpstreamEndpointForModel(r.Model, endpoint)); modelEndpoint != "" {
-		endpoint = modelEndpoint
-	} else if endpoint == "" {
-		endpoint = normalizeOpenAIVideoTaskEndpoint(r.Endpoint)
+	if endpoint == "" {
+		endpoint = OpenAIVideoUpstreamEndpointForModel(r.Model, r.Endpoint)
 	}
 	if endpoint == "" {
 		return fmt.Errorf("upstream video task endpoint is unavailable")
@@ -557,14 +558,12 @@ func normalizeOpenAIVideoDerivedFields(req *OpenAIVideoRequest) {
 }
 
 // OpenAIVideoUpstreamEndpointForModel keeps all supported client path aliases
-// while routing each relay model family through its documented task endpoint.
+// while routing the relay video catalog through the unified task endpoint.
 // It never returns a vendor host, only a path below the configured base URL.
 func OpenAIVideoUpstreamEndpointForModel(model, fallback string) string {
 	lowerModel := strings.ToLower(strings.TrimSpace(model))
 	switch {
-	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"):
-		return openAIVideoGenerationsEndpoint
-	case strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
+	case strings.Contains(lowerModel, "grok") && strings.Contains(lowerModel, "video"), strings.Contains(lowerModel, "seedance"), strings.Contains(lowerModel, "omni-"), strings.Contains(lowerModel, "sora"), strings.Contains(lowerModel, "veo"):
 		return openAIVideosEndpoint
 	default:
 		return strings.TrimSpace(fallback)
@@ -1025,6 +1024,13 @@ func (s *OpenAIGatewayService) buildOpenAIVideoRequest(ctx context.Context, c *g
 		}
 		for _, value := range values {
 			req.Header.Add(key, value)
+		}
+	}
+	if parsed.ContentRequest {
+		for _, header := range []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since"} {
+			if value := strings.TrimSpace(c.GetHeader(header)); value != "" {
+				req.Header.Set(header, value)
+			}
 		}
 	}
 	if parsed.GenerationRequest {
