@@ -126,6 +126,14 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
+	var mediaPricingSnapshot *service.MediaGenerationPricingSnapshot
+	var mediaHold *service.MediaBalanceHoldCommand
+	mediaHoldTransferred := false
+	defer func() {
+		if !mediaHoldTransferred {
+			releaseMediaBalanceHold(h, mediaHold)
+		}
+	}()
 
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
 	if !acquired {
@@ -201,6 +209,70 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	account := selection.Account
 	sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if endpoint.IsGenerationRequest() && h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
+		mappedModel := account.GetMappedModel(requestModel)
+		if strings.TrimSpace(mappedModel) == "" {
+			mappedModel = requestModel
+		}
+		usageFields := service.ChannelUsageFields{
+			OriginalModel:      requestModel,
+			ChannelMappedModel: mappedModel,
+		}
+		var pricingErr error
+		if endpoint == service.GrokMediaEndpointVideosGenerations {
+			mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIVideoPricingSnapshot(
+				requestCtx,
+				apiKey,
+				subject.UserID,
+				requestModel,
+				mappedModel,
+				requestInfo.Resolution,
+				requestInfo.DurationSeconds,
+				1,
+				usageFields,
+			)
+		} else {
+			mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIImagePricingSnapshot(
+				requestCtx,
+				apiKey,
+				subject.UserID,
+				requestModel,
+				mappedModel,
+				requestInfo.SizeTier,
+				requestInfo.N,
+				usageFields,
+			)
+		}
+		if pricingErr != nil {
+			reqLog.Warn("grok_media.capture_pricing_snapshot_failed", zap.Error(pricingErr))
+			h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Media pricing is unavailable")
+			return
+		}
+		if mediaPricingSnapshot != nil {
+			holdAmount := mediaPricingSnapshot.EstimatedCost(requestInfo.N, requestInfo.DurationSeconds)
+			if endpoint == service.GrokMediaEndpointVideosGenerations {
+				holdAmount = mediaPricingSnapshot.EstimatedCost(1, requestInfo.DurationSeconds)
+			}
+			if holdAmount > 0 {
+				mediaHold = newMediaBalanceHoldCommand(
+					apiKey.ID,
+					subject.UserID,
+					service.NewMediaBalanceHoldRequestID(),
+					service.HashMediaGenerationRequestFingerprint(string(endpoint), body),
+					service.HashUsageRequestPayload(body),
+					holdAmount,
+				)
+				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
+					status, code, message, retryAfter := billingErrorDetails(err)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, message)
+					return
+				}
+			}
+		}
+	}
 
 	accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
 	if !accountAcquired {
@@ -254,7 +326,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		return
 	}
 
+	mediaHoldTransferred = mediaHold != nil
 	h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
+	videoGeneration := endpoint == service.GrokMediaEndpointVideosGenerations
+	actualMediaCost := mediaBalanceActualCost(mediaPricingSnapshot, result, requestInfo.N, requestInfo.DurationSeconds, videoGeneration)
+	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
+		reqLog.Warn("grok_media.mark_balance_capture_pending_failed", zap.Error(markErr))
+	}
 	if endpoint == service.GrokMediaEndpointVideosGenerations && strings.TrimSpace(result.ResponseID) != "" {
 		if err := h.gatewayService.BindGrokMediaVideoRequestAccount(requestCtx, apiKey.GroupID, result.ResponseID, account.ID); err != nil {
 			reqLog.Warn("grok_media.bind_video_request_account_failed",
@@ -265,7 +343,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 	}
 	if shouldRecordGrokMediaUsage(endpoint, requestModel) {
-		recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
+		recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID, mediaPricingSnapshot, mediaHold)
 	}
 	reqLog.Debug("grok_media.request_completed", zap.Int64("account_id", account.ID))
 }
@@ -286,6 +364,8 @@ func recordGrokMediaUsage(
 	requestModel string,
 	body []byte,
 	requestID string,
+	mediaPricingSnapshot *service.MediaGenerationPricingSnapshot,
+	mediaHold *service.MediaBalanceHoldCommand,
 ) {
 	userAgent := c.GetHeader("User-Agent")
 	clientIP := ip.GetClientIP(c)
@@ -300,31 +380,38 @@ func recordGrokMediaUsage(
 		OriginalModel:      requestModel,
 		ChannelMappedModel: requestModel,
 	}
-	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             result,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: service.HashUsageRequestPayload(payloadForHash),
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
+	if err := recordMediaUsageWithRetry(func(ctx context.Context) error {
+		return h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+			Result:               result,
+			APIKey:               apiKey,
+			User:                 apiKey.User,
+			Account:              account,
+			Subscription:         subscription,
+			InboundEndpoint:      inboundEndpoint,
+			UpstreamEndpoint:     upstreamEndpoint,
+			UserAgent:            userAgent,
+			IPAddress:            clientIP,
+			RequestPayloadHash:   service.HashUsageRequestPayload(payloadForHash),
+			APIKeyService:        h.apiKeyService,
+			QuotaPlatform:        quotaPlatform,
+			MediaPricingSnapshot: mediaPricingSnapshot,
+			MediaBalanceHoldRequestID: func() string {
+				if mediaHold == nil {
+					return ""
+				}
+				return mediaHold.RequestID
+			}(),
 			ChannelUsageFields: channelUsageFields,
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway.grok_media"),
-				zap.Int64("user_id", subject.UserID),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.Any("group_id", apiKey.GroupID),
-				zap.String("model", requestModel),
-				zap.Int64("account_id", account.ID),
-			).Error("grok_media.record_usage_failed", zap.Error(err))
-			reqLog.Debug("grok_media.record_usage_failed", zap.Error(err))
-		}
-	})
+		})
+	}); err != nil {
+		logger.L().With(
+			zap.String("component", "handler.openai_gateway.grok_media"),
+			zap.Int64("user_id", subject.UserID),
+			zap.Int64("api_key_id", apiKey.ID),
+			zap.Any("group_id", apiKey.GroupID),
+			zap.String("model", requestModel),
+			zap.Int64("account_id", account.ID),
+		).Error("grok_media.record_usage_failed", zap.Error(err))
+		reqLog.Debug("grok_media.record_usage_failed", zap.Error(err))
+	}
 }

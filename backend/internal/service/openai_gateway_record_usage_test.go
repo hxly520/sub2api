@@ -2397,6 +2397,8 @@ func TestCaptureOpenAIVideoPricingSnapshotUsesMappedModelAndVideoMultiplier(t *t
 		"public-video-model",
 		"private-upstream-model",
 		VideoBillingResolution720P,
+		1,
+		1,
 		ChannelUsageFields{
 			OriginalModel:      "public-video-model",
 			ChannelMappedModel: "seedance-2.0-fast-720p",

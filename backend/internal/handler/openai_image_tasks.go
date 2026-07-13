@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,6 +151,14 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Image task initialization failed")
 		return
 	}
+	var mediaPricingSnapshot *service.MediaGenerationPricingSnapshot
+	var mediaHold *service.MediaBalanceHoldCommand
+	mediaHoldTransferred := false
+	defer func() {
+		if !mediaHoldTransferred {
+			releaseMediaBalanceHold(h, mediaHold)
+		}
+	}()
 	requestModel := strings.TrimSpace(parsed.Model)
 	sessionHash := service.OpenAIImageTaskSessionHash(state.publicTaskID)
 	if state.resumedTask != nil && state.resumedTask.AccountID > 0 {
@@ -208,6 +217,50 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	if billingInputSize == "" || strings.Contains(billingInputSize, ":") || strings.EqualFold(billingInputSize, "auto") {
 		billingInputSize = parsed.SizeTier
 	}
+	if state.resumedTask != nil {
+		mediaPricingSnapshot = state.resumedTask.PricingSnapshot()
+	}
+	if h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
+		if mediaPricingSnapshot == nil {
+			var pricingErr error
+			mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIImagePricingSnapshot(
+				requestCtx,
+				apiKey,
+				subject.UserID,
+				requestModel,
+				upstreamModel,
+				billingInputSize,
+				parsed.N,
+				usageFields,
+			)
+			if pricingErr != nil {
+				reqLog.Warn("openai.images.capture_async_pricing_snapshot_failed", zap.Error(pricingErr))
+				h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image pricing is unavailable")
+				return
+			}
+		}
+		if mediaPricingSnapshot != nil {
+			holdAmount := mediaPricingSnapshot.EstimatedCost(parsed.N, 0)
+			if holdAmount > 0 {
+				mediaHold = newMediaBalanceHoldCommand(
+					apiKey.ID,
+					subject.UserID,
+					service.MediaBalanceHoldRequestID(state.publicTaskID),
+					state.requestFingerprint,
+					service.HashUsageRequestPayload(body),
+					holdAmount,
+				)
+				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
+					status, code, message, retryAfter := billingErrorDetails(err)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, message)
+					return
+				}
+			}
+		}
+	}
 	intentBody := service.RewriteOpenAIImageClientResponseBody([]byte(`{"object":"image.generation","status":"creating"}`), state.publicTaskID)
 	intent := &service.MediaGenerationTask{
 		TaskID:              state.publicTaskID,
@@ -232,9 +285,15 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		ResponseContentType: "application/json",
 		ResponseBody:        string(intentBody),
 		Status:              service.MediaGenerationStatusCreating,
+		RequestCount:        parsed.N,
 		Resolution:          billingInputSize,
 		SizeTier:            parsed.SizeTier,
 		MediaType:           "image",
+	}
+	if mediaPricingSnapshot != nil {
+		intent.BillingMode = string(mediaPricingSnapshot.Mode)
+		intent.BillingUnitPrice = &mediaPricingSnapshot.UnitPrice
+		intent.BillingRateMultiplier = &mediaPricingSnapshot.RateMultiplier
 	}
 	if usageFields.ChannelID > 0 {
 		intent.ChannelID = &usageFields.ChannelID
@@ -321,6 +380,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Image task persistence failed")
 		return
 	}
+	mediaHoldTransferred = !service.IsMediaGenerationFailureStatus(status)
 	if err := h.gatewayService.BindStickySession(requestCtx, apiKey.GroupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.images.bind_task_account_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
 	}
@@ -504,10 +564,17 @@ func finalizeOpenAIImageTaskFromStatus(
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
 	if service.IsMediaGenerationFailureStatus(status) {
 		markOpenAIImageTaskTerminalDetached(h, apiKey.ID, task.ClientTaskID(), status, "image_task_failed")
+		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task))
 		return
 	}
-	if !service.IsMediaGenerationSuccessStatus(status) || result.ImageCount <= 0 || task.UsageRecordedAt != nil {
+	if !service.IsMediaGenerationSuccessStatus(status) || task.UsageRecordedAt != nil {
 		return
+	}
+	if result.ImageCount <= 0 {
+		result.ImageCount = task.RequestCount
+		if result.ImageCount <= 0 {
+			result.ImageCount = 1
+		}
 	}
 	leaseToken := uuid.NewString()
 	acquired, err := h.gatewayService.TryAcquireMediaGenerationFinalization(
@@ -580,43 +647,57 @@ func recordOpenAIImageFinalUsage(
 	userAgent := c.GetHeader("User-Agent")
 	clientIP := ip.GetClientIP(c)
 	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             recordResult,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    strings.TrimSpace(task.InboundEndpoint),
-			UpstreamEndpoint:   strings.TrimSpace(task.UpstreamEndpoint),
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: strings.TrimSpace(task.RequestPayloadHash),
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
+	mediaHold := mediaBalanceHoldCommandForTask(task)
+	actualMediaCost := mediaBalanceActualCost(task.PricingSnapshot(), recordResult, task.RequestCount, 0, false)
+	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
+		reqLog.Warn("openai.images.mark_balance_capture_pending_failed", zap.String("request_id", publicTaskID), zap.Error(markErr))
+	}
+	if err := recordMediaUsageWithRetry(func(ctx context.Context) error {
+		return h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+			Result:               recordResult,
+			APIKey:               apiKey,
+			User:                 apiKey.User,
+			Account:              account,
+			Subscription:         subscription,
+			InboundEndpoint:      strings.TrimSpace(task.InboundEndpoint),
+			UpstreamEndpoint:     strings.TrimSpace(task.UpstreamEndpoint),
+			UserAgent:            userAgent,
+			IPAddress:            clientIP,
+			RequestPayloadHash:   strings.TrimSpace(task.RequestPayloadHash),
+			APIKeyService:        h.apiKeyService,
+			QuotaPlatform:        quotaPlatform,
+			MediaPricingSnapshot: task.PricingSnapshot(),
+			MediaBalanceHoldRequestID: func() string {
+				if mediaHold := mediaBalanceHoldCommandForTask(task); mediaHold != nil {
+					return mediaHold.RequestID
+				}
+				return ""
+			}(),
 			ChannelUsageFields: usageFields,
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway.images"),
-				zap.Int64("user_id", subject.UserID),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.String("model", requestModel),
-				zap.Int64("account_id", account.ID),
-				zap.String("request_id", publicTaskID),
-			).Error("openai.images.record_final_usage_failed", zap.Error(err))
-			if releaseErr := h.gatewayService.ReleaseMediaGenerationFinalization(ctx, apiKey.ID, publicTaskID, leaseToken, "usage_record_failed"); releaseErr != nil {
-				reqLog.Warn("openai.images.release_finalization_failed", zap.String("request_id", publicTaskID), zap.Error(releaseErr))
-			}
-			return
+		})
+	}); err != nil {
+		logger.L().With(
+			zap.String("component", "handler.openai_gateway.images"),
+			zap.Int64("user_id", subject.UserID),
+			zap.Int64("api_key_id", apiKey.ID),
+			zap.String("model", requestModel),
+			zap.Int64("account_id", account.ID),
+			zap.String("request_id", publicTaskID),
+		).Error("openai.images.record_final_usage_failed", zap.Error(err))
+		if releaseErr := h.gatewayService.ReleaseMediaGenerationFinalization(context.Background(), apiKey.ID, publicTaskID, leaseToken, "usage_record_failed"); releaseErr != nil {
+			reqLog.Warn("openai.images.release_finalization_failed", zap.String("request_id", publicTaskID), zap.Error(releaseErr))
 		}
-		completed, err := h.gatewayService.CompleteMediaGenerationFinalization(ctx, apiKey.ID, publicTaskID, leaseToken)
-		if err != nil || !completed {
-			reqLog.Warn("openai.images.complete_finalization_failed", zap.String("request_id", publicTaskID), zap.Bool("completed", completed), zap.Error(err))
-			if releaseErr := h.gatewayService.ReleaseMediaGenerationFinalization(ctx, apiKey.ID, publicTaskID, leaseToken, "finalization_complete_failed"); releaseErr != nil {
-				reqLog.Warn("openai.images.release_finalization_failed", zap.String("request_id", publicTaskID), zap.Error(releaseErr))
-			}
+		return
+	}
+	finalizeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	completed, err := h.gatewayService.CompleteMediaGenerationFinalization(finalizeCtx, apiKey.ID, publicTaskID, leaseToken)
+	if err != nil || !completed {
+		reqLog.Warn("openai.images.complete_finalization_failed", zap.String("request_id", publicTaskID), zap.Bool("completed", completed), zap.Error(err))
+		if releaseErr := h.gatewayService.ReleaseMediaGenerationFinalization(finalizeCtx, apiKey.ID, publicTaskID, leaseToken, "finalization_complete_failed"); releaseErr != nil {
+			reqLog.Warn("openai.images.release_finalization_failed", zap.String("request_id", publicTaskID), zap.Error(releaseErr))
 		}
-	})
+	}
 }
 
 func persistOpenAIImageTaskDetached(ctx context.Context, h *OpenAIGatewayHandler, task *service.MediaGenerationTask) error {

@@ -64,7 +64,7 @@ func TestGetMediaGenerationTaskScansPricingSnapshot(t *testing.T) {
 		"billing_model_source", "model_mapping_chain", "request_fingerprint",
 		"request_payload_hash", "idempotency_key_hash", "response_status",
 		"response_content_type", "response_body", "upstream_result_url", "status", "duration_seconds",
-		"resolution", "size_tier", "billing_mode", "billing_unit_price", "billing_rate_multiplier",
+		"request_count", "resolution", "size_tier", "billing_mode", "billing_unit_price", "billing_rate_multiplier",
 		"media_type", "finalized_at", "finalization_lease_token", "finalization_lease_until",
 		"usage_recorded_at", "finalization_error", "created_at", "updated_at",
 	}
@@ -75,7 +75,7 @@ func TestGetMediaGenerationTaskScansPricingSnapshot(t *testing.T) {
 		service.BillingModelSourceChannelMapped, "[]", "fingerprint",
 		"payload", "idempotency", 202,
 		"application/json", `{"status":"pending"}`, nil, service.MediaGenerationStatusPending, 6,
-		service.VideoBillingResolution720P, "", service.BillingModeVideo, 0.55, 0.8,
+		1, service.VideoBillingResolution720P, "", service.BillingModeVideo, 0.55, 0.8,
 		"video", nil, nil, nil,
 		nil, nil, now, now,
 	)
@@ -91,6 +91,7 @@ func TestGetMediaGenerationTaskScansPricingSnapshot(t *testing.T) {
 	require.NotNil(t, task.BillingRateMultiplier)
 	require.InDelta(t, 0.55, *task.BillingUnitPrice, 1e-12)
 	require.InDelta(t, 0.8, *task.BillingRateMultiplier, 1e-12)
+	require.Equal(t, 1, task.RequestCount)
 	require.Equal(t, service.BillingModeVideo, task.PricingSnapshot().Mode)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

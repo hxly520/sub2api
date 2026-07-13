@@ -789,7 +789,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	processDataLine := func(payload string) bool {
 		firstResponseWatch.ObservePayload(payload)
 		if firstTokenMs == nil && openAIStreamPayloadCountsAsFirstResponse(payload) {
-			ms := int(time.Since(startTime).Milliseconds())
+			ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
 			firstTokenMs = &ms
 		}
 

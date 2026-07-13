@@ -103,7 +103,7 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 			billing_model_source, model_mapping_chain, request_fingerprint,
 			request_payload_hash, idempotency_key_hash, response_status,
 			response_content_type, response_body, upstream_result_url, status,
-			duration_seconds, resolution, size_tier, billing_mode, billing_unit_price,
+			duration_seconds, request_count, resolution, size_tier, billing_mode, billing_unit_price,
 			billing_rate_multiplier, media_type, created_at, updated_at
 		)
 		VALUES (
@@ -113,8 +113,8 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 			$17, $18, $19,
 			$20, NULLIF($21, ''), $22,
 			$23, $24, NULLIF($25, ''), $26, $27,
-			$28, $29, $30, $31,
-			$32, $33, NOW(), NOW()
+			$28, $29, $30, $31, $32,
+			$33, $34, $35, NOW(), NOW()
 		)
 		ON CONFLICT (api_key_id, task_id) DO UPDATE SET
 			public_task_id = EXCLUDED.public_task_id,
@@ -142,6 +142,7 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 			status = EXCLUDED.status,
 			duration_seconds = COALESCE(EXCLUDED.duration_seconds, media_generation_tasks.duration_seconds),
 			resolution = COALESCE(NULLIF(EXCLUDED.resolution, ''), media_generation_tasks.resolution),
+			request_count = GREATEST(media_generation_tasks.request_count, EXCLUDED.request_count, 1),
 			size_tier = COALESCE(NULLIF(EXCLUDED.size_tier, ''), media_generation_tasks.size_tier),
 			billing_mode = COALESCE(NULLIF(media_generation_tasks.billing_mode, ''), NULLIF(EXCLUDED.billing_mode, '')),
 			billing_unit_price = COALESCE(media_generation_tasks.billing_unit_price, EXCLUDED.billing_unit_price),
@@ -154,7 +155,7 @@ func (r *usageBillingRepository) CreateMediaGenerationTask(ctx context.Context, 
 		task.BillingModelSource, task.ModelMappingChain, task.RequestFingerprint,
 		task.RequestPayloadHash, task.IdempotencyKeyHash, nullableInt(task.ResponseStatus),
 		task.ResponseContentType, task.ResponseBody, task.UpstreamResultURL, status,
-		nullableInt(task.DurationSeconds), task.Resolution, task.SizeTier, task.BillingMode,
+		nullableInt(task.DurationSeconds), maxMediaRequestCount(task.RequestCount), task.Resolution, task.SizeTier, task.BillingMode,
 		nullableFloat64(task.BillingUnitPrice), nullableFloat64(task.BillingRateMultiplier), mediaType)
 	return err
 }
@@ -304,7 +305,7 @@ const mediaGenerationTaskSelectSQL = `
 		inbound_endpoint, upstream_endpoint, channel_id, channel_mapped_model,
 		billing_model_source, model_mapping_chain, request_fingerprint,
 		request_payload_hash, idempotency_key_hash, response_status,
-		response_content_type, response_body, upstream_result_url, status, duration_seconds,
+		response_content_type, response_body, upstream_result_url, status, duration_seconds, request_count,
 		resolution, size_tier, billing_mode, billing_unit_price, billing_rate_multiplier,
 		media_type, finalized_at, finalization_lease_token,
 		finalization_lease_until, usage_recorded_at, finalization_error, created_at, updated_at
@@ -319,6 +320,7 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 	var channelMappedModel, billingModelSource, mappingChain sql.NullString
 	var payloadHash, idempotencyHash, responseContentType, responseBody, upstreamResultURL sql.NullString
 	var responseStatus, durationSeconds sql.NullInt64
+	var requestCount int
 	var resolution, sizeTier, billingMode, mediaType, finalizationError sql.NullString
 	var billingUnitPrice, billingRateMultiplier sql.NullFloat64
 	var finalizedAt, finalizationLeaseUntil, usageRecordedAt sql.NullTime
@@ -329,7 +331,7 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 		&inboundEndpoint, &upstreamEndpoint, &channelID, &channelMappedModel,
 		&billingModelSource, &mappingChain, &task.RequestFingerprint,
 		&payloadHash, &idempotencyHash, &responseStatus,
-		&responseContentType, &responseBody, &upstreamResultURL, &task.Status, &durationSeconds, &resolution,
+		&responseContentType, &responseBody, &upstreamResultURL, &task.Status, &durationSeconds, &requestCount, &resolution,
 		&sizeTier, &billingMode, &billingUnitPrice, &billingRateMultiplier,
 		&mediaType, &finalizedAt, &finalizationLeaseToken,
 		&finalizationLeaseUntil, &usageRecordedAt, &finalizationError, &task.CreatedAt, &task.UpdatedAt,
@@ -361,6 +363,11 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 	if durationSeconds.Valid {
 		task.DurationSeconds = int(durationSeconds.Int64)
 	}
+	if requestCount > 0 {
+		task.RequestCount = requestCount
+	} else {
+		task.RequestCount = 1
+	}
 	task.Resolution = resolution.String
 	task.SizeTier = sizeTier.String
 	task.BillingMode = billingMode.String
@@ -379,6 +386,13 @@ func scanMediaGenerationTask(row *sql.Row) (*service.MediaGenerationTask, error)
 	}
 	task.FinalizationError = finalizationError.String
 	return &task, nil
+}
+
+func maxMediaRequestCount(value int) int {
+	if value <= 0 {
+		return 1
+	}
+	return value
 }
 
 func nullableString(value string) any {

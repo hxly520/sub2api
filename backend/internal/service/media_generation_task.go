@@ -52,6 +52,7 @@ type MediaGenerationTask struct {
 	UpstreamResultURL      string
 	Status                 string
 	DurationSeconds        int
+	RequestCount           int
 	Resolution             string
 	SizeTier               string
 	BillingMode            string

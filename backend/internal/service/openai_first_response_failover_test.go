@@ -235,3 +235,32 @@ func TestOpenAIFirstResponseTimeout_ResponseHeaderSuccessKeepsRemainingSSEBudget
 	require.False(t, watch.Waiting())
 	require.NoError(t, resp.Body.Close())
 }
+
+func TestOpenAIFirstTokenTimingStartsAtUpstreamDispatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	svc := &OpenAIGatewayService{httpUpstream: openAIFirstResponseImmediateUpstream{}}
+	account := &Account{ID: 204, Name: "timing", Platform: PlatformOpenAI, Concurrency: 1}
+	req := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
+	totalRequestStart := time.Now().Add(-5 * time.Second)
+
+	resp, err := svc.doOpenAIUpstreamWithFirstResponseBudget(context.Background(), c, account, req, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	firstTokenStart := openAIFirstTokenStart(c, totalRequestStart)
+	require.WithinDuration(t, time.Now(), firstTokenStart, time.Second)
+	require.Greater(t, firstTokenStart.Sub(totalRequestStart), 4*time.Second)
+	require.NoError(t, resp.Body.Close())
+}
+
+func TestOpenAIFirstTokenTimingFallsBackWithoutDispatchMarker(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	fallback := time.Now().Add(-time.Second)
+
+	require.Equal(t, fallback, openAIFirstTokenStart(c, fallback))
+}

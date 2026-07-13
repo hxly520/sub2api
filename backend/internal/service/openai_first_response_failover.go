@@ -231,6 +231,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstreamWithFirstResponseBudget(
 		return nil, errors.New("OpenAI upstream transport is unavailable")
 	}
 	guardedReq, guard := newOpenAIFirstResponseHeaderGuard(ctx, req)
+	setOpenAIFirstTokenStart(c, time.Now())
 	resp, err := s.httpUpstream.Do(guardedReq, proxyURL, account.ID, account.Concurrency)
 	if guard != nil && guard.finish(resp) {
 		return nil, s.newOpenAIFirstResponseTimeoutFailoverError(c, account, passthrough, "", guard.timeout)

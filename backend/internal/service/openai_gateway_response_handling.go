@@ -406,7 +406,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 			// Record first token time
 			if firstTokenMs == nil && semanticOutput {
-				ms := int(time.Since(startTime).Milliseconds())
+				ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
 				firstTokenMs = &ms
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)

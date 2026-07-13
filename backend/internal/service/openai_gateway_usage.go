@@ -20,19 +20,20 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
-	Result               *OpenAIForwardResult
-	APIKey               *APIKey
-	User                 *User
-	Account              *Account
-	Subscription         *UserSubscription
-	InboundEndpoint      string
-	UpstreamEndpoint     string
-	UserAgent            string // 请求的 User-Agent
-	IPAddress            string // 请求的客户端 IP 地址
-	RequestPayloadHash   string
-	APIKeyService        APIKeyQuotaUpdater
-	QuotaPlatform        string // user×platform quota platform resolved by the handler before async billing.
-	MediaPricingSnapshot *MediaGenerationPricingSnapshot
+	Result                    *OpenAIForwardResult
+	APIKey                    *APIKey
+	User                      *User
+	Account                   *Account
+	Subscription              *UserSubscription
+	InboundEndpoint           string
+	UpstreamEndpoint          string
+	UserAgent                 string // 请求的 User-Agent
+	IPAddress                 string // 请求的客户端 IP 地址
+	RequestPayloadHash        string
+	APIKeyService             APIKeyQuotaUpdater
+	QuotaPlatform             string // user×platform quota platform resolved by the handler before async billing.
+	MediaPricingSnapshot      *MediaGenerationPricingSnapshot
+	MediaBalanceHoldRequestID string
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	ChannelUsageFields
@@ -328,16 +329,17 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	billingErr := func() error {
 		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
-			Cost:                  cost,
-			User:                  user,
-			APIKey:                apiKey,
-			Account:               account,
-			Subscription:          subscription,
-			RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
-			IsSubscriptionBill:    isSubscriptionBilling,
-			AccountRateMultiplier: accountRateMultiplier,
-			APIKeyService:         input.APIKeyService,
-			Platform:              quotaPlatform,
+			Cost:                      cost,
+			User:                      user,
+			APIKey:                    apiKey,
+			Account:                   account,
+			Subscription:              subscription,
+			RequestPayloadHash:        resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
+			IsSubscriptionBill:        isSubscriptionBilling,
+			AccountRateMultiplier:     accountRateMultiplier,
+			APIKeyService:             input.APIKeyService,
+			Platform:                  quotaPlatform,
+			MediaBalanceHoldRequestID: input.MediaBalanceHoldRequestID,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()
@@ -372,6 +374,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		}
 	}
 	if result != nil && result.ImageCount > 0 {
+		if mediaPricingSnapshot != nil {
+			return calculateOpenAIImageSnapshotCost(result, mediaPricingSnapshot), nil
+		}
 		// 渠道定价为 token 计费时走 token 路径，否则走图片计费
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
 			return s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, imageMultiplier), nil
@@ -424,6 +429,22 @@ func calculateOpenAIVideoSnapshotCost(result *OpenAIForwardResult, snapshot *Med
 		requestCount *= NormalizeVideoBillingDurationSecondsOrDefault(openAIVideoUsageDurationSeconds(result))
 	}
 	totalCost := snapshot.UnitPrice * float64(requestCount)
+	return &CostBreakdown{
+		TotalCost:   totalCost,
+		ActualCost:  totalCost * snapshot.RateMultiplier,
+		BillingMode: string(snapshot.Mode),
+	}
+}
+
+func calculateOpenAIImageSnapshotCost(result *OpenAIForwardResult, snapshot *MediaGenerationPricingSnapshot) *CostBreakdown {
+	if snapshot == nil {
+		return &CostBreakdown{}
+	}
+	count := 1
+	if result != nil && result.ImageCount > 0 {
+		count = result.ImageCount
+	}
+	totalCost := snapshot.UnitPrice * float64(count)
 	return &CostBreakdown{
 		TotalCost:   totalCost,
 		ActualCost:  totalCost * snapshot.RateMultiplier,
@@ -672,6 +693,8 @@ func (s *OpenAIGatewayService) CaptureOpenAIVideoPricingSnapshot(
 	requestedModel string,
 	upstreamModel string,
 	resolution string,
+	durationSeconds int,
+	videoCount int,
 	fields ChannelUsageFields,
 ) (*MediaGenerationPricingSnapshot, error) {
 	if s == nil || s.billingService == nil || apiKey == nil || apiKey.Group == nil {
@@ -682,33 +705,91 @@ func (s *OpenAIGatewayService) CaptureOpenAIVideoPricingSnapshot(
 		BillingModel:  upstreamModel,
 		UpstreamModel: upstreamModel,
 	}, fields)
-	resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey)
-	if resolved == nil || (resolved.Mode != BillingModePerRequest && resolved.Mode != BillingModeImage && resolved.Mode != BillingModeVideo) {
+	if videoCount <= 0 {
+		videoCount = 1
+	}
+	if durationSeconds <= 0 {
+		durationSeconds = NormalizeVideoBillingDurationSecondsOrDefault(durationSeconds)
+	}
+	cost := s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, &OpenAIForwardResult{
+		Model:                requestedModel,
+		BillingModel:         billingModel,
+		UpstreamModel:        upstreamModel,
+		VideoCount:           videoCount,
+		VideoResolution:      NormalizeVideoBillingResolutionOrDefault(resolution),
+		VideoDurationSeconds: durationSeconds,
+		MediaType:            "video",
+	}, 1)
+	if cost == nil || cost.TotalCost <= 0 {
+		return nil, errors.New("resolve video pricing snapshot: pricing is unavailable or zero")
+	}
+	mode := BillingMode(strings.TrimSpace(cost.BillingMode))
+	if mode != BillingModePerRequest && mode != BillingModeImage && mode != BillingModeVideo {
 		return nil, nil
 	}
-	groupID := apiKey.Group.ID
-	cost, err := s.billingService.CalculateCostUnified(CostInput{
-		Ctx:            ctx,
-		Model:          billingModel,
-		GroupID:        &groupID,
-		RequestCount:   1,
-		SizeTier:       NormalizeVideoBillingResolutionOrDefault(resolution),
-		RateMultiplier: 1,
-		Resolver:       s.resolver,
-		Resolved:       resolved,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve video pricing snapshot: %w", err)
+	unitPrice := cost.TotalCost / float64(videoCount)
+	if mode == BillingModeVideo {
+		unitPrice = cost.TotalCost / float64(videoCount*durationSeconds)
 	}
-	if cost == nil || cost.TotalCost < 0 {
-		return nil, errors.New("resolve video pricing snapshot: invalid unit price")
-	}
+	rateMultiplier := s.resolveOpenAIMediaRateMultiplier(ctx, apiKey, userID, true)
+	return &MediaGenerationPricingSnapshot{
+		Mode:           mode,
+		UnitPrice:      unitPrice,
+		RateMultiplier: rateMultiplier,
+	}, nil
+}
 
+// CaptureOpenAIImagePricingSnapshot freezes the same price path used by the
+// final usage record. It covers both channel pricing and legacy group image
+// prices, so a later admin price edit cannot change an in-flight request.
+func (s *OpenAIGatewayService) CaptureOpenAIImagePricingSnapshot(
+	ctx context.Context,
+	apiKey *APIKey,
+	userID int64,
+	requestedModel string,
+	upstreamModel string,
+	size string,
+	imageCount int,
+	fields ChannelUsageFields,
+) (*MediaGenerationPricingSnapshot, error) {
+	if s == nil || s.billingService == nil || apiKey == nil || apiKey.Group == nil {
+		return nil, nil
+	}
+	if imageCount <= 0 {
+		imageCount = 1
+	}
+	billingModel := resolveOpenAIUsageBillingModel(&OpenAIForwardResult{
+		Model:         requestedModel,
+		BillingModel:  upstreamModel,
+		UpstreamModel: upstreamModel,
+	}, fields)
+	cost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, &OpenAIForwardResult{
+		Model:         requestedModel,
+		BillingModel:  billingModel,
+		UpstreamModel: upstreamModel,
+		ImageCount:    imageCount,
+		ImageSize:     NormalizeImageBillingTierOrDefault(size),
+	}, 1)
+	if cost == nil || cost.TotalCost <= 0 {
+		return nil, errors.New("resolve image pricing snapshot: pricing is unavailable or zero")
+	}
+	mode := BillingMode(strings.TrimSpace(cost.BillingMode))
+	if mode != BillingModePerRequest && mode != BillingModeImage {
+		return nil, nil
+	}
+	return &MediaGenerationPricingSnapshot{
+		Mode:           mode,
+		UnitPrice:      cost.TotalCost / float64(imageCount),
+		RateMultiplier: s.resolveOpenAIMediaRateMultiplier(ctx, apiKey, userID, false),
+	}, nil
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIMediaRateMultiplier(ctx context.Context, apiKey *APIKey, userID int64, video bool) float64 {
 	baseMultiplier := 1.0
-	if s.cfg != nil {
+	if s != nil && s.cfg != nil {
 		baseMultiplier = s.cfg.Default.RateMultiplier
 	}
-	if apiKey.GroupID != nil {
+	if apiKey != nil && apiKey.GroupID != nil && apiKey.Group != nil {
 		if userID > 0 {
 			resolver := s.userGroupRateResolver
 			if resolver == nil {
@@ -719,15 +800,17 @@ func (s *OpenAIGatewayService) CaptureOpenAIVideoPricingSnapshot(
 			baseMultiplier = apiKey.Group.RateMultiplier
 		}
 	}
-	rateMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
-	if rateMultiplier < 0 {
-		rateMultiplier = 0
+	if video {
+		return maxZeroMultiplier(resolveVideoRateMultiplier(apiKey, baseMultiplier))
 	}
-	return &MediaGenerationPricingSnapshot{
-		Mode:           resolved.Mode,
-		UnitPrice:      cost.TotalCost,
-		RateMultiplier: rateMultiplier,
-	}, nil
+	return maxZeroMultiplier(resolveImageRateMultiplier(apiKey, baseMultiplier))
+}
+
+func maxZeroMultiplier(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 // ParseCodexRateLimitHeaders extracts Codex usage limits from response headers.

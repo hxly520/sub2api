@@ -2117,6 +2117,20 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		}
 		return http.StatusServiceUnavailable, "billing_service_error", msg, 0
 	}
+	if errors.Is(err, service.ErrMediaInsufficientBalance) {
+		msg := pkgerrors.Message(err)
+		if msg == "" {
+			msg = "Insufficient balance for media generation."
+		}
+		return http.StatusPaymentRequired, "insufficient_balance", msg, 0
+	}
+	if errors.Is(err, service.ErrMediaBalanceHoldUnavailable) {
+		msg := pkgerrors.Message(err)
+		if msg == "" {
+			msg = "Media billing is temporarily unavailable. Please retry later."
+		}
+		return http.StatusServiceUnavailable, "billing_service_error", msg, 0
+	}
 	if errors.Is(err, service.ErrAPIKeyRateLimit5hExceeded) {
 		msg := pkgerrors.Message(err)
 		return http.StatusTooManyRequests, "rate_limit_exceeded", msg, 0

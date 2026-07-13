@@ -311,7 +311,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					usage = *u
 				}
 				if firstTokenMs == nil && openAIStreamPayloadCountsAsFirstResponse(payload) {
-					elapsed := int(time.Since(startTime).Milliseconds())
+					elapsed := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
 					firstTokenMs = &elapsed
 				}
 			}

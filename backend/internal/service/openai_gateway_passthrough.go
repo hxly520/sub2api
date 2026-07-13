@@ -1043,7 +1043,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			semanticOutput := openAIStreamDataStartsClientOutput(trimmedData, eventType)
 			lineStartsClientOutput = forceFlushFailedEvent || semanticOutput || (earlyFlushPreamble && openAIStreamEventIsPreamble(eventType) && trimmedData != "")
 			if firstTokenMs == nil && semanticOutput && trimmedData != "[DONE]" {
-				ms := int(time.Since(startTime).Milliseconds())
+				ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
 				firstTokenMs = &ms
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)

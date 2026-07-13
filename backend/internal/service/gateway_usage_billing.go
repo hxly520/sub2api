@@ -65,16 +65,17 @@ type usageLogBestEffortWriter interface {
 
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
-	Cost                  *CostBreakdown
-	User                  *User
-	APIKey                *APIKey
-	Account               *Account
-	Subscription          *UserSubscription
-	RequestPayloadHash    string
-	IsSubscriptionBill    bool
-	AccountRateMultiplier float64
-	APIKeyService         APIKeyQuotaUpdater
-	Platform              string // 来自 APIKey 关联 Group 的平台标识
+	Cost                      *CostBreakdown
+	User                      *User
+	APIKey                    *APIKey
+	Account                   *Account
+	Subscription              *UserSubscription
+	RequestPayloadHash        string
+	IsSubscriptionBill        bool
+	AccountRateMultiplier     float64
+	APIKeyService             APIKeyQuotaUpdater
+	Platform                  string // 来自 APIKey 关联 Group 的平台标识
+	MediaBalanceHoldRequestID string
 }
 
 // PlatformFromAPIKey 从 APIKey 关联的 Group 推导 platform 名称。
@@ -257,7 +258,13 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		cmd.SubscriptionID = &p.Subscription.ID
 		cmd.SubscriptionCost = p.Cost.ActualCost
 	} else if p.Cost.ActualCost > 0 {
-		cmd.BalanceCost = p.Cost.ActualCost
+		if strings.TrimSpace(p.MediaBalanceHoldRequestID) == "" {
+			cmd.BalanceCost = p.Cost.ActualCost
+		}
+	}
+	if strings.TrimSpace(p.MediaBalanceHoldRequestID) != "" && !p.IsSubscriptionBill {
+		cmd.MediaBalanceHoldRequestID = strings.TrimSpace(p.MediaBalanceHoldRequestID)
+		cmd.MediaBalanceHoldActualCost = p.Cost.ActualCost
 	}
 
 	if p.shouldDeductAPIKeyQuota() {
@@ -369,6 +376,15 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 
 func syncBalanceCacheAfterDeduction(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
 	if p == nil || p.Cost == nil || p.User == nil || deps == nil || deps.billingCacheService == nil {
+		return
+	}
+	if strings.TrimSpace(p.MediaBalanceHoldRequestID) != "" {
+		if err := deps.billingCacheService.InvalidateUserBalance(ctx, p.User.ID); err != nil {
+			slog.Warn("invalidate balance cache after media hold settlement failed",
+				"user_id", p.User.ID,
+				"error", err,
+			)
+		}
 		return
 	}
 	if result != nil && result.NewBalance != nil && deps.billingCacheService.balanceBelowEligibilityThreshold(*result.NewBalance) {

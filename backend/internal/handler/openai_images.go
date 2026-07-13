@@ -212,6 +212,66 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 
+	var mediaPricingSnapshot *service.MediaGenerationPricingSnapshot
+	var mediaHold *service.MediaBalanceHoldCommand
+	mediaHoldTransferred := false
+	if h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
+		mappedModel := requestModel
+		if value := strings.TrimSpace(channelMapping.MappedModel); value != "" {
+			mappedModel = value
+		}
+		upstreamModel := account.GetMappedModel(mappedModel)
+		billingSize := strings.TrimSpace(parsed.ImageSize)
+		if billingSize == "" {
+			billingSize = strings.TrimSpace(parsed.Size)
+		}
+		if billingSize == "" || strings.Contains(billingSize, ":") || strings.EqualFold(billingSize, "auto") {
+			billingSize = parsed.SizeTier
+		}
+		var pricingErr error
+		mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIImagePricingSnapshot(
+			requestCtx,
+			apiKey,
+			subject.UserID,
+			requestModel,
+			upstreamModel,
+			billingSize,
+			parsed.N,
+			channelMapping.ToUsageFields(requestModel, upstreamModel),
+		)
+		if pricingErr != nil {
+			reqLog.Warn("openai.images.capture_pricing_snapshot_failed", zap.Error(pricingErr))
+			h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image pricing is unavailable")
+			return
+		}
+		if mediaPricingSnapshot != nil {
+			holdAmount := mediaPricingSnapshot.EstimatedCost(parsed.N, 0)
+			if holdAmount > 0 {
+				mediaHold = newMediaBalanceHoldCommand(
+					apiKey.ID,
+					subject.UserID,
+					service.NewMediaBalanceHoldRequestID(),
+					service.HashMediaGenerationRequestFingerprint(parsed.Endpoint, body),
+					service.HashUsageRequestPayload(body),
+					holdAmount,
+				)
+				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
+					status, code, message, retryAfter := billingErrorDetails(err)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, message)
+					return
+				}
+				defer func() {
+					if !mediaHoldTransferred {
+						releaseMediaBalanceHold(h, mediaHold)
+					}
+				}()
+			}
+		}
+	}
+
 	accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
 	if !acquired {
 		return
@@ -327,32 +387,44 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if result != nil {
 		upstreamModel = result.UpstreamModel
 	}
-	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             result,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: requestPayloadHash,
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
+	mediaHoldTransferred = mediaHold != nil
+	actualMediaCost := mediaBalanceActualCost(mediaPricingSnapshot, result, parsed.N, 0, false)
+	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
+		reqLog.Warn("openai.images.mark_balance_capture_pending_failed", zap.Error(markErr))
+	}
+	if err := recordMediaUsageWithRetry(func(ctx context.Context) error {
+		return h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+			Result:               result,
+			APIKey:               apiKey,
+			User:                 apiKey.User,
+			Account:              account,
+			Subscription:         subscription,
+			InboundEndpoint:      inboundEndpoint,
+			UpstreamEndpoint:     upstreamEndpoint,
+			UserAgent:            userAgent,
+			IPAddress:            clientIP,
+			RequestPayloadHash:   requestPayloadHash,
+			APIKeyService:        h.apiKeyService,
+			QuotaPlatform:        quotaPlatform,
+			MediaPricingSnapshot: mediaPricingSnapshot,
+			MediaBalanceHoldRequestID: func() string {
+				if mediaHold == nil {
+					return ""
+				}
+				return mediaHold.RequestID
+			}(),
 			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway.images"),
-				zap.Int64("user_id", subject.UserID),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.Any("group_id", apiKey.GroupID),
-				zap.String("model", requestModel),
-				zap.Int64("account_id", account.ID),
-			).Error("openai.images.record_usage_failed", zap.Error(err))
-		}
-	})
+		})
+	}); err != nil {
+		logger.L().With(
+			zap.String("component", "handler.openai_gateway.images"),
+			zap.Int64("user_id", subject.UserID),
+			zap.Int64("api_key_id", apiKey.ID),
+			zap.Any("group_id", apiKey.GroupID),
+			zap.String("model", requestModel),
+			zap.Int64("account_id", account.ID),
+		).Error("openai.images.record_usage_failed", zap.Error(err))
+	}
 
 	reqLog.Debug("openai.images.request_completed", zap.Int64("account_id", account.ID))
 }

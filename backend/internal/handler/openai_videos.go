@@ -94,6 +94,13 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	generationPublicTaskID := ""
 	var generationIntent *service.MediaGenerationTask
 	var generationPricingSnapshot *service.MediaGenerationPricingSnapshot
+	var mediaHold *service.MediaBalanceHoldCommand
+	mediaHoldTransferred := false
+	defer func() {
+		if !mediaHoldTransferred {
+			releaseMediaBalanceHold(h, mediaHold)
+		}
+	}()
 	resumedGenerationIntent := false
 	inspectIdempotentTask := func(replay *service.MediaGenerationTask) (handled bool, resumable bool) {
 		if replay == nil {
@@ -418,7 +425,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			return
 		}
 		usageFields := channelMapping.ToUsageFields(requestModel, upstreamModel)
-		if !resumedGenerationIntent {
+		if !resumedGenerationIntent || generationPricingSnapshot == nil {
 			generationPricingSnapshot, prepareErr = h.gatewayService.CaptureOpenAIVideoPricingSnapshot(
 				requestCtx,
 				apiKey,
@@ -426,12 +433,35 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 				requestModel,
 				upstreamModel,
 				upstreamRequest.Resolution,
+				upstreamRequest.DurationSeconds,
+				1,
 				usageFields,
 			)
 			if prepareErr != nil {
 				reqLog.Warn("openai.videos.capture_pricing_snapshot_failed", zap.String("model", requestModel), zap.Error(prepareErr))
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video pricing is unavailable")
 				return
+			}
+		}
+		if h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) && generationPricingSnapshot != nil {
+			holdAmount := generationPricingSnapshot.EstimatedCost(1, upstreamRequest.DurationSeconds)
+			if holdAmount > 0 {
+				mediaHold = newMediaBalanceHoldCommand(
+					apiKey.ID,
+					subject.UserID,
+					service.MediaBalanceHoldRequestID(generationPublicTaskID),
+					requestFingerprint,
+					service.HashUsageRequestPayload(body),
+					holdAmount,
+				)
+				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
+					status, code, message, retryAfter := billingErrorDetails(err)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, message)
+					return
+				}
 			}
 		}
 		intentBody := service.RewriteOpenAIVideoClientResponseBody(
@@ -459,6 +489,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			ResponseBody:        string(intentBody),
 			Status:              service.MediaGenerationStatusCreating,
 			DurationSeconds:     upstreamRequest.DurationSeconds,
+			RequestCount:        1,
 			Resolution:          upstreamRequest.Resolution,
 			SizeTier:            upstreamRequest.BillingSizeTier(),
 			MediaType:           "video",
@@ -531,6 +562,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(err, &failoverErr) && parsed.GenerationRequest {
+			mediaHoldTransferred = true
 			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				c.Abort()
@@ -594,6 +626,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			UpstreamResultURL:   result.MediaResultURL,
 			Status:              status,
 			DurationSeconds:     result.MediaDurationSeconds,
+			RequestCount:        1,
 			Resolution:          result.VideoResolution,
 			SizeTier:            result.ImageSize,
 			MediaType:           "video",
@@ -621,6 +654,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task persistence failed")
 			return
 		}
+		mediaHoldTransferred = !service.IsMediaGenerationFailureStatus(status)
 		if err := h.gatewayService.BindOpenAIVideoTaskAccount(requestCtx, apiKey.GroupID, publicTaskID, account.ID); err != nil {
 			reqLog.Warn("openai.videos.bind_task_account_failed",
 				zap.Int64("account_id", account.ID),
@@ -696,6 +730,7 @@ func finalizeOpenAIVideoTaskFromStatus(
 		if err := h.gatewayService.MarkOpenAIVideoTaskTerminal(c.Request.Context(), apiKey.ID, clientTaskID, status, "video_task_failed"); err != nil {
 			reqLog.Warn("openai.videos.mark_task_failed_status_failed", zap.String("request_id", clientTaskID), zap.String("status", status), zap.Error(err))
 		}
+		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task))
 		return
 	}
 	if !service.IsMediaGenerationSuccessStatus(status) || task.UsageRecordedAt != nil {
@@ -766,6 +801,10 @@ func recordOpenAIVideoFinalUsage(
 	if usageFields.ChannelMappedModel == "" {
 		usageFields.ChannelMappedModel = requestModel
 	}
+	videoCount := task.RequestCount
+	if videoCount <= 0 {
+		videoCount = 1
+	}
 	recordResult := &service.OpenAIForwardResult{
 		RequestID:            clientTaskID,
 		ResponseID:           clientTaskID,
@@ -776,7 +815,7 @@ func recordOpenAIVideoFinalUsage(
 		Stream:               false,
 		Duration:             statusResult.Duration,
 		ImageCount:           0,
-		VideoCount:           1,
+		VideoCount:           videoCount,
 		VideoResolution:      videoResolution,
 		VideoDurationSeconds: durationSeconds,
 		MediaDurationSeconds: durationSeconds,
@@ -784,8 +823,13 @@ func recordOpenAIVideoFinalUsage(
 		ResponseStatus:       statusResult.ResponseStatus,
 		VideoStatus:          statusResult.VideoStatus,
 	}
-	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+	mediaHold := mediaBalanceHoldCommandForTask(task)
+	actualMediaCost := mediaBalanceActualCost(task.PricingSnapshot(), recordResult, videoCount, durationSeconds, true)
+	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
+		reqLog.Warn("openai.videos.mark_balance_capture_pending_failed", zap.String("request_id", clientTaskID), zap.Error(markErr))
+	}
+	if err := recordMediaUsageWithRetry(func(ctx context.Context) error {
+		return h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:               recordResult,
 			APIKey:               apiKey,
 			User:                 apiKey.User,
@@ -799,30 +843,38 @@ func recordOpenAIVideoFinalUsage(
 			APIKeyService:        h.apiKeyService,
 			QuotaPlatform:        quotaPlatform,
 			MediaPricingSnapshot: task.PricingSnapshot(),
-			ChannelUsageFields:   usageFields,
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway.videos"),
-				zap.Int64("user_id", subject.UserID),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.Any("group_id", apiKey.GroupID),
-				zap.String("model", requestModel),
-				zap.Int64("account_id", account.ID),
-				zap.String("request_id", clientTaskID),
-			).Error("openai.videos.record_final_usage_failed", zap.Error(err))
-			if releaseErr := h.gatewayService.ReleaseOpenAIVideoFinalization(ctx, apiKey.ID, clientTaskID, leaseToken, "usage_record_failed"); releaseErr != nil {
-				reqLog.Warn("openai.videos.release_finalization_failed", zap.String("request_id", clientTaskID), zap.Error(releaseErr))
-			}
-			return
+			MediaBalanceHoldRequestID: func() string {
+				if mediaHold := mediaBalanceHoldCommandForTask(task); mediaHold != nil {
+					return mediaHold.RequestID
+				}
+				return ""
+			}(),
+			ChannelUsageFields: usageFields,
+		})
+	}); err != nil {
+		logger.L().With(
+			zap.String("component", "handler.openai_gateway.videos"),
+			zap.Int64("user_id", subject.UserID),
+			zap.Int64("api_key_id", apiKey.ID),
+			zap.Any("group_id", apiKey.GroupID),
+			zap.String("model", requestModel),
+			zap.Int64("account_id", account.ID),
+			zap.String("request_id", clientTaskID),
+		).Error("openai.videos.record_final_usage_failed", zap.Error(err))
+		if releaseErr := h.gatewayService.ReleaseOpenAIVideoFinalization(context.Background(), apiKey.ID, clientTaskID, leaseToken, "usage_record_failed"); releaseErr != nil {
+			reqLog.Warn("openai.videos.release_finalization_failed", zap.String("request_id", clientTaskID), zap.Error(releaseErr))
 		}
-		completed, err := h.gatewayService.CompleteOpenAIVideoFinalization(ctx, apiKey.ID, clientTaskID, leaseToken)
-		if err != nil || !completed {
-			reqLog.Warn("openai.videos.complete_finalization_failed", zap.String("request_id", clientTaskID), zap.Bool("completed", completed), zap.Error(err))
-			if releaseErr := h.gatewayService.ReleaseOpenAIVideoFinalization(ctx, apiKey.ID, clientTaskID, leaseToken, "finalization_complete_failed"); releaseErr != nil {
-				reqLog.Warn("openai.videos.release_finalization_failed", zap.String("request_id", clientTaskID), zap.Error(releaseErr))
-			}
+		return
+	}
+	finalizeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	completed, err := h.gatewayService.CompleteOpenAIVideoFinalization(finalizeCtx, apiKey.ID, clientTaskID, leaseToken)
+	if err != nil || !completed {
+		reqLog.Warn("openai.videos.complete_finalization_failed", zap.String("request_id", clientTaskID), zap.Bool("completed", completed), zap.Error(err))
+		if releaseErr := h.gatewayService.ReleaseOpenAIVideoFinalization(finalizeCtx, apiKey.ID, clientTaskID, leaseToken, "finalization_complete_failed"); releaseErr != nil {
+			reqLog.Warn("openai.videos.release_finalization_failed", zap.String("request_id", clientTaskID), zap.Error(releaseErr))
 		}
-	})
+	}
 }
 
 func persistOpenAIVideoTaskOutcome(ctx context.Context, h *OpenAIGatewayHandler, task *service.MediaGenerationTask) error {
