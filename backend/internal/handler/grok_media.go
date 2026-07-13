@@ -280,6 +280,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+	if endpoint.IsGenerationRequest() {
+		if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
+			reqLog.Warn("grok_media.mark_balance_dispatched_failed", zap.Error(err))
+			h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Media billing reservation is unavailable")
+			return
+		}
+	}
 	forwardStart := time.Now()
 	writerSizeBeforeForward := c.Writer.Size()
 	result, err := func() (*service.OpenAIForwardResult, error) {
@@ -302,6 +309,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	if err != nil {
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(err, &failoverErr) {
+			mediaHoldTransferred = mediaHold != nil
 			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				h.handleFailoverExhausted(c, failoverErr, true)

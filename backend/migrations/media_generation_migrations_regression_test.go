@@ -39,3 +39,13 @@ func TestMigration178AddsAtomicMediaBalanceHolds(t *testing.T) {
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS request_count")
 	require.NotContains(t, sql, "UPDATE media_generation_tasks")
 }
+
+func TestMigration179IndexesDispatchedMediaBalanceHolds(t *testing.T) {
+	content, err := FS.ReadFile("179_media_balance_hold_dispatch_state.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "DROP INDEX IF EXISTS idx_media_balance_holds_reserved_expiry")
+	require.Contains(t, sql, "CREATE INDEX idx_media_balance_holds_reserved_expiry")
+	require.Contains(t, sql, "status IN ('reserved', 'dispatched', 'capture_pending')")
+}

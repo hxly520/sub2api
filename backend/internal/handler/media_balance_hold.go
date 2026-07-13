@@ -52,6 +52,25 @@ func markMediaBalanceHoldForCapture(h *OpenAIGatewayHandler, cmd *service.MediaB
 	return lastErr
 }
 
+func markMediaBalanceHoldDispatched(h *OpenAIGatewayHandler, cmd *service.MediaBalanceHoldCommand) error {
+	if h == nil || h.gatewayService == nil || cmd == nil || strings.TrimSpace(cmd.RequestID) == "" || cmd.HoldAmount <= 0 {
+		return nil
+	}
+	var lastErr error
+	for attempt := 0; attempt < mediaUsageRecordMaxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lastErr = h.gatewayService.MarkMediaBalanceDispatched(ctx, cmd)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		if attempt+1 < mediaUsageRecordMaxAttempts {
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+		}
+	}
+	return lastErr
+}
+
 func recordMediaUsageWithRetry(record func(context.Context) error) error {
 	if record == nil {
 		return nil

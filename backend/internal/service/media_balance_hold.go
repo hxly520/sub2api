@@ -115,6 +115,18 @@ func (s *OpenAIGatewayService) ReleaseMediaBalance(ctx context.Context, cmd *Med
 	return err
 }
 
+// MarkMediaBalanceDispatched persists the non-idempotent boundary immediately
+// before the upstream POST so uncertain async requests remain recoverable. A
+// hold is still settled only after a success marker or successful task state.
+func (s *OpenAIGatewayService) MarkMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) error {
+	repo, ok := s.usageBillingRepo.(MediaBalanceHoldRepository)
+	if !ok || repo == nil {
+		return ErrMediaBalanceHoldUnavailable
+	}
+	_, err := repo.MarkMediaBalanceDispatched(ctx, cmd)
+	return err
+}
+
 // MarkMediaBalanceForCapture records that the upstream has produced or
 // accepted a billable media result. If normal usage recording remains
 // unavailable until the hold expires, the repository can still settle the

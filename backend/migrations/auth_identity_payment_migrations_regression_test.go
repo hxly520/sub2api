@@ -227,6 +227,7 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 		"176_media_generation_finalization_recovery.sql": -1,
 		"177_media_generation_pricing_snapshot.sql":      -1,
 		"178_media_balance_holds.sql":                    -1,
+		"179_media_balance_hold_dispatch_state.sql":      -1,
 	}
 	for i, entry := range entries {
 		if _, tracked := indexes[entry.Name()]; tracked {
@@ -243,6 +244,7 @@ func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
 	require.Less(t, indexes["175_openai_first_response_settings.sql"], indexes["176_media_generation_finalization_recovery.sql"])
 	require.Less(t, indexes["176_media_generation_finalization_recovery.sql"], indexes["177_media_generation_pricing_snapshot.sql"])
 	require.Less(t, indexes["177_media_generation_pricing_snapshot.sql"], indexes["178_media_balance_holds.sql"])
+	require.Less(t, indexes["178_media_balance_holds.sql"], indexes["179_media_balance_hold_dispatch_state.sql"])
 
 	content, err := FS.ReadFile("173_allow_cyber_blocked_usage_request_type.sql")
 	require.NoError(t, err)

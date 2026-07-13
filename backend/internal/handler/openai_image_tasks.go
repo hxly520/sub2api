@@ -312,9 +312,18 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 
 	accountRelease, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, new(bool), reqLog)
 	if !acquired {
+		// The persisted creation intent must keep its hold resumable under the
+		// same idempotency key. Expiry reconciliation refunds it if never sent.
+		mediaHoldTransferred = mediaHold != nil
 		return
 	}
 	writerSizeBeforeForward := c.Writer.Size()
+	if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
+		mediaHoldTransferred = mediaHold != nil
+		reqLog.Warn("openai.images.mark_async_balance_dispatched_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
+		h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image billing reservation is unavailable")
+		return
+	}
 	forwardStart := time.Now()
 	result, forwardErr := func() (*service.OpenAIForwardResult, error) {
 		defer func() {
@@ -338,6 +347,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		}
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(forwardErr, &failoverErr) {
+			mediaHoldTransferred = mediaHold != nil
 			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				c.Abort()
@@ -360,6 +370,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream image task response is invalid")
 		return
 	}
+	mediaHoldTransferred = mediaHold != nil
 	h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, result.FirstTokenMs)
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
 	if status == "" || status == service.MediaGenerationStatusCreating {
@@ -380,7 +391,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Image task persistence failed")
 		return
 	}
-	mediaHoldTransferred = !service.IsMediaGenerationFailureStatus(status)
+	mediaHoldTransferred = mediaHold != nil && !service.IsMediaGenerationFailureStatus(status)
 	if err := h.gatewayService.BindStickySession(requestCtx, apiKey.GroupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.images.bind_task_account_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
 	}

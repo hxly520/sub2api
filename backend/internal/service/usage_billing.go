@@ -195,6 +195,7 @@ type UsageBillingRepository interface {
 // test doubles and batch-image integrations remain source compatible.
 type MediaBalanceHoldRepository interface {
 	ReserveMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+	MarkMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
 	MarkMediaBalanceForCapture(ctx context.Context, cmd *MediaBalanceHoldCommand, actualCost float64) (*MediaBalanceHoldResult, error)
 	ReleaseMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
 }

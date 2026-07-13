@@ -521,9 +521,22 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 
 	accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream || parsed.ContentRequest, &streamStarted, reqLog)
 	if !accountAcquired {
+		if parsed.GenerationRequest {
+			// Keep the persisted intent resumable. A task that never reaches a
+			// successful state is refunded by expiry reconciliation.
+			mediaHoldTransferred = mediaHold != nil
+		}
 		return
 	}
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+	if parsed.GenerationRequest {
+		if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
+			mediaHoldTransferred = mediaHold != nil
+			reqLog.Warn("openai.videos.mark_balance_dispatched_failed", zap.String("request_id", generationPublicTaskID), zap.Error(err))
+			h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Video billing reservation is unavailable")
+			return
+		}
+	}
 
 	forwardStart := time.Now()
 	writerSizeBeforeForward := c.Writer.Size()
@@ -596,6 +609,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			writeOpenAIVideoSafeUpstreamError(c)
 			return
 		}
+		mediaHoldTransferred = mediaHold != nil
 		upstreamTaskID := strings.TrimSpace(result.ResponseID)
 		publicTaskID := generationPublicTaskID
 		status := service.NormalizeMediaGenerationStatus(result.VideoStatus)
@@ -654,7 +668,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task persistence failed")
 			return
 		}
-		mediaHoldTransferred = !service.IsMediaGenerationFailureStatus(status)
+		mediaHoldTransferred = mediaHold != nil && !service.IsMediaGenerationFailureStatus(status)
 		if err := h.gatewayService.BindOpenAIVideoTaskAccount(requestCtx, apiKey.GroupID, publicTaskID, account.ID); err != nil {
 			reqLog.Warn("openai.videos.bind_task_account_failed",
 				zap.Int64("account_id", account.ID),

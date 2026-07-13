@@ -55,7 +55,7 @@ func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *s
 		if existingUserID != cmd.UserID || strings.TrimSpace(fingerprint) != strings.TrimSpace(cmd.RequestFingerprint) || !mediaBalanceAmountsEqual(existingAmount, cmd.HoldAmount) {
 			return nil, service.ErrMediaBalanceHoldConflict
 		}
-		if strings.EqualFold(status, "reserved") || strings.EqualFold(status, "capture_pending") {
+		if strings.EqualFold(status, "reserved") || strings.EqualFold(status, "dispatched") || strings.EqualFold(status, "capture_pending") {
 			if err := tx.Commit(); err != nil {
 				return nil, err
 			}
@@ -93,6 +93,39 @@ func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *s
 	}
 	tx = nil
 	return &service.MediaBalanceHoldResult{Applied: true, NewBalance: &balance, FrozenBalance: &frozen}, nil
+}
+
+func (r *usageBillingRepository) MarkMediaBalanceDispatched(ctx context.Context, cmd *service.MediaBalanceHoldCommand) (_ *service.MediaBalanceHoldResult, err error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("usage billing repository db is nil")
+	}
+	if cmd == nil {
+		return &service.MediaBalanceHoldResult{}, nil
+	}
+	cmd.Normalize()
+	if cmd.RequestID == "" || cmd.APIKeyID <= 0 || cmd.UserID <= 0 || cmd.HoldAmount <= 0 {
+		return &service.MediaBalanceHoldResult{}, nil
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE media_balance_holds
+		SET status = 'dispatched',
+			expires_at = GREATEST(expires_at, NOW() + INTERVAL '24 hours'),
+			updated_at = NOW()
+		WHERE request_id = $1 AND api_key_id = $2 AND user_id = $3
+			AND request_fingerprint = $4 AND hold_amount = $5
+			AND status IN ('reserved', 'dispatched')
+	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if rows != 1 {
+		return nil, service.ErrMediaBalanceHoldConflict
+	}
+	return &service.MediaBalanceHoldResult{Applied: true}, nil
 }
 
 func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context, cmd *service.MediaBalanceHoldCommand, actualCost float64) (_ *service.MediaBalanceHoldResult, err error) {
@@ -140,7 +173,7 @@ func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context,
 		tx = nil
 		return &service.MediaBalanceHoldResult{Applied: false}, nil
 	}
-	if !strings.EqualFold(status, "reserved") && !strings.EqualFold(status, "capture_pending") {
+	if !strings.EqualFold(status, "reserved") && !strings.EqualFold(status, "dispatched") && !strings.EqualFold(status, "capture_pending") {
 		return nil, service.ErrMediaBalanceHoldConflict
 	}
 	if existingCapture.Valid && !mediaBalanceAmountsEqual(existingCapture.Float64, actualCost) {
@@ -148,9 +181,12 @@ func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context,
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE media_balance_holds
-		SET status = 'capture_pending', capture_amount = $2, updated_at = NOW()
+		SET status = 'capture_pending',
+			capture_amount = $2,
+			expires_at = GREATEST(expires_at, NOW() + INTERVAL '24 hours'),
+			updated_at = NOW()
 		WHERE request_id = $1 AND api_key_id = $3
-		  AND status IN ('reserved', 'capture_pending')
+		  AND status IN ('reserved', 'dispatched', 'capture_pending')
 	`, cmd.RequestID, actualCost, cmd.APIKeyID)
 	if err != nil {
 		return nil, err
@@ -213,7 +249,7 @@ func (r *usageBillingRepository) ReleaseMediaBalance(ctx context.Context, cmd *s
 	if holdUserID != cmd.UserID || strings.TrimSpace(fingerprint) != strings.TrimSpace(cmd.RequestFingerprint) || !mediaBalanceAmountsEqual(holdAmount, cmd.HoldAmount) {
 		return nil, service.ErrMediaBalanceHoldConflict
 	}
-	if !strings.EqualFold(status, "reserved") {
+	if !strings.EqualFold(status, "reserved") && !strings.EqualFold(status, "dispatched") {
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
@@ -272,7 +308,7 @@ func (r *usageBillingRepository) captureMediaBalanceHold(ctx context.Context, tx
 	if userID != cmd.UserID {
 		return 0, service.ErrMediaBalanceHoldConflict
 	}
-	if !strings.EqualFold(status, "reserved") && !strings.EqualFold(status, "capture_pending") {
+	if !strings.EqualFold(status, "reserved") && !strings.EqualFold(status, "dispatched") && !strings.EqualFold(status, "capture_pending") {
 		return 0, service.ErrMediaBalanceHoldConflict
 	}
 	actual := cmd.MediaBalanceHoldActualCost
@@ -318,6 +354,8 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 	if tx == nil || userID <= 0 {
 		return nil
 	}
+	// Only a captured success marker or a successful async task can settle an
+	// expired hold. Unsent, failed, and unresolved requests are refunded.
 	var releaseAmount float64
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(hold_amount), 0)
@@ -328,7 +366,7 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 				ON tasks.api_key_id = holds.api_key_id
 				AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
 			WHERE holds.user_id = $1
-					AND holds.status = 'reserved'
+				AND holds.status IN ('reserved', 'dispatched')
 				AND holds.expires_at <= NOW()
 				AND (
 					tasks.id IS NULL
@@ -347,18 +385,18 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 		FROM (
 			SELECT holds.hold_amount, COALESCE(holds.capture_amount, holds.hold_amount) AS actual_amount
 			FROM media_balance_holds holds
-			LEFT JOIN media_generation_tasks tasks
-				ON tasks.api_key_id = holds.api_key_id
-				AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
-			WHERE holds.user_id = $1
-				AND (
-					holds.status = 'capture_pending'
-					OR (
-						holds.status = 'reserved'
-						AND LOWER(BTRIM(tasks.status)) IN (
-							'complete', 'completed', 'success', 'succeeded', 'done'
+				LEFT JOIN media_generation_tasks tasks
+					ON tasks.api_key_id = holds.api_key_id
+					AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
+				WHERE holds.user_id = $1
+					AND (
+						holds.status = 'capture_pending'
+						OR (
+							holds.status IN ('reserved', 'dispatched')
+							AND LOWER(BTRIM(tasks.status)) IN (
+								'complete', 'completed', 'success', 'succeeded', 'done'
+							)
 						)
-					)
 				)
 				AND holds.expires_at <= NOW()
 			FOR UPDATE OF holds
@@ -391,7 +429,7 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 		UPDATE media_balance_holds holds
 		SET status = 'released', settled_amount = 0, settled_at = NOW(), updated_at = NOW()
 		WHERE holds.user_id = $1
-			AND holds.status = 'reserved'
+			AND holds.status IN ('reserved', 'dispatched')
 			AND holds.expires_at <= NOW()
 			AND NOT EXISTS (
 				SELECT 1
@@ -414,7 +452,7 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 			AND (
 				holds.status = 'capture_pending'
 				OR (
-					holds.status = 'reserved'
+					holds.status IN ('reserved', 'dispatched')
 					AND EXISTS (
 						SELECT 1
 						FROM media_generation_tasks tasks
@@ -422,7 +460,7 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 							AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
 							AND LOWER(BTRIM(tasks.status)) IN (
 								'complete', 'completed', 'success', 'succeeded', 'done'
-							)
+						)
 					)
 				)
 			)

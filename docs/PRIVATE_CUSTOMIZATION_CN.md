@@ -47,10 +47,12 @@
 | 会话粘性 | 同一会话优先保持可调度账号，减少缓存失效 | `backend/internal/service/openai_account_scheduler.go`、`repository/scheduler_cache.go` |
 | 速度画像 | 按账号、模型族、入站端点和上游端点维护 TTFT/错误率画像，避免 Chat 样本污染 Responses | `openai_account_scheduler.go`、`handler/openai_account_schedule_profile.go` |
 | 快账号优先 | 在分组、模型、传输协议、能力和并发限制内综合 TTFT、错误率、负载、队列和配额余量 | `openai_account_scheduler.go` |
-| 首响应故障转移 | 仅在下游尚未输出且错误明确允许切换时执行；最终成功 attempt 的首响应单独记录 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*` |
+| 首响应故障转移 | 仅在下游尚未输出且错误明确允许切换时执行；最终成功 attempt 的真实语义首响应单独记录 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*`、`service/openai_first_token_timing.go` |
 | 运行时短熔断 | 只隔离明确异常的账号/能力组合，不能因为用户取消或媒体长任务等待永久封禁账号 | `openai_account_runtime_block_fastpath.go` |
 
 不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时应回到官方兼容选择流程，而不是进入另一套隐式实验策略。
+
+TTFT 起点必须设置在最终选中账号实际发出上游请求之前。HTTP 响应头、SSE 注释/preamble、空 delta、usage-only 事件和本地伪造事件都不能算首字；只有首个文本、reasoning 或工具调用等真实语义输出才结束计时。`duration_ms` 仍保留从客户端请求进入到完成的完整耗时，不能为了显示更快而缩短总耗时。
 
 ### 3.3 可用渠道与产品入口
 
@@ -70,6 +72,8 @@
 - 计费：`service/openai_gateway_usage.go`、`billing_service.go`、媒体定价快照。
 
 同步和异步都是显式模式。同步失败不得自动改成异步再创建一次；异步创建必须使用幂等键，后续只查询已有任务。返回 URL 必须改写为平台代理地址或转换为可直接交付的图片数据。
+
+余额计费用户在调用上游前按创建时渠道价格快照冻结预计费用，原子地从可用余额转入冻结余额；并发创建不能透支。余额不足必须在上游请求前返回 `402`。成功 usage 与冻结结算在同一数据库事务中完成并退还差额；明确失败立即释放，状态不明的媒体创建不得重放，过期时只有 `capture_pending` 或成功任务证据才能扣费，其余退款。订阅分组和 simple mode 保持原有计费行为。
 
 ### 3.5 视频生成与媒体代理
 
@@ -95,6 +99,7 @@
 ### 4.1 数据库
 
 - 媒体任务、公开任务 ID、定价快照、计费终态和幂等信息由迁移维护。
+- `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引，禁止修改已发布的 `178` checksum。
 - 修改 `backend/ent/schema/` 后必须重新生成 Ent 文件，并提交 schema、生成代码、SQL migration 和回归测试。
 - 新迁移必须可重复启动，不能依赖某个生产账号、分组或固定主键。
 - 升级前必须验证旧数据库迁移到新版本；回滚应用前确认新迁移是否向后兼容。
@@ -189,7 +194,7 @@ pnpm run build
 - 原有 OpenAI、Claude、Gemini、Codex、OpenClaw 调用继续可用。
 - 显式缓存键优先，自动缓存键不跨用户、不改正文、不影响图片意图。
 - 调度不越过用户分组、模型限制、账号状态、传输协议和并发限制。
-- TTFT 只记录真实成功 attempt；错误切号耗时另记，不能伪造首字。
+- TTFT 从最终账号真实上游发送开始，只记录首个语义输出；错误切号耗时另记，不能把响应头、SSE preamble 或空事件伪装成首字。
 - 文本请求最多按明确安全条件故障转移；媒体创建发出后绝不跨账号自动重放。
 - 图片/视频任务使用公开 ID；查询固定回创建账号；成功一次计费，失败不扣费。
 - 用户响应和浏览器 Network 不出现供应商域名、账号 Base URL、供应商任务 ID或认证头。
