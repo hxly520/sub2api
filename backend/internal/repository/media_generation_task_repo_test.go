@@ -25,7 +25,7 @@ func TestCreateMediaGenerationTaskPreservesInitialPricingSnapshotOnConflict(t *t
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	mock.ExpectExec(`(?s)INSERT INTO media_generation_tasks .*billing_unit_price.*ON CONFLICT .*billing_unit_price = COALESCE\(media_generation_tasks\.billing_unit_price, EXCLUDED\.billing_unit_price\).*billing_rate_multiplier = COALESCE\(media_generation_tasks\.billing_rate_multiplier, EXCLUDED\.billing_rate_multiplier\)`).
+	mock.ExpectExec(`(?s)INSERT INTO media_generation_tasks .*VALUES .*\$33, \$34, NOW\(\), NOW\(\).*ON CONFLICT .*billing_unit_price = COALESCE\(media_generation_tasks\.billing_unit_price, EXCLUDED\.billing_unit_price\).*billing_rate_multiplier = COALESCE\(media_generation_tasks\.billing_rate_multiplier, EXCLUDED\.billing_rate_multiplier\)`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	unitPrice := 0.55
