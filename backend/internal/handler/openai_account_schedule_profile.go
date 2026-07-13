@@ -35,7 +35,7 @@ func openAIAccountScheduleResultProfile(c *gin.Context, requestedModel string, a
 	if c != nil {
 		inboundEndpoint = GetInboundEndpoint(c)
 		if account != nil {
-			upstreamEndpoint = resolveOpenAIUpstreamEndpoint(c, account)
+			upstreamEndpoint = resolveOpenAIUpstreamEndpoint(c, account, nil)
 		}
 	}
 	return service.NewOpenAIAccountScheduleProfile(requestedModel, inboundEndpoint, upstreamEndpoint)
