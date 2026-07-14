@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,12 +19,80 @@ var chatgptCodexModelsURL = "https://chatgpt.com/backend-api/codex/models"
 
 const codexModelsManifestBodyLimit int64 = 8 << 20
 
+var errNoAvailableCodexModelsAccount = errors.New("no available OpenAI accounts for Codex models manifest")
+
+// CodexModelsAccountSelection describes how the models manifest should be
+// served. APIKey-only groups cannot access ChatGPT's OAuth manifest; Codex can
+// safely merge an empty remote catalog with its built-in catalog instead.
+type CodexModelsAccountSelection struct {
+	Account    *Account
+	APIKeyOnly bool
+}
+
 // CodexModelsManifest carries the raw upstream manifest payload plus caching
 // metadata so handlers can pass both through to the client untouched.
 type CodexModelsManifest struct {
 	Body        []byte
 	ETag        string
 	NotModified bool
+}
+
+// SelectAccountForCodexModels chooses a manifest-capable account without
+// changing normal request scheduling. It deliberately prefers OAuth/setup-token
+// accounts even when an API key relay has a higher scheduling priority.
+func (s *OpenAIGatewayService) SelectAccountForCodexModels(ctx context.Context, groupID *int64) (*CodexModelsAccountSelection, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, errNoAvailableCodexModelsAccount
+	}
+
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, PlatformOpenAI)
+	if err != nil {
+		return nil, err
+	}
+	return s.selectAccountForCodexModels(ctx, accounts)
+}
+
+func (s *OpenAIGatewayService) selectAccountForCodexModels(ctx context.Context, accounts []Account) (*CodexModelsAccountSelection, error) {
+	var firstBrokenOAuth *Account
+	hasAPIKey := false
+
+	for i := range accounts {
+		candidate := s.resolveFreshSchedulableOpenAIAccount(ctx, &accounts[i], PlatformOpenAI, "", false, "")
+		if candidate == nil {
+			continue
+		}
+		candidate = s.recheckSelectedOpenAIAccountFromDB(ctx, candidate, PlatformOpenAI, "", false, "")
+		if candidate == nil {
+			continue
+		}
+
+		if candidate.Type == AccountTypeAPIKey {
+			hasAPIKey = true
+			continue
+		}
+		if !candidate.IsOAuth() {
+			continue
+		}
+
+		credentialAccount, resolveErr := resolveCredentialAccount(ctx, s.accountRepo, candidate)
+		if resolveErr == nil && credentialAccount != nil && strings.TrimSpace(credentialAccount.GetOpenAIAccessToken()) != "" {
+			return &CodexModelsAccountSelection{Account: candidate}, nil
+		}
+		if firstBrokenOAuth == nil {
+			firstBrokenOAuth = candidate
+		}
+	}
+
+	// Preserve the existing 502 for a configured OAuth/setup-token account with
+	// broken credentials. This keeps configuration faults visible instead of
+	// silently treating a mixed group as APIKey-only.
+	if firstBrokenOAuth != nil {
+		return &CodexModelsAccountSelection{Account: firstBrokenOAuth}, nil
+	}
+	if hasAPIKey {
+		return &CodexModelsAccountSelection{APIKeyOnly: true}, nil
+	}
+	return nil, errNoAvailableCodexModelsAccount
 }
 
 // FetchCodexModelsManifest fetches the live Codex models manifest from the

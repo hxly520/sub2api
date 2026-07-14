@@ -38,6 +38,7 @@
 | 提示词归属 | OpenAI APIKey 账号可显式开启 `extra.openai_upstream_relay`。开启后不再由平台重复注入默认 Codex 基础提示词；客户端显式 `instructions` 原样保留，上游内部提示词由上游负责。默认关闭，维持官方兼容行为 | `backend/internal/service/account.go`、`openai_gateway_forward.go`、账号创建/编辑前端 | `account_openai_passthrough_test.go`、`openai_gateway_service_hotpath_test.go`、账号前端测试 |
 | Chat/Responses/Anthropic 工具流 | 保留 function/custom/freeform 工具、工具顺序归一、call id、thinking 和 terminal 事件 | `backend/internal/pkg/apicompat/`、`backend/internal/service/openai_gateway_*` | `chatcompletions_responses_bridge_*`、`openai_gateway_*_test.go` |
 | OpenAI-compatible 账号 | 支持精确 Chat Completions URL、Responses/Chat 模式和可配置认证头 | `backend/internal/service/openai_compatible_auth.go`、账号配置与各 OpenAI 转发服务 | 账号探测、模型同步、Chat/Responses/Embeddings/Images 回归 |
+| Codex 模型清单 | 带 `client_version` 的模型清单请求只使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey-only 中转分组返回合法空远程清单，由 Codex 合并内置目录。OAuth 凭据损坏仍报 502，零可用账号仍报 503 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`gateway_codex_models_test.go` |
 | 错误脱敏 | 用户仅看到稳定错误结构，内部日志保留不含凭据的诊断字段 | `backend/internal/service/upstream_error_sanitize.go`、各 gateway handler | `upstream_error_sanitize_test.go`、协议错误回归 |
 
 缓存命中由请求前缀稳定性、模型、账号和上游缓存共同决定。网关只能提高亲和性，不能承诺每次请求都命中。禁止为了提高命中率改写用户正文、跨用户共享缓存键或固定到已不可调度账号。
@@ -205,6 +206,7 @@ pnpm run build
 ## 7. 不可破坏清单
 
 - 原有 OpenAI、Claude、Gemini、Codex、OpenClaw 调用继续可用。
+- Codex manifest 兼容只作用于带 `client_version` 的模型清单路径；普通 `/v1/models`、渠道定价模型列表、Responses/Chat 调度和计费不得复用该回退。
 - 显式缓存键优先，自动缓存键不跨用户、不改正文、不影响图片意图。
 - 调度不越过用户分组、模型限制、账号状态、传输协议和并发限制。
 - 全局首响应优化开启时，TTFT 从最终账号真实上游发送开始，以最终成功 attempt 的 2xx 响应头作为最早正常响应；关闭时使用首个真实语义输出。错误切号、调度排队和失败响应不计入，不能发送本地伪造 token 或篡改总耗时。

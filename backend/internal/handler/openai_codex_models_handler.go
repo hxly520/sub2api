@@ -15,10 +15,10 @@ import (
 // Codex CLI and the Codex desktop app refresh their model picker from
 // GET {base_url}/models?client_version=... (custom provider mode) or
 // GET /backend-api/codex/models (chatgpt_base_url mode). Both routes land
-// here. The manifest is proxied verbatim from the ChatGPT backend with a
-// schedulable OAuth account's credentials, so clients pointed at the gateway
-// see the account's real, always-current model entitlements instead of a
-// frozen local cache.
+// here. OAuth-capable groups receive the live ChatGPT manifest. APIKey-only
+// relay groups receive an empty remote catalog, which Codex merges with its
+// built-in catalog; this avoids requiring an OAuth token that those accounts do
+// not have without changing normal model routing.
 func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey.Group == nil {
@@ -30,13 +30,17 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		return
 	}
 
-	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, "", "")
+	selection, err := h.gatewayService.SelectAccountForCodexModels(c.Request.Context(), apiKey.GroupID)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI accounts")
 		return
 	}
+	if selection.APIKeyOnly {
+		c.Data(http.StatusOK, "application/json", []byte(`{"models":[]}`))
+		return
+	}
 
-	manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), c.GetHeader("If-None-Match"))
+	manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), selection.Account, c.Query("client_version"), c.GetHeader("If-None-Match"))
 	if err != nil {
 		h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
 		return

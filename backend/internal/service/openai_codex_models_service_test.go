@@ -5,17 +5,93 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 func newCodexModelsTestAccount() *Account {
 	return &Account{
-		ID:       1,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeOAuth,
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
 		Credentials: map[string]any{
 			"access_token":       "test-access-token",
 			"chatgpt_account_id": "acc-123",
 		},
+	}
+}
+
+func newCodexModelsAPIKeyTestAccount(id int64) Account {
+	return Account{
+		ID:          id,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+}
+
+func TestSelectAccountForCodexModelsSkipsAPIKeyBeforeOAuth(t *testing.T) {
+	oauth := *newCodexModelsTestAccount()
+	oauth.ID = 2
+	s := &OpenAIGatewayService{}
+
+	selection, err := s.selectAccountForCodexModels(context.Background(), []Account{
+		newCodexModelsAPIKeyTestAccount(1),
+		oauth,
+	})
+	if err != nil {
+		t.Fatalf("selectAccountForCodexModels returned error: %v", err)
+	}
+	if selection.APIKeyOnly {
+		t.Fatal("expected OAuth selection, got APIKey-only fallback")
+	}
+	if selection.Account == nil || selection.Account.ID != oauth.ID {
+		t.Fatalf("selected account: got %#v, want OAuth account %d", selection.Account, oauth.ID)
+	}
+}
+
+func TestSelectAccountForCodexModelsAPIKeyOnlyFallback(t *testing.T) {
+	s := &OpenAIGatewayService{}
+
+	selection, err := s.selectAccountForCodexModels(context.Background(), []Account{
+		newCodexModelsAPIKeyTestAccount(1),
+		newCodexModelsAPIKeyTestAccount(2),
+	})
+	if err != nil {
+		t.Fatalf("selectAccountForCodexModels returned error: %v", err)
+	}
+	if !selection.APIKeyOnly || selection.Account != nil {
+		t.Fatalf("selection: got %#v, want APIKey-only fallback", selection)
+	}
+}
+
+func TestSelectAccountForCodexModelsBrokenOAuthDoesNotFallback(t *testing.T) {
+	oauth := *newCodexModelsTestAccount()
+	delete(oauth.Credentials, "access_token")
+	s := &OpenAIGatewayService{}
+
+	selection, err := s.selectAccountForCodexModels(context.Background(), []Account{
+		newCodexModelsAPIKeyTestAccount(1),
+		oauth,
+	})
+	if err != nil {
+		t.Fatalf("selectAccountForCodexModels returned error: %v", err)
+	}
+	if selection.APIKeyOnly || selection.Account == nil || selection.Account.ID != oauth.ID {
+		t.Fatalf("selection: got %#v, want broken OAuth account to preserve 502", selection)
+	}
+}
+
+func TestSelectAccountForCodexModelsNoAccounts(t *testing.T) {
+	s := &OpenAIGatewayService{}
+
+	selection, err := s.selectAccountForCodexModels(context.Background(), nil)
+	if err == nil {
+		t.Fatalf("expected no-account error, got selection %#v", selection)
 	}
 }
 
@@ -134,5 +210,7 @@ func TestFetchCodexModelsManifestMissingToken(t *testing.T) {
 	s := &OpenAIGatewayService{}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", ""); err == nil {
 		t.Fatal("expected error for missing access token, got nil")
+	} else if got := infraerrors.Code(err); got != http.StatusBadGateway {
+		t.Fatalf("missing access token status: got %d, want %d", got, http.StatusBadGateway)
 	}
 }
