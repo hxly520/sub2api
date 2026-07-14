@@ -234,6 +234,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 					if c.Writer.Size() != writerSizeBeforeForward {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						h.handleFailoverExhausted(c, failoverErr, true)
@@ -270,6 +271,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						zap.Int("max_switches", maxAccountSwitches),
 					)
 					continue
+				}
+				if service.IsOpenAIUpstreamFailureForStickyRelease(err) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 				}
 				h.gatewayService.MaybeBlockOpenAIAccountAfterForwardError(account, err)
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)

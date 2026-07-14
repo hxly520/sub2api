@@ -52,6 +52,22 @@ func TestOpenAIMediaCreationHandlersDoNotUseAutomaticReplayBudget(t *testing.T) 
 	}
 }
 
+func TestOpenAIPoolTextHandlersReleaseFailedStickySession(t *testing.T) {
+	for _, file := range []string{
+		"openai_gateway_handler.go",
+		"openai_chat_completions.go",
+	} {
+		t.Run(file, func(t *testing.T) {
+			source, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.Contains(t, string(source), "releaseOpenAIFailedPoolStickySession")
+		})
+	}
+	helperSource, err := os.ReadFile("openai_account_schedule_profile.go")
+	require.NoError(t, err)
+	require.Contains(t, string(helperSource), "ReportOpenAIAccountRecentFailure")
+}
+
 func TestOpenAIRequestRetryBudget_PoolModeAllowsOnlyBoundedExplicitRejectionFailover(t *testing.T) {
 	budget := openAIRequestRetryBudget{}
 	account := &service.Account{

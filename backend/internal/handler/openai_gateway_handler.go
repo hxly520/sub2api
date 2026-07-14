@@ -445,6 +445,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 					if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						h.handleFailoverExhausted(c, failoverErr, true)
@@ -481,6 +482,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int("max_switches", maxAccountSwitches),
 					)
 					continue
+				}
+				if service.IsOpenAIUpstreamFailureForStickyRelease(err) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 				}
 				h.gatewayService.MaybeBlockOpenAIAccountAfterForwardError(account, err)
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
@@ -933,6 +937,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 					if c.Writer.Size() != writerSizeBeforeForward {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
@@ -976,6 +981,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						zap.Error(err),
 					)
 					return
+				}
+				if service.IsOpenAIUpstreamFailureForStickyRelease(err) {
+					h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 				}
 				h.gatewayService.MaybeBlockOpenAIAccountAfterForwardError(account, err)
 				h.reportOpenAIAccountScheduleResult(c, account, currentRoutingModel, false, nil)
@@ -1686,6 +1694,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
 				releaseAccountSlot()
 				if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
@@ -2097,7 +2106,8 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 	}
 	// 与快照同口径：排除 compact 心跳字节，避免"仅心跳写出"被误判为
 	// 响应已写出（#3887）。
-	if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward {
+	if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward ||
+		service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward {
 		return false
 	}
 

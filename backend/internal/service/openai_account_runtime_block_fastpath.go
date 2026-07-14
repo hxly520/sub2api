@@ -284,6 +284,22 @@ func openAIForwardErrorRuntimeBlockReason(err error) string {
 	}
 }
 
+// IsOpenAIUpstreamFailureForStickyRelease identifies failures where retaining
+// a pool-mode session binding would route the client's next retry back to the
+// same failed upstream. Client cancellation and downstream disconnects remain
+// excluded by openAIForwardErrorRuntimeBlockReason.
+func IsOpenAIUpstreamFailureForStickyRelease(err error) bool {
+	if openAIForwardErrorRuntimeBlockReason(err) != "" {
+		return true
+	}
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "upstream response failed") ||
+		strings.Contains(message, "stream usage incomplete after timeout")
+}
+
 func normalizeOpenAIRuntimeBlockReason(reason string) string {
 	reason = strings.ToLower(strings.TrimSpace(reason))
 	if reason == "" {

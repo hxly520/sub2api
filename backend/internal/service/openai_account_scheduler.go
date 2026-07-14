@@ -43,6 +43,8 @@ const (
 	openAIAccountSlowSuccessConsecutiveThreshold        = 3
 	openAIAccountSlowSuccessPenaltyDuration             = 3 * time.Minute
 	openAIAccountSlowSuccessScoreMultiplier             = 0.35
+	openAIAccountRecentFailurePenaltyDuration           = 2 * time.Minute
+	openAIAccountRecentFailureScoreMultiplier           = 0.10
 	openAISelectionNearEqualScoreRatio                  = 0.02
 )
 
@@ -190,6 +192,7 @@ type openAIAccountRuntimeStat struct {
 	ttftSamples             atomic.Uint64
 	slowSuccessCount        atomic.Int64
 	slowSuccessPenaltyUntil atomic.Int64
+	recentFailureUntil      atomic.Int64
 }
 
 // OpenAIAccountScheduleProfile keeps latency samples isolated by the route that
@@ -438,6 +441,20 @@ func reportOpenAIAccountRuntimeStat(stat *openAIAccountRuntimeStat, success bool
 	}
 }
 
+func (s *openAIAccountRuntimeStats) markRecentFailure(accountID int64, now time.Time) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	stat := s.loadOrCreate(accountID)
+	penaltyUntil := now.Add(openAIAccountRecentFailurePenaltyDuration).UnixNano()
+	for {
+		current := stat.recentFailureUntil.Load()
+		if current >= penaltyUntil || stat.recentFailureUntil.CompareAndSwap(current, penaltyUntil) {
+			return
+		}
+	}
+}
+
 func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstTokenMs *int, profiles ...OpenAIAccountScheduleProfile) {
 	if s == nil || accountID <= 0 {
 		return
@@ -549,6 +566,22 @@ func (s *openAIAccountRuntimeStats) slowSuccessPenaltyActive(accountID int64, pr
 	}
 	stat, _ := value.(*openAIAccountRuntimeStat)
 	return openAIAccountRuntimeSlowPenaltyActive(stat, now)
+}
+
+func (s *openAIAccountRuntimeStats) recentFailurePenaltyActive(accountID int64, now time.Time) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	value, ok := s.accounts.Load(accountID)
+	if !ok {
+		return false
+	}
+	stat, _ := value.(*openAIAccountRuntimeStat)
+	if stat == nil {
+		return false
+	}
+	until := stat.recentFailureUntil.Load()
+	return until > 0 && now.UnixNano() < until
 }
 
 func (s *openAIAccountRuntimeStats) size() int {
@@ -1216,6 +1249,12 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 				// repeatedly slow sticky account can still outrank a healthy account
 				// solely because of the cache-affinity bonus.
 				item.score *= openAIAccountSlowSuccessScoreMultiplier
+			}
+			// A pool-mode upstream that just failed remains available as a last
+			// resort, but must not immediately outrank healthy peers solely on
+			// historical TTFT. This is a soft score penalty, not a runtime block.
+			if s.stats.recentFailurePenaltyActive(item.account.ID, now) {
+				item.score *= openAIAccountRecentFailureScoreMultiplier
 			}
 		}
 	}
@@ -2304,6 +2343,20 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithProfile(accountID int64, success bool, firstTokenMs *int, profile OpenAIAccountScheduleProfile) {
 	s.ReportOpenAIAccountScheduleResult(accountID, success, firstTokenMs, profile)
+}
+
+// ReportOpenAIAccountRecentFailure temporarily lowers an account's scheduler
+// score without making it unschedulable. It is used for pool-mode upstreams:
+// healthy peers are preferred after a failure, while a single-account group
+// can still fall back to the same upstream on the client's next request.
+func (s *OpenAIGatewayService) ReportOpenAIAccountRecentFailure(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	if s.getOpenAIAccountScheduler(context.Background()) == nil || s.openaiAccountStats == nil {
+		return
+	}
+	s.openaiAccountStats.markRecentFailure(accountID, time.Now())
 }
 
 // ReportOpenAIAccountFirstResponseTimeout records an optional failure sample

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -217,6 +218,25 @@ func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsClientCancel(t *test
 
 	require.False(t, blocked)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestIsOpenAIUpstreamFailureForStickyRelease(t *testing.T) {
+	for _, err := range []error{
+		fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF),
+		errors.New("upstream response failed: Upstream request failed"),
+		errors.New("stream usage incomplete after timeout"),
+	} {
+		require.True(t, IsOpenAIUpstreamFailureForStickyRelease(err), "err=%v", err)
+	}
+
+	for _, err := range []error{
+		nil,
+		context.Canceled,
+		context.DeadlineExceeded,
+		errors.New("client disconnected during stream"),
+	} {
+		require.False(t, IsOpenAIUpstreamFailureForStickyRelease(err), "err=%v", err)
+	}
 }
 
 func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {

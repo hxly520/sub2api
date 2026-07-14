@@ -15,7 +15,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前正式基线：官方 Release `v0.1.153`（tag `a2bc1337474b68b62391116835e5698ebb5526bd`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前正式基线：官方 Release `v0.1.155`（tag `41cec0db059ffb82d0efdcfcf07a24ab51fbfe97`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -38,7 +38,7 @@
 | 提示词归属 | OpenAI APIKey 账号可显式开启 `extra.openai_upstream_relay`。开启后不再由平台重复注入默认 Codex 基础提示词；客户端显式 `instructions` 原样保留，上游内部提示词由上游负责。默认关闭，维持官方兼容行为 | `backend/internal/service/account.go`、`openai_gateway_forward.go`、账号创建/编辑前端 | `account_openai_passthrough_test.go`、`openai_gateway_service_hotpath_test.go`、账号前端测试 |
 | Chat/Responses/Anthropic 工具流 | 保留 function/custom/freeform 工具、工具顺序归一、call id、thinking 和 terminal 事件 | `backend/internal/pkg/apicompat/`、`backend/internal/service/openai_gateway_*` | `chatcompletions_responses_bridge_*`、`openai_gateway_*_test.go` |
 | OpenAI-compatible 账号 | 支持精确 Chat Completions URL、Responses/Chat 模式和可配置认证头 | `backend/internal/service/openai_compatible_auth.go`、账号配置与各 OpenAI 转发服务 | 账号探测、模型同步、Chat/Responses/Embeddings/Images 回归 |
-| Codex 模型清单 | 带 `client_version` 的模型清单请求只使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey-only 中转分组返回合法空远程清单，由 Codex 合并内置目录。OAuth 凭据损坏仍报 502，零可用账号仍报 503 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`gateway_codex_models_test.go` |
+| Codex 模型清单 | 带 `client_version` 的请求优先使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey 账号按官方代理路径获取并复用缓存、ETag 与 singleflight。APIKey-only 分组全部失败时返回合法空远程清单，由 Codex 合并内置目录；OAuth 凭据损坏仍报错 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`openai_codex_models_handler_test.go`、`gateway_codex_models_test.go` |
 | 错误脱敏 | 用户仅看到稳定错误结构，内部日志保留不含凭据的诊断字段 | `backend/internal/service/upstream_error_sanitize.go`、各 gateway handler | `upstream_error_sanitize_test.go`、协议错误回归 |
 
 缓存命中由请求前缀稳定性、模型、账号和上游缓存共同决定。网关只能提高亲和性，不能承诺每次请求都命中。禁止为了提高命中率改写用户正文、跨用户共享缓存键或固定到已不可调度账号。
@@ -50,10 +50,13 @@
 | 会话粘性 | 同一会话优先保持可调度账号，减少缓存失效 | `backend/internal/service/openai_account_scheduler.go`、`repository/scheduler_cache.go` |
 | 速度画像 | 按账号、模型族、入站端点和上游端点维护 TTFT/错误率画像，避免 Chat 样本污染 Responses | `openai_account_scheduler.go`、`handler/openai_account_schedule_profile.go` |
 | 快账号优先 | 在分组、模型、传输协议、能力和并发限制内综合 TTFT、错误率、负载、队列和配额余量 | `openai_account_scheduler.go` |
+| 故障 pool 逃逸 | 5xx、524、流读取失败或失败终态只解除当前会话到故障 pool 上游的粘性，并软降权 2 分钟；不全局封禁，单候选仍可回落 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`handler/openai_account_schedule_profile.go` |
 | 首响应记录 | `first_token_ms` 从最终成功 attempt 发出上游请求起，记录收到 2xx 响应头的最早真实确认时间；调度、排队和失败 attempt 不计入 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*`、`service/openai_first_token_timing.go` |
 | 运行时短熔断 | 只隔离明确异常的账号/能力组合，不能因为用户取消或媒体长任务等待永久封禁账号 | `openai_account_runtime_block_fastpath.go` |
 
 不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时应回到官方兼容选择流程，而不是进入另一套隐式实验策略。
+
+同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、`5xx/524`、流中断和 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。pool 上游发生这些故障后，当前请求返回真实错误；下一次客户端重试会先解除旧粘性并在 2 分钟软降权窗口内优先选择健康账号。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
 
 TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系统设置 `openai_first_response_enabled=true` 时，最终 attempt 收到上游 2xx 响应头即表示上游已经接受并正常开始响应，`first_token_ms` 在此处结束；关闭时恢复首个真实语义输出口径。4xx/5xx、transport error、调度排队和之前失败 attempt 不得留下快值。该值是首响应指标，不代表首段可见文本；`duration_ms` 仍保留从客户端请求进入到完成的完整耗时。禁止发送本地伪造 token、提前结束请求或修改计费记录来缩短指标。
 
@@ -123,13 +126,14 @@ TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.153 合并兼容结论
+### 5.0 v0.1.155 合并兼容结论
 
-- 合入官方 Grok 视频编辑/延长、Apple Container 部署、OAuth `plan_type` 覆盖、账号 IP 查询与静态资源缓存优化。
-- 合入池模式重试次数、调度缓存异常时间、OpenAI WS 生命周期、第三方 Grok Base URL、模型同步和工具流/停止原因修复。
-- 私有统一 `/v1/videos` 与官方 `/v1/videos/generations` 并存；编辑/延长保持官方能力边界，不扩散到不支持的分组。
-- 三类视频创建都使用视频定价和余额预留，绑定创建账号；发出上游后不因超时、断流或 5xx 自动重放。
-- Release tag 内 `VERSION` 仍为 `0.1.152`，本候选只修正版本元数据为 `0.1.153`，未合并 tag 之后的未发布 `main` 提交。
+- 合入官方 Grok 健康监控、Web SSO 批量导入、主机日志过滤、可选 Server-Timing、免费配额估算和 OpenAI HTTP/2 keep-alive。
+- 合入官方 Codex API Key manifest 代理与故障转移、原生 Responses 工具 namespace、Responses Lite 图像工具、非流式图片保活和流式图片终态修复。
+- 保留私有 Codex APIKey-only 合法空清单兜底、TTFT 口径、协议/缓存兼容、媒体余额预留、统一视频接口、平台代理 URL 和 KeyingPay V2。
+- 官方长上下文计费改为账号级开关并默认关闭；私有渠道显式区间定价继续优先，避免重复阶梯计费。
+- 文本模糊失败不自动重放；故障 pool 只解除当前会话粘性并短时软降权。图片和视频创建继续严格一次提交。
+- Release tag 内 `backend/cmd/server/VERSION` 仍为 `0.1.153`，本候选修正为 `0.1.155`；构建必须显式传入 `VERSION=0.1.155`，不合并 tag 之后的未发布 `main` 提交。
 
 ### 5.1 升级前盘点
 

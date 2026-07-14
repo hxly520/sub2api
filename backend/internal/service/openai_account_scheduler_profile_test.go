@@ -153,6 +153,72 @@ func TestDefaultOpenAIAccountSchedulerSlowPenaltyCanOverrideStickyBonus(t *testi
 	require.Equal(t, accounts[1].ID, plan.selectionOrder[0].account.ID)
 }
 
+func TestDefaultOpenAIAccountSchedulerRecentFailurePenaltyPrefersHealthyPeer(t *testing.T) {
+	accounts := []*Account{
+		{ID: 9253, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3},
+		{ID: 9254, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 0.2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 0.8
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 0.8
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 1.5
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 2
+
+	stats := newOpenAIAccountRuntimeStats()
+	profile := NewOpenAIAccountScheduleProfile("gpt-5.6-sol", "/v1/responses", "/v1/responses")
+	fast := 500
+	slower := 3000
+	for i := 0; i < int(openAIAccountProfileMinTTFTSamples); i++ {
+		stats.report(accounts[0].ID, true, &fast, profile)
+		stats.report(accounts[1].ID, true, &slower, profile)
+	}
+	stats.markRecentFailure(accounts[0].ID, time.Now())
+
+	scheduler := &defaultOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{cfg: cfg},
+		stats:   stats,
+	}
+	plan := scheduler.buildOpenAIAccountLoadPlan(context.Background(), OpenAIAccountScheduleRequest{
+		RequestedModel: "gpt-5.6-sol",
+		SessionHash:    "failed-pool-session",
+		Profile:        profile,
+	}, accounts, map[int64]*AccountLoadInfo{
+		accounts[0].ID: {AccountID: accounts[0].ID},
+		accounts[1].ID: {AccountID: accounts[1].ID},
+	})
+
+	require.Len(t, plan.selectionOrder, 2)
+	require.Equal(t, accounts[1].ID, plan.selectionOrder[0].account.ID)
+
+	require.True(t, stats.recentFailurePenaltyActive(accounts[0].ID, time.Now()))
+	require.False(t, stats.recentFailurePenaltyActive(
+		accounts[0].ID,
+		time.Now().Add(openAIAccountRecentFailurePenaltyDuration+time.Second),
+	))
+}
+
+func TestDefaultOpenAIAccountSchedulerRecentFailurePenaltyKeepsOnlyCandidateAvailable(t *testing.T) {
+	account := &Account{ID: 9255, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 1
+
+	stats := newOpenAIAccountRuntimeStats()
+	stats.markRecentFailure(account.ID, time.Now())
+	scheduler := &defaultOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{cfg: cfg},
+		stats:   stats,
+	}
+	plan := scheduler.buildOpenAIAccountLoadPlan(context.Background(), OpenAIAccountScheduleRequest{}, []*Account{account}, map[int64]*AccountLoadInfo{
+		account.ID: {AccountID: account.ID},
+	})
+
+	require.Len(t, plan.selectionOrder, 1)
+	require.Equal(t, account.ID, plan.selectionOrder[0].account.ID)
+}
+
 func TestOpenAIGatewayServiceFirstResponseTimeoutDoesNotCreateTTFTSample(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)

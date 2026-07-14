@@ -160,6 +160,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		c,
 		requestModel,
 	)
+	stopJSONKeepalive := func() {}
+	defer func() { stopJSONKeepalive() }()
 
 	reqLog.Debug("openai.images.account_selecting")
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
@@ -283,8 +285,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image billing reservation is unavailable")
 		return
 	}
+	if !parsed.Stream {
+		stopJSONKeepalive = service.StartOpenAIImagesJSONKeepalive(c, h.openAIImagesJSONKeepaliveInterval())
+	}
 	forwardStart := time.Now()
-	writerSizeBeforeForward := c.Writer.Size()
+	writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 	result, err := func() (*service.OpenAIForwardResult, error) {
 		defer func() {
 			if accountReleaseFunc != nil {
@@ -332,7 +337,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			if errors.As(err, &failoverErr) {
 				mediaHoldTransferred = mediaHold != nil
 				h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
-				if c.Writer.Size() != writerSizeBeforeForward {
+				if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 					reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
@@ -433,6 +438,13 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	reqLog.Debug("openai.images.request_completed", zap.Int64("account_id", account.ID))
+}
+
+func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration {
+	if h.cfg == nil || h.cfg.Gateway.ImageNonstreamKeepaliveInterval <= 0 {
+		return 0
+	}
+	return time.Duration(h.cfg.Gateway.ImageNonstreamKeepaliveInterval) * time.Second
 }
 
 func isMultipartImagesContentType(contentType string) bool {

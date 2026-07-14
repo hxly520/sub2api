@@ -1731,6 +1731,87 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_PoolModeSlowSessionKeep
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_PoolFailureMovesNextRequestToHealthyPeer(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10107)
+	accounts := []Account{
+		{
+			ID:          21701,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"pool_mode": true},
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			GroupIDs:    []int64{groupID},
+		},
+		{
+			ID:          21702,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"pool_mode": true},
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			GroupIDs:    []int64{groupID},
+		},
+	}
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{"openai:session_hash_pool_failed": 21701},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 0.2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 0.8
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 0.8
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 1.5
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 2
+	stats := newOpenAIAccountRuntimeStats()
+	profile := NewOpenAIAccountScheduleProfile("gpt-5.6-sol", "/v1/responses", "/v1/responses")
+	fastTTFT := 500
+	slowerTTFT := 3000
+	for i := 0; i < int(openAIAccountProfileMinTTFTSamples); i++ {
+		stats.report(21701, true, &fastTTFT, profile)
+		stats.report(21702, true, &slowerTTFT, profile)
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              cache,
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		openaiAccountStats: stats,
+	}
+
+	svc.ReportOpenAIAccountRecentFailure(21701)
+	released, err := svc.ReleaseOpenAIStickySessionAfterFailure(ctx, &groupID, "session_hash_pool_failed", 21701)
+	require.NoError(t, err)
+	require.True(t, released)
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForCapability(
+		WithOpenAIAccountScheduleProfile(ctx, profile),
+		&groupID,
+		"",
+		"session_hash_pool_failed",
+		"gpt-5.6-sol",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(21702), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.Equal(t, int64(21702), cache.sessionBindings["openai:session_hash_pool_failed"])
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_NewSessionPrefersFasterProfile(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(10106)

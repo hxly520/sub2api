@@ -219,3 +219,24 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 	}
 	return err
 }
+
+// ReleaseOpenAIStickySessionAfterFailure removes a sticky binding only when it
+// still points at the account that failed. It is used for pool-mode upstreams:
+// the current request is never replayed, while the client's next retry can be
+// scheduled against another local upstream without disabling the whole pool.
+func (s *OpenAIGatewayService) ReleaseOpenAIStickySessionAfterFailure(ctx context.Context, groupID *int64, sessionHash string, accountID int64) (bool, error) {
+	if s == nil || s.cache == nil || accountID <= 0 || strings.TrimSpace(sessionHash) == "" {
+		return false, nil
+	}
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+
+	boundAccountID, _ := s.getStickySessionAccountID(stateCtx, groupID, sessionHash)
+	if boundAccountID != accountID {
+		return false, nil
+	}
+	if err := s.deleteStickySessionAccountID(stateCtx, groupID, sessionHash); err != nil {
+		return false, err
+	}
+	return true, nil
+}

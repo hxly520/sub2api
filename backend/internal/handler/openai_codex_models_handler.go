@@ -15,11 +15,14 @@ import (
 // Codex CLI and the Codex desktop app refresh their model picker from
 // GET {base_url}/models?client_version=... (custom provider mode) or
 // GET /backend-api/codex/models (chatgpt_base_url mode). Both routes land
-// here. OAuth-capable groups receive the live ChatGPT manifest. APIKey-only
-// relay groups receive an empty remote catalog, which Codex merges with its
-// built-in catalog; this avoids requiring an OAuth token that those accounts do
-// not have without changing normal model routing.
+// here. The manifest is proxied verbatim from the selected account's ChatGPT
+// backend or custom API key upstream. API key manifests use a short-lived,
+// asynchronously revalidated cache. If every API-key manifest attempt fails,
+// Codex receives an empty remote catalog and keeps its built-in model list.
 func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
+	if c.Request.Context().Err() != nil {
+		return
+	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey.Group == nil {
 		h.errorResponse(c, http.StatusUnauthorized, "invalid_request_error", "API key group is required")
@@ -30,28 +33,65 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		return
 	}
 
-	selection, err := h.gatewayService.SelectAccountForCodexModels(c.Request.Context(), apiKey.GroupID)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI accounts")
-		return
+	maxAccountSwitches := h.maxAccountSwitches
+	if maxAccountSwitches <= 0 {
+		maxAccountSwitches = 3
 	}
-	if selection.APIKeyOnly {
-		c.Data(http.StatusOK, "application/json", []byte(`{"models":[]}`))
-		return
-	}
+	failedAccountIDs := make(map[int64]struct{})
+	switchCount := 0
+	var lastUpstreamErr error
 
-	manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), selection.Account, c.Query("client_version"), c.GetHeader("If-None-Match"))
-	if err != nil {
-		h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
-		return
-	}
+	for {
+		selection, err := h.gatewayService.SelectAccountForCodexModelsWithExclusions(c.Request.Context(), apiKey.GroupID, failedAccountIDs)
+		if err != nil {
+			if c.Request.Context().Err() != nil {
+				return
+			}
+			if lastUpstreamErr != nil {
+				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
+				return
+			}
+			h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI accounts")
+			return
+		}
+		if selection.APIKeyOnly {
+			c.Data(http.StatusOK, "application/json", []byte(`{"models":[]}`))
+			return
+		}
+		account := selection.Account
 
-	if manifest.ETag != "" {
-		c.Header("ETag", manifest.ETag)
-	}
-	if manifest.NotModified {
-		c.Status(http.StatusNotModified)
+		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), c.GetHeader("If-None-Match"))
+		if err != nil {
+			if c.Request.Context().Err() != nil {
+				return
+			}
+			shouldTryAnotherAccount := account != nil && account.Type == service.AccountTypeAPIKey
+			shouldTryAnotherAccount = shouldTryAnotherAccount || service.IsRetryableCodexModelsManifestError(err)
+			if shouldTryAnotherAccount && switchCount < maxAccountSwitches {
+				failedAccountIDs[account.ID] = struct{}{}
+				switchCount++
+				lastUpstreamErr = err
+				continue
+			}
+			if account != nil && account.Type == service.AccountTypeAPIKey {
+				c.Data(http.StatusOK, "application/json", []byte(`{"models":[]}`))
+				return
+			}
+			h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
+			return
+		}
+		if c.Request.Context().Err() != nil {
+			return
+		}
+
+		if manifest.ETag != "" {
+			c.Header("ETag", manifest.ETag)
+		}
+		if manifest.NotModified {
+			c.Status(http.StatusNotModified)
+			return
+		}
+		c.Data(http.StatusOK, "application/json", manifest.Body)
 		return
 	}
-	c.Data(http.StatusOK, "application/json", manifest.Body)
 }
