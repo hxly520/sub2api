@@ -50,13 +50,13 @@
 | 会话粘性 | 同一会话优先保持可调度账号，减少缓存失效 | `backend/internal/service/openai_account_scheduler.go`、`repository/scheduler_cache.go` |
 | 速度画像 | 按账号、模型族、入站端点和上游端点维护 TTFT/错误率画像，避免 Chat 样本污染 Responses | `openai_account_scheduler.go`、`handler/openai_account_schedule_profile.go` |
 | 快账号优先 | 在分组、模型、传输协议、能力和并发限制内综合 TTFT、错误率、负载、队列和配额余量 | `openai_account_scheduler.go` |
-| 故障 pool 逃逸 | 5xx、524、流读取失败或失败终态只解除当前会话到故障 pool 上游的粘性，并软降权 2 分钟；不全局封禁，单候选仍可回落 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`handler/openai_account_schedule_profile.go` |
+| 故障 pool 逃逸 | 5xx、524、流读取失败或失败终态只在绑定仍指向故障账号时原子解除当前会话粘性，并软降权 2 分钟；不全局封禁，单候选仍可回落 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`repository/gateway_cache.go`、`handler/openai_account_schedule_profile.go` |
 | 首响应记录 | `first_token_ms` 从最终成功 attempt 发出上游请求起，记录收到 2xx 响应头的最早真实确认时间；调度、排队和失败 attempt 不计入 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*`、`service/openai_first_token_timing.go` |
 | 运行时短熔断 | 只隔离明确异常的账号/能力组合，不能因为用户取消或媒体长任务等待永久封禁账号 | `openai_account_runtime_block_fastpath.go` |
 
 不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时应回到官方兼容选择流程，而不是进入另一套隐式实验策略。
 
-同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、`5xx/524`、流中断和 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。pool 上游发生这些故障后，当前请求返回真实错误；下一次客户端重试会先解除旧粘性并在 2 分钟软降权窗口内优先选择健康账号。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
+同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、`5xx/524`、流中断和 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。pool 上游发生这些故障后，当前请求返回真实错误；下一次客户端重试会在绑定仍指向故障账号时原子解除旧粘性，并在 2 分钟软降权窗口内优先选择健康账号。并发请求已经写入的新绑定不会被旧失败请求删除。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
 
 TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系统设置 `openai_first_response_enabled=true` 时，最终 attempt 收到上游 2xx 响应头即表示上游已经接受并正常开始响应，`first_token_ms` 在此处结束；关闭时恢复首个真实语义输出口径。4xx/5xx、transport error、调度排队和之前失败 attempt 不得留下快值。该值是首响应指标，不代表首段可见文本；`duration_ms` 仍保留从客户端请求进入到完成的完整耗时。禁止发送本地伪造 token、提前结束请求或修改计费记录来缩短指标。
 

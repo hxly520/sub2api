@@ -91,6 +91,31 @@ func (s *GatewayCacheSuite) TestDeleteSessionAccountID() {
 	require.True(s.T(), errors.Is(err, redis.Nil), "expected redis.Nil after delete")
 }
 
+func (s *GatewayCacheSuite) TestCompareAndDeleteSessionAccountID() {
+	conditionalCache, ok := s.cache.(service.ConditionalGatewayCache)
+	require.True(s.T(), ok)
+
+	const (
+		groupID   = int64(1)
+		session   = "compare-delete"
+		accountID = int64(102)
+	)
+	require.NoError(s.T(), s.cache.SetSessionAccountID(s.ctx, groupID, session, accountID, time.Minute))
+
+	deleted, err := conditionalCache.CompareAndDeleteSessionAccountID(s.ctx, groupID, session, accountID+1)
+	require.NoError(s.T(), err)
+	require.False(s.T(), deleted)
+	stored, err := s.cache.GetSessionAccountID(s.ctx, groupID, session)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), accountID, stored)
+
+	deleted, err = conditionalCache.CompareAndDeleteSessionAccountID(s.ctx, groupID, session, accountID)
+	require.NoError(s.T(), err)
+	require.True(s.T(), deleted)
+	_, err = s.cache.GetSessionAccountID(s.ctx, groupID, session)
+	require.True(s.T(), errors.Is(err, redis.Nil), "expected redis.Nil after matching compare-and-delete")
+}
+
 func (s *GatewayCacheSuite) TestGetSessionAccountID_CorruptedValue() {
 	sessionID := "corrupted"
 	groupID := int64(1)

@@ -448,6 +448,14 @@ type GatewayCache interface {
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
 }
 
+// ConditionalGatewayCache extends GatewayCache with an atomic compare-and-delete
+// operation. Implementations should only remove the binding when its current
+// account still matches expectedAccountID.
+type ConditionalGatewayCache interface {
+	GatewayCache
+	CompareAndDeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error)
+}
+
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
 	if groupID == nil {

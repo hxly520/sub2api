@@ -220,6 +220,39 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 	return err
 }
 
+func (s *OpenAIGatewayService) compareAndDeleteStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string, accountID int64) (bool, error) {
+	conditionalCache, ok := s.cache.(ConditionalGatewayCache)
+	if !ok {
+		boundAccountID, _ := s.getStickySessionAccountID(ctx, groupID, sessionHash)
+		if boundAccountID != accountID {
+			return false, nil
+		}
+		if err := s.deleteStickySessionAccountID(ctx, groupID, sessionHash); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	primaryKey := s.openAISessionCacheKey(sessionHash)
+	if primaryKey == "" {
+		return false, nil
+	}
+	primaryDeleted, err := conditionalCache.CompareAndDeleteSessionAccountID(ctx, derefGroupID(groupID), primaryKey, accountID)
+	if err != nil {
+		return false, err
+	}
+
+	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
+	if legacyKey == "" {
+		return primaryDeleted, nil
+	}
+	legacyDeleted, legacyErr := conditionalCache.CompareAndDeleteSessionAccountID(ctx, derefGroupID(groupID), legacyKey, accountID)
+	if legacyErr != nil {
+		return primaryDeleted, legacyErr
+	}
+	return primaryDeleted || legacyDeleted, nil
+}
+
 // ReleaseOpenAIStickySessionAfterFailure removes a sticky binding only when it
 // still points at the account that failed. It is used for pool-mode upstreams:
 // the current request is never replayed, while the client's next retry can be
@@ -231,12 +264,5 @@ func (s *OpenAIGatewayService) ReleaseOpenAIStickySessionAfterFailure(ctx contex
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
 
-	boundAccountID, _ := s.getStickySessionAccountID(stateCtx, groupID, sessionHash)
-	if boundAccountID != accountID {
-		return false, nil
-	}
-	if err := s.deleteStickySessionAccountID(stateCtx, groupID, sessionHash); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.compareAndDeleteStickySessionAccountID(stateCtx, groupID, sessionHash, accountID)
 }
