@@ -2,6 +2,7 @@ package handler
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -50,15 +51,19 @@ func (h *AvailableChannelHandler) featureEnabled(c *gin.Context) bool {
 // userAvailableGroup 用户可见的分组概要（白名单字段）。
 //
 // 前端据此区分专属 vs 公开分组（IsExclusive）、订阅 vs 标准分组（SubscriptionType，
-// 订阅视觉加深），并用 RateMultiplier 作为默认倍率；用户专属倍率前端走
+// 订阅视觉加深），并展示默认倍率与高峰倍率规则；用户专属倍率前端走
 // /groups/rates，和 API 密钥页面保持一致。
 type userAvailableGroup struct {
-	ID               int64   `json:"id"`
-	Name             string  `json:"name"`
-	Platform         string  `json:"platform"`
-	SubscriptionType string  `json:"subscription_type"`
-	RateMultiplier   float64 `json:"rate_multiplier"`
-	IsExclusive      bool    `json:"is_exclusive"`
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	Platform           string  `json:"platform"`
+	SubscriptionType   string  `json:"subscription_type"`
+	RateMultiplier     float64 `json:"rate_multiplier"`
+	PeakRateEnabled    bool    `json:"peak_rate_enabled"`
+	PeakStart          string  `json:"peak_start"`
+	PeakEnd            string  `json:"peak_end"`
+	PeakRateMultiplier float64 `json:"peak_rate_multiplier"`
+	IsExclusive        bool    `json:"is_exclusive"`
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
@@ -192,14 +197,47 @@ func buildPlatformSections(
 
 	sections := make([]userChannelPlatformSection, 0, len(platforms))
 	for _, platform := range platforms {
-		platformSet := map[string]struct{}{platform: {}}
+		platformGroups := groupsByPlatform[platform]
 		sections = append(sections, userChannelPlatformSection{
 			Platform:        platform,
-			Groups:          groupsByPlatform[platform],
-			SupportedModels: toUserSupportedModels(ch.SupportedModels, platformSet),
+			Groups:          platformGroups,
+			SupportedModels: visibleGroupSupportedModels(ch, platformGroups, platform),
 		})
 	}
 	return sections
+}
+
+// visibleGroupSupportedModels 只合并当前用户实际可见分组对应的渠道定价模型快照。
+// 快照按分组平台隔离；手工构造的旧测试数据没有快照时，保留全量列表兼容行为。
+func visibleGroupSupportedModels(
+	ch service.AvailableChannel,
+	visibleGroups []userAvailableGroup,
+	platform string,
+) []userSupportedModel {
+	platformSet := map[string]struct{}{platform: {}}
+	if len(ch.SupportedModelsByGroup) == 0 {
+		return toUserSupportedModels(ch.SupportedModels, platformSet)
+	}
+
+	models := make([]service.SupportedModel, 0)
+	seen := make(map[string]struct{})
+	for _, group := range visibleGroups {
+		for _, model := range ch.SupportedModelsByGroup[group.ID] {
+			if model.Platform != platform {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(model.Platform)) + "\x00" + strings.ToLower(strings.TrimSpace(model.Name))
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			models = append(models, model)
+		}
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return toUserSupportedModels(models, platformSet)
 }
 
 // filterUserVisibleGroups 仅保留用户可访问的分组。
@@ -213,12 +251,16 @@ func filterUserVisibleGroups(
 			continue
 		}
 		visible = append(visible, userAvailableGroup{
-			ID:               g.ID,
-			Name:             g.Name,
-			Platform:         g.Platform,
-			SubscriptionType: g.SubscriptionType,
-			RateMultiplier:   g.RateMultiplier,
-			IsExclusive:      g.IsExclusive,
+			ID:                 g.ID,
+			Name:               g.Name,
+			Platform:           g.Platform,
+			SubscriptionType:   g.SubscriptionType,
+			RateMultiplier:     g.RateMultiplier,
+			PeakRateEnabled:    g.PeakRateEnabled,
+			PeakStart:          g.PeakStart,
+			PeakEnd:            g.PeakEnd,
+			PeakRateMultiplier: g.PeakRateMultiplier,
+			IsExclusive:        g.IsExclusive,
 		})
 	}
 	return visible

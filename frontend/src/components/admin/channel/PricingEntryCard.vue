@@ -189,11 +189,15 @@
           </div>
         </div>
 
-        <!-- Image mode -->
-        <div v-else-if="entry.billing_mode === 'image'">
-          <!-- Default image price (per-request, same as per_request mode) -->
+        <!-- Image / video mode -->
+        <div v-else-if="entry.billing_mode === 'image' || entry.billing_mode === 'video'">
+          <!-- Default media price. Video mode stores the per-second unit price in per_request_price. -->
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ t('admin.channels.form.defaultImagePrice') }}
+            {{
+              entry.billing_mode === 'video'
+                ? t('admin.channels.form.videoPrice')
+                : t('admin.channels.form.defaultImagePrice')
+            }}
             <span class="ml-1 font-normal text-gray-400">$</span>
           </label>
           <div class="mt-1 w-48">
@@ -201,10 +205,14 @@
               type="number" step="any" min="0" class="input text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
           </div>
 
-          <!-- Image tiers -->
+          <!-- Media tiers -->
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.channels.form.imageTiers') }}
+              {{
+                entry.billing_mode === 'video'
+                  ? t('admin.channels.form.videoTiers')
+                  : t('admin.channels.form.imageTiers')
+              }}
             </label>
             <button type="button" @click="addImageTier" class="text-xs text-primary-600 hover:text-primary-700">
               + {{ t('admin.channels.form.addTier') }}
@@ -234,7 +242,7 @@ import Icon from '@/components/icons/Icon.vue'
 import IntervalRow from './IntervalRow.vue'
 import ModelTagInput from './ModelTagInput.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
-import { perTokenToMTok, getPlatformTagClass } from './types'
+import { defaultMediaTierLabels, perTokenToMTok, getPlatformTagClass } from './types'
 import type { BillingMode } from '@/api/admin/channels'
 import channelsAPI from '@/api/admin/channels'
 
@@ -256,7 +264,8 @@ const collapsed = ref(props.entry.models.length > 0)
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },
   { value: 'per_request', label: t('admin.channels.billingMode.perRequest') },
-  { value: 'image', label: t('admin.channels.billingMode.image') }
+  { value: 'image', label: t('admin.channels.billingMode.image') },
+  { value: 'video', label: t('admin.channels.billingMode.video') }
 ])
 
 const billingModeLabel = computed(() => {
@@ -281,7 +290,7 @@ function addInterval() {
 
 function addImageTier() {
   const intervals = [...(props.entry.intervals || [])]
-  const labels = ['1K', '2K', '4K', 'HD']
+  const labels = defaultMediaTierLabels(props.entry.billing_mode)
   intervals.push({
     min_tokens: 0, max_tokens: null, tier_label: labels[intervals.length] || '',
     input_price: null, output_price: null, cache_write_price: null,

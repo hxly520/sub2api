@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -47,6 +48,7 @@ type OpenAIImagesCapability string
 const (
 	OpenAIImagesCapabilityBasic  OpenAIImagesCapability = "images-basic"
 	OpenAIImagesCapabilityNative OpenAIImagesCapability = "images-native"
+	OpenAIImagesCapabilityAsync  OpenAIImagesCapability = "images-async"
 )
 
 type OpenAIImagesUpload struct {
@@ -59,35 +61,39 @@ type OpenAIImagesUpload struct {
 }
 
 type OpenAIImagesRequest struct {
-	Endpoint           string
-	ContentType        string
-	Multipart          bool
-	Model              string
-	ExplicitModel      bool
-	Prompt             string
-	Stream             bool
-	N                  int
-	Size               string
-	ExplicitSize       bool
-	SizeTier           string
-	ResponseFormat     string
-	Quality            string
-	Background         string
-	OutputFormat       string
-	Moderation         string
-	InputFidelity      string
-	Style              string
-	OutputCompression  *int
-	PartialImages      *int
-	HasMask            bool
-	HasNativeOptions   bool
-	RequiredCapability OpenAIImagesCapability
-	InputImageURLs     []string
-	MaskImageURL       string
-	Uploads            []OpenAIImagesUpload
-	MaskUpload         *OpenAIImagesUpload
-	Body               []byte
-	bodyHash           string
+	Endpoint               string
+	ContentType            string
+	Multipart              bool
+	Model                  string
+	ExplicitModel          bool
+	Prompt                 string
+	Stream                 bool
+	Async                  bool
+	N                      int
+	Size                   string
+	ImageSize              string
+	AspectRatio            string
+	ExplicitSize           bool
+	SizeTier               string
+	ResponseFormat         string
+	Quality                string
+	Background             string
+	OutputFormat           string
+	Moderation             string
+	InputFidelity          string
+	Style                  string
+	OutputCompression      *int
+	PartialImages          *int
+	HasMask                bool
+	HasNativeOptions       bool
+	RequiredCapability     OpenAIImagesCapability
+	InputImageURLs         []string
+	MaskImageURL           string
+	Uploads                []OpenAIImagesUpload
+	MaskUpload             *OpenAIImagesUpload
+	Body                   []byte
+	UpstreamIdempotencyKey string
+	bodyHash               string
 }
 
 func (r *OpenAIImagesRequest) ModerationBody() []byte {
@@ -218,7 +224,10 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	if err := validateOpenAIImagesModel(req.Model); err != nil {
 		return nil, err
 	}
-	req.SizeTier = normalizeOpenAIImageSizeTier(req.Size)
+	if err := validateOpenAIImagesRequest(req); err != nil {
+		return nil, err
+	}
+	req.SizeTier = resolveOpenAIImageSizeTier(req.Size, req.ImageSize, req.Model)
 	req.RequiredCapability = classifyOpenAIImagesCapability(req)
 	return req, nil
 }
@@ -236,6 +245,12 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 		}
 		req.Stream = streamResult.Bool()
 	}
+	if asyncResult := gjson.GetBytes(body, "async"); asyncResult.Exists() {
+		if asyncResult.Type != gjson.True && asyncResult.Type != gjson.False {
+			return fmt.Errorf("invalid async field type")
+		}
+		req.Async = asyncResult.Bool()
+	}
 
 	if nResult := gjson.GetBytes(body, "n"); nResult.Exists() {
 		if nResult.Type != gjson.Number {
@@ -251,6 +266,8 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 		req.Size = strings.TrimSpace(sizeResult.String())
 		req.ExplicitSize = req.Size != ""
 	}
+	req.ImageSize = strings.TrimSpace(gjson.GetBytes(body, "image_size").String())
+	req.AspectRatio = strings.TrimSpace(gjson.GetBytes(body, "aspect_ratio").String())
 	req.ResponseFormat = strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "response_format").String()))
 	req.Quality = strings.TrimSpace(gjson.GetBytes(body, "quality").String())
 	req.Background = strings.TrimSpace(gjson.GetBytes(body, "background").String())
@@ -377,6 +394,10 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 		case "size":
 			req.Size = value
 			req.ExplicitSize = value != ""
+		case "image_size":
+			req.ImageSize = value
+		case "aspect_ratio":
+			req.AspectRatio = value
 		case "response_format":
 			req.ResponseFormat = strings.ToLower(value)
 		case "stream":
@@ -385,6 +406,12 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 				return fmt.Errorf("invalid stream field value")
 			}
 			req.Stream = parsed
+		case "async":
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("invalid async field value")
+			}
+			req.Async = parsed
 		case "n":
 			n, err := strconv.Atoi(value)
 			if err != nil || n <= 0 {
@@ -455,7 +482,19 @@ func applyOpenAIImagesDefaults(req *OpenAIImagesRequest) {
 }
 
 func isOpenAIImageGenerationModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-image-")
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-image-") ||
+		strings.HasPrefix(model, "firefly-gpt-image-") ||
+		strings.HasPrefix(model, "firefly-nano-banana") ||
+		(strings.HasPrefix(model, "cy-img") && strings.Contains(model, "gpt-image-")) ||
+		isGrokImageGenerationModel(model)
+}
+
+func isGrokImageGenerationModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return model == "grok-imagine" ||
+		model == "grok-imagine-edit" ||
+		strings.HasPrefix(model, "grok-imagine-image")
 }
 
 func validateOpenAIImagesModel(model string) error {
@@ -469,12 +508,66 @@ func validateOpenAIImagesModel(model string) error {
 	return fmt.Errorf("images endpoint requires an image model, got %q", model)
 }
 
+func validateOpenAIImagesRequest(req *OpenAIImagesRequest) error {
+	if req == nil {
+		return fmt.Errorf("image request is required")
+	}
+	if req.Async && req.Stream {
+		return fmt.Errorf("async image generation does not support stream=true")
+	}
+	if !isFireflyFixedTierImageModel(req.Model) {
+		return nil
+	}
+	if req.N != 1 {
+		return fmt.Errorf("%s only supports n=1", req.Model)
+	}
+	wantTier := fixedOpenAIImageSizeTierFromModel(req.Model)
+	if imageSize := strings.TrimSpace(req.ImageSize); imageSize != "" {
+		gotTier, ok := ClassifyImageBillingTier(imageSize)
+		if !ok || gotTier != wantTier {
+			return fmt.Errorf("image_size must be %s for model %s", wantTier, req.Model)
+		}
+	}
+	if size := strings.TrimSpace(req.Size); size != "" && size != "auto" {
+		if strings.Contains(size, ":") {
+			if !isFireflyImageAspectRatio(size) {
+				return fmt.Errorf("unsupported size aspect ratio %q for model %s", size, req.Model)
+			}
+		} else if gotTier, ok := ClassifyImageBillingTier(size); ok && gotTier != wantTier {
+			return fmt.Errorf("size must match %s for model %s", wantTier, req.Model)
+		}
+	}
+	if quality := strings.TrimSpace(req.Quality); quality != "" {
+		if gotTier, ok := ClassifyImageBillingTier(quality); ok && gotTier != wantTier {
+			return fmt.Errorf("quality must match %s for model %s", wantTier, req.Model)
+		}
+	}
+	if aspectRatio := strings.TrimSpace(req.AspectRatio); aspectRatio != "" && !isFireflyImageAspectRatio(aspectRatio) {
+		return fmt.Errorf("unsupported aspect_ratio %q for model %s", aspectRatio, req.Model)
+	}
+	return nil
+}
+
+func isFireflyFixedTierImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "firefly-") && fixedOpenAIImageSizeTierFromModel(model) != ""
+}
+
+func isFireflyImageAspectRatio(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "1:1", "4:3", "3:4", "16:9", "9:16":
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeOpenAIImagesEndpointPath(path string) string {
-	trimmed := strings.TrimSpace(path)
-	switch {
-	case strings.Contains(trimmed, "/images/generations"):
+	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
+	switch trimmed {
+	case openAIImagesGenerationsEndpoint, "/images/generations":
 		return openAIImagesGenerationsEndpoint
-	case strings.Contains(trimmed, "/images/edits"):
+	case openAIImagesEditsEndpoint, "/images/edits":
 		return openAIImagesEditsEndpoint
 	default:
 		return ""
@@ -484,6 +577,9 @@ func normalizeOpenAIImagesEndpointPath(path string) string {
 func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapability {
 	if req == nil {
 		return OpenAIImagesCapabilityNative
+	}
+	if req.Async {
+		return OpenAIImagesCapabilityAsync
 	}
 	if req.ExplicitModel || req.ExplicitSize {
 		return OpenAIImagesCapabilityNative
@@ -502,6 +598,40 @@ func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapabi
 		return OpenAIImagesCapabilityNative
 	}
 	return OpenAIImagesCapabilityBasic
+}
+
+func NewOpenAIImagePublicTaskID() string {
+	return "image-" + strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+func OpenAIImageTaskSessionHash(taskID string) string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return ""
+	}
+	return "openai-image:" + DeriveSessionHashFromSeed(taskID)
+}
+
+func OpenAIImageTaskPollEndpoint(model, createEndpoint string) string {
+	if isFireflyFixedTierImageModel(model) {
+		return openAIImagesGenerationsEndpoint
+	}
+	if endpoint := normalizeOpenAIImageTaskEndpoint(createEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return openAIImagesGenerationsEndpoint
+}
+
+func normalizeOpenAIImageTaskEndpoint(endpoint string) string {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	switch endpoint {
+	case openAIImagesGenerationsEndpoint, "/images/generations":
+		return openAIImagesGenerationsEndpoint
+	case openAIImagesEditsEndpoint, "/images/edits":
+		return openAIImagesEditsEndpoint
+	default:
+		return ""
+	}
 }
 
 func hasOpenAINativeImageOptions(exists func(path string) bool) bool {
@@ -533,6 +663,33 @@ func isOpenAINativeImageOption(name string) bool {
 
 func normalizeOpenAIImageSizeTier(size string) string {
 	return NormalizeImageBillingTierOrDefault(size)
+}
+
+func resolveOpenAIImageSizeTier(size, imageSize, model string) string {
+	if tier := fixedOpenAIImageSizeTierFromModel(model); tier != "" {
+		return tier
+	}
+	if strings.TrimSpace(imageSize) != "" {
+		return normalizeOpenAIImageSizeTier(imageSize)
+	}
+	return normalizeOpenAIImageSizeTier(size)
+}
+
+func fixedOpenAIImageSizeTierFromModel(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, item := range []struct {
+		suffix string
+		tier   string
+	}{
+		{suffix: "-4k", tier: ImageBillingSize4K},
+		{suffix: "-2k", tier: ImageBillingSize2K},
+		{suffix: "-1k", tier: ImageBillingSize1K},
+	} {
+		if strings.HasSuffix(model, item.suffix) {
+			return item.tier
+		}
+	}
+	return ""
 }
 
 func (s *OpenAIGatewayService) ForwardImages(
@@ -576,6 +733,13 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
+	billingInputSize := strings.TrimSpace(parsed.Size)
+	if imageSize := strings.TrimSpace(parsed.ImageSize); imageSize != "" {
+		billingInputSize = imageSize
+	}
+	if fixedTier := fixedOpenAIImageSizeTierFromModel(upstreamModel); fixedTier != "" {
+		billingInputSize = fixedTier
+	}
 	logger.LegacyPrintf(
 		"service.openai_gateway",
 		"[OpenAI] Images request routing request_model=%s upstream_model=%s endpoint=%s account_type=%s",
@@ -584,7 +748,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		parsed.Endpoint,
 		account.Type,
 	)
-	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
+	forwardBody, forwardContentType, err := rewriteOpenAIImagesRequest(body, parsed.ContentType, upstreamModel, fixedOpenAIImageSizeTierFromModel(upstreamModel))
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +759,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err != nil {
 		return nil, err
 	}
-	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint)
+	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint, parsed.UpstreamIdempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -650,10 +814,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	defer func() { _ = resp.Body.Close() }()
 
 	var usage OpenAIUsage
-	imageCount := parsed.N
+	var imageCount int
 	var firstTokenMs *int
 	if parsed.Stream && isEventStreamResponse(resp.Header) {
-		streamUsage, streamCount, streamSizes, ttft, err := s.handleOpenAIImagesStreamingResponse(resp, c, startTime)
+		streamUsage, streamCount, streamSizes, ttft, err := s.handleOpenAIImagesStreamingResponse(upstreamCtx, resp, c, startTime)
 		if err != nil {
 			if streamCount > 0 {
 				return &OpenAIForwardResult{
@@ -667,7 +831,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					FirstTokenMs:     ttft,
 					ImageCount:       streamCount,
 					ImageSize:        parsed.SizeTier,
-					ImageInputSize:   parsed.Size,
+					ImageInputSize:   billingInputSize,
 					ImageOutputSizes: streamSizes,
 				}, err
 			}
@@ -688,31 +852,54 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
 			ImageSize:        parsed.SizeTier,
-			ImageInputSize:   parsed.Size,
+			ImageInputSize:   billingInputSize,
 			ImageOutputSizes: imageOutputSizes,
 		}, nil
 	} else {
-		nonStreamUsage, nonStreamCount, nonStreamSizes, err := s.handleOpenAIImagesNonStreamingResponse(resp, c)
+		nonStreamUsage, nonStreamCount, nonStreamSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(resp, c, false)
 		if err != nil {
 			return nil, err
 		}
+		PrepareOpenAIImageClientResponseHeaders(c.Writer.Header())
+		c.Writer.Header().Del("Content-Length")
+		c.Writer.Header().Del("Content-Encoding")
+		if !parsed.Async {
+			responseBody, err = s.PrepareOpenAIImageClientResponseBody(upstreamCtx, responseBody)
+			if err != nil {
+				return nil, err
+			}
+			nonStreamCount = extractOpenAIImageCountFromJSONBytes(responseBody)
+			nonStreamSizes = collectOpenAIResponseImageOutputSizesFromJSONBytes(responseBody)
+			if nonStreamCount == 0 {
+				return nil, fmt.Errorf("upstream image response did not contain an image")
+			}
+			c.Data(resp.StatusCode, responseContentType, responseBody)
+		}
 		usage = nonStreamUsage
-		if nonStreamCount > 0 {
-			imageCount = nonStreamCount
+		imageCount = nonStreamCount
+		mediaStatus := extractOpenAIImageTaskStatus(responseBody)
+		if mediaStatus == "" && nonStreamCount > 0 {
+			mediaStatus = MediaGenerationStatusCompleted
 		}
 		return &OpenAIForwardResult{
-			RequestID:        resp.Header.Get("x-request-id"),
-			Usage:            usage,
-			Model:            requestModel,
-			UpstreamModel:    upstreamModel,
-			Stream:           parsed.Stream,
-			ResponseHeaders:  resp.Header.Clone(),
-			Duration:         time.Since(startTime),
-			FirstTokenMs:     firstTokenMs,
-			ImageCount:       imageCount,
-			ImageSize:        parsed.SizeTier,
-			ImageInputSize:   parsed.Size,
-			ImageOutputSizes: nonStreamSizes,
+			RequestID:           resp.Header.Get("x-request-id"),
+			ResponseID:          extractOpenAIImageTaskID(responseBody),
+			Usage:               usage,
+			Model:               requestModel,
+			UpstreamModel:       upstreamModel,
+			Stream:              parsed.Stream,
+			ResponseHeaders:     resp.Header.Clone(),
+			Duration:            time.Since(startTime),
+			FirstTokenMs:        firstTokenMs,
+			ImageCount:          imageCount,
+			ImageSize:           parsed.SizeTier,
+			ImageInputSize:      billingInputSize,
+			ImageOutputSizes:    nonStreamSizes,
+			MediaType:           "image",
+			MediaStatus:         mediaStatus,
+			ResponseStatus:      resp.StatusCode,
+			ResponseBody:        responseBody,
+			ResponseContentType: responseContentType,
 		}, nil
 	}
 }
@@ -725,6 +912,7 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 	contentType string,
 	token string,
 	endpoint string,
+	idempotencyKey string,
 ) (*http.Request, error) {
 	targetURL := openAIImagesGenerationsURL
 	if endpoint == openAIImagesEditsEndpoint {
@@ -760,6 +948,11 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 	if strings.TrimSpace(contentType) != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	if idempotencyKey = strings.TrimSpace(idempotencyKey); idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
+	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
 
@@ -767,24 +960,45 @@ func buildOpenAIImagesURL(base string, endpoint string) string {
 	return buildOpenAIEndpointURL(base, endpoint)
 }
 
-func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]byte, string, error) {
+func rewriteOpenAIImagesRequest(body []byte, contentType string, model string, imageSize string) ([]byte, string, error) {
 	model = strings.TrimSpace(model)
-	if model == "" {
+	imageSize = strings.TrimSpace(imageSize)
+	if model == "" && imageSize == "" {
 		return body, contentType, nil
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
-		rewrittenBody, rewrittenType, rewriteErr := rewriteOpenAIImagesMultipartModel(body, contentType, model)
+		fields := map[string]string{}
+		if model != "" {
+			fields["model"] = model
+		}
+		if imageSize != "" {
+			fields["image_size"] = imageSize
+		}
+		rewrittenBody, rewrittenType, rewriteErr := rewriteOpenAIImagesMultipartFields(body, contentType, fields)
 		return rewrittenBody, rewrittenType, rewriteErr
 	}
-	rewritten, err := sjson.SetBytes(body, "model", model)
-	if err != nil {
-		return nil, "", fmt.Errorf("rewrite image request model: %w", err)
+	rewritten := body
+	if model != "" {
+		rewritten, err = sjson.SetBytes(rewritten, "model", model)
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite image request model: %w", err)
+		}
+	}
+	if imageSize != "" {
+		rewritten, err = sjson.SetBytes(rewritten, "image_size", imageSize)
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite image request image_size: %w", err)
+		}
 	}
 	return rewritten, contentType, nil
 }
 
 func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model string) ([]byte, string, error) {
+	return rewriteOpenAIImagesMultipartFields(body, contentType, map[string]string{"model": strings.TrimSpace(model)})
+}
+
+func rewriteOpenAIImagesMultipartFields(body []byte, contentType string, fields map[string]string) ([]byte, string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse multipart content-type: %w", err)
@@ -797,7 +1011,7 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
-	modelWritten := false
+	written := make(map[string]bool, len(fields))
 
 	for {
 		part, err := reader.NextPart()
@@ -816,12 +1030,12 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 			return nil, "", fmt.Errorf("create multipart part: %w", err)
 		}
 
-		if formName == "model" && part.FileName() == "" {
-			if _, err := target.Write([]byte(model)); err != nil {
+		if replacement, ok := fields[formName]; ok && part.FileName() == "" && replacement != "" {
+			if _, err := target.Write([]byte(replacement)); err != nil {
 				_ = part.Close()
-				return nil, "", fmt.Errorf("rewrite multipart model: %w", err)
+				return nil, "", fmt.Errorf("rewrite multipart field %s: %w", formName, err)
 			}
-			modelWritten = true
+			written[formName] = true
 			_ = part.Close()
 			continue
 		}
@@ -832,9 +1046,13 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 		_ = part.Close()
 	}
 
-	if !modelWritten {
-		if err := writer.WriteField("model", model); err != nil {
-			return nil, "", fmt.Errorf("append multipart model field: %w", err)
+	for _, name := range []string{"model", "image_size"} {
+		value := strings.TrimSpace(fields[name])
+		if value == "" || written[name] {
+			continue
+		}
+		if err := writer.WriteField(name, value); err != nil {
+			return nil, "", fmt.Errorf("append multipart field %s: %w", name, err)
 		}
 	}
 	if err := writer.Close(); err != nil {
@@ -853,10 +1071,10 @@ func cloneMultipartHeader(src textproto.MIMEHeader) textproto.MIMEHeader {
 	return dst
 }
 
-func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http.Response, c *gin.Context) (OpenAIUsage, int, []string, error) {
+func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http.Response, c *gin.Context, writeResponse bool) (OpenAIUsage, int, []string, []byte, string, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
-		return OpenAIUsage{}, 0, nil, err
+		return OpenAIUsage{}, 0, nil, nil, "", err
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"
@@ -865,18 +1083,24 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http
 			contentType = upstreamType
 		}
 	}
-	c.Data(resp.StatusCode, contentType, body)
+	if writeResponse {
+		c.Data(resp.StatusCode, contentType, body)
+	}
 
 	usage, _ := extractOpenAIUsageFromJSONBytes(body)
-	return usage, extractOpenAIImageCountFromJSONBytes(body), collectOpenAIResponseImageOutputSizesFromJSONBytes(body), nil
+	return usage, extractOpenAIImageCountFromJSONBytes(body), collectOpenAIResponseImageOutputSizesFromJSONBytes(body), body, contentType, nil
 }
 
 func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	startTime time.Time,
 ) (OpenAIUsage, int, []string, *int, error) {
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	PrepareOpenAIImageClientResponseHeaders(c.Writer.Header())
+	c.Writer.Header().Del("Content-Length")
+	c.Writer.Header().Del("Content-Encoding")
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "text/event-stream"
@@ -913,10 +1137,18 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		sseData.Flush(processSSEData)
 	}
 
-	processLine := func(line []byte) {
+	processLine := func(line []byte) error {
 		if len(line) == 0 {
-			return
+			return nil
 		}
+		safeLine, err := s.PrepareOpenAIImageClientStreamLine(ctx, line)
+		if err != nil {
+			if !clientDisconnected {
+				_ = s.writeOpenAIImagesStreamEvent(c, flusher, "error", buildOpenAIImagesStreamErrorBody("Image result delivery failed"))
+			}
+			return err
+		}
+		line = safeLine
 		if firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
@@ -934,7 +1166,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		trimmedLine := strings.TrimRight(string(line), "\r\n")
 		if _, ok := extractOpenAISSEDataLine(trimmedLine); ok || strings.TrimSpace(trimmedLine) == "" {
 			sseData.AddLine(trimmedLine, processSSEData)
-			return
+			return nil
 		}
 		if !seenSSEData && !fallbackTooLarge {
 			fallbackBytes += int64(len(line))
@@ -945,6 +1177,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 				fallbackBody.Reset()
 			}
 		}
+		return nil
 	}
 
 	finalizeFallbackBody := func() {
@@ -965,7 +1198,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		reader := bufio.NewReader(resp.Body)
 		for {
 			line, err := reader.ReadBytes('\n')
-			processLine(line)
+			if processErr := processLine(line); processErr != nil {
+				return usage, 0, nil, firstTokenMs, processErr
+			}
 			if err == io.EOF {
 				break
 			}
@@ -1049,7 +1284,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 				flushSSEEvent()
 				return usage, imageCounter.Count(), imageCounter.Sizes(), firstTokenMs, ev.err
 			}
-			processLine(ev.line)
+			if processErr := processLine(ev.line); processErr != nil {
+				return usage, 0, nil, firstTokenMs, processErr
+			}
 		case <-intervalCh:
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
 			if time.Since(lastRead) < streamInterval {
@@ -1111,6 +1348,44 @@ func extractOpenAIImagesBillableCountFromJSONBytes(body []byte) int {
 		return 1
 	}
 	return 0
+}
+
+func extractOpenAIImageTaskID(body []byte) string {
+	for _, path := range []string{
+		"id",
+		"task_id",
+		"request_id",
+		"data.id",
+		"data.task_id",
+		"data.request_id",
+		"data.task.id",
+		"result.id",
+		"result.task_id",
+		"result.request_id",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func extractOpenAIImageTaskStatus(body []byte) string {
+	for _, path := range []string{
+		"status",
+		"state",
+		"data.status",
+		"data.state",
+		"data.task.status",
+		"data.task.state",
+		"result.status",
+		"result.state",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
+			return NormalizeMediaGenerationStatus(value)
+		}
+	}
+	return ""
 }
 
 func mergeOpenAIUsage(dst *OpenAIUsage, body []byte) {

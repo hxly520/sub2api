@@ -6,7 +6,7 @@ on:
       version:
         description: 'Image version tag to publish'
         required: true
-        default: '0.1.142'
+        default: '0.1.151'
         type: string
       publish_latest:
         description: 'Also publish latest tag'
@@ -97,7 +97,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             org.opencontainers.image.title=sub2api
-            org.opencontainers.image.description=Sub2API cache compatibility fork
+            org.opencontainers.image.description=Sub2API compatibility fork
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ inputs.version }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateIntervals, type IntervalFormEntry } from '../types'
+import { defaultMediaTierLabels, validateIntervals, type IntervalFormEntry } from '../types'
 
 function makeInterval(over: Partial<IntervalFormEntry>): IntervalFormEntry {
   return {
@@ -79,5 +79,15 @@ describe('validateIntervals', () => {
       ]
       expect(validateIntervals(intervals, 'image', t)).toContain('maxGreaterThanMin')
     })
+  })
+})
+
+describe('defaultMediaTierLabels', () => {
+  it('uses the relay video billing resolutions including 4K', () => {
+    expect(defaultMediaTierLabels('video')).toEqual(['480p', '720p', '1080p', '4k'])
+  })
+
+  it('keeps the existing image tiers', () => {
+    expect(defaultMediaTierLabels('image')).toEqual(['1K', '2K', '4K', 'HD'])
   })
 })

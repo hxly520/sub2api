@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -47,13 +46,14 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
+		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
 		return
 	}
 	if len(body) == 0 {
@@ -64,6 +64,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	bodyRef := service.NewRequestBodyRef(body)
 	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
 	if err != nil {
+		logRequestBodyParseFailure(reqLog, body, err)
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
@@ -101,7 +102,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		currentRoutingModel = preferredMappedModel
 	}
 	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		c.Request.Context(),
+		openAIAccountScheduleSelectionContext(c, currentRoutingModel),
 		apiKey.GroupID,
 		"",
 		sessionHash,
@@ -110,12 +111,14 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		service.OpenAIUpstreamTransportAny,
 		service.OpenAIEndpointCapabilityChatCompletions,
 		false,
+		false,
 		openAICompatibleRequestPlatform(apiKey),
 	)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	if err != nil {
-		reqLog.Warn("openai_count_tokens.account_select_failed", zap.Error(err))
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel, service.PlatformOpenAI)
+		requestPlatform := openAICompatibleRequestPlatform(apiKey)
+		reqLog.Warn("openai_count_tokens.account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)))
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -123,7 +126,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 	if selection == nil || selection.Account == nil {
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel, service.PlatformOpenAI)
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimited(c)
 		}

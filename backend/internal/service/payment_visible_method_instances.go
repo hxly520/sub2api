@@ -16,8 +16,7 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 	methodSet := make(map[string]struct{}, 2)
 	addMethod := func(method string) {
 		method = NormalizeVisibleMethod(method)
-		switch method {
-		case payment.TypeAlipay, payment.TypeWxpay:
+		if method != "" {
 			methodSet[method] = struct{}{}
 		}
 	}
@@ -45,7 +44,7 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 				break
 			}
 		}
-	case payment.TypeEasyPay:
+	case payment.TypeEasyPay, payment.TypeKeyingPay:
 		for _, supportedType := range splitTypes(supportedTypes) {
 			addMethod(supportedType)
 		}
@@ -55,6 +54,14 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 	for _, method := range []string{payment.TypeAlipay, payment.TypeWxpay} {
 		if _, ok := methodSet[method]; ok {
 			methods = append(methods, method)
+			delete(methodSet, method)
+		}
+	}
+	for _, supportedType := range splitTypes(supportedTypes) {
+		method := NormalizeVisibleMethod(supportedType)
+		if _, ok := methodSet[method]; ok {
+			methods = append(methods, method)
+			delete(methodSet, method)
 		}
 	}
 	return methods
@@ -138,7 +145,7 @@ func (s *PaymentConfigService) validateVisibleMethodEnablementConflicts(
 	supportedTypes string,
 	enabled bool,
 ) error {
-	// Visible methods are selected by configured source (official/easypay),
+	// Visible methods are selected by configured source (official/easypay/keyingpay),
 	// so multiple enabled providers can intentionally claim the same user-facing
 	// method. Order creation and limits will route through the configured source.
 	_, _, _, _, _ = ctx, excludeID, providerKey, supportedTypes, enabled
@@ -215,7 +222,7 @@ func (s *PaymentConfigService) resolveEnabledVisibleMethodInstance(
 	}
 
 	method = NormalizeVisibleMethod(method)
-	if method != payment.TypeAlipay && method != payment.TypeWxpay {
+	if method == "" {
 		return nil, nil
 	}
 

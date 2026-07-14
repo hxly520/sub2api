@@ -435,13 +435,14 @@ func TestValidateIntervals_UnboundedNotLast(t *testing.T) {
 }
 
 func TestValidateIntervals_ImageModeAllowsMultipleUnboundedTiers(t *testing.T) {
-	// image / per_request 按 tier_label 匹配，多条 min=0/max=nil 是合法形态。
+	// image / video / per_request 按 tier_label 匹配，多条 min=0/max=nil 是合法形态。
 	intervals := []PricingInterval{
 		{MinTokens: 0, MaxTokens: nil, TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
 		{MinTokens: 0, MaxTokens: nil, TierLabel: "2K", PerRequestPrice: testPtrFloat64(0.06)},
 		{MinTokens: 0, MaxTokens: nil, TierLabel: "4K", PerRequestPrice: testPtrFloat64(0.08)},
 	}
 	require.NoError(t, ValidateIntervals(intervals, BillingModeImage))
+	require.NoError(t, ValidateIntervals(intervals, BillingModeVideo))
 	require.NoError(t, ValidateIntervals(intervals, BillingModePerRequest))
 }
 
@@ -512,7 +513,6 @@ func TestSupportedModels_WildcardExpandedFromPricing(t *testing.T) {
 		require.NotContains(t, m.Name, "*")
 	}
 }
-
 
 func TestSupportedModels_MissingPricingKeepsNilPricing(t *testing.T) {
 	ch := &Channel{
@@ -712,6 +712,46 @@ func TestSupportedModels_PricingOnlyNoMapping(t *testing.T) {
 	require.Equal(t, int64(2), got[0].Pricing.ID)
 	require.Equal(t, "claude-opus-4-6", got[1].Name)
 	require.Equal(t, int64(1), got[1].Pricing.ID)
+}
+
+func TestSupportedModels_PricingOnlyManyVideoModels(t *testing.T) {
+	models := []string{
+		"seedance-2.0",
+		"seedance-2.0-fast-480p",
+		"seedance-2.0-fast-720p",
+		"sora-2",
+		"sora-2-pro",
+		"omni-v1",
+		"omni-v2v",
+		"grok-video",
+		"grok-vision-video",
+		"kling-video-pro",
+		"veo-3",
+		"veo-3-fast",
+	}
+	ch := &Channel{
+		ModelPricing: []ChannelModelPricing{
+			{
+				ID:              1,
+				Platform:        PlatformOpenAI,
+				Models:          models,
+				BillingMode:     BillingModeVideo,
+				PerRequestPrice: testPtrFloat64(0.1),
+			},
+		},
+	}
+
+	got := ch.SupportedModels()
+	require.Len(t, got, len(models))
+
+	gotNames := make([]string, 0, len(got))
+	for _, m := range got {
+		require.Equal(t, PlatformOpenAI, m.Platform)
+		require.NotNil(t, m.Pricing)
+		require.Equal(t, BillingModeVideo, m.Pricing.BillingMode)
+		gotNames = append(gotNames, m.Name)
+	}
+	require.ElementsMatch(t, models, gotNames)
 }
 
 func TestSupportedModels_ExactMappingUsesTargetPricing(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -70,13 +71,24 @@ type Account struct {
 	modelMappingCacheRawPtr         uintptr
 	modelMappingCacheRawLen         int
 	modelMappingCacheRawSig         uint64
+
+	// header_overrides 热路径缓存（非持久化字段，同 model_mapping 缓存先例）
+	headerOverrideCache               map[string]string
+	headerOverrideCacheReady          bool
+	headerOverrideCacheCredentialsPtr uintptr
+	headerOverrideCacheRawPtr         uintptr
+	headerOverrideCacheRawLen         int
+	headerOverrideCacheRawSig         uint64
 }
 
 type OpenAIEndpointCapability string
 
+const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
+
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
+	OpenAIEndpointCapabilityVideos          OpenAIEndpointCapability = "videos"
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
@@ -513,9 +525,10 @@ func stringMappingFromRaw(raw any) map[string]string {
 
 func (a *Account) GetModelMapping() map[string]string {
 	credentialsPtr := mapPtr(a.Credentials)
-	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
+	rawValue := a.Credentials["model_mapping"]
+	rawMapping, _ := rawValue.(map[string]any)
 	rawPtr := mapPtr(rawMapping)
-	rawLen := len(rawMapping)
+	rawLen := modelMappingRawLen(rawValue)
 	rawSig := uint64(0)
 	rawSigReady := false
 
@@ -523,16 +536,16 @@ func (a *Account) GetModelMapping() map[string]string {
 		a.modelMappingCacheCredentialsPtr == credentialsPtr &&
 		a.modelMappingCacheRawPtr == rawPtr &&
 		a.modelMappingCacheRawLen == rawLen {
-		rawSig = modelMappingSignature(rawMapping)
+		rawSig = modelMappingRawSignature(rawValue)
 		rawSigReady = true
 		if a.modelMappingCacheRawSig == rawSig {
 			return a.modelMappingCache
 		}
 	}
 
-	mapping := a.resolveModelMapping(rawMapping)
+	mapping := a.resolveModelMapping(stringMappingFromRaw(rawValue))
 	if !rawSigReady {
-		rawSig = modelMappingSignature(rawMapping)
+		rawSig = modelMappingRawSignature(rawValue)
 	}
 
 	a.modelMappingCache = mapping
@@ -544,7 +557,7 @@ func (a *Account) GetModelMapping() map[string]string {
 	return mapping
 }
 
-func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
+func (a *Account) resolveModelMapping(rawMapping map[string]string) map[string]string {
 	if a.Credentials == nil {
 		// Antigravity 平台使用默认映射
 		if a.Platform == domain.PlatformAntigravity {
@@ -567,11 +580,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return nil
 	}
 
-	result := make(map[string]string)
+	result := make(map[string]string, len(rawMapping))
 	for k, v := range rawMapping {
-		if s, ok := v.(string); ok {
-			result[k] = s
-		}
+		result[k] = v
 	}
 	if len(result) > 0 {
 		if a.Platform == domain.PlatformAntigravity {
@@ -580,6 +591,7 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 				"gemini-3.1-pro-high",
 				"gemini-3.1-pro-low",
 			})
+			applyAntigravityGemini31ProAliases(result)
 		}
 		return result
 	}
@@ -592,6 +604,32 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return xai.DefaultModelMapping()
 	}
 	return nil
+}
+
+func modelMappingRawLen(raw any) int {
+	switch mapping := raw.(type) {
+	case map[string]any:
+		return len(mapping)
+	case map[string]string:
+		return len(mapping)
+	default:
+		return 0
+	}
+}
+
+func modelMappingRawSignature(raw any) uint64 {
+	switch mapping := raw.(type) {
+	case map[string]any:
+		return modelMappingSignature(mapping)
+	case map[string]string:
+		converted := make(map[string]any, len(mapping))
+		for key, value := range mapping {
+			converted[key] = value
+		}
+		return modelMappingSignature(converted)
+	default:
+		return 0
+	}
 }
 
 func mapPtr(m map[string]any) uintptr {
@@ -646,6 +684,61 @@ func ensureAntigravityDefaultPassthroughs(mapping map[string]string, models []st
 	}
 }
 
+func applyAntigravityGemini31ProAliases(mapping map[string]string) {
+	target := strings.TrimSpace(mapping[domain.AntigravityGemini31ProAgentModel])
+	if target == "" {
+		return
+	}
+
+	aliases := []struct {
+		model         string
+		legacyTargets map[string]struct{}
+	}{
+		{
+			model: "gemini-3.1-pro",
+			legacyTargets: map[string]struct{}{
+				"gemini-3.1-pro": {},
+			},
+		},
+		{
+			model: "gemini-3.1-pro-high",
+			legacyTargets: map[string]struct{}{
+				"gemini-3.1-pro-high": {},
+			},
+		},
+		{
+			model: "gemini-3.1-pro-preview",
+			legacyTargets: map[string]struct{}{
+				"gemini-3.1-pro-preview": {},
+				"gemini-3.1-pro-high":    {},
+			},
+		},
+	}
+
+	for _, alias := range aliases {
+		current, exists := mapping[alias.model]
+		if exists {
+			if _, legacy := alias.legacyTargets[current]; legacy {
+				mapping[alias.model] = target
+			}
+			continue
+		}
+		if mappingHasWildcardForModel(mapping, alias.model) {
+			continue
+		}
+		mapping[alias.model] = target
+	}
+}
+
+func mappingHasWildcardForModel(mapping map[string]string, model string) bool {
+	for pattern := range mapping {
+		if matchWildcard(pattern, model) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	trimmed := strings.TrimSpace(requestedModel)
 	if trimmed == "" {
@@ -686,10 +779,19 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 }
 
 // IsModelSupported 检查模型是否在 model_mapping 中（支持通配符）
-// 如果未配置 mapping，返回 true（允许所有模型）
+// 如果未配置 mapping，返回 true（允许所有模型）。
+//
+// 例外：OpenAI OAuth 账号（Codex 上游）的空映射会排除明确属于其他厂商
+// 家族的模型（deepseek-*/glm-* 等）——转发阶段 normalizeOpenAIModelForUpstream
+// 会把未知模型原样透传，Codex 上游对这类模型必然返回不可重试的 400，导致
+// 请求卡死在该账号上、无法 failover 到真正支持该模型的 API Key 账号（#3662）。
+// 未知/自定义别名仍保持允许（兼容渠道级映射），见 isOpenAIOAuthServableModel。
 func (a *Account) IsModelSupported(requestedModel string) bool {
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
+		if a.IsOpenAIOAuth() && !a.IsOpenAIPassthroughEnabled() {
+			return isOpenAIOAuthServableModel(requestedModel)
+		}
 		return true // 无映射 = 允许所有
 	}
 	if mappingSupportsRequestedModel(mapping, requestedModel) {
@@ -1118,12 +1220,32 @@ func (a *Account) IsOpenAI() bool {
 	return a.Platform == PlatformOpenAI
 }
 
+func (a *Account) IsOpenAILongContextBillingEnabled() bool {
+	if a == nil || !a.IsOpenAI() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra[openAILongContextBillingEnabledKey].(bool)
+	return ok && enabled
+}
+
 func (a *Account) IsAnthropic() bool {
 	return a.Platform == PlatformAnthropic
 }
 
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
+}
+
+func (a *Account) IsOpenAIChatGPTSubscription() bool {
+	if !a.IsOpenAIOAuth() {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(a.GetCredential("plan_type"))) {
+	case "", "free", "abnormal":
+		return false
+	default:
+		return true
+	}
 }
 
 func (a *Account) IsOpenAIPersonalAccessToken() bool {
@@ -1204,15 +1326,82 @@ func (a *Account) GetOpenAIRefreshToken() string {
 	return a.GetCredential("refresh_token")
 }
 
+// GetGrokBaseURL selects the upstream used by Grok text and Responses traffic.
+// Grok media traffic has a different transport contract and must use
+// GetGrokMediaBaseURL instead.
 func (a *Account) GetGrokBaseURL() string {
 	if !a.IsGrok() {
 		return ""
 	}
 	baseURL := a.GetCredential("base_url")
+	if a.IsGrokOAuth() {
+		if strings.TrimSpace(baseURL) == "" || isOfficialGrokAPIBaseURL(baseURL) {
+			return xai.DefaultCLIBaseURL
+		}
+		if _, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
+			return baseURL
+		}
+		return xai.DefaultCLIBaseURL
+	}
 	if baseURL != "" {
 		return baseURL
 	}
 	return xai.DefaultBaseURL
+}
+
+// GetGrokMediaBaseURL selects the upstream used by Grok Imagine APIs.
+//
+// OAuth text requests need the CLI subscription proxy, but that proxy has a
+// smaller request-body limit than the official Imagine API. Media requests can
+// contain large base64 inputs, so default OAuth accounts must use api.x.ai.
+// API-key accounts and explicit unsafe development overrides retain their
+// configured base URL.
+func (a *Account) GetGrokMediaBaseURL() string {
+	if !a.IsGrok() {
+		return ""
+	}
+	if !a.IsGrokOAuth() {
+		return a.GetGrokBaseURL()
+	}
+
+	baseURL := a.GetCredential("base_url")
+	if strings.TrimSpace(baseURL) == "" || isOfficialGrokAPIBaseURL(baseURL) || isOfficialGrokCLIBaseURL(baseURL) {
+		return xai.DefaultBaseURL
+	}
+	if _, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
+		return baseURL
+	}
+	return xai.DefaultBaseURL
+}
+
+func isOfficialGrokAPIBaseURL(raw string) bool {
+	return isOfficialGrokBaseURL(raw, xai.DefaultBaseURL)
+}
+
+func isOfficialGrokCLIBaseURL(raw string) bool {
+	return isOfficialGrokBaseURL(raw, xai.DefaultCLIBaseURL)
+}
+
+func isOfficialGrokBaseURL(raw, expected string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	defaultURL, err := url.Parse(expected)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, defaultURL.Scheme) || !strings.EqualFold(parsed.Hostname(), defaultURL.Hostname()) {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber != 443 {
+			return false
+		}
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	return path == "" || path == strings.TrimRight(defaultURL.Path, "/")
 }
 
 func (a *Account) GetGrokAccessToken() string {
@@ -1318,15 +1507,45 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		if a.Type != AccountTypeAPIKey {
 			return false
 		}
+	case OpenAIEndpointCapabilityVideos:
+		if a.Type != AccountTypeAPIKey {
+			return false
+		}
 	default:
 		return false
 	}
 
 	configured, found := a.openAIEndpointCapabilitySet()
 	if !found {
-		return true
+		return capability != OpenAIEndpointCapabilityVideos
 	}
 	return configured[string(capability)]
+}
+
+// SupportsOpenAIEndpointCapabilityForModel preserves video accounts created
+// before the explicit videos capability existed. A legacy account is eligible
+// only when its public model mapping declares the requested model exactly;
+// empty mappings and wildcard text mappings never opt an account into video.
+func (a *Account) SupportsOpenAIEndpointCapabilityForModel(capability OpenAIEndpointCapability, requestedModel string) bool {
+	if a.SupportsOpenAIEndpointCapability(capability) {
+		return true
+	}
+	if capability != OpenAIEndpointCapabilityVideos || a == nil || a.Type != AccountTypeAPIKey {
+		return false
+	}
+	if _, explicitlyConfigured := a.openAIEndpointCapabilitySet(); explicitlyConfigured {
+		return false
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return false
+	}
+	for publicModel := range a.GetModelMapping() {
+		if strings.EqualFold(strings.TrimSpace(publicModel), requestedModel) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Account) openAIEndpointCapabilitySet() (map[string]bool, bool) {
@@ -1386,6 +1605,8 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	switch capability {
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	case OpenAIImagesCapabilityAsync:
+		return a.Type == AccountTypeAPIKey && strings.TrimSpace(a.GetCredential("base_url")) != ""
 	default:
 		return true
 	}
@@ -1471,6 +1692,19 @@ func (a *Account) IsOpenAIPassthroughEnabled() bool {
 	return false
 }
 
+// IsOpenAIUpstreamRelay reports whether an OpenAI API-key account points to
+// another compatible relay that already owns its default prompt policy.
+//
+// This is intentionally narrower than passthrough: cache/session isolation,
+// model mapping, tool conversion, usage, billing, and safety remain enabled.
+func (a *Account) IsOpenAIUpstreamRelay() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_upstream_relay"].(bool)
+	return ok && enabled
+}
+
 // IsOpenAIResponsesWebSocketV2Enabled 返回 OpenAI 账号是否开启 Responses WebSocket v2。
 //
 // 分类型新字段：
@@ -1513,6 +1747,7 @@ const (
 	OpenAIWSIngressModeDedicated   = "dedicated"
 	OpenAIWSIngressModeCtxPool     = "ctx_pool"
 	OpenAIWSIngressModePassthrough = "passthrough"
+	OpenAIWSIngressModeHTTPBridge  = "http_bridge"
 )
 
 func normalizeOpenAIWSIngressMode(mode string) string {
@@ -1523,6 +1758,8 @@ func normalizeOpenAIWSIngressMode(mode string) string {
 		return OpenAIWSIngressModeCtxPool
 	case OpenAIWSIngressModePassthrough:
 		return OpenAIWSIngressModePassthrough
+	case OpenAIWSIngressModeHTTPBridge:
+		return OpenAIWSIngressModeHTTPBridge
 	case OpenAIWSIngressModeShared:
 		return OpenAIWSIngressModeShared
 	case OpenAIWSIngressModeDedicated:

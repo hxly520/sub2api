@@ -169,6 +169,17 @@ func TestMigration151AddsAccountAutoPauseExpiryPartialIndex(t *testing.T) {
 	require.Contains(t, sql, "expires_at IS NOT NULL")
 }
 
+func TestMigration158BackfillsGrokMediaGenerationGroups(t *testing.T) {
+	content, err := FS.ReadFile("158_enable_grok_media_generation_groups.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE groups")
+	require.Contains(t, sql, "SET allow_image_generation = true")
+	require.Contains(t, sql, "WHERE platform = 'grok'")
+	require.Contains(t, sql, "AND allow_image_generation = false")
+}
+
 func TestMigration154AddsSparkShadowColumnsAndConstraintsWithoutHotIndexes(t *testing.T) {
 	content, err := FS.ReadFile("154_account_spark_shadow.sql")
 	require.NoError(t, err)
@@ -201,4 +212,57 @@ func TestMigration154aAddsSparkShadowIndexesConcurrently(t *testing.T) {
 	require.Contains(t, sql, "WHERE parent_account_id IS NOT NULL")
 	require.Contains(t, sql, "quota_dimension = 'spark'")
 	require.Contains(t, sql, "deleted_at IS NULL")
+}
+
+func TestMigration173AllowsCyberBlockedUsageRequestType(t *testing.T) {
+	entries, err := FS.ReadDir(".")
+	require.NoError(t, err)
+
+	indexes := map[string]int{
+		"172_video_per_second_billing_metadata.sql":      -1,
+		"173_allow_cyber_blocked_usage_request_type.sql": -1,
+		"173_media_generation_tasks.sql":                 -1,
+		"174_media_generation_task_public_ids.sql":       -1,
+		"175_openai_first_response_settings.sql":         -1,
+		"176_media_generation_finalization_recovery.sql": -1,
+		"177_media_generation_pricing_snapshot.sql":      -1,
+		"178_media_balance_holds.sql":                    -1,
+		"179_media_balance_hold_dispatch_state.sql":      -1,
+	}
+	for i, entry := range entries {
+		if _, tracked := indexes[entry.Name()]; tracked {
+			indexes[entry.Name()] = i
+		}
+	}
+	for name, index := range indexes {
+		require.NotEqualf(t, -1, index, "migration %s must be embedded", name)
+	}
+	require.Less(t, indexes["172_video_per_second_billing_metadata.sql"], indexes["173_allow_cyber_blocked_usage_request_type.sql"])
+	require.Less(t, indexes["173_allow_cyber_blocked_usage_request_type.sql"], indexes["173_media_generation_tasks.sql"])
+	require.Less(t, indexes["173_media_generation_tasks.sql"], indexes["174_media_generation_task_public_ids.sql"])
+	require.Less(t, indexes["174_media_generation_task_public_ids.sql"], indexes["175_openai_first_response_settings.sql"])
+	require.Less(t, indexes["175_openai_first_response_settings.sql"], indexes["176_media_generation_finalization_recovery.sql"])
+	require.Less(t, indexes["176_media_generation_finalization_recovery.sql"], indexes["177_media_generation_pricing_snapshot.sql"])
+	require.Less(t, indexes["177_media_generation_pricing_snapshot.sql"], indexes["178_media_balance_holds.sql"])
+	require.Less(t, indexes["178_media_balance_holds.sql"], indexes["179_media_balance_hold_dispatch_state.sql"])
+
+	content, err := FS.ReadFile("173_allow_cyber_blocked_usage_request_type.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "DROP CONSTRAINT IF EXISTS usage_logs_request_type_check")
+	require.Contains(t, sql, "ADD CONSTRAINT usage_logs_request_type_check")
+	require.Contains(t, sql, "CHECK (request_type IN (0, 1, 2, 3, 4)) NOT VALID")
+}
+
+func TestMigration175EnablesFirstResponseOnlyForAdvancedSchedulerInstalls(t *testing.T) {
+	content, err := FS.ReadFile("175_openai_first_response_settings.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "'openai_first_response_enabled'")
+	require.Contains(t, sql, "key = 'openai_advanced_scheduler_enabled' AND value = 'true'")
+	require.Contains(t, sql, "ELSE 'false'")
+	require.Contains(t, sql, "'openai_first_response_timeout_ms', '5000'")
+	require.Contains(t, sql, "ON CONFLICT (key) DO NOTHING")
 }

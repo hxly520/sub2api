@@ -1158,7 +1158,11 @@
                     <Select
                       :modelValue="rule.action"
                       @update:modelValue="
-                        rule.action = $event as 'pass' | 'filter' | 'block'
+                        rule.action = $event as
+                          | 'pass'
+                          | 'filter'
+                          | 'block'
+                          | 'force_priority'
                       "
                       :options="openaiFastPolicyActionOptions"
                     />
@@ -1183,6 +1187,22 @@
                       :options="openaiFastPolicyScopeOptions"
                     />
                   </div>
+                </div>
+
+                <!-- User Scope -->
+                <div class="mt-3">
+                  <label
+                    class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                  >
+                    {{ t("admin.settings.openaiFastPolicy.userIds") }}
+                  </label>
+                  <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                    {{ t("admin.settings.openaiFastPolicy.userIdsHint") }}
+                  </p>
+                  <OpenAIFastPolicyUserSelector
+                    :model-value="rule.user_ids || []"
+                    @update:model-value="rule.user_ids = $event"
+                  />
                 </div>
 
                 <!-- Error Message (only when action=block) -->
@@ -1297,6 +1317,7 @@
                         | 'pass'
                         | 'filter'
                         | 'block'
+                        | 'force_priority'
                     "
                     :options="openaiFastPolicyActionOptions"
                   />
@@ -4014,6 +4035,95 @@
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
+
+              <div
+                v-if="form.openai_advanced_scheduler_enabled"
+                class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+              >
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.openaiExperimentalScheduler.stickyWeightedTitle") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t("admin.settings.openaiExperimentalScheduler.stickyWeightedDescription")
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.openai_advanced_scheduler_sticky_weighted_enabled" />
+              </div>
+
+              <div
+                v-if="form.openai_advanced_scheduler_enabled"
+                class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+              >
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.openaiExperimentalScheduler.subscriptionPriorityTitle") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t("admin.settings.openaiExperimentalScheduler.subscriptionPriorityDescription")
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.openai_advanced_scheduler_subscription_priority_enabled" />
+              </div>
+
+              <div
+                v-if="form.openai_advanced_scheduler_enabled"
+                class="border-t border-gray-100 pt-5 dark:border-dark-700"
+              >
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.openaiExperimentalScheduler.weightsTitle") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t("admin.settings.openaiExperimentalScheduler.weightsDescription")
+                    }}
+                  </p>
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                  <label
+                    v-for="field in openAIAdvancedSchedulerWeightFields"
+                    :key="field.key"
+                    class="block"
+                  >
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                      {{ field.label }}
+                    </span>
+                    <input
+                      v-model="form[field.key]"
+                      class="input mt-1"
+                      inputmode="decimal"
+                      :placeholder="field.placeholder"
+                      type="text"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div class="border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiFirstResponse.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiFirstResponse.description") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_first_response_enabled" />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -5240,6 +5350,25 @@
                 />
               </div>
 
+              <!-- QQ Group URL -->
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.qqGroupUrl") }}
+                </label>
+                <input
+                  v-model="form.qq_group_url"
+                  data-testid="qq-group-url-input"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.site.qqGroupUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.qqGroupUrlHint") }}
+                </p>
+              </div>
+
               <!-- Home Content -->
               <div>
                 <label
@@ -6407,6 +6536,34 @@
                   </div>
                   <div>
                     <label class="input-label">{{
+                      t("admin.settings.payment.subscriptionUsdToCnyRate")
+                    }}</label>
+                    <input
+                      :value="form.payment_subscription_usd_to_cny_rate || ''"
+                      @input="
+                        form.payment_subscription_usd_to_cny_rate =
+                          parseFloat(
+                            ($event.target as HTMLInputElement).value,
+                          ) || 0
+                      "
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="input"
+                      :placeholder="
+                        t(
+                          'admin.settings.payment.subscriptionUsdToCnyRateDisabled',
+                        )
+                      "
+                    />
+                    <p class="mt-0.5 text-xs text-gray-400">
+                      {{
+                        t("admin.settings.payment.subscriptionUsdToCnyRateHint")
+                      }}
+                    </p>
+                  </div>
+                  <div>
+                    <label class="input-label">{{
                       t("admin.settings.payment.rechargeFeeRate")
                     }}</label>
                     <div class="relative">
@@ -7257,12 +7414,12 @@ import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
+import OpenAIFastPolicyUserSelector from "@/views/admin/settings/OpenAIFastPolicyUserSelector.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
-import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
 import {
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
@@ -7903,6 +8060,20 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  openai_advanced_scheduler_sticky_weighted_enabled: boolean;
+  openai_advanced_scheduler_subscription_priority_enabled: boolean;
+  openai_advanced_scheduler_lb_top_k: string;
+  openai_advanced_scheduler_weight_priority: string;
+  openai_advanced_scheduler_weight_load: string;
+  openai_advanced_scheduler_weight_queue: string;
+  openai_advanced_scheduler_weight_error_rate: string;
+  openai_advanced_scheduler_weight_ttft: string;
+  openai_advanced_scheduler_weight_reset: string;
+  openai_advanced_scheduler_weight_quota_headroom: string;
+  openai_advanced_scheduler_weight_previous_response: string;
+  openai_advanced_scheduler_weight_session_sticky: string;
+  openai_first_response_enabled: boolean;
+  openai_first_response_timeout_ms: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
@@ -7936,6 +8107,7 @@ const form = reactive<SettingsForm>({
   api_base_url: "",
   contact_info: "",
   doc_url: "",
+  qq_group_url: "",
   home_content: "",
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
@@ -7950,6 +8122,7 @@ const form = reactive<SettingsForm>({
   payment_order_timeout_minutes: 30,
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
   payment_enabled_types: [],
   payment_help_image_url: "",
@@ -8094,6 +8267,20 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  openai_advanced_scheduler_sticky_weighted_enabled: false,
+  openai_advanced_scheduler_subscription_priority_enabled: false,
+  openai_advanced_scheduler_lb_top_k: "",
+  openai_advanced_scheduler_weight_priority: "",
+  openai_advanced_scheduler_weight_load: "",
+  openai_advanced_scheduler_weight_queue: "",
+  openai_advanced_scheduler_weight_error_rate: "",
+  openai_advanced_scheduler_weight_ttft: "",
+  openai_advanced_scheduler_weight_reset: "",
+  openai_advanced_scheduler_weight_quota_headroom: "",
+  openai_advanced_scheduler_weight_previous_response: "",
+  openai_advanced_scheduler_weight_session_sticky: "",
+  openai_first_response_enabled: false,
+  openai_first_response_timeout_ms: 5000,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -8129,6 +8316,103 @@ const form = reactive<SettingsForm>({
   affiliate_enabled: false,
   // Allow user view error requests
   allow_user_view_error_requests: false,
+});
+
+type OpenAIAdvancedSchedulerOverrideKey =
+  | "openai_advanced_scheduler_lb_top_k"
+  | "openai_advanced_scheduler_weight_priority"
+  | "openai_advanced_scheduler_weight_load"
+  | "openai_advanced_scheduler_weight_queue"
+  | "openai_advanced_scheduler_weight_error_rate"
+  | "openai_advanced_scheduler_weight_ttft"
+  | "openai_advanced_scheduler_weight_reset"
+  | "openai_advanced_scheduler_weight_quota_headroom"
+  | "openai_advanced_scheduler_weight_previous_response"
+  | "openai_advanced_scheduler_weight_session_sticky";
+
+type OpenAIAdvancedSchedulerEffectiveKey =
+  | "openai_advanced_scheduler_effective_lb_top_k"
+  | "openai_advanced_scheduler_effective_weight_priority"
+  | "openai_advanced_scheduler_effective_weight_load"
+  | "openai_advanced_scheduler_effective_weight_queue"
+  | "openai_advanced_scheduler_effective_weight_error_rate"
+  | "openai_advanced_scheduler_effective_weight_ttft"
+  | "openai_advanced_scheduler_effective_weight_reset"
+  | "openai_advanced_scheduler_effective_weight_quota_headroom"
+  | "openai_advanced_scheduler_effective_weight_previous_response"
+  | "openai_advanced_scheduler_effective_weight_session_sticky";
+
+const openAIAdvancedSchedulerWeightFields = computed<
+  Array<{
+    key: OpenAIAdvancedSchedulerOverrideKey;
+    label: string;
+    placeholder: string;
+  }>
+>(() => {
+  const placeholder = (
+    effectiveKey: OpenAIAdvancedSchedulerEffectiveKey,
+    fallbackValue: string,
+  ) => {
+    const effectiveValue = String(
+      (form as Record<string, unknown>)[effectiveKey] ?? "",
+    ).trim();
+    return t("admin.settings.openaiExperimentalScheduler.defaultPlaceholder", {
+      value: effectiveValue || fallbackValue,
+    });
+  };
+
+  return [
+    {
+      key: "openai_advanced_scheduler_lb_top_k",
+      label: t("admin.settings.openaiExperimentalScheduler.topKLabel"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_lb_top_k", "7"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_priority",
+      label: t("admin.settings.openaiExperimentalScheduler.priorityWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_priority", "1"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_load",
+      label: t("admin.settings.openaiExperimentalScheduler.loadWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_load", "1"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_queue",
+      label: t("admin.settings.openaiExperimentalScheduler.queueWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_queue", "0.7"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_error_rate",
+      label: t("admin.settings.openaiExperimentalScheduler.errorRateWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_error_rate", "0.8"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_ttft",
+      label: t("admin.settings.openaiExperimentalScheduler.ttftWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_ttft", "0.5"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_reset",
+      label: t("admin.settings.openaiExperimentalScheduler.resetWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_reset", "0"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_quota_headroom",
+      label: t("admin.settings.openaiExperimentalScheduler.quotaHeadroomWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_quota_headroom", "0"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_previous_response",
+      label: t("admin.settings.openaiExperimentalScheduler.previousResponseWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_previous_response", "5"),
+    },
+    {
+      key: "openai_advanced_scheduler_weight_session_sticky",
+      label: t("admin.settings.openaiExperimentalScheduler.sessionStickyWeight"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_session_sticky", "3"),
+    },
+  ];
 });
 
 const authSourceDefaults = reactive<AuthSourceDefaultsState>(
@@ -8914,6 +9198,7 @@ async function loadSettings() {
       openaiFastPolicyForm.rules =
         settings.openai_fast_policy_settings.rules.map((rule) => ({
           ...rule,
+          user_ids: rule.user_ids ? [...rule.user_ids] : [],
           model_whitelist: rule.model_whitelist
             ? [...rule.model_whitelist]
             : [],
@@ -9130,9 +9415,16 @@ async function saveSettings() {
         return false;
       }
     };
-    // Optional URL fields: auto-clear invalid values so they don't cause backend 400 errors
+    // Optional URL fields: auto-clear legacy invalid values so they don't cause backend 400 errors.
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
+
+    // QQ group is a public navigation link: trim it and reject unsafe protocols explicitly.
+    form.qq_group_url = form.qq_group_url.trim();
+    if (form.qq_group_url && !isValidHttpUrl(form.qq_group_url)) {
+      appStore.showError(t("admin.settings.site.qqGroupUrlInvalid"));
+      return;
+    }
     syncWeChatConnectMode();
     const wechatStoredMode = deriveWeChatConnectStoredMode(
       form.wechat_connect_open_enabled,
@@ -9180,6 +9472,7 @@ async function saveSettings() {
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
       doc_url: form.doc_url,
+      qq_group_url: form.qq_group_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
@@ -9342,6 +9635,8 @@ async function saveSettings() {
       payment_balance_disabled: form.payment_balance_disabled,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
+      payment_subscription_usd_to_cny_rate:
+        Number(form.payment_subscription_usd_to_cny_rate) || 0,
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
       payment_enabled_types: form.payment_enabled_types,
       payment_load_balance_strategy: form.payment_load_balance_strategy,
@@ -9359,6 +9654,33 @@ async function saveSettings() {
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      openai_advanced_scheduler_sticky_weighted_enabled:
+        form.openai_advanced_scheduler_sticky_weighted_enabled,
+      openai_advanced_scheduler_subscription_priority_enabled:
+        form.openai_advanced_scheduler_subscription_priority_enabled,
+      openai_advanced_scheduler_lb_top_k:
+        form.openai_advanced_scheduler_lb_top_k.trim(),
+      openai_advanced_scheduler_weight_priority:
+        form.openai_advanced_scheduler_weight_priority.trim(),
+      openai_advanced_scheduler_weight_load:
+        form.openai_advanced_scheduler_weight_load.trim(),
+      openai_advanced_scheduler_weight_queue:
+        form.openai_advanced_scheduler_weight_queue.trim(),
+      openai_advanced_scheduler_weight_error_rate:
+        form.openai_advanced_scheduler_weight_error_rate.trim(),
+      openai_advanced_scheduler_weight_ttft:
+        form.openai_advanced_scheduler_weight_ttft.trim(),
+      openai_advanced_scheduler_weight_reset:
+        form.openai_advanced_scheduler_weight_reset.trim(),
+      openai_advanced_scheduler_weight_quota_headroom:
+        form.openai_advanced_scheduler_weight_quota_headroom.trim(),
+      openai_advanced_scheduler_weight_previous_response:
+        form.openai_advanced_scheduler_weight_previous_response.trim(),
+      openai_advanced_scheduler_weight_session_sticky:
+        form.openai_advanced_scheduler_weight_session_sticky.trim(),
+      openai_first_response_enabled: form.openai_first_response_enabled,
+      openai_first_response_timeout_ms:
+        Number(form.openai_first_response_timeout_ms) || 5000,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:
@@ -9395,6 +9717,10 @@ async function saveSettings() {
             service_tier: rule.service_tier,
             action: rule.action,
             scope: rule.scope,
+            user_ids:
+              rule.user_ids && rule.user_ids.length > 0
+                ? [...rule.user_ids]
+                : undefined,
             error_message:
               rule.action === "block" ? rule.error_message : undefined,
             model_whitelist: hasWhitelist ? whitelist : undefined,
@@ -9471,6 +9797,7 @@ async function saveSettings() {
       openaiFastPolicyForm.rules =
         updated.openai_fast_policy_settings.rules.map((rule) => ({
           ...rule,
+          user_ids: rule.user_ids ? [...rule.user_ids] : [],
           model_whitelist: rule.model_whitelist
             ? [...rule.model_whitelist]
             : [],
@@ -9864,6 +10191,10 @@ const openaiFastPolicyTierOptions = computed(() => [
 const openaiFastPolicyActionOptions = computed(() => [
   { value: "pass", label: t("admin.settings.openaiFastPolicy.actionPass") },
   { value: "filter", label: t("admin.settings.openaiFastPolicy.actionFilter") },
+  {
+    value: "force_priority",
+    label: t("admin.settings.openaiFastPolicy.actionForcePriority"),
+  },
   { value: "block", label: t("admin.settings.openaiFastPolicy.actionBlock") },
 ]);
 
@@ -9882,6 +10213,7 @@ function addOpenAIFastPolicyRule() {
     service_tier: "priority",
     action: "filter",
     scope: "all",
+    user_ids: [],
     error_message: "",
     model_whitelist: [],
     fallback_action: "pass",
@@ -9945,6 +10277,7 @@ async function saveBetaPolicySettings() {
 
 const allPaymentTypes = computed(() => [
   { value: "easypay", label: t("payment.methods.easypay") },
+  { value: "keyingpay", label: t("payment.methods.keyingpay") },
   { value: "alipay", label: t("payment.methods.alipay") },
   { value: "wxpay", label: t("payment.methods.wxpay") },
   { value: "stripe", label: t("payment.methods.stripe") },
@@ -10002,6 +10335,7 @@ const providerDialogRef = ref<InstanceType<
 
 const providerKeyOptions = computed(() => [
   { value: "easypay", label: t("admin.settings.payment.providerEasypay") },
+  { value: "keyingpay", label: t("admin.settings.payment.providerKeyingpay") },
   { value: "alipay", label: t("admin.settings.payment.providerAlipay") },
   { value: "wxpay", label: t("admin.settings.payment.providerWxpay") },
   { value: "stripe", label: t("admin.settings.payment.providerStripe") },
@@ -10044,95 +10378,6 @@ const cancelRateLimitModeOptions = computed(() => [
   },
 ]);
 
-type ProviderEnablementCandidate = Pick<
-  ProviderInstance,
-  "id" | "provider_key" | "supported_types" | "enabled" | "name"
->;
-
-function getProviderVisibleMethods(
-  provider: ProviderEnablementCandidate,
-): Array<"alipay" | "wxpay"> {
-  if (!provider.enabled) {
-    return [];
-  }
-
-  const supportedTypes = Array.isArray(provider.supported_types)
-    ? provider.supported_types
-    : [];
-  const methods = new Set<"alipay" | "wxpay">();
-  const addMethod = (type: string) => {
-    const method = normalizeVisibleMethod(type);
-    if (method === "alipay" || method === "wxpay") {
-      methods.add(method);
-    }
-  };
-
-  if (provider.provider_key === "alipay") {
-    if (supportedTypes.length === 0) {
-      methods.add("alipay");
-    } else {
-      supportedTypes.forEach((type) => {
-        if (normalizeVisibleMethod(type) === "alipay") {
-          methods.add("alipay");
-        }
-      });
-    }
-  } else if (provider.provider_key === "wxpay") {
-    if (supportedTypes.length === 0) {
-      methods.add("wxpay");
-    } else {
-      supportedTypes.forEach((type) => {
-        if (normalizeVisibleMethod(type) === "wxpay") {
-          methods.add("wxpay");
-        }
-      });
-    }
-  } else if (provider.provider_key === "easypay") {
-    supportedTypes.forEach(addMethod);
-  }
-
-  return Array.from(methods);
-}
-
-function findProviderEnablementConflict(
-  candidate: ProviderEnablementCandidate,
-): { method: "alipay" | "wxpay"; conflicting: ProviderInstance } | null {
-  const claimedMethods = getProviderVisibleMethods(candidate);
-  if (claimedMethods.length === 0) {
-    return null;
-  }
-
-  for (const other of providers.value) {
-    if (other.id === candidate.id || !other.enabled) {
-      continue;
-    }
-
-    const otherMethods = getProviderVisibleMethods(other);
-    const matchedMethod = claimedMethods.find((method) =>
-      otherMethods.includes(method),
-    );
-    if (matchedMethod) {
-      return {
-        method: matchedMethod,
-        conflicting: other,
-      };
-    }
-  }
-
-  return null;
-}
-
-function showProviderEnablementConflict(
-  conflict: { method: "alipay" | "wxpay"; conflicting: ProviderInstance },
-) {
-  appStore.showError(
-    t("admin.settings.payment.enableConflict", {
-      method: t(`payment.methods.${conflict.method}`),
-      provider: conflict.conflicting.name,
-    }),
-  );
-}
-
 async function loadProviders() {
   providersLoading.value = true;
   try {
@@ -10170,21 +10415,6 @@ function openEditProvider(provider: ProviderInstance) {
 async function handleSaveProvider(payload: Partial<ProviderInstance>) {
   providerSaving.value = true;
   try {
-    const candidate: ProviderEnablementCandidate = {
-      id: editingProvider.value?.id ?? 0,
-      provider_key:
-        payload.provider_key ?? editingProvider.value?.provider_key ?? "",
-      supported_types:
-        payload.supported_types ?? editingProvider.value?.supported_types ?? [],
-      enabled: payload.enabled ?? editingProvider.value?.enabled ?? false,
-      name: payload.name ?? editingProvider.value?.name ?? "",
-    };
-    const conflict = findProviderEnablementConflict(candidate);
-    if (conflict) {
-      showProviderEnablementConflict(conflict);
-      return;
-    }
-
     if (editingProvider.value) {
       await adminAPI.payment.updateProvider(editingProvider.value.id, payload);
     } else {
@@ -10211,20 +10441,6 @@ async function handleToggleField(
   else if (field === "refund_enabled") newValue = !provider.refund_enabled;
   else newValue = !provider.allow_user_refund;
 
-  if (field === "enabled" && newValue) {
-    const conflict = findProviderEnablementConflict({
-      id: provider.id,
-      provider_key: provider.provider_key,
-      supported_types: provider.supported_types,
-      enabled: true,
-      name: provider.name,
-    });
-    if (conflict) {
-      showProviderEnablementConflict(conflict);
-      return;
-    }
-  }
-
   const payload: Record<string, boolean> = { [field]: newValue };
   // Cascade: turning off refund_enabled also turns off allow_user_refund
   if (field === "refund_enabled" && !newValue) {
@@ -10245,17 +10461,6 @@ async function handleToggleType(provider: ProviderInstance, type: string) {
   const updated = currentTypes.includes(type)
     ? currentTypes.filter((t) => t !== type)
     : [...currentTypes, type];
-  const conflict = findProviderEnablementConflict({
-    id: provider.id,
-    provider_key: provider.provider_key,
-    supported_types: updated,
-    enabled: provider.enabled,
-    name: provider.name,
-  });
-  if (conflict) {
-    showProviderEnablementConflict(conflict);
-    return;
-  }
   try {
     await adminAPI.payment.updateProvider(provider.id, {
       supported_types: updated,

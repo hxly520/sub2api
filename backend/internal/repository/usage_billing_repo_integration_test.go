@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -160,6 +161,405 @@ func TestUsageBillingRepositoryApply_RequestFingerprintConflict(t *testing.T) {
 		BalanceCost: 2.50,
 	})
 	require.ErrorIs(t, err, service.ErrUsageBillingRequestConflict)
+}
+
+func TestMediaBalanceHoldReserveCaptureAndRelease(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+	mediaRepo, ok := repo.(service.MediaBalanceHoldRepository)
+	require.True(t, ok)
+
+	newFixture := func(t *testing.T, balance float64) (*service.User, *service.APIKey) {
+		t.Helper()
+		user := mustCreateUser(t, client, &service.User{
+			Email:        fmt.Sprintf("media-hold-%s@example.com", uuid.NewString()),
+			PasswordHash: "hash",
+			Balance:      balance,
+		})
+		apiKey := mustCreateApiKey(t, client, &service.APIKey{
+			UserID: user.ID,
+			Key:    "sk-media-hold-" + uuid.NewString(),
+			Name:   "media-hold",
+		})
+		t.Cleanup(func() {
+			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM media_balance_holds WHERE api_key_id = $1", apiKey.ID)
+		})
+		return user, apiKey
+	}
+
+	t.Run("insufficient balance never creates a hold", func(t *testing.T) {
+		user, apiKey := newFixture(t, 0.5)
+		cmd := &service.MediaBalanceHoldCommand{
+			RequestID:          service.NewMediaBalanceHoldRequestID(),
+			APIKeyID:           apiKey.ID,
+			UserID:             user.ID,
+			RequestFingerprint: strings.Repeat("a", 64),
+			HoldAmount:         1,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, cmd)
+		require.ErrorIs(t, err, service.ErrMediaInsufficientBalance)
+
+		var holdCount int
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM media_balance_holds WHERE api_key_id = $1", apiKey.ID).Scan(&holdCount))
+		require.Zero(t, holdCount)
+	})
+
+	t.Run("concurrent reserves cannot overdraw", func(t *testing.T) {
+		user, apiKey := newFixture(t, 1.5)
+		commands := []*service.MediaBalanceHoldCommand{
+			{RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID, RequestFingerprint: strings.Repeat("b", 64), HoldAmount: 1},
+			{RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID, RequestFingerprint: strings.Repeat("c", 64), HoldAmount: 1},
+		}
+		errs := make(chan error, len(commands))
+		for _, cmd := range commands {
+			go func(command *service.MediaBalanceHoldCommand) {
+				_, err := mediaRepo.ReserveMediaBalance(ctx, command)
+				errs <- err
+			}(cmd)
+		}
+		succeeded := 0
+		insufficient := 0
+		for range commands {
+			err := <-errs
+			switch {
+			case err == nil:
+				succeeded++
+			case errors.Is(err, service.ErrMediaInsufficientBalance):
+				insufficient++
+			default:
+				require.NoError(t, err)
+			}
+		}
+		require.Equal(t, 1, succeeded)
+		require.Equal(t, 1, insufficient)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 0.5, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+	})
+
+	t.Run("capture returns unused amount and is idempotent", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID:          service.NewMediaBalanceHoldRequestID(),
+			APIKeyID:           apiKey.ID,
+			UserID:             user.ID,
+			RequestFingerprint: strings.Repeat("d", 64),
+			HoldAmount:         3,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		pending, err := mediaRepo.MarkMediaBalanceForCapture(ctx, hold, 2.25)
+		require.NoError(t, err)
+		require.True(t, pending.Applied)
+		released, err := mediaRepo.ReleaseMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		require.False(t, released.Applied, "a successful result pending capture must never be refunded")
+
+		billing := &service.UsageBillingCommand{
+			RequestID:                  "usage-" + uuid.NewString(),
+			APIKeyID:                   apiKey.ID,
+			UserID:                     user.ID,
+			MediaBalanceHoldRequestID:  hold.RequestID,
+			MediaBalanceHoldActualCost: 2.25,
+		}
+		first, err := repo.Apply(ctx, billing)
+		require.NoError(t, err)
+		require.True(t, first.Applied)
+		second, err := repo.Apply(ctx, billing)
+		require.NoError(t, err)
+		require.False(t, second.Applied)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 7.75, balance, 0.00000001)
+		require.Zero(t, frozen)
+	})
+
+	t.Run("same hold cannot be reused by another user", func(t *testing.T) {
+		user, apiKey := newFixture(t, 5)
+		otherUser, _ := newFixture(t, 5)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID:          service.NewMediaBalanceHoldRequestID(),
+			APIKeyID:           apiKey.ID,
+			UserID:             user.ID,
+			RequestFingerprint: strings.Repeat("f", 64),
+			HoldAmount:         1,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+
+		conflict := *hold
+		conflict.UserID = otherUser.ID
+		_, err = mediaRepo.ReserveMediaBalance(ctx, &conflict)
+		require.ErrorIs(t, err, service.ErrMediaBalanceHoldConflict)
+	})
+
+	t.Run("expired unattached hold is released before next reserve", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		oldHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("1", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, oldHold)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", oldHold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("2", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 9, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", oldHold.RequestID, apiKey.ID).Scan(&status))
+		require.Equal(t, "released", status)
+	})
+
+	t.Run("expired capture pending settles actual cost exactly once", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		oldHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("3", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, oldHold)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceForCapture(ctx, oldHold, 1.25)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", oldHold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("4", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 7.75, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		var settled float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status, settled_amount FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", oldHold.RequestID, apiKey.ID).Scan(&status, &settled))
+		require.Equal(t, "captured", status)
+		require.InDelta(t, 1.25, settled, 0.00000001)
+	})
+
+	t.Run("expired successful async task without pending marker captures full hold", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID: service.MediaBalanceHoldRequestID("successful-task"), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("5", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, `
+			INSERT INTO media_generation_tasks (
+				task_id, public_task_id, api_key_id, user_id, account_id, model,
+				request_fingerprint, status, media_type, created_at, updated_at
+			) VALUES ($1, $1, $2, $3, 0, 'image-model', $4, 'completed', 'image', NOW(), NOW())
+		`, "successful-task", apiKey.ID, user.ID, hold.RequestFingerprint)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM media_generation_tasks WHERE api_key_id = $1 AND public_task_id = $2", apiKey.ID, "successful-task")
+		})
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("6", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 7, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		var settled float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status, settled_amount FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID).Scan(&status, &settled))
+		require.Equal(t, "captured", status)
+		require.InDelta(t, 2, settled, 0.00000001)
+	})
+
+	t.Run("release is idempotent", func(t *testing.T) {
+		user, apiKey := newFixture(t, 5)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID:          service.NewMediaBalanceHoldRequestID(),
+			APIKeyID:           apiKey.ID,
+			UserID:             user.ID,
+			RequestFingerprint: strings.Repeat("e", 64),
+			HoldAmount:         1.5,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceDispatched(ctx, hold)
+		require.NoError(t, err)
+		first, err := mediaRepo.ReleaseMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		require.True(t, first.Applied)
+		second, err := mediaRepo.ReleaseMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		require.False(t, second.Applied)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 5, balance, 0.00000001)
+		require.Zero(t, frozen)
+	})
+
+	t.Run("dispatch and capture refresh expiry for recovery", func(t *testing.T) {
+		user, apiKey := newFixture(t, 5)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID:          service.NewMediaBalanceHoldRequestID(),
+			APIKeyID:           apiKey.ID,
+			UserID:             user.ID,
+			RequestFingerprint: strings.Repeat("c", 64),
+			HoldAmount:         2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceDispatched(ctx, hold)
+		require.NoError(t, err)
+
+		var dispatchedExpiry time.Time
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT expires_at FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID).Scan(&dispatchedExpiry))
+		require.True(t, dispatchedExpiry.After(time.Now().Add(23*time.Hour)))
+
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceForCapture(ctx, hold, 1.25)
+		require.NoError(t, err)
+
+		var captureExpiry time.Time
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT expires_at FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID).Scan(&captureExpiry))
+		require.True(t, captureExpiry.After(time.Now().Add(23*time.Hour)))
+	})
+
+	t.Run("expired dispatched request without a successful task is released", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		dispatched := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("7", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, dispatched)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceDispatched(ctx, dispatched)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", dispatched.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("8", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 9, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		var settled float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status, settled_amount FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", dispatched.RequestID, apiKey.ID).Scan(&status, &settled))
+		require.Equal(t, "released", status)
+		require.Zero(t, settled)
+	})
+
+	t.Run("expired dispatched failed async task is released", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID: service.MediaBalanceHoldRequestID("dispatched-failed-task"), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("a", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceDispatched(ctx, hold)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, `
+			INSERT INTO media_generation_tasks (
+				task_id, public_task_id, api_key_id, user_id, account_id, model,
+				request_fingerprint, status, media_type, created_at, updated_at
+			) VALUES ($1, $1, $2, $3, 0, 'video-model', $4, 'failed', 'video', NOW(), NOW())
+		`, "dispatched-failed-task", apiKey.ID, user.ID, hold.RequestFingerprint)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM media_generation_tasks WHERE api_key_id = $1 AND public_task_id = $2", apiKey.ID, "dispatched-failed-task")
+		})
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("b", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 9, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID).Scan(&status))
+		require.Equal(t, "released", status)
+	})
+
+	t.Run("expired dispatched successful async task captures the full hold", func(t *testing.T) {
+		user, apiKey := newFixture(t, 10)
+		hold := &service.MediaBalanceHoldCommand{
+			RequestID: service.MediaBalanceHoldRequestID("dispatched-successful-task"), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("9", 64), HoldAmount: 2,
+		}
+		_, err := mediaRepo.ReserveMediaBalance(ctx, hold)
+		require.NoError(t, err)
+		_, err = mediaRepo.MarkMediaBalanceDispatched(ctx, hold)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, `
+			INSERT INTO media_generation_tasks (
+				task_id, public_task_id, api_key_id, user_id, account_id, model,
+				request_fingerprint, status, media_type, created_at, updated_at
+			) VALUES ($1, $1, $2, $3, 0, 'video-model', $4, 'completed', 'video', NOW(), NOW())
+		`, "dispatched-successful-task", apiKey.ID, user.ID, hold.RequestFingerprint)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM media_generation_tasks WHERE api_key_id = $1 AND public_task_id = $2", apiKey.ID, "dispatched-successful-task")
+		})
+		_, err = integrationDB.ExecContext(ctx, "UPDATE media_balance_holds SET expires_at = NOW() - INTERVAL '1 minute' WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID)
+		require.NoError(t, err)
+
+		newHold := &service.MediaBalanceHoldCommand{
+			RequestID: service.NewMediaBalanceHoldRequestID(), APIKeyID: apiKey.ID, UserID: user.ID,
+			RequestFingerprint: strings.Repeat("0", 64), HoldAmount: 1,
+		}
+		_, err = mediaRepo.ReserveMediaBalance(ctx, newHold)
+		require.NoError(t, err)
+
+		var balance, frozen float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance, frozen_balance FROM users WHERE id = $1", user.ID).Scan(&balance, &frozen))
+		require.InDelta(t, 7, balance, 0.00000001)
+		require.InDelta(t, 1, frozen, 0.00000001)
+		var status string
+		var settled float64
+		require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT status, settled_amount FROM media_balance_holds WHERE request_id = $1 AND api_key_id = $2", hold.RequestID, apiKey.ID).Scan(&status, &settled))
+		require.Equal(t, "captured", status)
+		require.InDelta(t, 2, settled, 0.00000001)
+	})
 }
 
 func TestUsageBillingRepositoryApply_UpdatesAccountQuota(t *testing.T) {

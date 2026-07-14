@@ -116,6 +116,8 @@ backend/.installed
 # 其他
 # ===================
 tests
+!deploy/tests/
+!deploy/tests/**
 CLAUDE.md
 .claude
 scripts
@@ -133,6 +135,8 @@ docs/*
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
+!docs/MEDIA_API_CN.md
+!docs/PRIVATE_CUSTOMIZATION_CN.md
 !docs/legal/
 !docs/legal/*.md
 .serena/
@@ -140,3 +144,5 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+# Local browser automation artifacts
+frontend/.playwright-cli/

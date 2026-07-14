@@ -39,6 +39,12 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+
+	// MediaBalanceHoldRequestID identifies an atomic media balance hold. When
+	// set, Apply settles the hold in the same transaction as usage billing
+	// instead of deducting BalanceCost a second time.
+	MediaBalanceHoldRequestID  string
+	MediaBalanceHoldActualCost float64
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -46,6 +52,12 @@ func (c *UsageBillingCommand) Normalize() {
 		return
 	}
 	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.MediaBalanceHoldRequestID = strings.TrimSpace(c.MediaBalanceHoldRequestID)
+	if c.MediaBalanceHoldActualCost < 0 {
+		c.MediaBalanceHoldActualCost = 0
+	} else if c.MediaBalanceHoldRequestID != "" {
+		c.MediaBalanceHoldActualCost = normalizeMediaBalanceAmount(c.MediaBalanceHoldActualCost)
+	}
 	if strings.TrimSpace(c.RequestFingerprint) == "" {
 		c.RequestFingerprint = buildUsageBillingFingerprint(c)
 	}
@@ -78,6 +90,10 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.APIKeyRateLimitCost,
 		c.AccountQuotaCost,
 	)
+	if holdRequestID := strings.TrimSpace(c.MediaBalanceHoldRequestID); holdRequestID != "" {
+		raw += "|hold=" + holdRequestID
+		raw += fmt.Sprintf("|hold_actual=%0.10f", c.MediaBalanceHoldActualCost)
+	}
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
 	}
@@ -119,6 +135,67 @@ type UsageBillingApplyResult struct {
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
 }
 
+// BatchImageBalanceHoldCommand describes an idempotent balance hold operation.
+type BatchImageBalanceHoldCommand struct {
+	RequestID          string
+	APIKeyID           int64
+	RequestFingerprint string
+	RequestPayloadHash string
+	UserID             int64
+	BatchID            string
+	HoldAmount         float64
+	ActualAmount       float64
+}
+
+func (c *BatchImageBalanceHoldCommand) Normalize() {
+	if c == nil {
+		return
+	}
+	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.BatchID = strings.TrimSpace(c.BatchID)
+	if strings.TrimSpace(c.RequestFingerprint) == "" {
+		c.RequestFingerprint = buildBatchImageBalanceHoldFingerprint(c)
+	}
+}
+
+func buildBatchImageBalanceHoldFingerprint(c *BatchImageBalanceHoldCommand) string {
+	if c == nil {
+		return ""
+	}
+	raw := fmt.Sprintf(
+		"%d|%d|%s|%0.10f|%0.10f",
+		c.UserID,
+		c.APIKeyID,
+		strings.TrimSpace(c.BatchID),
+		c.HoldAmount,
+		c.ActualAmount,
+	)
+	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
+		raw += "|" + payloadHash
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+type BatchImageBalanceHoldResult struct {
+	Applied       bool
+	NewBalance    *float64
+	FrozenBalance *float64
+}
+
 type UsageBillingRepository interface {
 	Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error)
+	ReserveBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	CaptureBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	ReleaseBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+}
+
+// MediaBalanceHoldRepository is implemented by the SQL billing repository.
+// It is deliberately kept separate from UsageBillingRepository so existing
+// test doubles and batch-image integrations remain source compatible.
+type MediaBalanceHoldRepository interface {
+	ReserveMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+	MarkMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+	MarkMediaBalanceForCapture(ctx context.Context, cmd *MediaBalanceHoldCommand, actualCost float64) (*MediaBalanceHoldResult, error)
+	ReleaseMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
 }

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 func TestOpenAIRequestView_ExtractsRawScalars(t *testing.T) {
@@ -25,6 +25,33 @@ func TestOpenAIRequestView_ExtractsRawScalars(t *testing.T) {
 	require.Equal(t, "resp-1", view.PreviousResponseID)
 	require.Equal(t, "fast", view.ServiceTier)
 	require.Equal(t, "medium", view.ReasoningEffort)
+}
+
+func TestOpenAIRequestView_ExtractsFieldsAfterLargeInput(t *testing.T) {
+	body := []byte(`{"model":"gpt-5","input":[{"content":"` + strings.Repeat("payload", 1024) + `"}],"stream":true,"prompt_cache_key":"session-1","previous_response_id":"resp-1","service_tier":"flex","reasoning":{"effort":"high"}}`)
+
+	view := newOpenAIRequestView(body)
+
+	require.Equal(t, "gpt-5", view.Model)
+	require.True(t, view.Stream)
+	require.Equal(t, "session-1", view.PromptCacheKey)
+	require.Equal(t, "resp-1", view.PreviousResponseID)
+	require.Equal(t, "flex", view.ServiceTier)
+	require.Equal(t, "high", view.ReasoningEffort)
+}
+
+func TestOpenAIRequestView_KeepsFirstDuplicateField(t *testing.T) {
+	view := newOpenAIRequestView([]byte(`{"model":"gpt-5","model":"gpt-5.1","reasoning":{"effort":"low"},"reasoning":{"effort":"high"}}`))
+
+	require.Equal(t, "gpt-5", view.Model)
+	require.Equal(t, "low", view.ReasoningEffort)
+}
+
+func TestOpenAIRequestView_KeepsLenientPrefixExtraction(t *testing.T) {
+	view := newOpenAIRequestView([]byte(`{"model":"gpt-5","stream":true,"input":[`))
+
+	require.Equal(t, "gpt-5", view.Model)
+	require.True(t, view.Stream)
 }
 
 func TestOpenAIRequestView_DecodeKeepsFullMapBehavior(t *testing.T) {
@@ -100,28 +127,65 @@ func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing
 			"api_key":  "sk-test",
 			"base_url": "https://example.com",
 		},
-		Extra: map[string]any{"use_responses_api": true},
+		Extra: map[string]any{"use_responses_api": true, "openai_upstream_relay": true},
 	}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-	c.Set("api_key", &APIKey{ID: 77})
 
 	body := []byte(`{"model":"gpt-5","stream":false,"reasoning":{"effort":"minimal"},"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
-	require.NotEmpty(t, cacheKey)
-	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
-	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(77, cacheKey)), upstream.lastReq.Header.Get("session_id"))
-	// 合成路径默认 instructions 现按模型填入真实 Codex base prompt（此处 inbound model=gpt-5）。
-	encodedInstr, _ := json.Marshal(defaultCodexSynthInstructions("gpt-5"))
-	expectedBody := fmt.Sprintf(`{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"prompt_cache_key":%q,"instructions":%s,"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`, cacheKey, string(encodedInstr))
-	require.JSONEq(t, expectedBody, string(upstream.lastBody))
+	// 普通第三方 APIKey 请求保持原始 Responses 语义，不注入完整 Codex prompt。
+	expectedBody := `{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`
+	promptCacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.NotEmpty(t, promptCacheKey)
+	require.True(t, strings.HasPrefix(promptCacheKey, compatAutoPromptCacheKeyPrefix))
+	withoutPromptCacheKey, deleteErr := sjson.DeleteBytes(upstream.lastBody, "prompt_cache_key")
+	require.NoError(t, deleteErr)
+	require.JSONEq(t, expectedBody, string(withoutPromptCacheKey))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(0, promptCacheKey)), upstream.lastReq.Header.Get("session_id"))
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.lastBody, "input.0.content.0.nonce").Raw)
+}
+
+func TestOpenAIGatewayService_Forward_DefaultAPIKeyStillSynthesizesCodexInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          2,
+		Name:        "openai-apikey-codex",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
+		Extra:       map[string]any{"use_responses_api": true},
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", codexCLIUserAgent)
+	c.Request.Header.Set("originator", "codex_cli_rs")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	_, err := svc.Forward(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"gpt-5","stream":false,"input":"hi"}`),
+	)
+	require.NoError(t, err)
+	require.Equal(t, defaultCodexSynthInstructions("gpt-5"), gjson.GetBytes(upstream.lastBody, "instructions").String())
 }
 
 func TestOpenAIGatewayService_Forward_DecodedMutationKeepsLaterFieldDeletes(t *testing.T) {
@@ -199,6 +263,147 @@ func TestOpenAIGatewayService_Forward_MappedImageModelUsesImageGate(t *testing.T
 	require.Nil(t, result)
 	require.Nil(t, upstream.lastReq)
 	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestOpenAIGatewayService_Forward_TextResponsesSetsBillingModelToMappedModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_text_mapped_billing"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_text_mapped","object":"response","model":"gpt-5.5","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30}}`,
+			)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          4,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":       "sk-test",
+			"base_url":      "https://example.com",
+			"model_mapping": map[string]any{"gpt-5.4": "gpt-5.5"},
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	body := []byte(`{"model":"gpt-5.4","stream":false,"input":"hello"}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "gpt-5.5", result.BillingModel)
+	require.Equal(t, "gpt-5.5", result.UpstreamModel)
+	require.Equal(t, "gpt-5.5", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-5.4", gjson.Get(rec.Body.String(), "model").String())
+	require.Equal(t, 0, result.ImageCount)
+}
+
+func TestOpenAIGatewayService_Forward_TextResponsesWithoutMappingKeepsRequestedBillingModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_text_unmapped_billing"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_text_unmapped","object":"response","model":"gpt-5.4","status":"completed","usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30}}`)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          4,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://example.com",
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.4","stream":false,"input":"hello"}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-5.4", result.Model)
+	require.Equal(t, "gpt-5.4", result.BillingModel)
+	require.Equal(t, "gpt-5.4", result.UpstreamModel)
+}
+
+func TestOpenAIGatewayService_Forward_TextResponsesBillingModelMatchesChatCompletions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	account := &Account{
+		ID:          5,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":       "sk-test",
+			"base_url":      "https://example.com",
+			"model_mapping": map[string]any{"gpt-5.4": "gpt-5.5"},
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+
+	responsesUpstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_responses_mapped_billing"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_native","object":"response","model":"gpt-5.5","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30}}`,
+			)),
+		},
+	}
+	responsesSvc := &OpenAIGatewayService{cfg: cfg, httpUpstream: responsesUpstream}
+	responsesRecorder := httptest.NewRecorder()
+	responsesCtx, _ := gin.CreateTestContext(responsesRecorder)
+	responsesCtx.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(responsesCtx, OpenAIClientTransportHTTP)
+	responsesResult, err := responsesSvc.Forward(context.Background(), responsesCtx, account, []byte(`{"model":"gpt-5.4","stream":false,"input":"hello"}`))
+	require.NoError(t, err)
+	require.NotNil(t, responsesResult)
+
+	chatUpstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_mapped_billing"}},
+			Body: io.NopCloser(strings.NewReader(
+				`data: {"type":"response.completed","response":{"id":"resp_chat","object":"response","model":"gpt-5.5","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30}}}` + "\n\n",
+			)),
+		},
+	}
+	chatSvc := &OpenAIGatewayService{cfg: cfg, httpUpstream: chatUpstream}
+	chatRecorder := httptest.NewRecorder()
+	chatCtx, _ := gin.CreateTestContext(chatRecorder)
+	chatCtx.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", nil)
+	chatResult, err := chatSvc.ForwardAsChatCompletions(context.Background(), chatCtx, account, []byte(`{"model":"gpt-5.4","stream":false,"messages":[{"role":"user","content":"hello"}]}`), "", "")
+	require.NoError(t, err)
+	require.NotNil(t, chatResult)
+
+	require.Equal(t, chatResult.BillingModel, responsesResult.BillingModel)
+	require.Equal(t, "gpt-5.5", responsesResult.BillingModel)
+	require.Equal(t, "gpt-5.5", chatResult.BillingModel)
+	require.Equal(t, "gpt-5.4", gjson.Get(responsesRecorder.Body.String(), "model").String())
+	require.Equal(t, "gpt-5.4", gjson.Get(chatRecorder.Body.String(), "model").String())
 }
 
 func TestOpenAIGatewayService_Forward_TextDataImageDoesNotForceMapMarshal(t *testing.T) {

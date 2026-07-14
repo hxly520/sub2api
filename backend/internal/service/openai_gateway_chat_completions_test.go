@@ -98,7 +98,7 @@ func TestNormalizeResponsesBodyServiceTier(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "service_tier").Exists())
 }
 
-func TestForwardAsChatCompletions_UnknownModelDoesNotUseDefaultMappedModel(t *testing.T) {
+func TestForwardAsChatCompletions_UnknownModelWithoutMessagesDispatchKeepsRequestedModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -129,7 +129,7 @@ func TestForwardAsChatCompletions_UnknownModelDoesNotUseDefaultMappedModel(t *te
 		},
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.4")
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, "gpt6", gjson.GetBytes(upstream.lastBody, "model").String())
@@ -181,41 +181,32 @@ func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(
 	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, "cache-key-123")), upstream.lastReq.Header.Get("session_id"))
 }
 
-func TestForwardAsChatCompletions_APIKeyAutoDerivesPromptCacheKeyWhenMissing(t *testing.T) {
+func TestForwardAsChatCompletions_APIKeyAutoDerivesStablePromptCacheKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	body := []byte(`{"model":"gpt-5.5","messages":[{"role":"system","content":"repo assistant"},{"role":"user","content":"inspect the project"},{"role":"assistant","content":"ok"},{"role":"user","content":"continue"}],"tools":[{"type":"function","function":{"name":"exec_command","parameters":{"type":"object"}}}],"stream":false}`)
+	bodies := [][]byte{
+		[]byte(`{"model":"gpt-5.6-luna","messages":[{"role":"system","content":"repo assistant"},{"role":"user","content":"inspect"}],"tools":[{"type":"function","function":{"name":"zeta","parameters":{"type":"object"}}},{"type":"function","function":{"name":"alpha","parameters":{"type":"object"}}}],"stream":false}`),
+		[]byte(`{"model":"gpt-5.6-luna","messages":[{"role":"system","content":"repo assistant"},{"role":"user","content":"inspect"},{"role":"assistant","content":"ok"},{"role":"user","content":"continue"}],"tools":[{"function":{"parameters":{"type":"object"},"name":"alpha"},"type":"function"},{"function":{"name":"zeta","parameters":{"type":"object"}},"type":"function"}],"stream":false}`),
+	}
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusBadRequest,
-			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_auto_cache_1"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop first"}}`)),
-		},
-		{
-			StatusCode: http.StatusBadRequest,
-			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_auto_cache_2"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop second"}}`)),
-		},
+		{StatusCode: http.StatusBadRequest, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"stop one"}}`))},
+		{StatusCode: http.StatusBadRequest, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"stop two"}}`))},
 	}}
 	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
-		ID:          2,
-		Name:        "openai-compatible",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
+		ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
 		Credentials: map[string]any{"api_key": "sk-compatible"},
 		Extra:       map[string]any{"openai_responses_supported": true},
 	}
 
-	for i := 0; i < 2; i++ {
+	for _, body := range bodies {
 		rec := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(rec)
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 		c.Request.Header.Set("Content-Type", "application/json")
 		c.Set("api_key", &APIKey{ID: 99})
 
-		result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.5")
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.6-luna")
 		require.Error(t, err)
 		require.Nil(t, result)
 	}
@@ -226,9 +217,84 @@ func TestForwardAsChatCompletions_APIKeyAutoDerivesPromptCacheKeyWhenMissing(t *
 	require.NotEmpty(t, firstKey)
 	require.True(t, strings.HasPrefix(firstKey, compatAutoPromptCacheKeyPrefix))
 	require.Equal(t, firstKey, secondKey)
-	require.NotContains(t, firstKey, "inspect the project")
-	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(99, firstKey)), upstream.requests[0].Header.Get("session_id"))
 	require.Equal(t, upstream.requests[0].Header.Get("session_id"), upstream.requests[1].Header.Get("session_id"))
+	require.Equal(t, "alpha", gjson.GetBytes(upstream.bodies[0], "tools.0.name").String())
+}
+
+func TestForwardAsChatCompletions_APIKeyExplicitHeaderPreservesToolOrder(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"inspect"}],"tools":[{"type":"function","function":{"name":"zeta","parameters":{"type":"object"}}},{"type":"function","function":{"name":"alpha","parameters":{"type":"object"}}}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("session_id", "client-session")
+	c.Set("api_key", &APIKey{ID: 102})
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"capture"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-compatible"},
+		Extra:       map[string]any{"openai_responses_supported": true},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "gpt-5.6-luna")
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, "zeta", gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(cacheKey, compatAutoPromptCacheKeyPrefix))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(102, cacheKey)), upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestForwardAsChatCompletions_OAuthCanonicalizesOnlyAutoCacheTools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		promptCacheKey string
+		wantFirstTool  string
+	}{
+		{name: "gateway derived cache key", wantFirstTool: "alpha"},
+		{name: "explicit client cache key", promptCacheKey: "client-key", wantFirstTool: "zeta"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"inspect"}],"tools":[{"type":"function","function":{"name":"zeta","parameters":{"type":"object"}}},{"type":"function","function":{"name":"alpha","parameters":{"type":"object"}}}],"stream":false}`)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("api_key", &APIKey{ID: 100})
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"capture"}}`)),
+			}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			account := &Account{
+				ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
+				Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+			}
+
+			result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, tt.promptCacheKey, "gpt-5.6-luna")
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Equal(t, tt.wantFirstTool, gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
+			if tt.promptCacheKey == "" {
+				require.True(t, strings.HasPrefix(gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String(), compatPromptCacheKeyPrefix))
+			} else {
+				require.Equal(t, tt.promptCacheKey, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+			}
+		})
+	}
 }
 
 func TestForwardAsChatCompletions_OAuthDoesNotInjectDefaultInstructions(t *testing.T) {

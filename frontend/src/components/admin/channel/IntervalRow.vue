@@ -35,14 +35,14 @@
       </div>
     </template>
 
-    <!-- Per-request / Image mode: tier label + context range + price -->
+    <!-- Per-request / Image / Video mode: tier label + context range + price -->
     <template v-else>
       <div class="w-24">
         <label class="text-xs text-gray-400">
-          {{ mode === 'image' ? t('admin.channels.form.resolution') : t('admin.channels.form.tierLabel') }}
+          {{ mode === 'image' || mode === 'video' ? t('admin.channels.form.resolution') : t('admin.channels.form.tierLabel') }}
         </label>
         <input :value="interval.tier_label" @input="emitField('tier_label', ($event.target as HTMLInputElement).value)"
-          type="text" class="input mt-0.5 text-xs" :placeholder="mode === 'image' ? '1K / 2K / 4K' : ''" />
+          type="text" class="input mt-0.5 text-xs" :placeholder="mode === 'image' ? '1K / 2K / 4K' : mode === 'video' ? '480p / 720p / 1080p / 4K' : ''" />
       </div>
       <div class="w-20">
         <label class="text-xs text-gray-400">{{ t('admin.channels.form.minTokens') }}</label>
@@ -55,7 +55,11 @@
           type="number" min="0" class="input mt-0.5 text-xs" :placeholder="'∞'" />
       </div>
       <div class="flex-1">
-        <label class="text-xs text-gray-400">{{ t('admin.channels.form.perRequestPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$</span></label>
+        <label class="text-xs text-gray-400">
+          {{ mode === 'video' ? t('admin.channels.form.videoPrice') : t('admin.channels.form.perRequestPrice') }}
+          <span v-if="isEmpty" class="text-red-500">*</span>
+          <span class="text-gray-300">$</span>
+        </label>
         <input :value="interval.per_request_price" @input="emitField('per_request_price', ($event.target as HTMLInputElement).value)"
           type="number" step="any" min="0" class="input mt-0.5 text-xs" />
       </div>

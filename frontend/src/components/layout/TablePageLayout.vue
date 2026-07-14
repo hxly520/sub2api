@@ -1,5 +1,11 @@
 <template>
-  <div class="table-page-layout" :class="{ 'mobile-mode': isMobile }">
+  <div
+    class="table-page-layout"
+    :class="{
+      'mobile-mode': isMobile,
+      'fit-table-content': tableWidthMode === 'fit',
+    }"
+  >
     <!-- 固定区域：操作按钮 -->
     <div v-if="$slots.actions" class="layout-section-fixed">
       <slot name="actions" />
@@ -26,6 +32,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+
+withDefaults(
+  defineProps<{
+    tableWidthMode?: 'scroll' | 'fit'
+  }>(),
+  {
+    tableWidthMode: 'scroll',
+  },
+)
 
 const isMobile = ref(false)
 
@@ -89,6 +104,16 @@ onUnmounted(() => {
 
 .table-scroll-container :deep(td) {
   @apply px-5 py-4 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-dark-800;
+}
+
+/* Some user-facing tables wrap content vertically and must stay within the viewport width. */
+.table-page-layout.fit-table-content .table-scroll-container {
+  @apply overflow-x-hidden overflow-y-auto;
+}
+
+.table-page-layout.fit-table-content .table-scroll-container :deep(table) {
+  min-width: 0;
+  table-layout: fixed;
 }
 
 /* 移动端：恢复正常滚动 */

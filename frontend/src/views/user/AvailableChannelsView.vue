@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout table-width-mode="fit">
       <template #filters>
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div class="flex flex-1 flex-wrap items-center gap-3">
@@ -42,6 +42,7 @@
           :no-pricing-label="t('availableChannels.noPricing')"
           :no-models-label="t('availableChannels.noModels')"
           :empty-label="t('availableChannels.empty')"
+          :force-expand-models="searchQuery.trim().length > 0"
         />
       </template>
     </TablePageLayout>

@@ -187,6 +187,23 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("custom enabled types are preserved", func(t *testing.T) {
+		t.Parallel()
+		vals := map[string]string{
+			SettingEnabledPaymentTypes: "alipay,ldc,usdt_trc20",
+		}
+		cfg := svc.parsePaymentConfig(vals)
+		want := []string{"alipay", "ldc", "usdt_trc20"}
+		if len(cfg.EnabledTypes) != len(want) {
+			t.Fatalf("EnabledTypes len = %d, want %d (%v)", len(cfg.EnabledTypes), len(want), cfg.EnabledTypes)
+		}
+		for i := range want {
+			if cfg.EnabledTypes[i] != want[i] {
+				t.Fatalf("EnabledTypes[%d] = %q, want %q (full=%v)", i, cfg.EnabledTypes[i], want[i], cfg.EnabledTypes)
+			}
+		}
+	})
+
 	t.Run("empty enabled types string", func(t *testing.T) {
 		t.Parallel()
 		vals := map[string]string{
@@ -286,6 +303,7 @@ func TestBuildVisibleMethodSourceAvailability(t *testing.T) {
 	instances := []*dbent.PaymentProviderInstance{
 		{ProviderKey: payment.TypeAlipay, SupportedTypes: "alipay"},
 		{ProviderKey: payment.TypeEasyPay, SupportedTypes: "wxpay_direct, alipay"},
+		{ProviderKey: payment.TypeKeyingPay, SupportedTypes: "alipay,wxpay"},
 		{ProviderKey: payment.TypeWxpay, SupportedTypes: "wxpay_direct"},
 	}
 
@@ -301,6 +319,12 @@ func TestBuildVisibleMethodSourceAvailability(t *testing.T) {
 	}
 	if !got[VisibleMethodSourceEasyPayWechat] {
 		t.Fatalf("expected %q to be available", VisibleMethodSourceEasyPayWechat)
+	}
+	if !got[VisibleMethodSourceKeyingPayAlipay] {
+		t.Fatalf("expected %q to be available", VisibleMethodSourceKeyingPayAlipay)
+	}
+	if !got[VisibleMethodSourceKeyingPayWechat] {
+		t.Fatalf("expected %q to be available", VisibleMethodSourceKeyingPayWechat)
 	}
 }
 

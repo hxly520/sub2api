@@ -10,10 +10,12 @@ describe('admin settings payment visible method helpers', () => {
     expect(normalizePaymentVisibleMethodSource('alipay', 'official')).toBe('official_alipay')
     expect(normalizePaymentVisibleMethodSource('alipay', 'alipay_direct')).toBe('official_alipay')
     expect(normalizePaymentVisibleMethodSource('alipay', 'easypay')).toBe('easypay_alipay')
+    expect(normalizePaymentVisibleMethodSource('alipay', 'keyingpay')).toBe('keyingpay_alipay')
 
     expect(normalizePaymentVisibleMethodSource('wxpay', 'official')).toBe('official_wxpay')
     expect(normalizePaymentVisibleMethodSource('wxpay', 'wechat')).toBe('official_wxpay')
     expect(normalizePaymentVisibleMethodSource('wxpay', 'easypay')).toBe('easypay_wxpay')
+    expect(normalizePaymentVisibleMethodSource('wxpay', 'keyingpay')).toBe('keyingpay_wxpay')
   })
 
   it('rejects unknown or cross-method source values', () => {
@@ -40,6 +42,11 @@ describe('admin settings payment visible method helpers', () => {
         labelZh: '易支付支付宝',
         labelEn: 'EasyPay Alipay',
       },
+      {
+        value: 'keyingpay_alipay',
+        labelZh: '可盈Pay 支付宝',
+        labelEn: 'KeyingPay Alipay',
+      },
     ])
 
     expect(getPaymentVisibleMethodSourceOptions('wxpay')).toEqual([
@@ -57,6 +64,11 @@ describe('admin settings payment visible method helpers', () => {
         value: 'easypay_wxpay',
         labelZh: '易支付微信',
         labelEn: 'EasyPay WeChat Pay',
+      },
+      {
+        value: 'keyingpay_wxpay',
+        labelZh: '可盈Pay 微信',
+        labelEn: 'KeyingPay WeChat Pay',
       },
     ])
   })

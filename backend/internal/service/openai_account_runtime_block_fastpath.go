@@ -2,9 +2,20 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
 )
+
+type openAIAccountRuntimeBlock struct {
+	Until  time.Time
+	Reason string
+}
 
 const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
@@ -101,28 +112,32 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	if blockUntil.IsZero() || !blockUntil.After(now) {
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
+	nextBlock := openAIAccountRuntimeBlock{
+		Until:  blockUntil,
+		Reason: normalizeOpenAIRuntimeBlockReason(reason),
+	}
 
 	for {
 		current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
 		if !loaded {
-			actual, stored := s.openaiAccountRuntimeBlockUntil.LoadOrStore(account.ID, blockUntil)
+			actual, stored := s.openaiAccountRuntimeBlockUntil.LoadOrStore(account.ID, nextBlock)
 			if !stored {
 				return
 			}
 			current = actual
 		}
 
-		currentUntil, ok := current.(time.Time)
-		if !ok || currentUntil.IsZero() {
-			if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
+		currentBlock, ok := openAIAccountRuntimeBlockFromValue(current)
+		if !ok || currentBlock.Until.IsZero() {
+			if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, nextBlock) {
 				return
 			}
 			continue
 		}
-		if currentUntil.After(blockUntil) {
+		if currentBlock.Until.After(blockUntil) {
 			return
 		}
-		if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
+		if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, nextBlock) {
 			return
 		}
 	}
@@ -136,23 +151,172 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
+	_, ok := s.openAIAccountRuntimeBlock(account)
+	return ok
+}
+
+func (s *OpenAIGatewayService) openAIAccountRuntimeBlock(account *Account) (openAIAccountRuntimeBlock, bool) {
 	if s == nil || !isOpenAIAccount(account) {
-		return false
+		return openAIAccountRuntimeBlock{}, false
 	}
 	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	if !ok {
-		return false
+		return openAIAccountRuntimeBlock{}, false
 	}
-	cooldownUntil, ok := value.(time.Time)
-	if !ok || cooldownUntil.IsZero() {
+	block, ok := openAIAccountRuntimeBlockFromValue(value)
+	if !ok || block.Until.IsZero() {
 		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-		return false
+		return openAIAccountRuntimeBlock{}, false
 	}
-	if time.Now().Before(cooldownUntil) {
-		return true
+	if time.Now().Before(block.Until) {
+		return block, true
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-	return false
+	return openAIAccountRuntimeBlock{}, false
+}
+
+func openAIAccountRuntimeBlockFromValue(value any) (openAIAccountRuntimeBlock, bool) {
+	switch v := value.(type) {
+	case openAIAccountRuntimeBlock:
+		if v.Reason == "" {
+			v.Reason = "upstream_failure"
+		}
+		return v, true
+	case *openAIAccountRuntimeBlock:
+		if v == nil {
+			return openAIAccountRuntimeBlock{}, false
+		}
+		out := *v
+		if out.Reason == "" {
+			out.Reason = "upstream_failure"
+		}
+		return out, true
+	case time.Time:
+		return openAIAccountRuntimeBlock{Until: v, Reason: "upstream_failure"}, true
+	default:
+		return openAIAccountRuntimeBlock{}, false
+	}
+}
+
+func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterFailoverError(account *Account, failoverErr *UpstreamFailoverError) bool {
+	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	// Pool-mode endpoints already schedule their own upstream account pool. A
+	// local transient block removes the whole pool and can exhaust the group.
+	// Slow first output is also not evidence that an account is unhealthy.
+	if account.IsPoolMode() || failoverErr.FirstResponseTimeout {
+		return false
+	}
+	reason := ""
+	if openAIStatusShouldRuntimeBlockAfterFailure(failoverErr.StatusCode) {
+		if text := http.StatusText(failoverErr.StatusCode); text != "" {
+			reason = "upstream_status_" + text
+		} else {
+			reason = "upstream_status_" + strconv.Itoa(failoverErr.StatusCode)
+		}
+	}
+	if reason == "" {
+		return false
+	}
+	s.blockOpenAIAccountSchedulingAfterFailure(account, normalizeOpenAIRuntimeBlockReason(reason))
+	return true
+}
+
+func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterForwardError(account *Account, err error) bool {
+	if s == nil || account == nil || err == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	if account.IsPoolMode() {
+		return false
+	}
+	reason := openAIForwardErrorRuntimeBlockReason(err)
+	if reason == "" {
+		return false
+	}
+	s.blockOpenAIAccountSchedulingAfterFailure(account, reason)
+	return true
+}
+
+func (s *OpenAIGatewayService) blockOpenAIAccountSchedulingAfterFailure(account *Account, reason string) {
+	if s == nil || account == nil {
+		return
+	}
+	s.BlockAccountScheduling(account, time.Time{}, reason)
+	logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
+		"openai.account_runtime_block_failure",
+		zap.Int64("account_id", account.ID),
+		zap.String("account_name", account.Name),
+		zap.String("platform", account.Platform),
+		zap.String("reason", reason),
+		zap.Duration("cooldown", openAIStopSchedulingBridgeCooldown),
+	)
+}
+
+func openAIStatusShouldRuntimeBlockAfterFailure(statusCode int) bool {
+	if statusCode == 0 || statusCode == http.StatusTooManyRequests {
+		return false
+	}
+	return statusCode == 529 || statusCode >= http.StatusInternalServerError
+}
+
+func openAIForwardErrorRuntimeBlockReason(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	if msg == "" || strings.Contains(msg, "client disconnected") || strings.Contains(msg, "after disconnect") ||
+		strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded") {
+		return ""
+	}
+	switch {
+	case strings.Contains(msg, "stream read error"),
+		strings.Contains(msg, "http2: response body closed"),
+		strings.Contains(msg, "unexpected eof"),
+		strings.Contains(msg, "connection reset by peer"):
+		return "stream_read_error"
+	case strings.Contains(msg, "stream data interval timeout"):
+		return "stream_data_interval_timeout"
+	case strings.Contains(msg, "missing terminal event"):
+		return "missing_terminal_event"
+	default:
+		return ""
+	}
+}
+
+// IsOpenAIUpstreamFailureForStickyRelease identifies failures where retaining
+// a pool-mode session binding would route the client's next retry back to the
+// same failed upstream. Client cancellation and downstream disconnects remain
+// excluded by openAIForwardErrorRuntimeBlockReason.
+func IsOpenAIUpstreamFailureForStickyRelease(err error) bool {
+	if openAIForwardErrorRuntimeBlockReason(err) != "" {
+		return true
+	}
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "upstream response failed") ||
+		strings.Contains(message, "stream usage incomplete after timeout")
+}
+
+func normalizeOpenAIRuntimeBlockReason(reason string) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return "upstream_failure"
+	}
+	replacer := strings.NewReplacer(" ", "_", "-", "_", "/", "_", ":", "_", "(", "", ")", "")
+	return replacer.Replace(reason)
+}
+
+func openAIRuntimeBlockReasonAllowsSingleCandidateFailOpen(reason string) bool {
+	reason = normalizeOpenAIRuntimeBlockReason(reason)
+	switch reason {
+	case "first_response_timeout", "stream_read_error", "stream_data_interval_timeout", "missing_terminal_event":
+		return true
+	default:
+		return strings.HasPrefix(reason, "upstream_status_")
+	}
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {

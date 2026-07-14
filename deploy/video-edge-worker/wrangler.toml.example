@@ -1,0 +1,15 @@
+name = "sub2api-video-edge"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+workers_dev = false
+
+# Replace this example route only when the DNS/custom domain is ready.
+routes = [
+  { pattern = "video.52token.org/v1/video-content/*", zone_name = "52token.org" },
+  { pattern = "video.52token.org/v1/image-content/*", zone_name = "52token.org" }
+]
+
+[vars]
+# Optional comma-separated exact/wildcard hosts, for example:
+# "media.example.com,*.vendor-cdn.example"
+ALLOWED_MEDIA_HOSTS = ""

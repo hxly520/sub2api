@@ -85,8 +85,10 @@ export type PaymentVisibleMethodSource =
   | ""
   | "official_alipay"
   | "easypay_alipay"
+  | "keyingpay_alipay"
   | "official_wxpay"
-  | "easypay_wxpay";
+  | "easypay_wxpay"
+  | "keyingpay_wxpay";
 export type WeChatConnectMode = "open" | "mp" | "mobile";
 
 export interface PaymentVisibleMethodSourceOption {
@@ -128,6 +130,11 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       labelZh: "易支付支付宝",
       labelEn: "EasyPay Alipay",
     },
+    {
+      value: "keyingpay_alipay",
+      labelZh: "可盈Pay 支付宝",
+      labelEn: "KeyingPay Alipay",
+    },
   ],
   wxpay: [
     { value: "", labelZh: "未配置", labelEn: "Not configured" },
@@ -140,6 +147,11 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       value: "easypay_wxpay",
       labelZh: "易支付微信",
       labelEn: "EasyPay WeChat Pay",
+    },
+    {
+      value: "keyingpay_wxpay",
+      labelZh: "可盈Pay 微信",
+      labelEn: "KeyingPay WeChat Pay",
     },
   ],
 };
@@ -154,6 +166,8 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     official: "official_alipay",
     easypay_alipay: "easypay_alipay",
     easypay: "easypay_alipay",
+    keyingpay_alipay: "keyingpay_alipay",
+    keyingpay: "keyingpay_alipay",
   },
   wxpay: {
     official_wxpay: "official_wxpay",
@@ -163,6 +177,8 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     official: "official_wxpay",
     easypay_wxpay: "easypay_wxpay",
     easypay: "easypay_wxpay",
+    keyingpay_wxpay: "keyingpay_wxpay",
+    keyingpay: "keyingpay_wxpay",
   },
 };
 const WECHAT_CONNECT_MODE_OPTIONS: WeChatConnectModeOption[] = [
@@ -431,6 +447,7 @@ export interface SystemSettings {
   api_base_url: string;
   contact_info: string;
   doc_url: string;
+  qq_group_url: string;
   home_content: string;
   hide_ccs_import_button: boolean;
   table_default_page_size: number;
@@ -589,6 +606,7 @@ export interface SystemSettings {
   payment_enabled_types: string[];
   payment_balance_disabled: boolean;
   payment_balance_recharge_multiplier: number;
+  payment_subscription_usd_to_cny_rate: number;
   payment_recharge_fee_rate: number;
   payment_load_balance_strategy: string;
   payment_product_name_prefix: string;
@@ -606,6 +624,30 @@ export interface SystemSettings {
   payment_visible_method_alipay_enabled?: boolean;
   payment_visible_method_wxpay_enabled?: boolean;
   openai_advanced_scheduler_enabled?: boolean;
+  openai_advanced_scheduler_sticky_weighted_enabled?: boolean;
+  openai_advanced_scheduler_subscription_priority_enabled?: boolean;
+  openai_advanced_scheduler_lb_top_k?: string;
+  openai_advanced_scheduler_weight_priority?: string;
+  openai_advanced_scheduler_weight_load?: string;
+  openai_advanced_scheduler_weight_queue?: string;
+  openai_advanced_scheduler_weight_error_rate?: string;
+  openai_advanced_scheduler_weight_ttft?: string;
+  openai_advanced_scheduler_weight_reset?: string;
+  openai_advanced_scheduler_weight_quota_headroom?: string;
+  openai_advanced_scheduler_weight_previous_response?: string;
+  openai_advanced_scheduler_weight_session_sticky?: string;
+  openai_advanced_scheduler_effective_lb_top_k?: string;
+  openai_advanced_scheduler_effective_weight_priority?: string;
+  openai_advanced_scheduler_effective_weight_load?: string;
+  openai_advanced_scheduler_effective_weight_queue?: string;
+  openai_advanced_scheduler_effective_weight_error_rate?: string;
+  openai_advanced_scheduler_effective_weight_ttft?: string;
+  openai_advanced_scheduler_effective_weight_reset?: string;
+  openai_advanced_scheduler_effective_weight_quota_headroom?: string;
+  openai_advanced_scheduler_effective_weight_previous_response?: string;
+  openai_advanced_scheduler_effective_weight_session_sticky?: string;
+  openai_first_response_enabled?: boolean;
+  openai_first_response_timeout_ms?: number;
 
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled: boolean;
@@ -704,6 +746,7 @@ export interface UpdateSettingsRequest {
   api_base_url?: string;
   contact_info?: string;
   doc_url?: string;
+  qq_group_url?: string;
   home_content?: string;
   hide_ccs_import_button?: boolean;
   table_default_page_size?: number;
@@ -838,6 +881,7 @@ export interface UpdateSettingsRequest {
   payment_enabled_types?: string[];
   payment_balance_disabled?: boolean;
   payment_balance_recharge_multiplier?: number;
+  payment_subscription_usd_to_cny_rate?: number;
   payment_recharge_fee_rate?: number;
   payment_load_balance_strategy?: string;
   payment_product_name_prefix?: string;
@@ -855,6 +899,20 @@ export interface UpdateSettingsRequest {
   payment_visible_method_alipay_enabled?: boolean;
   payment_visible_method_wxpay_enabled?: boolean;
   openai_advanced_scheduler_enabled?: boolean;
+  openai_advanced_scheduler_sticky_weighted_enabled?: boolean;
+  openai_advanced_scheduler_subscription_priority_enabled?: boolean;
+  openai_advanced_scheduler_lb_top_k?: string;
+  openai_advanced_scheduler_weight_priority?: string;
+  openai_advanced_scheduler_weight_load?: string;
+  openai_advanced_scheduler_weight_queue?: string;
+  openai_advanced_scheduler_weight_error_rate?: string;
+  openai_advanced_scheduler_weight_ttft?: string;
+  openai_advanced_scheduler_weight_reset?: string;
+  openai_advanced_scheduler_weight_quota_headroom?: string;
+  openai_advanced_scheduler_weight_previous_response?: string;
+  openai_advanced_scheduler_weight_session_sticky?: string;
+  openai_first_response_enabled?: boolean;
+  openai_first_response_timeout_ms?: number;
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;
@@ -1237,11 +1295,12 @@ export async function updateRectifierSettings(
  */
 export interface OpenAIFastPolicyRule {
   service_tier: "all" | "priority" | "flex";
-  action: "pass" | "filter" | "block";
+  action: "pass" | "filter" | "block" | "force_priority";
   scope: "all" | "oauth" | "apikey" | "bedrock";
+  user_ids?: number[];
   error_message?: string;
   model_whitelist?: string[];
-  fallback_action?: "pass" | "filter" | "block";
+  fallback_action?: "pass" | "filter" | "block" | "force_priority";
   fallback_error_message?: string;
 }
 

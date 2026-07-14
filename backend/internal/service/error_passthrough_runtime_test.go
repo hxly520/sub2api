@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestApplyErrorPassthroughRule_NoBoundService(t *testing.T) {
@@ -35,6 +36,45 @@ func TestApplyErrorPassthroughRule_NoBoundService(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, status)
 	assert.Equal(t, "upstream_error", errType)
 	assert.Equal(t, "Upstream request failed", errMsg)
+}
+
+func TestApplyErrorPassthroughRule_SanitizesPassthroughBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	statusCode := http.StatusBadRequest
+	rule := &model.ErrorPassthroughRule{
+		ID:              1,
+		Name:            "safe-passthrough",
+		Enabled:         true,
+		Priority:        1,
+		ErrorCodes:      []int{statusCode},
+		Keywords:        []string{"invalid model"},
+		MatchMode:       model.MatchModeAll,
+		PassthroughCode: true,
+		PassthroughBody: true,
+	}
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	status, errType, errMsg, matched := applyErrorPassthroughRule(
+		c,
+		PlatformOpenAI,
+		statusCode,
+		[]byte(`{"error":{"message":"invalid model at https://private-upstream.example/v1/models?key=secret"}}`),
+		http.StatusBadGateway,
+		"upstream_error",
+		"Upstream request failed",
+	)
+
+	require.True(t, matched)
+	require.Equal(t, statusCode, status)
+	require.Equal(t, "upstream_error", errType)
+	require.Contains(t, errMsg, "invalid model")
+	require.NotContains(t, errMsg, "private-upstream.example")
+	require.NotContains(t, errMsg, "secret")
 }
 
 func TestGatewayHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
@@ -301,6 +341,31 @@ func TestHandleErrorResponse_SetsResponseCommitted(t *testing.T) {
 	assert.True(t, IsResponseCommitted(c), "non-failover error path must mark response committed")
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+}
+
+func TestHandleErrorResponse_BadRequestSanitizesUpstreamDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &GatewayService{}
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body: io.NopCloser(bytes.NewReader([]byte(
+			`{"type":"error","error":{"type":"invalid_request_error","message":"invalid model at https://private-upstream.example/v1/models?key=secret"}}`,
+		))),
+		Header: http.Header{},
+	}
+	account := &Account{ID: 100, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account)
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.NotContains(t, rec.Body.String(), "private-upstream.example")
+	require.NotContains(t, rec.Body.String(), "?key=secret")
+	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "[upstream URL]")
 }
 
 func TestHandleErrorResponse_PassthroughRuleSetsCommitted(t *testing.T) {

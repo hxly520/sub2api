@@ -10,35 +10,40 @@ import (
 // AvailableGroupRef 渠道视图中关联分组的简要信息。
 //
 // 用户侧「可用渠道」页面据此展示：专属分组 vs 公开分组（IsExclusive）、
-// 订阅 vs 标准（SubscriptionType）、默认倍率（RateMultiplier）。用户专属倍率
-// 不在这里暴露，前端自己通过 /groups/rates 拉取，和 API 密钥页面保持一致。
+// 订阅 vs 标准（SubscriptionType）、默认倍率（RateMultiplier）与高峰倍率规则。
+// 用户专属倍率不在这里暴露，前端自己通过 /groups/rates 拉取，和 API 密钥页面保持一致。
 type AvailableGroupRef struct {
-	ID               int64
-	Name             string
-	Platform         string
-	SubscriptionType string
-	RateMultiplier   float64
-	IsExclusive      bool
+	ID                 int64
+	Name               string
+	Platform           string
+	SubscriptionType   string
+	RateMultiplier     float64
+	PeakRateEnabled    bool
+	PeakStart          string
+	PeakEnd            string
+	PeakRateMultiplier float64
+	IsExclusive        bool
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
 // 关联的分组 + 推导出的支持模型列表（无通配符）。
 type AvailableChannel struct {
-	ID                 int64
-	Name               string
-	Description        string
-	Status             string
-	BillingModelSource string
-	RestrictModels     bool
-	Groups             []AvailableGroupRef
-	SupportedModels    []SupportedModel
+	ID                     int64
+	Name                   string
+	Description            string
+	Status                 string
+	BillingModelSource     string
+	RestrictModels         bool
+	Groups                 []AvailableGroupRef
+	SupportedModels        []SupportedModel
+	SupportedModelsByGroup map[int64][]SupportedModel
 }
 
 // ListAvailable 返回所有渠道的可用视图：每个渠道附带关联分组信息与支持模型列表。
 //
-// 支持模型通过 (*Channel).SupportedModels() 计算（mapping ∪ pricing 并联）。
-// 对于渠道未配置定价的模型，进一步用 PricingService 的全局 LiteLLM 数据合成
-// 一份展示用定价，让用户看到默认价格而非"未配置"。
+// 模型只来自渠道定价中配置的具体模型名，不读取上游账号 model_mapping，也不读取
+// 分组自定义 /v1/models 列表。这样页面与管理员的渠道定价配置保持一致，同时避免暴露
+// 上游账号能力。模型按分组平台保存，防止跨平台展示。
 //
 // 关联分组信息通过 groupRepo.ListActive 查询后按 ID 映射；渠道 GroupIDs 中未在活跃列表中
 // 的分组（已停用或删除）会被忽略。
@@ -59,40 +64,53 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 	for i := range groups {
 		g := groups[i]
 		groupByID[g.ID] = AvailableGroupRef{
-			ID:               g.ID,
-			Name:             g.Name,
-			Platform:         g.Platform,
-			SubscriptionType: g.SubscriptionType,
-			RateMultiplier:   g.RateMultiplier,
-			IsExclusive:      g.IsExclusive,
+			ID:                 g.ID,
+			Name:               g.Name,
+			Platform:           g.Platform,
+			SubscriptionType:   g.SubscriptionType,
+			RateMultiplier:     g.RateMultiplier,
+			PeakRateEnabled:    g.PeakRateEnabled,
+			PeakStart:          g.PeakStart,
+			PeakEnd:            g.PeakEnd,
+			PeakRateMultiplier: g.PeakRateMultiplier,
+			IsExclusive:        g.IsExclusive,
 		}
 	}
 
 	out := make([]AvailableChannel, 0, len(channels))
 	for i := range channels {
 		ch := &channels[i]
-		groups := make([]AvailableGroupRef, 0, len(ch.GroupIDs))
+		attachedGroups := make([]AvailableGroupRef, 0, len(ch.GroupIDs))
 		for _, gid := range ch.GroupIDs {
 			if ref, ok := groupByID[gid]; ok {
-				groups = append(groups, ref)
+				attachedGroups = append(attachedGroups, ref)
 			}
 		}
-		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		sort.SliceStable(attachedGroups, func(i, j int) bool {
+			return strings.ToLower(attachedGroups[i].Name) < strings.ToLower(attachedGroups[j].Name)
+		})
 
 		ch.normalizeBillingModelSource()
+		channelModels := configuredChannelPricingModels(ch)
+		supportedByGroup := make(map[int64][]SupportedModel, len(attachedGroups))
 
-		supported := ch.SupportedModels()
-		s.fillGlobalPricingFallback(supported)
+		for _, group := range attachedGroups {
+			groupModels := supportedModelsForPlatform(channelModels, group.Platform)
+			s.fillGlobalPricingFallback(groupModels)
+			supportedByGroup[group.ID] = groupModels
+		}
+		s.fillGlobalPricingFallback(channelModels)
 
 		out = append(out, AvailableChannel{
-			ID:                 ch.ID,
-			Name:               ch.Name,
-			Description:        ch.Description,
-			Status:             ch.Status,
-			BillingModelSource: ch.BillingModelSource,
-			RestrictModels:     ch.RestrictModels,
-			Groups:             groups,
-			SupportedModels:    supported,
+			ID:                     ch.ID,
+			Name:                   ch.Name,
+			Description:            ch.Description,
+			Status:                 ch.Status,
+			BillingModelSource:     ch.BillingModelSource,
+			RestrictModels:         ch.RestrictModels,
+			Groups:                 attachedGroups,
+			SupportedModels:        channelModels,
+			SupportedModelsByGroup: supportedByGroup,
 		})
 	}
 
@@ -102,12 +120,67 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 	return out, nil
 }
 
+// configuredChannelPricingModels returns only concrete models explicitly listed
+// in channel pricing. Channel mappings, account mappings and group model lists
+// are deliberately not part of the user-facing model catalogue.
+func configuredChannelPricingModels(ch *Channel) []SupportedModel {
+	if ch == nil || len(ch.ModelPricing) == 0 {
+		return nil
+	}
+
+	models := make([]SupportedModel, 0)
+	seen := make(map[string]struct{})
+	for i := range ch.ModelPricing {
+		pricing := &ch.ModelPricing[i]
+		platform := strings.TrimSpace(pricing.Platform)
+		if platform == "" {
+			continue
+		}
+		for _, configuredName := range pricing.Models {
+			name := strings.TrimSpace(configuredName)
+			if name == "" || strings.Contains(name, wildcardSuffix) {
+				continue
+			}
+			key := strings.ToLower(platform) + "\x00" + strings.ToLower(name)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			clone := pricing.Clone()
+			models = append(models, SupportedModel{
+				Name:     name,
+				Platform: platform,
+				Pricing:  &clone,
+			})
+		}
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		leftPlatform := strings.ToLower(models[i].Platform)
+		rightPlatform := strings.ToLower(models[j].Platform)
+		if leftPlatform != rightPlatform {
+			return leftPlatform < rightPlatform
+		}
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return models
+}
+
+func supportedModelsForPlatform(models []SupportedModel, platform string) []SupportedModel {
+	out := make([]SupportedModel, 0, len(models))
+	for i := range models {
+		if models[i].Platform == platform {
+			out = append(out, models[i])
+		}
+	}
+	return out
+}
+
 // fillGlobalPricingFallback 对未命中渠道定价的支持模型，从全局 LiteLLM 数据合成一份
 // 展示用定价。仅用于「可用渠道」展示，不影响真实计费链路。
 //
 // 触发条件：
 //  1. Pricing == nil（渠道完全没声明该模型的定价条目）
-//  2. Pricing 非 nil 但所有价格字段为空（admin UI 建了条目但没填价格）
+//  2. Pricing 非 nil但所有价格字段为空（admin UI 建了条目但没填价格）
 //
 // 当 s.pricingService 为 nil（测试场景），跳过回落。
 func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
@@ -151,7 +224,7 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 // 仅用于展示。
 //
 // 计费模式优先级：
-//  1. 渠道已选 BillingMode（admin 在 UI 里选了 image / per_request 但没填价的场景，
+//  1. 渠道已选 BillingMode（admin 在 UI 里选了 image / per_request / video 但没填价的场景，
 //     按选定模式合成对应字段）
 //  2. LiteLLM mode="image_generation" → image
 //  3. 默认 token
@@ -170,7 +243,7 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		mode = BillingModeImage
 	}
 
-	if mode == BillingModeImage || mode == BillingModePerRequest {
+	if mode == BillingModeImage || mode == BillingModePerRequest || mode == BillingModeVideo {
 		return &ChannelModelPricing{
 			BillingMode:      mode,
 			PerRequestPrice:  nonZeroPtr(lp.OutputCostPerImage),

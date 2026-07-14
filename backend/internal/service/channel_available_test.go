@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -76,6 +77,14 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
 	return NewChannelService(repo, groupRepo, nil, nil)
+}
+
+func availableModelNames(models []SupportedModel) []string {
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		out = append(out, model.Name)
+	}
+	return out
 }
 
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
@@ -308,4 +317,95 @@ func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
 
 func newStubPricingServiceFromMap(data map[string]*LiteLLMModelPricing) *PricingService {
 	return &PricingService{pricingData: data}
+}
+
+func TestListAvailable_UsesOnlyConcreteChannelPricingModels(t *testing.T) {
+	videoPrice := 0.08
+	channels := []Channel{{
+		ID:       10,
+		Name:     "media-channel",
+		Status:   StatusActive,
+		GroupIDs: []int64{1, 2},
+		ModelMapping: map[string]map[string]string{
+			"openai": {"mapping-only-model": "private/upstream-model"},
+		},
+		ModelPricing: []ChannelModelPricing{
+			{
+				Platform:        "openai",
+				Models:          []string{"grok-video", " seedance-2.0-fast-1080p ", "video-*", "", "GROK-VIDEO"},
+				BillingMode:     BillingModeVideo,
+				PerRequestPrice: &videoPrice,
+			},
+			{
+				Platform:    "anthropic",
+				Models:      []string{"claude-sonnet-4-6"},
+				BillingMode: BillingModeToken,
+			},
+			{Platform: " ", Models: []string{"missing-platform"}},
+		},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{
+		{
+			ID: 1, Name: "video", Platform: "openai",
+			ModelsListConfig: GroupModelsListConfig{Enabled: true, Models: []string{"group-list-only-model"}},
+		},
+		{ID: 2, Name: "claude", Platform: "anthropic"},
+	}}
+
+	out, err := newAvailableChannelService(channels, groupRepo).ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t,
+		[]string{"claude-sonnet-4-6", "grok-video", "seedance-2.0-fast-1080p"},
+		availableModelNames(out[0].SupportedModels),
+	)
+	require.Equal(t,
+		[]string{"grok-video", "seedance-2.0-fast-1080p"},
+		availableModelNames(out[0].SupportedModelsByGroup[1]),
+	)
+	require.Equal(t,
+		[]string{"claude-sonnet-4-6"},
+		availableModelNames(out[0].SupportedModelsByGroup[2]),
+	)
+	for _, forbidden := range []string{
+		"mapping-only-model", "private/upstream-model", "group-list-only-model",
+		"video-*", "missing-platform", "", "GROK-VIDEO",
+	} {
+		require.NotContains(t, availableModelNames(out[0].SupportedModels), forbidden)
+	}
+	require.NotNil(t, out[0].SupportedModelsByGroup[1][0].Pricing)
+	require.Equal(t, BillingModeVideo, out[0].SupportedModelsByGroup[1][0].Pricing.BillingMode)
+}
+
+func TestListAvailable_ReturnsEveryConfiguredPricingModel(t *testing.T) {
+	configured := make([]string, 0, 24)
+	for i := 1; i <= 24; i++ {
+		configured = append(configured, fmt.Sprintf("video-model-%02d", i))
+	}
+	channels := []Channel{{
+		ID:       1,
+		Name:     "large-video-channel",
+		Status:   StatusActive,
+		GroupIDs: []int64{7},
+		ModelPricing: []ChannelModelPricing{{
+			Platform:    "openai",
+			Models:      configured,
+			BillingMode: BillingModeVideo,
+		}},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{{ID: 7, Name: "video", Platform: "openai"}}}
+
+	out, err := newAvailableChannelService(channels, groupRepo).ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, configured, availableModelNames(out[0].SupportedModels))
+	require.Equal(t, configured, availableModelNames(out[0].SupportedModelsByGroup[7]))
+}
+
+func TestConfiguredChannelPricingModels_NilAndNoConcreteModels(t *testing.T) {
+	require.Nil(t, configuredChannelPricingModels(nil))
+	require.Nil(t, configuredChannelPricingModels(&Channel{}))
+	require.Empty(t, configuredChannelPricingModels(&Channel{ModelPricing: []ChannelModelPricing{
+		{Platform: "openai", Models: []string{"", "  ", "gpt-*", "*"}},
+	}}))
 }

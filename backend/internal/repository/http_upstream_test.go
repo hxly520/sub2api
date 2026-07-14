@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,151 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) {
+	t.Setenv("XAI_GROK_CLI_VERSION", "")
+
+	for _, endpoint := range []string{"responses", "chat/completions"} {
+		t.Run(endpoint, func(t *testing.T) {
+			upstream := NewHTTPUpstream(nil)
+			svc, ok := upstream.(*httpUpstreamService)
+			require.True(t, ok)
+
+			const accountID int64 = 4084
+			isolation := svc.getIsolationMode()
+			profile := service.HTTPUpstreamProfileDefault
+			proxyKey := directProxyKey
+			protocolMode := svc.resolveProtocolMode(profile, proxyKey, nil)
+			settings := svc.resolvePoolSettings(isolation, 1)
+			settings = svc.applyProfilePoolSettings(settings, profile)
+			cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+
+			var capturedHeaders http.Header
+			svc.clients[cacheKey] = &upstreamClientEntry{
+				client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					capturedHeaders = req.Header.Clone()
+					statusCode := http.StatusOK
+					if req.Header.Get("X-XAI-Token-Auth") != "xai-grok-cli" {
+						statusCode = http.StatusForbidden
+					}
+					return &http.Response{
+						StatusCode: statusCode,
+						Header:     make(http.Header),
+						Body:       http.NoBody,
+						Request:    req,
+					}, nil
+				})},
+				proxyKey:     proxyKey,
+				poolKey:      buildPoolKey(settings, protocolMode),
+				protocolMode: protocolMode,
+			}
+
+			req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/"+endpoint, nil)
+			require.NoError(t, err)
+			req.Header.Set("User-Agent", "sub2api-grok/1.0")
+
+			resp, err := svc.Do(req, "", accountID, 1)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.NoError(t, resp.Body.Close())
+
+			require.Equal(t, "0.2.93", capturedHeaders.Get("x-grok-client-version"))
+			require.Equal(t, "xai-grok-cli", capturedHeaders.Get("X-XAI-Token-Auth"))
+			require.Equal(t, "xai-grok-workspace/0.2.93", capturedHeaders.Get("User-Agent"))
+		})
+	}
+}
+
+func TestApplyGrokCLIProxyHeaders(t *testing.T) {
+	t.Run("uses pinned stable version for the CLI proxy", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "sub2api-grok/1.0")
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "0.2.93", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-cli", req.Header.Get("X-XAI-Token-Auth"))
+		require.Equal(t, "xai-grok-workspace/0.2.93", req.Header.Get("User-Agent"))
+	})
+
+	t.Run("accepts a valid operator override", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.95-alpha.1")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/chat/completions", nil)
+		require.NoError(t, err)
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "0.2.95-alpha.1", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-workspace/0.2.95-alpha.1", req.Header.Get("User-Agent"))
+	})
+
+	t.Run("rejects an unsafe override", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.95\r\nX-Injected: true")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "0.2.93", req.Header.Get("x-grok-client-version"))
+		require.Empty(t, req.Header.Get("X-Injected"))
+	})
+
+	t.Run("rejects an override below the supported minimum", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.92")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "0.2.93", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-workspace/0.2.93", req.Header.Get("User-Agent"))
+	})
+
+	t.Run("rejects a prerelease override at the minimum version", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.93-beta.1")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "0.2.93", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-workspace/0.2.93", req.Header.Get("User-Agent"))
+	})
+
+	for _, version := range []string{
+		"0.2.093",
+		"0.2.94-alpha..1",
+		"0.3",
+		"1",
+		"0.2.95+build.1",
+	} {
+		t.Run("rejects invalid semver "+version, func(t *testing.T) {
+			t.Setenv("XAI_GROK_CLI_VERSION", version)
+			req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+			require.NoError(t, err)
+
+			applyGrokCLIProxyHeaders(req)
+
+			require.Equal(t, "0.2.93", req.Header.Get("x-grok-client-version"))
+			require.Equal(t, "xai-grok-workspace/0.2.93", req.Header.Get("User-Agent"))
+		})
+	}
+
+	t.Run("leaves direct xAI API requests unchanged", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.95")
+		req, err := http.NewRequest(http.MethodPost, "https://api.x.ai/v1/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "sub2api-grok/1.0")
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Empty(t, req.Header.Get("x-grok-client-version"))
+		require.Empty(t, req.Header.Get("X-XAI-Token-Auth"))
+		require.Equal(t, "sub2api-grok/1.0", req.Header.Get("User-Agent"))
+	})
+}
 
 // HTTPUpstreamSuite HTTP 上游服务测试套件
 // 使用 testify/suite 组织测试，支持 SetupTest 初始化
@@ -408,6 +555,71 @@ func (s *HTTPUpstreamSuite) TestIdleTTLDoesNotEvictActive() {
 	_, _ = svc.getOrCreateClient("", 2, 1)
 
 	require.True(s.T(), hasEntry(svc, entry1), "有活跃请求时不应回收")
+}
+
+func (s *HTTPUpstreamSuite) TestPinnedDialContextUsesValidatedIP() {
+	var dialAddress string
+	sentinel := errors.New("stop after capture")
+	dial := pinnedDialContext("media.example.com", []net.IP{net.ParseIP("8.8.8.8")}, func(_ context.Context, _ string, address string) (net.Conn, error) {
+		dialAddress = address
+		return nil, sentinel
+	})
+
+	_, err := dial(context.Background(), "tcp", "media.example.com:443")
+	require.ErrorIs(s.T(), err, sentinel)
+	require.Equal(s.T(), "8.8.8.8:443", dialAddress)
+}
+
+func (s *HTTPUpstreamSuite) TestPinnedDialContextRejectsUnexpectedHostAndPrivateIP() {
+	called := false
+	dialer := func(_ context.Context, _ string, _ string) (net.Conn, error) {
+		called = true
+		return nil, errors.New("unexpected dial")
+	}
+
+	dial := pinnedDialContext("media.example.com", []net.IP{net.ParseIP("8.8.8.8")}, dialer)
+	_, err := dial(context.Background(), "tcp", "other.example.com:443")
+	require.ErrorContains(s.T(), err, "unexpected dial host")
+	require.False(s.T(), called)
+
+	dial = pinnedDialContext("media.example.com", []net.IP{net.ParseIP("127.0.0.1")}, dialer)
+	_, err = dial(context.Background(), "tcp", "media.example.com:443")
+	require.ErrorContains(s.T(), err, "not allowed")
+	require.False(s.T(), called)
+}
+
+func (s *HTTPUpstreamSuite) TestClientForRequestPinsResolvedIPAndDisablesRedirects() {
+	svc := s.newService()
+	baseTransport := &http.Transport{}
+	entry := &upstreamClientEntry{client: &http.Client{Transport: baseTransport}}
+	req, err := http.NewRequest(http.MethodGet, "https://8.8.8.8/video.mp4", nil)
+	require.NoError(s.T(), err)
+	ctx := service.WithHTTPUpstreamResolvedIPValidation(req.Context())
+	ctx = service.WithHTTPUpstreamRedirectsDisabled(ctx)
+	req = req.WithContext(ctx)
+
+	client, cleanup, err := svc.clientForRequest(req, "", entry)
+	require.NoError(s.T(), err)
+	require.NotSame(s.T(), entry.client, client)
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(s.T(), ok)
+	require.NotSame(s.T(), baseTransport, transport)
+	require.NotNil(s.T(), transport.DialContext)
+	require.Nil(s.T(), transport.Proxy)
+	require.NotNil(s.T(), cleanup)
+	require.ErrorIs(s.T(), client.CheckRedirect(req, nil), http.ErrUseLastResponse)
+	cleanup()
+}
+
+func (s *HTTPUpstreamSuite) TestClientForRequestRejectsProxyWhenPinning() {
+	svc := s.newService()
+	entry := &upstreamClientEntry{client: &http.Client{Transport: &http.Transport{}}}
+	req, err := http.NewRequest(http.MethodGet, "https://8.8.8.8/video.mp4", nil)
+	require.NoError(s.T(), err)
+	req = req.WithContext(service.WithHTTPUpstreamResolvedIPValidation(req.Context()))
+
+	_, _, err = svc.clientForRequest(req, "http://proxy.example.com:8080", entry)
+	require.ErrorContains(s.T(), err, "requires a direct connection")
 }
 
 // TestHTTPUpstreamSuite 运行测试套件

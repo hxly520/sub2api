@@ -84,6 +84,45 @@ func TestSetStickySessionAccountID_DualWriteOldDisabled(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestReleaseOpenAIStickySessionAfterFailureDeletesMatchingBinding(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:failed-session": 48}}
+	svc := &OpenAIGatewayService{cache: cache}
+
+	released, err := svc.ReleaseOpenAIStickySessionAfterFailure(context.Background(), nil, "failed-session", 48)
+	require.NoError(t, err)
+	require.True(t, released)
+	require.NotContains(t, cache.sessionBindings, "openai:failed-session")
+	require.Equal(t, 1, cache.deletedSessions["openai:failed-session"])
+}
+
+func TestReleaseOpenAIStickySessionAfterFailurePreservesNewBinding(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:failed-session": 55}}
+	svc := &OpenAIGatewayService{cache: cache}
+
+	released, err := svc.ReleaseOpenAIStickySessionAfterFailure(context.Background(), nil, "failed-session", 48)
+	require.NoError(t, err)
+	require.False(t, released)
+	require.Equal(t, int64(55), cache.sessionBindings["openai:failed-session"])
+	require.Empty(t, cache.deletedSessions)
+}
+
+func TestReleaseOpenAIStickySessionAfterFailureDeletesOnlyMatchingLegacyBinding(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{
+		"openai:new-hash":    55,
+		"openai:legacy-hash": 48,
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	ctx := withOpenAILegacySessionHash(context.Background(), "legacy-hash")
+
+	released, err := svc.ReleaseOpenAIStickySessionAfterFailure(ctx, nil, "new-hash", 48)
+	require.NoError(t, err)
+	require.True(t, released)
+	require.Equal(t, int64(55), cache.sessionBindings["openai:new-hash"])
+	require.NotContains(t, cache.sessionBindings, "openai:legacy-hash")
+	require.NotContains(t, cache.deletedSessions, "openai:new-hash")
+	require.Equal(t, 1, cache.deletedSessions["openai:legacy-hash"])
+}
+
 func TestSnapshotOpenAICompatibilityFallbackMetrics(t *testing.T) {
 	before := SnapshotOpenAICompatibilityFallbackMetrics()
 

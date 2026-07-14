@@ -29,7 +29,7 @@ const (
 
 // DefaultCSPPolicy is the default Content-Security-Policy with nonce support
 // __CSP_NONCE__ will be replaced with actual nonce at request time by the SecurityHeaders middleware
-const DefaultCSPPolicy = "default-src 'self'; script-src 'self' __CSP_NONCE__ https://challenges.cloudflare.com https://static.cloudflareinsights.com https://*.stripe.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src https://challenges.cloudflare.com https://*.stripe.com https://checkout.airwallex.com https://checkout-demo.airwallex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+const DefaultCSPPolicy = "default-src 'self'; script-src 'self' __CSP_NONCE__ https://challenges.cloudflare.com https://static.cloudflareinsights.com https://*.stripe.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src https://challenges.cloudflare.com https://*.stripe.com https://checkout.airwallex.com https://checkout-demo.airwallex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 // UMQ（用户消息队列）模式常量
 const (
@@ -93,6 +93,7 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 }
 
 type LogConfig struct {
@@ -173,6 +174,56 @@ type IdempotencyConfig struct {
 	CleanupIntervalSeconds int `mapstructure:"cleanup_interval_seconds"`
 	// CleanupBatchSize 每次清理的最大记录数。
 	CleanupBatchSize int `mapstructure:"cleanup_batch_size"`
+}
+
+type BatchImageConfig struct {
+	Enabled                           bool   `mapstructure:"enabled"`
+	MaxItemsPerJobDefault             int    `mapstructure:"max_items_per_job_default"`
+	MaxItemsPerJobTrial               int    `mapstructure:"max_items_per_job_trial"`
+	MaxOutputImagesPerJob             int    `mapstructure:"max_output_images_per_job"`
+	MaxOutputImagesPerItem            int    `mapstructure:"max_output_images_per_item"`
+	MaxPromptCharsPerItem             int    `mapstructure:"max_prompt_chars_per_item"`
+	MaxReferenceImagesPerJob          int    `mapstructure:"max_reference_images_per_job"`
+	MaxReferenceInlineBytesPerJob     int    `mapstructure:"max_reference_inline_bytes_per_job"`
+	DefaultResponseMimeType           string `mapstructure:"default_response_mime_type"`
+	DefaultImageSize                  string `mapstructure:"default_image_size"`
+	MaxDownloadItemsZip               int    `mapstructure:"max_download_items_zip"`
+	MaxDownloadBytesPerRequest        int64  `mapstructure:"max_download_bytes_per_request"`
+	MaxDownloadDurationSeconds        int    `mapstructure:"max_download_duration_seconds"`
+	MaxDownloadConcurrencyPerUser     int    `mapstructure:"max_download_concurrency_per_user"`
+	InputRetentionAfterTerminalHours  int    `mapstructure:"input_retention_after_terminal_hours"`
+	OutputRetentionAfterTerminalHours int    `mapstructure:"output_retention_after_terminal_hours"`
+	OutputRetentionMaxDays            int    `mapstructure:"output_retention_max_days"`
+	CleanupIntervalMinutes            int    `mapstructure:"cleanup_interval_minutes"`
+	CleanupBatchSize                  int    `mapstructure:"cleanup_batch_size"`
+	QueueEnabled                      bool   `mapstructure:"queue_enabled"`
+	QueueReadyKey                     string `mapstructure:"queue_ready_key"`
+	QueueDelayedKey                   string `mapstructure:"queue_delayed_key"`
+	QueueActiveKey                    string `mapstructure:"queue_active_key"`
+	InflightKeyPrefix                 string `mapstructure:"inflight_key_prefix"`
+	LockKeyPrefix                     string `mapstructure:"lock_key_prefix"`
+	IdempotencyKeyPrefix              string `mapstructure:"idempotency_key_prefix"`
+	InflightTTLSeconds                int    `mapstructure:"inflight_ttl_seconds"`
+	JobLockTTLSeconds                 int    `mapstructure:"job_lock_ttl_seconds"`
+	DefaultRequeueDelaySeconds        int    `mapstructure:"default_requeue_delay_seconds"`
+	ErrorRetryDelaySeconds            int    `mapstructure:"error_retry_delay_seconds"`
+	LockConflictDelaySeconds          int    `mapstructure:"lock_conflict_delay_seconds"`
+	StaleActiveAfterSeconds           int    `mapstructure:"stale_active_after_seconds"`
+	DelayedMoverIntervalSeconds       int    `mapstructure:"delayed_mover_interval_seconds"`
+	RecoveryIntervalSeconds           int    `mapstructure:"recovery_interval_seconds"`
+	DelayedMoveLimit                  int    `mapstructure:"delayed_move_limit"`
+	RecoverLimit                      int    `mapstructure:"recover_limit"`
+	VertexEnabled                     bool   `mapstructure:"vertex_enabled"`
+	VertexProjectID                   string `mapstructure:"vertex_project_id"`
+	VertexLocation                    string `mapstructure:"vertex_location"`
+	// VertexManagedGCSBucket is a server-owned bucket for batch JSONL input/output.
+	// Disable Cloud Storage soft delete on this bucket to avoid retaining deleted batch objects.
+	VertexManagedGCSBucket       string `mapstructure:"vertex_managed_gcs_bucket"`
+	VertexManagedGCSPrefix       string `mapstructure:"vertex_managed_gcs_prefix"`
+	VertexInputRetentionHours    int    `mapstructure:"vertex_input_retention_hours"`
+	VertexOutputRetentionHours   int    `mapstructure:"vertex_output_retention_hours"`
+	VertexBatchPredictionBaseURL string `mapstructure:"vertex_batch_prediction_base_url"`
+	VertexGCSBaseURL             string `mapstructure:"vertex_gcs_base_url"`
 }
 
 type LinuxDoConnectConfig struct {
@@ -550,6 +601,7 @@ type ServerConfig struct {
 	Host               string    `mapstructure:"host"`
 	Port               int       `mapstructure:"port"`
 	Mode               string    `mapstructure:"mode"`                  // debug/release
+	EnableServerTiming bool      `mapstructure:"enable_server_timing"`  // Admin UI Server-Timing response header
 	FrontendURL        string    `mapstructure:"frontend_url"`          // 前端基础 URL，用于生成邮件中的外部链接
 	ReadHeaderTimeout  int       `mapstructure:"read_header_timeout"`   // 读取请求头超时（秒）
 	IdleTimeout        int       `mapstructure:"idle_timeout"`          // 空闲连接超时（秒）
@@ -721,14 +773,23 @@ type GatewayConfig struct {
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
+	// OpenAICompactModel: /responses/compact 上游使用的模型。
+	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
+	OpenAICompactModel string `mapstructure:"openai_compact_model"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// OpenAIScheduler: OpenAI 高级调度器粘性逃逸配置
 	OpenAIScheduler GatewayOpenAISchedulerConfig `mapstructure:"openai_scheduler"`
+	// OpenAIFirstResponse: OpenAI 流式首事件超时切号默认配置。
+	// 后台系统设置存在时优先使用系统设置；本配置作为缺省/兜底。
+	OpenAIFirstResponse GatewayOpenAIFirstResponseConfig `mapstructure:"openai_first_response"`
 	// OpenAIHTTP2: OpenAI HTTP 上游协议策略（默认启用 HTTP/2，可按代理能力回退 HTTP/1.1）
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
+	// VideoProxy: 媒体结果交付策略。origin 保持视频源站流式代理；edge 使用
+	// 自有边缘域名和加密令牌，让图片/视频上游地址不暴露给客户端。
+	VideoProxy VideoProxyConfig `mapstructure:"video_proxy"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -764,6 +825,8 @@ type GatewayConfig struct {
 	ImageStreamDataIntervalTimeout int `mapstructure:"image_stream_data_interval_timeout"`
 	// ImageStreamKeepaliveInterval: 图片流式 keepalive 间隔（秒），0表示禁用
 	ImageStreamKeepaliveInterval int `mapstructure:"image_stream_keepalive_interval"`
+	// ImageNonstreamKeepaliveInterval: 图片非流式 JSON keepalive 间隔（秒），0表示禁用
+	ImageNonstreamKeepaliveInterval int `mapstructure:"image_nonstream_keepalive_interval"`
 	// MaxLineSize: 上游 SSE 单行最大字节数（0使用默认值）
 	MaxLineSize int `mapstructure:"max_line_size"`
 
@@ -803,6 +866,18 @@ type GatewayConfig struct {
 	// UserMessageQueue: 用户消息串行队列配置
 	// 对 role:"user" 的真实用户消息实施账号级串行化 + RPM 自适应延迟
 	UserMessageQueue UserMessageQueueConfig `mapstructure:"user_message_queue"`
+}
+
+const (
+	VideoProxyModeOrigin = "origin"
+	VideoProxyModeEdge   = "edge"
+)
+
+type VideoProxyConfig struct {
+	Mode            string `mapstructure:"mode"`
+	EdgeBaseURL     string `mapstructure:"edge_base_url"`
+	EncryptionKey   string `mapstructure:"encryption_key"`
+	TokenTTLSeconds int    `mapstructure:"token_ttl_seconds"`
 }
 
 // GatewayOpenAIHTTP2Config OpenAI HTTP 上游协议配置。
@@ -867,8 +942,14 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 type GatewayOpenAIWSConfig struct {
 	// ModeRouterV2Enabled: 新版 WS mode 路由开关（默认 false；关闭时保持 legacy 行为）
 	ModeRouterV2Enabled bool `mapstructure:"mode_router_v2_enabled"`
-	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough）
+	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough/http_bridge）
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
+	// IngressInterTurnIdleTimeoutSeconds bounds the time a client may remain idle
+	// between completed ingress turns. Zero disables this protection.
+	IngressInterTurnIdleTimeoutSeconds int `mapstructure:"ingress_inter_turn_idle_timeout_seconds"`
+	// MaxIngressConnectionsPerAPIKey bounds live client WebSocket ingress sessions
+	// per API key across all instances. Zero disables this protection.
+	MaxIngressConnectionsPerAPIKey int `mapstructure:"max_ingress_connections_per_api_key"`
 	// Enabled: 全局总开关（默认 true）
 	Enabled bool `mapstructure:"enabled"`
 	// OAuthEnabled: 是否允许 OpenAI OAuth 账号使用 WS
@@ -966,6 +1047,9 @@ type GatewayOpenAIWSSchedulerScoreWeights struct {
 	Reset float64 `mapstructure:"reset"`
 	// QuotaHeadroom 倾向 7d 剩余额度更健康的账号；默认 0（关闭，不改变原有行为）。
 	QuotaHeadroom float64 `mapstructure:"quota_headroom"`
+	// PreviousResponse/SessionSticky 仅在开启 OpenAI 高级调度的粘性加权时生效。
+	PreviousResponse float64 `mapstructure:"previous_response"`
+	SessionSticky    float64 `mapstructure:"session_sticky"`
 }
 
 // GatewayOpenAISchedulerConfig OpenAI 高级调度器配置。
@@ -976,6 +1060,16 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
+}
+
+// GatewayOpenAIFirstResponseConfig controls low-latency stream flushing. The
+// timeout fields remain for configuration compatibility but never authorize
+// replaying a request that may already have reached upstream billing.
+type GatewayOpenAIFirstResponseConfig struct {
+	Enabled      bool `mapstructure:"enabled"`
+	TimeoutMS    int  `mapstructure:"timeout_ms"`
+	MaxAttempts  int  `mapstructure:"max_attempts"`
+	CountAsError bool `mapstructure:"count_as_error"`
 }
 
 // GatewayUsageRecordConfig 使用量记录异步队列配置
@@ -1396,6 +1490,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	// 环境变量支持
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	if err := viper.BindEnv("server.enable_server_timing", "ENABLE_SERVER_TIMING"); err != nil {
+		return nil, fmt.Errorf("bind ENABLE_SERVER_TIMING: %w", err)
+	}
 
 	// 默认值
 	setDefaults()
@@ -1417,8 +1514,11 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 0.5
 	}
-	if !cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled && !viper.IsSet("gateway.openai_scheduler.sticky_escape_enabled") {
-		cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled = true
+	if cfg.Gateway.OpenAIFirstResponse.TimeoutMS == 0 {
+		cfg.Gateway.OpenAIFirstResponse.TimeoutMS = 5000
+	}
+	if cfg.Gateway.OpenAIFirstResponse.MaxAttempts == 0 {
+		cfg.Gateway.OpenAIFirstResponse.MaxAttempts = 2
 	}
 
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
@@ -1474,6 +1574,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.StacktraceLevel = strings.ToLower(strings.TrimSpace(cfg.Log.StacktraceLevel))
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
+	cfg.Gateway.VideoProxy.Mode = strings.ToLower(strings.TrimSpace(cfg.Gateway.VideoProxy.Mode))
+	cfg.Gateway.VideoProxy.EdgeBaseURL = strings.TrimRight(strings.TrimSpace(cfg.Gateway.VideoProxy.EdgeBaseURL), "/")
+	cfg.Gateway.VideoProxy.EncryptionKey = strings.TrimSpace(cfg.Gateway.VideoProxy.EncryptionKey)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
 		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 		if err != nil {
@@ -1551,6 +1654,7 @@ func setDefaults() {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.mode", "release")
+	viper.SetDefault("server.enable_server_timing", false)
 	viper.SetDefault("server.frontend_url", "")
 	viper.SetDefault("server.read_header_timeout", 30) // 30秒读取请求头
 	viper.SetDefault("server.idle_timeout", 120)       // 120秒空闲超时
@@ -1726,6 +1830,53 @@ func setDefaults() {
 	viper.SetDefault("redis.min_idle_conns", 128)
 	viper.SetDefault("redis.enable_tls", false)
 
+	// Batch Image queue
+	viper.SetDefault("batch_image.enabled", false)
+	viper.SetDefault("batch_image.max_items_per_job_default", 200)
+	viper.SetDefault("batch_image.max_items_per_job_trial", 50)
+	viper.SetDefault("batch_image.max_output_images_per_job", 200)
+	viper.SetDefault("batch_image.max_output_images_per_item", 4)
+	viper.SetDefault("batch_image.max_prompt_chars_per_item", 8000)
+	viper.SetDefault("batch_image.max_reference_images_per_job", 1000)
+	viper.SetDefault("batch_image.max_reference_inline_bytes_per_job", 134217728)
+	viper.SetDefault("batch_image.default_response_mime_type", "image/png")
+	viper.SetDefault("batch_image.default_image_size", "1K")
+	viper.SetDefault("batch_image.max_download_items_zip", 200)
+	viper.SetDefault("batch_image.max_download_bytes_per_request", 536870912)
+	viper.SetDefault("batch_image.max_download_duration_seconds", 600)
+	viper.SetDefault("batch_image.max_download_concurrency_per_user", 1)
+	viper.SetDefault("batch_image.input_retention_after_terminal_hours", 24)
+	viper.SetDefault("batch_image.output_retention_after_terminal_hours", 72)
+	viper.SetDefault("batch_image.output_retention_max_days", 7)
+	viper.SetDefault("batch_image.cleanup_interval_minutes", 30)
+	viper.SetDefault("batch_image.cleanup_batch_size", 100)
+	viper.SetDefault("batch_image.queue_enabled", false)
+	viper.SetDefault("batch_image.queue_ready_key", "batch_image:queue:ready")
+	viper.SetDefault("batch_image.queue_delayed_key", "batch_image:queue:delayed")
+	viper.SetDefault("batch_image.queue_active_key", "batch_image:queue:active")
+	viper.SetDefault("batch_image.inflight_key_prefix", "batch_image:queue:inflight:")
+	viper.SetDefault("batch_image.lock_key_prefix", "batch_image:queue:lock:")
+	viper.SetDefault("batch_image.idempotency_key_prefix", "batch_image:queue:idem:")
+	viper.SetDefault("batch_image.inflight_ttl_seconds", 604800)
+	viper.SetDefault("batch_image.job_lock_ttl_seconds", 300)
+	viper.SetDefault("batch_image.default_requeue_delay_seconds", 30)
+	viper.SetDefault("batch_image.error_retry_delay_seconds", 60)
+	viper.SetDefault("batch_image.lock_conflict_delay_seconds", 5)
+	viper.SetDefault("batch_image.stale_active_after_seconds", 600)
+	viper.SetDefault("batch_image.delayed_mover_interval_seconds", 5)
+	viper.SetDefault("batch_image.recovery_interval_seconds", 300)
+	viper.SetDefault("batch_image.delayed_move_limit", 100)
+	viper.SetDefault("batch_image.recover_limit", 100)
+	viper.SetDefault("batch_image.vertex_enabled", false)
+	viper.SetDefault("batch_image.vertex_project_id", "")
+	viper.SetDefault("batch_image.vertex_location", "global")
+	viper.SetDefault("batch_image.vertex_managed_gcs_bucket", "")
+	viper.SetDefault("batch_image.vertex_managed_gcs_prefix", "batch-image/{env}/{batch_id}")
+	viper.SetDefault("batch_image.vertex_input_retention_hours", 24)
+	viper.SetDefault("batch_image.vertex_output_retention_hours", 72)
+	viper.SetDefault("batch_image.vertex_batch_prediction_base_url", "")
+	viper.SetDefault("batch_image.vertex_gcs_base_url", "")
+
 	// Ops (vNext)
 	viper.SetDefault("ops.enabled", true)
 	viper.SetDefault("ops.use_preaggregated_tables", true)
@@ -1836,10 +1987,17 @@ func setDefaults() {
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
+	viper.SetDefault("gateway.video_proxy.mode", VideoProxyModeOrigin)
+	viper.SetDefault("gateway.video_proxy.edge_base_url", "")
+	viper.SetDefault("gateway.video_proxy.encryption_key", "")
+	viper.SetDefault("gateway.video_proxy.token_ttl_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.ingress_mode_default", "ctx_pool")
+	viper.SetDefault("gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds", 300)
+	viper.SetDefault("gateway.openai_ws.max_ingress_connections_per_api_key", 64)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
 	viper.SetDefault("gateway.openai_ws.force_http", false)
@@ -1887,6 +2045,12 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.ttft", 0.5)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.reset", 0.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.quota_headroom", 0.0)
+	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.previous_response", 5.0)
+	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.session_sticky", 3.0)
+	viper.SetDefault("gateway.openai_first_response.enabled", false)
+	viper.SetDefault("gateway.openai_first_response.timeout_ms", 5000)
+	viper.SetDefault("gateway.openai_first_response.max_attempts", 2)
+	viper.SetDefault("gateway.openai_first_response.count_as_error", false)
 	// OpenAI HTTP upstream protocol strategy
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)
@@ -1917,6 +2081,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.stream_keepalive_interval", 10)
 	viper.SetDefault("gateway.image_stream_data_interval_timeout", 900)
 	viper.SetDefault("gateway.image_stream_keepalive_interval", 10)
+	viper.SetDefault("gateway.image_nonstream_keepalive_interval", 0)
 	viper.SetDefault("gateway.max_line_size", 500*1024*1024)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
@@ -1941,7 +2106,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.usage_record.worker_count", 128)
 	viper.SetDefault("gateway.usage_record.queue_size", 16384)
 	viper.SetDefault("gateway.usage_record.task_timeout_seconds", 5)
-	viper.SetDefault("gateway.usage_record.overflow_policy", UsageRecordOverflowPolicySample)
+	// 默认 sync：队列满时由提交方内联执行（提交点在响应写出之后，不阻塞客户端）。
+	// sample/drop 会在溢出时静默丢弃计费任务，造成扣费与 usage_logs 对账缺口（issue #3656），
+	// 仅供显式配置的运维场景使用。
+	viper.SetDefault("gateway.usage_record.overflow_policy", UsageRecordOverflowPolicySync)
 	viper.SetDefault("gateway.usage_record.overflow_sample_percent", 10)
 	viper.SetDefault("gateway.usage_record.auto_scale_enabled", true)
 	viper.SetDefault("gateway.usage_record.auto_scale_min_workers", 128)
@@ -2321,6 +2489,61 @@ func (c *Config) Validate() error {
 	if c.Redis.MinIdleConns > c.Redis.PoolSize {
 		return fmt.Errorf("redis.min_idle_conns cannot exceed redis.pool_size")
 	}
+	if c.BatchImage.QueueEnabled {
+		if strings.TrimSpace(c.BatchImage.QueueReadyKey) == "" {
+			return fmt.Errorf("batch_image.queue_ready_key must not be empty")
+		}
+		if strings.TrimSpace(c.BatchImage.QueueDelayedKey) == "" {
+			return fmt.Errorf("batch_image.queue_delayed_key must not be empty")
+		}
+		if strings.TrimSpace(c.BatchImage.QueueActiveKey) == "" {
+			return fmt.Errorf("batch_image.queue_active_key must not be empty")
+		}
+		if strings.TrimSpace(c.BatchImage.InflightKeyPrefix) == "" {
+			return fmt.Errorf("batch_image.inflight_key_prefix must not be empty")
+		}
+		if strings.TrimSpace(c.BatchImage.LockKeyPrefix) == "" {
+			return fmt.Errorf("batch_image.lock_key_prefix must not be empty")
+		}
+		if c.BatchImage.InflightTTLSeconds <= 0 {
+			return fmt.Errorf("batch_image.inflight_ttl_seconds must be positive")
+		}
+		if c.BatchImage.JobLockTTLSeconds <= 0 {
+			return fmt.Errorf("batch_image.job_lock_ttl_seconds must be positive")
+		}
+		if c.BatchImage.StaleActiveAfterSeconds <= 0 {
+			return fmt.Errorf("batch_image.stale_active_after_seconds must be positive")
+		}
+		if c.BatchImage.DelayedMoveLimit <= 0 {
+			return fmt.Errorf("batch_image.delayed_move_limit must be positive")
+		}
+		if c.BatchImage.RecoverLimit <= 0 {
+			return fmt.Errorf("batch_image.recover_limit must be positive")
+		}
+	}
+	if c.BatchImage.VertexEnabled {
+		if strings.TrimSpace(c.BatchImage.VertexManagedGCSBucket) == "" {
+			return fmt.Errorf("batch_image.vertex_managed_gcs_bucket must not be empty when vertex is enabled")
+		}
+		if strings.Contains(c.BatchImage.VertexManagedGCSBucket, "://") {
+			return fmt.Errorf("batch_image.vertex_managed_gcs_bucket must be a bucket name, not a URI")
+		}
+		if strings.TrimSpace(c.BatchImage.VertexLocation) == "" {
+			return fmt.Errorf("batch_image.vertex_location must not be empty when vertex is enabled")
+		}
+		if strings.TrimSpace(c.BatchImage.VertexManagedGCSPrefix) == "" {
+			return fmt.Errorf("batch_image.vertex_managed_gcs_prefix must not be empty when vertex is enabled")
+		}
+		if !strings.Contains(c.BatchImage.VertexManagedGCSPrefix, "{batch_id}") {
+			return fmt.Errorf("batch_image.vertex_managed_gcs_prefix must contain {batch_id}")
+		}
+		if c.BatchImage.VertexInputRetentionHours <= 0 {
+			return fmt.Errorf("batch_image.vertex_input_retention_hours must be positive")
+		}
+		if c.BatchImage.VertexOutputRetentionHours <= 0 {
+			return fmt.Errorf("batch_image.vertex_output_retention_hours must be positive")
+		}
+	}
 	if c.Dashboard.Enabled {
 		if c.Dashboard.StatsFreshTTLSeconds <= 0 {
 			return fmt.Errorf("dashboard_cache.stats_fresh_ttl_seconds must be positive")
@@ -2470,6 +2693,26 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
 	}
+	switch c.Gateway.VideoProxy.Mode {
+	case "", VideoProxyModeOrigin:
+		// Origin mode does not issue edge tokens. Keep zero-value Config values
+		// valid so the opt-in media feature cannot break existing deployments or
+		// tests that construct Config directly.
+	case VideoProxyModeEdge:
+		parsed, err := url.Parse(c.Gateway.VideoProxy.EdgeBaseURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("gateway.video_proxy.edge_base_url must be an absolute HTTPS URL without credentials, query, or fragment")
+		}
+		key, err := hex.DecodeString(c.Gateway.VideoProxy.EncryptionKey)
+		if err != nil || len(key) != 32 {
+			return fmt.Errorf("gateway.video_proxy.encryption_key must be 64 hexadecimal characters")
+		}
+		if c.Gateway.VideoProxy.TokenTTLSeconds < 60 || c.Gateway.VideoProxy.TokenTTLSeconds > 86400 {
+			return fmt.Errorf("gateway.video_proxy.token_ttl_seconds must be between 60 and 86400")
+		}
+	default:
+		return fmt.Errorf("gateway.video_proxy.mode must be one of: %s/%s", VideoProxyModeOrigin, VideoProxyModeEdge)
+	}
 	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
 		switch c.Gateway.ConnectionPoolIsolation {
 		case ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy:
@@ -2545,12 +2788,25 @@ func (c *Config) Validate() error {
 		(c.Gateway.ImageStreamKeepaliveInterval < 5 || c.Gateway.ImageStreamKeepaliveInterval > 60) {
 		return fmt.Errorf("gateway.image_stream_keepalive_interval must be 0 or between 5-60 seconds")
 	}
+	if c.Gateway.ImageNonstreamKeepaliveInterval < 0 {
+		return fmt.Errorf("gateway.image_nonstream_keepalive_interval must be non-negative")
+	}
+	if c.Gateway.ImageNonstreamKeepaliveInterval != 0 &&
+		(c.Gateway.ImageNonstreamKeepaliveInterval < 5 || c.Gateway.ImageNonstreamKeepaliveInterval > 60) {
+		return fmt.Errorf("gateway.image_nonstream_keepalive_interval must be 0 or between 5-60 seconds")
+	}
 	// 兼容旧键 sticky_previous_response_ttl_seconds
 	if c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds <= 0 && c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds > 0 {
 		c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds
 	}
 	if c.Gateway.OpenAIWS.MaxConnsPerAccount <= 0 {
 		return fmt.Errorf("gateway.openai_ws.max_conns_per_account must be positive")
+	}
+	if c.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey < 0 {
+		return fmt.Errorf("gateway.openai_ws.max_ingress_connections_per_api_key must be non-negative")
 	}
 	if c.Gateway.OpenAIWS.MinIdlePerAccount < 0 {
 		return fmt.Errorf("gateway.openai_ws.min_idle_per_account must be non-negative")
@@ -2624,11 +2880,11 @@ func (c *Config) Validate() error {
 	}
 	if mode := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIWS.IngressModeDefault)); mode != "" {
 		switch mode {
-		case "off", "ctx_pool", "passthrough":
+		case "off", "ctx_pool", "passthrough", "http_bridge":
 		case "shared", "dedicated":
-			slog.Warn("gateway.openai_ws.ingress_mode_default is deprecated, treating as ctx_pool; please update to off|ctx_pool|passthrough", "value", mode)
+			slog.Warn("gateway.openai_ws.ingress_mode_default is deprecated, treating as ctx_pool; please update to off|ctx_pool|passthrough|http_bridge", "value", mode)
 		default:
-			return fmt.Errorf("gateway.openai_ws.ingress_mode_default must be one of off|ctx_pool|passthrough")
+			return fmt.Errorf("gateway.openai_ws.ingress_mode_default must be one of off|ctx_pool|passthrough|http_bridge")
 		}
 	}
 	if mode := strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIWS.StoreDisabledConnMode)); mode != "" {
@@ -2667,7 +2923,9 @@ func (c *Config) Validate() error {
 		c.Gateway.OpenAIWS.SchedulerScoreWeights.Queue < 0 ||
 		c.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate < 0 ||
 		c.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom < 0 {
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom < 0 ||
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse < 0 ||
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky < 0 {
 		return fmt.Errorf("gateway.openai_ws.scheduler_score_weights.* must be non-negative")
 	}
 	weightSum := c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority +
@@ -2684,6 +2942,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeErrorRate < 0 || c.Gateway.OpenAIScheduler.StickyEscapeErrorRate > 1 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_error_rate must be between 0 and 1")
+	}
+	if c.Gateway.OpenAIFirstResponse.TimeoutMS < 0 {
+		return fmt.Errorf("gateway.openai_first_response.timeout_ms must be non-negative")
+	}
+	if c.Gateway.OpenAIFirstResponse.Enabled {
+		if c.Gateway.OpenAIFirstResponse.TimeoutMS < 500 || c.Gateway.OpenAIFirstResponse.TimeoutMS > 60000 {
+			return fmt.Errorf("gateway.openai_first_response.timeout_ms must be between 500-60000 milliseconds when enabled")
+		}
+		if c.Gateway.OpenAIFirstResponse.MaxAttempts <= 0 {
+			return fmt.Errorf("gateway.openai_first_response.max_attempts must be positive when enabled")
+		}
 	}
 	if c.Gateway.MaxLineSize < 0 {
 		return fmt.Errorf("gateway.max_line_size must be non-negative")

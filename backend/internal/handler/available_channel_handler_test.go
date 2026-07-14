@@ -63,6 +63,28 @@ func TestToUserSupportedModels_NilAllowedPlatformsKeepsAll(t *testing.T) {
 	require.Len(t, toUserSupportedModels(src, nil), 2)
 }
 
+func TestToUserSupportedModels_KeepsAllAllowedVideoModels(t *testing.T) {
+	src := []service.SupportedModel{
+		{Name: "seedance-2.0", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "seedance-2.0-fast-480p", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "seedance-2.0-fast-720p", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "sora-2", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "sora-2-pro", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "omni-v1", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "omni-v2v", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "grok-video", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+		{Name: "veo-3-fast", Platform: "openai", Pricing: &service.ChannelModelPricing{BillingMode: service.BillingModeVideo}},
+	}
+
+	out := toUserSupportedModels(src, map[string]struct{}{"openai": {}})
+	require.Len(t, out, len(src))
+	for i := range out {
+		require.Equal(t, src[i].Name, out[i].Name)
+		require.NotNil(t, out[i].Pricing)
+		require.Equal(t, string(service.BillingModeVideo), out[i].Pricing.BillingMode)
+	}
+}
+
 func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 	// 通过序列化 userAvailableChannel 结构体验证响应形状：
 	// 只有 name / description / platforms；不含管理端字段。
@@ -101,13 +123,13 @@ func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 		require.Truef(t, exists, "platform section must expose %q", key)
 	}
 
-	// Group DTO 暴露区分专属/公开、订阅类型、默认倍率所需的字段，
+	// Group DTO 暴露区分专属/公开、订阅类型、默认倍率和高峰倍率规则所需的字段，
 	// 前端据此渲染 GroupBadge 并与 API 密钥页保持一致的视觉。
 	rawGroup, err := json.Marshal(row.Platforms[0].Groups[0])
 	require.NoError(t, err)
 	var groupDecoded map[string]any
 	require.NoError(t, json.Unmarshal(rawGroup, &groupDecoded))
-	for _, key := range []string{"id", "name", "platform", "subscription_type", "rate_multiplier", "is_exclusive"} {
+	for _, key := range []string{"id", "name", "platform", "subscription_type", "rate_multiplier", "peak_rate_enabled", "peak_start", "peak_end", "peak_rate_multiplier", "is_exclusive"} {
 		_, exists := groupDecoded[key]
 		require.Truef(t, exists, "group DTO must expose %q", key)
 	}
@@ -154,4 +176,109 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Equal(t, int64(2), sections[0].Groups[0].ID)
 	require.Len(t, sections[0].SupportedModels, 1)
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
+}
+
+func TestBuildPlatformSections_UsesOnlyVisibleGroupModels(t *testing.T) {
+	ch := service.AvailableChannel{
+		Name: "video-channel",
+		SupportedModels: []service.SupportedModel{
+			{Name: "public-seedance", Platform: "openai"},
+			{Name: "private-grok", Platform: "openai"},
+		},
+		SupportedModelsByGroup: map[int64][]service.SupportedModel{
+			10: {{Name: "public-seedance", Platform: "openai"}},
+			20: {{Name: "private-grok", Platform: "openai"}},
+		},
+	}
+
+	sections := buildPlatformSections(ch, []userAvailableGroup{
+		{ID: 10, Name: "visible", Platform: "openai"},
+	})
+
+	require.Len(t, sections, 1)
+	require.Equal(t, []userSupportedModel{
+		{Name: "public-seedance", Platform: "openai", Pricing: nil},
+	}, sections[0].SupportedModels)
+}
+
+func TestVisibleGroupSupportedModels_DoesNotFallbackWhenSnapshotExists(t *testing.T) {
+	ch := service.AvailableChannel{
+		SupportedModels: []service.SupportedModel{
+			{Name: "channel-wide-private-model", Platform: "openai"},
+		},
+		SupportedModelsByGroup: map[int64][]service.SupportedModel{
+			99: {{Name: "other-group-model", Platform: "openai"}},
+		},
+	}
+
+	models := visibleGroupSupportedModels(
+		ch,
+		[]userAvailableGroup{{ID: 10, Platform: "openai"}},
+		"openai",
+	)
+	require.Empty(t, models)
+}
+
+func TestUserAvailableChannel_ResponseDoesNotExposeUpstreamMetadata(t *testing.T) {
+	row := userAvailableChannel{
+		Name:        "video-channel",
+		Description: "public description",
+		Platforms: []userChannelPlatformSection{{
+			Platform: "openai",
+			Groups: []userAvailableGroup{{
+				ID:       10,
+				Name:     "video",
+				Platform: "openai",
+			}},
+			SupportedModels: []userSupportedModel{{
+				Name:     "grok-video",
+				Platform: "openai",
+				Pricing: &userSupportedModelPricing{
+					BillingMode: string(service.BillingModeVideo),
+				},
+			}},
+		}},
+	}
+
+	raw, err := json.Marshal(row)
+	require.NoError(t, err)
+	payload := string(raw)
+	for _, forbiddenValue := range []string{
+		"https://upstream.example.internal/v1/videos",
+		"provider/internal/grok-video-v3",
+		"Bearer upstream-secret",
+	} {
+		require.NotContains(t, payload, forbiddenValue)
+	}
+
+	var decoded any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	assertNoForbiddenUserChannelKeys(t, decoded)
+}
+
+func assertNoForbiddenUserChannelKeys(t *testing.T, value any) {
+	t.Helper()
+	forbidden := map[string]struct{}{
+		"credentials":          {},
+		"base_url":             {},
+		"upstream_url":         {},
+		"upstream_model":       {},
+		"model_mapping":        {},
+		"account_id":           {},
+		"auth_header":          {},
+		"billing_model_source": {},
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			_, denied := forbidden[key]
+			require.Falsef(t, denied, "user DTO must not expose %q", key)
+			assertNoForbiddenUserChannelKeys(t, child)
+		}
+	case []any:
+		for _, child := range typed {
+			assertNoForbiddenUserChannelKeys(t, child)
+		}
+	}
 }

@@ -58,6 +58,63 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
 	require.False(t, parsed.Multipart)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_FireflyFixedTiers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		model    string
+		wantTier string
+	}{
+		{model: "firefly-gpt-image-2-1k", wantTier: ImageBillingSize1K},
+		{model: "firefly-gpt-image-2-2k", wantTier: ImageBillingSize2K},
+		{model: "firefly-gpt-image-2-4k", wantTier: ImageBillingSize4K},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			body := []byte(`{"model":"` + tt.model + `","prompt":"draw a cat","size":"1:1","image_size":"` + tt.wantTier + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			require.Equal(t, tt.model, parsed.Model)
+			require.Equal(t, tt.wantTier, parsed.ImageSize)
+			require.Equal(t, tt.wantTier, parsed.SizeTier)
+			require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_FireflyRejectsConflictingTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"firefly-gpt-image-2-2k","prompt":"draw a cat","size":"1024x1024","image_size":"2K"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	_, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.EqualError(t, err, "size must match 2K for model firefly-gpt-image-2-2k")
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ImageSizeSetsBillingTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"16:9","image_size":"4K"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, "4K", parsed.ImageSize)
+	require.Equal(t, ImageBillingSize4K, parsed.SizeTier)
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -334,6 +391,28 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *te
 	require.ErrorContains(t, err, `images endpoint requires an image model, got "gpt-5.4"`)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_AllowsGrokImageModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, model := range []string{"grok-imagine", "grok-imagine-image", "grok-imagine-image-quality", "grok-imagine-edit"} {
+		t.Run(model, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw a cat","response_format":"b64_json"}`, model))
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			svc := &OpenAIGatewayService{}
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+			require.Equal(t, model, parsed.Model)
+			require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{
@@ -461,6 +540,37 @@ func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 		require.True(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings))
+		require.False(t, account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+	})
+
+	t.Run("legacy video account requires an exact public model mapping", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"seedance-2.0": "relay/seedance-2.0",
+					"text-*":       "relay/text-*",
+				},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "seedance-2.0"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "text-model"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "grok-video"))
+	})
+
+	t.Run("explicit video capability supports passthrough models", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"openai_capabilities": []any{"videos"},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityVideos, "custom-video-model"))
+		require.False(t, account.SupportsOpenAIEndpointCapabilityForModel(OpenAIEndpointCapabilityChatCompletions, "gpt-5"))
 	})
 
 	t.Run("OpenAI OAuth 默认仅兼容 chat", func(t *testing.T) {

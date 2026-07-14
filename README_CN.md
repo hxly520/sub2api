@@ -24,12 +24,18 @@
 - **🚨 服务条款风险**：使用本项目可能违反 Anthropic 等上游服务商的服务条款。请在使用前仔细阅读相关服务商的用户协议，由此产生的一切风险由用户自行承担。
 - **⚖️ 合规使用**：请在符合您所在国家或地区法律法规的前提下使用本项目，严禁将其用于任何违法违规用途。
 - **📖 免责声明**：本项目仅供技术学习与研究使用，作者不对因使用本项目导致的账户封禁、服务中断、数据丢失或其他任何直接或间接损失承担责任。
+- **🚫 无商业授权**：本项目从未授权任何个人或组织基于本项目开展任何形式的商业化运营。任何以本项目名义或基于本项目从事的商业行为均与本项目及其开发者无关，由此产生的一切纠纷、损失和法律责任由行为主体自行承担。
 
 ## ❤️ 赞助商
 
-> [想出现在这里？](mailto:support@pincc.ai)
+> [想出现在这里？](mailto:support@sub2api.org)
 
 <table>
+
+<tr>
+<td width="180"><a href="https://cctk.ai/register?aff=SUB2API"><img src="assets/partners/logos/cctk.jpg" alt="CCTK.AI" width="150"></a></td>
+<td>感谢 CCTK.AI 赞助了本项目！<a href="https://cctk.ai/register?aff=SUB2API">CCTK.AI</a> 是一个专注于稳定与性价比的 AI API 网关平台，提供 Claude、OpenAI、Gemini 等主流模型的高速中转服务，无缝兼容 Claude Code、Codex 等主流编程工具，以远低于官方的成本获得同等的模型能力。点击<a href="https://cctk.ai/register?aff=SUB2API">此链接</a>注册，即刻体验更快、更稳、更省的 AI API 接入。</td>
+</tr>
 
 <tr>
 <td width="180"><a href="https://www.openmodel.ai?ref=sub2api"><img src="assets/partners/logos/openmodel.jpg" alt="openmodel" width="150"></a></td>
@@ -42,13 +48,13 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://aigocode.com/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
-<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://aigocode.com/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
+<td width="180"><a href="https://apikey.fun/register?aff=SUB2API"><img src="assets/partners/logos/apikey-fun.png" alt="APIKEY.FUN" width="150"></a></td>
+<td>感谢 APIKEY.FUN 赞助了本项目！<a href="https://apikey.fun/register?aff=SUB2API">APIKEY.FUN</a> 是 sub2api 开源项目的核心贡献者之一，致力于提供开放、稳定、高性价比的 AI API 接入服务。平台支持 Claude、OpenAI、Gemini 等热门模型的 API 中转服务，价格低至官方原价的 7%。通过专属链接 <a href="https://apikey.fun/register?aff=SUB2API">APIKEY</a> 注册，可享受所有充值永久 95 折优惠。</td>
 </tr>
 
 <tr>
-<td width="180"><a href="https://code.silkapi.com/register?aff=SUB2API"><img src="assets/partners/logos/silkapi.png" alt="silkapi" width="150"></a></td>
-<td>感谢 丝绸API 赞助了本项目！ <a href="https://code.silkapi.com/register?aff=SUB2API">丝绸API</a> 是基于 Sub2API 搭建的中转服务，专注于提供 Codex 高速稳定API中转。</td>
+<td width="180"><a href="https://aigocode.com/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
+<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://aigocode.com/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
 </tr>
 
 <tr>
@@ -98,8 +104,8 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://apikl.com"><img src="assets/partners/logos/apikl.png" alt="apikl" width="150"></a></td>
-<td>感谢 Apikl 赞助本项目！平台基于 Sub2API 搭建，为开发者提供 Codex / Claude 系列模型的中转服务，专注于长期稳定、高速直连与高性价比。支持按量计费的余额结算、企业级正规发票及一对一专属对接。<a href="https://apikl.com">立即注册</a>即享充值 1:1 赠送 — 余额翻倍！
+<td width="180"><a href="https://apikl.ai"><img src="assets/partners/logos/apikl.png" alt="apikl" width="150"></a></td>
+<td>感谢 Apikl 赞助本项目！平台基于 Sub2API 搭建，为开发者提供 Codex / Claude 系列模型的中转服务，专注于长期稳定、高速直连与高性价比。支持按量计费的余额结算、企业级正规发票及一对一专属对接。<a href="https://apikl.ai">立即注册</a>即享充值 1:1 赠送 — 余额翻倍！
 </td>
 </tr>
 
@@ -146,6 +152,21 @@
 </td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://www.proxy4free.com/?keyword=4yjqecpc"><img src="assets/partners/logos/proxy4free.png" alt="proxy4free" width="150"></a></td>
+<td>感谢 Proxy4Free 赞助本项目！Proxy4Free 是面向开发者和 AI 应用的数据代理服务商，提供住宅代理、静态住宅代理、ISP 代理及数据中心代理等多种代理解决方案，适用于 Web Scraping、Browser Automation、AI Agent 等场景。支持全球 IP 资源、稳定连接与灵活切换，帮助开发者提升数据采集成功率，降低 IP 封禁风险。通过<a href="https://www.proxy4free.com/?keyword=4yjqecpc">此链接注册</a>即可开始体验，轻松构建更稳定、高效的自动化工作流。
+</td>
+</tr>
+
+<tr>
+<td width="180"><a href="http://www.fastaitoken.com/register"><img src="assets/partners/logos/fastaitoken.jpg" alt="fastaitoken" width="150"></a></td>
+<td>🎉 感谢 FastAIToken 对本项目的赞助！ <a href="http://www.fastaitoken.com/register">FastAIToken</a> 是面向开发者的 AI API 聚合平台，支持 OpenAI、Claude、Gemini 等主流大模型，充值 1:1，1 元 = 1 美元 API 额度，让开发者以更低成本、更便捷地使用全球领先的大模型服务。<br>
+
+🚀 平台提供多种渠道自由选择：超级低价的0.02x OpenAI 福利分组（限时）、低至 0.25x OpenAI 分组、0.7x Claude 95%固定缓存、1.2x Claude Max 渠道；同时提供公开状态页，实时展示各分组的可用率、延迟及运行状态，服务透明可靠，并提供 7×24 小时真人技术支持（非机器人），快速响应开发者需求。
+</td>
+</tr>
+
+
 </table>
 
 ## 项目概述
@@ -163,6 +184,17 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 - **内置支付系统** - 支持 EasyPay 易支付、支付宝官方、微信官方、Stripe，用户自助充值，无需独立部署支付服务（[配置指南](docs/PAYMENT_CN.md)）
 - **管理后台** - Web 界面进行监控和管理
 - **外部系统集成** - 支持通过 iframe 嵌入外部系统（如工单等），扩展管理后台功能
+
+## 私有维护分支说明
+
+本仓库的私有维护分支在官方 Sub2API 基线上增加协议缓存兼容、账号调度与首响应、OpenAI-compatible 图片/视频任务、媒体下载代理、可用渠道展示和 KeyingPay V2 等扩展。二开遵循“保留官方能力、仅做兼容增加”的原则。
+
+- [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
+- [图片与视频 API 契约](docs/MEDIA_API_CN.md)
+- [KeyingPay V2 部署说明](deploy/KEYINGPAY_V2.md)
+- [媒体 Edge Worker 部署说明](deploy/video-edge-worker/README.md)
+
+后续合并官方版本前必须先阅读二开维护指南，并完成其中的协议、缓存、调度、媒体、计费、可用渠道和支付回归。渠道价格、账号地址和生产凭据由运行时配置维护，不得写入源码或仓库文档。
 
 ## 生态项目
 
@@ -312,6 +344,7 @@ cd sub2api/deploy
 
 # 2. 复制环境配置文件
 cp .env.example .env
+chmod 600 .env
 
 # 3. 编辑配置（生成安全密码）
 nano .env
@@ -443,7 +476,23 @@ rm -rf data/ postgres_data/ redis_data/
 
 ---
 
-### 方式三：源码编译
+### 方式三：Apple container（macOS）
+
+Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
+
+```bash
+git clone https://github.com/Wei-Shaw/sub2api.git
+cd sub2api/deploy
+./apple-container.sh init
+./apple-container.sh up
+./apple-container.sh status
+```
+
+该方式面向本地开发和人工运维，不提供持续重启监管；生产部署仍推荐 Docker Compose。生命周期命令、持久化、升级和运行时限制见 [deploy/APPLE_CONTAINER.md](deploy/APPLE_CONTAINER.md)。
+
+---
+
+### 方式四：源码编译
 
 从源码编译安装，适合开发或定制需求。
 
@@ -565,20 +614,20 @@ gateway:
 
 **⚠️ 安全警告：HTTP URL 配置**
 
-当 `security.url_allowlist.enabled=false` 时，系统默认执行最小 URL 校验，**拒绝 HTTP URL**，仅允许 HTTPS。要允许 HTTP URL（例如用于开发或内网测试），必须显式设置：
+当 `security.url_allowlist.enabled=false` 时，系统仅执行最小 URL 校验，且**默认允许 HTTP URL**（开发友好模式，Docker Compose 部署的默认值一致）。生产环境建议显式收紧为仅允许 HTTPS：
 
 ```yaml
 security:
   url_allowlist:
     enabled: false                # 禁用白名单检查
-    allow_insecure_http: true     # 允许 HTTP URL（⚠️ 不安全）
+    allow_insecure_http: false    # 仅允许 HTTPS（生产环境推荐）
 ```
 
 **或通过环境变量：**
 
 ```bash
 SECURITY_URL_ALLOWLIST_ENABLED=false
-SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
+SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=false
 ```
 
 **允许 HTTP 的风险：**
@@ -592,7 +641,7 @@ SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
 - ✅ 获取 HTTPS 前测试账号连通性
 - ❌ 生产环境（仅使用 HTTPS）
 
-**未设置此项时的错误示例：**
+**设置 `allow_insecure_http: false` 后，HTTP URL 会返回如下错误：**
 ```
 Invalid base URL: invalid url scheme: http
 ```
@@ -708,10 +757,6 @@ Antigravity 账户支持可选的**混合调度**功能。开启后，通用端�
 
 > **⚠️ 注意**：Anthropic Claude 和 Antigravity Claude **不能在同一上下文中混合使用**，请通过分组功能做好隔离。
 
-
-### 已知问题
-在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。） 
-解决办法：shift + Tab，手动退出Plan mode，然后输入内容 告诉 Claude Code 同意或拒绝 Plan
 ---
 
 ## 项目结构
@@ -741,16 +786,6 @@ sub2api/
     ├── config.example.yaml   # 二进制部署完整配置文件
     └── install.sh            # 一键安装脚本
 ```
-
-## 免责声明
-
-> **使用本项目前请仔细阅读：**
->
-> :rotating_light: **服务条款风险**: 使用本项目可能违反 Anthropic 的服务条款。请在使用前仔细阅读 Anthropic 的用户协议，使用本项目的一切风险由用户自行承担。
->
-> :book: **免责声明**: 本项目仅供技术学习和研究使用，作者不对因使用本项目导致的账户封禁、服务中断或其他损失承担任何责任。
-
----
 
 ## Star History
 

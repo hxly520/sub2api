@@ -3,11 +3,77 @@
 package repository
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
+
+func newSchedulerCacheUnit(t *testing.T) *schedulerCache {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache, ok := newSchedulerCacheWithChunkSizes(rdb, defaultSchedulerSnapshotMGetChunkSize, defaultSchedulerSnapshotWriteChunkSize).(*schedulerCache)
+	require.True(t, ok)
+	return cache
+}
+
+func TestSchedulerCacheWriteAccountsSkipsUnencodableTimes(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	cacheable, err := cache.writeAccounts(ctx, []service.Account{
+		{ID: 111, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey},
+		{ID: 112, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, ExpiresAt: &invalidTime},
+	})
+	require.NoError(t, err)
+	require.Len(t, cacheable, 1)
+	require.Equal(t, int64(111), cacheable[0].ID)
+
+	cached, err := cache.GetAccount(ctx, 111)
+	require.NoError(t, err)
+	require.NotNil(t, cached)
+
+	invalid, err := cache.GetAccount(ctx, 112)
+	require.NoError(t, err)
+	require.Nil(t, invalid)
+}
+
+func TestSchedulerCacheSetAccountClearsUnencodablePayload(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+
+	account := service.Account{ID: 113, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
+	require.NoError(t, cache.SetAccount(ctx, &account))
+
+	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	account.ExpiresAt = &invalidTime
+	require.NoError(t, cache.SetAccount(ctx, &account))
+
+	cached, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.Nil(t, cached)
+}
+
+func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	account := service.Account{ID: 114, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
+	require.NoError(t, cache.SetAccount(ctx, &account))
+
+	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: invalidTime}))
+
+	cached, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.Nil(t, cached)
+}
 
 func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	account := service.Account{
@@ -20,6 +86,7 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 			"openai_ws_force_http":                         true,
 			"openai_responses_mode":                        "force_chat_completions",
 			"openai_responses_supported":                   false,
+			"openai_upstream_relay":                        true,
 			"mixed_scheduling":                             true,
 			"unused_large_field":                           "drop-me",
 		},
@@ -32,6 +99,7 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Equal(t, true, got.Extra["openai_ws_force_http"])
 	require.Equal(t, "force_chat_completions", got.Extra["openai_responses_mode"])
 	require.Equal(t, false, got.Extra["openai_responses_supported"])
+	require.Equal(t, true, got.Extra["openai_upstream_relay"])
 	require.Equal(t, true, got.Extra["mixed_scheduling"])
 	require.Nil(t, got.Extra["unused_large_field"])
 }

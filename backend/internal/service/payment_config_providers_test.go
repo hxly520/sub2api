@@ -52,6 +52,13 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid keyingpay provider",
+			providerKey:    payment.TypeKeyingPay,
+			providerName:   "KeyingPay Provider",
+			supportedTypes: "alipay,wxpay",
+			wantErr:        false,
+		},
+		{
 			name:           "valid alipay provider",
 			providerKey:    "alipay",
 			providerName:   "Alipay Direct",
@@ -114,6 +121,100 @@ func TestValidateProviderRequest(t *testing.T) {
 	}
 }
 
+func TestValidateKeyingPaySupportedTypes(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateKeyingPaySupportedTypes(""))
+	require.NoError(t, validateKeyingPaySupportedTypes("alipay,wxpay"))
+	require.ErrorContains(t, validateKeyingPaySupportedTypes("alipay,card"), "unsupported KeyingPay payment type")
+}
+
+func TestValidateEasyPayCustomMethods(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		config         map[string]string
+		supportedTypes string
+		wantErr        string
+	}{
+		{
+			name:           "valid custom methods",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","upstreamType":"epay","displayName":"LDC"}]`},
+			supportedTypes: "alipay,wxpay,ldc",
+		},
+		{
+			name:           "malformed custom methods json",
+			config:         map[string]string{"customMethods": `not-json`},
+			supportedTypes: "alipay,wxpay,ldc",
+			wantErr:        "customMethods must be a JSON array",
+		},
+		{
+			name:           "missing upstream type",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","displayName":"LDC"}]`},
+			supportedTypes: "alipay,wxpay,ldc",
+			wantErr:        "customMethods upstreamType is required",
+		},
+		{
+			name:           "duplicate custom type",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","upstreamType":"epay"},{"type":"ldc","upstreamType":"epay2"}]`},
+			supportedTypes: "alipay,wxpay,ldc",
+			wantErr:        "duplicate customMethods type",
+		},
+		{
+			name:           "custom type must already be lowercase",
+			config:         map[string]string{"customMethods": `[{"type":"LDC","upstreamType":"epay"}]`},
+			supportedTypes: "alipay,wxpay,ldc",
+			wantErr:        "customMethods type may only contain lowercase letters",
+		},
+		{
+			name:           "upstream type must already be lowercase",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","upstreamType":"ALIPAY"}]`},
+			supportedTypes: "alipay,wxpay,ldc",
+			wantErr:        "customMethods upstreamType may only contain lowercase letters",
+		},
+		{
+			name:           "custom type uses alipay prefix",
+			config:         map[string]string{"customMethods": `[{"type":"alipay_hk","upstreamType":"hkpay"}]`},
+			supportedTypes: "alipay,wxpay,alipay_hk",
+			wantErr:        "customMethods type cannot start with alipay or wxpay",
+		},
+		{
+			name:           "custom type uses wxpay prefix",
+			config:         map[string]string{"customMethods": `[{"type":"wxpay_usdt","upstreamType":"usdt"}]`},
+			supportedTypes: "alipay,wxpay,wxpay_usdt",
+			wantErr:        "customMethods type cannot start with alipay or wxpay",
+		},
+		{
+			name:           "supported custom type missing mapping",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","upstreamType":"epay"}]`},
+			supportedTypes: "alipay,wxpay,ldc,usdt_trc20",
+			wantErr:        "supported EasyPay custom type usdt_trc20 has no customMethods mapping",
+		},
+		{
+			name:           "supported custom type must already be lowercase",
+			config:         map[string]string{"customMethods": `[{"type":"ldc","upstreamType":"epay"}]`},
+			supportedTypes: "alipay,wxpay,LDC",
+			wantErr:        "supported EasyPay custom type LDC may only contain lowercase letters",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateEasyPayCustomMethods(tc.config, tc.supportedTypes)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestIsSensitiveProviderConfigField(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +250,12 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{"easypay", "pkey", true},
 		{"easypay", "pid", false},
 		{"easypay", "apiBase", false},
+
+		// KeyingPay V2
+		{payment.TypeKeyingPay, "merchantPrivateKey", true},
+		{payment.TypeKeyingPay, "platformPublicKey", true},
+		{payment.TypeKeyingPay, "pid", false},
+		{payment.TypeKeyingPay, "apiBase", false},
 
 		// Airwallex
 		{payment.TypeAirwallex, "apiKey", true},

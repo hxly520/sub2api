@@ -1,0 +1,27 @@
+# Download-proxy-only origin for video.52token.org.
+# Cloudflare Worker must intercept /v1/video-content/* and
+# /v1/image-content/*. Every origin request intentionally returns 404.
+
+server {
+    listen 80;
+    server_name video.52token.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name video.52token.org;
+
+    ssl_certificate     /etc/nginx/cert/52token.org.pem;
+    ssl_certificate_key /etc/nginx/cert/52token.org.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # A missing or bypassed Worker must not expose Sub2API or proxy media through
+    # the application server. The Worker supplies CORS, Range and media headers.
+    location ^~ /v1/video-content/ { return 404; }
+    location ^~ /v1/image-content/ { return 404; }
+
+    # No workbench, generation API, task API, platform UI, admin or payment API.
+    location / { return 404; }
+}

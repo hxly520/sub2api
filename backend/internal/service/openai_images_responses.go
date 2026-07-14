@@ -85,7 +85,9 @@ func (e *OpenAIImagesUpstreamError) clientMessage() string {
 		return "Upstream request failed"
 	}
 	if trimmed := strings.TrimSpace(e.Message); trimmed != "" {
-		return trimmed
+		if sanitized := sanitizeClientUpstreamErrorMessage(trimmed); sanitized != "" {
+			return sanitized
+		}
 	}
 	if trimmed := strings.TrimSpace(e.Code); trimmed != "" {
 		return trimmed
@@ -1010,9 +1012,13 @@ func buildOpenAIImagesStreamErrorBodyFromUpstream(err *OpenAIImagesUpstreamError
 }
 
 func writeOpenAIImagesUpstreamErrorResponse(c *gin.Context, err *OpenAIImagesUpstreamError) bool {
-	if c == nil || c.Writer == nil || c.Writer.Written() || err == nil {
+	if c == nil || c.Writer == nil || err == nil {
 		return false
 	}
+	if c.Writer.Written() && OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) >= 0 {
+		return false
+	}
+	StopOpenAIImagesJSONKeepaliveCommitted(c)
 	errorObj := gin.H{
 		"type":    err.clientErrorType(),
 		"message": err.clientMessage(),
@@ -1114,10 +1120,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			return OpenAIUsage{}, 0, nil, refusalErr
 		}
 		// (B) 真空响应：记录上游诊断摘要到 ops（last_event/status/model/body 片段）便于
-		// 排查，并返回 UpstreamFailoverError 触发重试。因实测为「同账号概率性失败」，优先
-		// RetryableOnSameAccount 同账号快速重试（默认 3 次，大概率某次正常出图），用尽后
-		// 由 handler 自然换账号 failover（switchCount 上限保护），既提高成功率又不无谓
-		// 消耗其它账号配额。
+		// 排查，并返回 UpstreamFailoverError。该请求已可能被上游接受并计费，
+		// handler 必须禁止自动重放；RetryableOnSameAccount 仅保留为旧协议诊断字段。
 		setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(body))
 		return OpenAIUsage{}, 0, nil, &UpstreamFailoverError{
 			StatusCode:             http.StatusBadGateway,
@@ -1176,7 +1180,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	var sseData openAISSEDataAccumulator
 	var processDataErr error
 	processDataDone := false
-	writerSizeBeforeResponse := c.Writer.Size()
+	writerSizeBeforeResponse := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 
 	processData := func(dataBytes []byte) {
 		if processDataDone || processDataErr != nil {
@@ -1591,7 +1595,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		imageOutputSizes []string
 		firstTokenMs     *int
 	)
-	writerSizeBeforeResponse := c.Writer.Size()
+	// 与 handleOpenAIImagesOAuthResponseError 的比较端同口径：排除非流式 JSON
+	// keepalive 心跳字节，避免 failover 第 2 轮起把上一轮心跳残留误判为已写响应。
+	writerSizeBeforeResponse := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 	if parsed.Stream {
 		usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), requestModel)
 		if err != nil {
@@ -1672,7 +1678,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	}
 
 	retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
-	responseWritten := c != nil && c.Writer != nil && c.Writer.Size() != writerSizeBeforeResponse
+	responseWritten := c != nil && c.Writer != nil && OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeResponse
 	kind := "http_error"
 	if retryable {
 		kind = "failover"

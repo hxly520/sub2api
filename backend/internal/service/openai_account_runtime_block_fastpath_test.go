@@ -4,6 +4,9 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -115,9 +118,10 @@ func TestOpenAIRuntimeBlock_DoesNotShortenExistingBlock(t *testing.T) {
 
 	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.True(t, ok)
-	actualUntil, ok := value.(time.Time)
+	block, ok := openAIAccountRuntimeBlockFromValue(value)
 	require.True(t, ok)
-	require.WithinDuration(t, longUntil, actualUntil, time.Second)
+	require.WithinDuration(t, longUntil, block.Until, time.Second)
+	require.Equal(t, "oauth_401", block.Reason)
 }
 
 func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
@@ -129,6 +133,110 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 
 	svc.ClearAccountSchedulingBlock(account.ID)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorBlocksServerStatus(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 48, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterFailoverError(account, &UpstreamFailoverError{StatusCode: 524})
+
+	require.True(t, blocked)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorSkips429AndClientStatus(t *testing.T) {
+	for _, statusCode := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: int64(4900 + statusCode), Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+		blocked := svc.MaybeBlockOpenAIAccountAfterFailoverError(account, &UpstreamFailoverError{StatusCode: statusCode})
+
+		require.False(t, blocked)
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	}
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterFailoverErrorSkipsPoolAndFirstResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		err     *UpstreamFailoverError
+	}{
+		{
+			name: "pool mode server error",
+			account: &Account{
+				ID: 4951, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"pool_mode": true},
+			},
+			err: &UpstreamFailoverError{StatusCode: http.StatusBadGateway},
+		},
+		{
+			name:    "first response timeout",
+			account: &Account{ID: 4952, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			err:     &UpstreamFailoverError{StatusCode: http.StatusGatewayTimeout, FirstResponseTimeout: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &OpenAIGatewayService{}
+			require.False(t, svc.MaybeBlockOpenAIAccountAfterFailoverError(tt.account, tt.err))
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(tt.account))
+		})
+	}
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorBlocksStreamRead(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 50, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF))
+
+	require.True(t, blocked)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsPoolMode(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		ID: 5051, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"pool_mode": true},
+	}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF))
+
+	require.False(t, blocked)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBlock_MaybeBlockAfterForwardErrorSkipsClientCancel(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 51, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	blocked := svc.MaybeBlockOpenAIAccountAfterForwardError(account, context.Canceled)
+
+	require.False(t, blocked)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestIsOpenAIUpstreamFailureForStickyRelease(t *testing.T) {
+	for _, err := range []error{
+		fmt.Errorf("stream read error: %w", io.ErrUnexpectedEOF),
+		errors.New("upstream response failed: Upstream request failed"),
+		errors.New("stream usage incomplete after timeout"),
+	} {
+		require.True(t, IsOpenAIUpstreamFailureForStickyRelease(err), "err=%v", err)
+	}
+
+	for _, err := range []error{
+		nil,
+		context.Canceled,
+		context.DeadlineExceeded,
+		errors.New("client disconnected during stream"),
+	} {
+		require.False(t, IsOpenAIUpstreamFailureForStickyRelease(err), "err=%v", err)
+	}
 }
 
 func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {

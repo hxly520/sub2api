@@ -11,6 +11,14 @@ import (
 
 const stickySessionPrefix = "sticky_session:"
 
+var compareAndDeleteSessionAccountScript = redis.NewScript(`
+	local current = redis.call('GET', KEYS[1])
+	if current == ARGV[1] then
+		return redis.call('DEL', KEYS[1])
+	end
+	return 0
+`)
+
 type gatewayCache struct {
 	rdb *redis.Client
 }
@@ -51,6 +59,20 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+// CompareAndDeleteSessionAccountID atomically deletes a sticky binding only if
+// it still points at expectedAccountID. This prevents a late failed request
+// from deleting a newer binding written by a concurrent successful request.
+func (c *gatewayCache) CompareAndDeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
+	key := buildSessionKey(groupID, sessionHash)
+	deleted, err := compareAndDeleteSessionAccountScript.Run(ctx, c.rdb, []string{key}, expectedAccountID).Int64()
+	if err != nil {
+		return false, err
+	}
+	return deleted > 0, nil
+}
+
+var _ service.ConditionalGatewayCache = (*gatewayCache)(nil)
 
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)

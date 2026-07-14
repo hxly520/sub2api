@@ -28,7 +28,6 @@ func RegisterPaymentRoutes(
 		authenticated.GET("/config", paymentHandler.GetPaymentConfig)
 		authenticated.GET("/checkout-info", paymentHandler.GetCheckoutInfo)
 		authenticated.GET("/plans", paymentHandler.GetPlans)
-		authenticated.GET("/channels", paymentHandler.GetChannels)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
 
 		orders := authenticated.Group("/orders")
@@ -59,6 +58,8 @@ func RegisterPaymentRoutes(
 		// EasyPay sends GET callbacks with query params
 		webhook.GET("/easypay", webhookHandler.EasyPayNotify)
 		webhook.POST("/easypay", webhookHandler.EasyPayNotify)
+		webhook.GET("/keyingpay", webhookHandler.KeyingPayNotify)
+		webhook.POST("/keyingpay", webhookHandler.KeyingPayNotify)
 		webhook.POST("/alipay", webhookHandler.AlipayNotify)
 		webhook.POST("/wxpay", webhookHandler.WxpayNotify)
 		webhook.POST("/stripe", webhookHandler.StripeWebhook)

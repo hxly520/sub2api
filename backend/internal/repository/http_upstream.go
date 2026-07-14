@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,13 +21,16 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/net/http2"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"golang.org/x/mod/semver"
 )
 
 // 默认配置常量
@@ -57,6 +61,20 @@ const (
 	defaultOpenAIHTTP2FallbackErrorThreshold = 2
 	defaultOpenAIHTTP2FallbackWindow         = 60 * time.Second
 	defaultOpenAIHTTP2FallbackTTL            = 10 * time.Minute
+	// OpenAI HTTP/2 连接健康探测：Codex 上游改走 HTTP/2 后，池化连接被代理/NAT
+	// 静默掐断会成为“死连接”（两端都以为存活），请求落上去会挂到 TCP 重传超时
+	// （分钟级）。Go 的 http2.Transport 默认 ReadIdleTimeout=0（不发健康 PING），
+	// 无法检测。启用主动 PING 探测：连接空闲 ReadIdleTimeout 后发 PING，PingTimeout
+	// 内无响应即判定死连接并关闭，从源头避免请求挂在死连接上。
+	openAIHTTP2ReadIdleTimeout = 15 * time.Second
+	openAIHTTP2PingTimeout     = 15 * time.Second
+
+	// The Grok CLI proxy rejects requests that do not identify a supported
+	// client version. Keep a known-good stable version in the binary while
+	// allowing operators to bump it without waiting for a Sub2API release.
+	grokCLIProxyHost       = "cli-chat-proxy.grok.com"
+	grokCLIStableVersion   = "0.2.93"
+	grokCLIVersionOverride = "XAI_GROK_CLI_VERSION"
 )
 
 const (
@@ -161,6 +179,7 @@ func NewHTTPUpstream(cfg *config.Config) service.HTTPUpstream {
 //   - 调用方必须关闭 resp.Body，否则会导致 inFlight 计数泄漏
 //   - inFlight > 0 的客户端不会被淘汰，确保活跃请求不被中断
 func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	applyGrokCLIProxyHeaders(req)
 	if err := s.validateRequestHost(req); err != nil {
 		return nil, err
 	}
@@ -175,9 +194,19 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		return nil, err
 	}
 
-	// 执行请求
-	resp, err := entry.client.Do(req)
+	// 执行请求。媒体内容代理等敏感场景按请求克隆 Transport，
+	// 将已验证 DNS 结果绑定到实际 DialContext，避免校验后再次解析。
+	client, requestCleanup, err := s.clientForRequest(req, proxyURL, entry)
 	if err != nil {
+		atomic.AddInt64(&entry.inFlight, -1)
+		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
+		return nil, err
+	}
+	resp, err := servertiming.Do(client, req)
+	if err != nil {
+		if requestCleanup != nil {
+			requestCleanup()
+		}
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -192,6 +221,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
 	resp.Body = wrapTrackedBody(resp.Body, func() {
+		if requestCleanup != nil {
+			requestCleanup()
+		}
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 	})
@@ -206,6 +238,10 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	if profile == nil {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
+	}
+	applyGrokCLIProxyHeaders(req)
+	if req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context()) {
+		return nil, errors.New("resolved-ip pinning is unavailable with TLS fingerprint transport")
 	}
 	upstreamProfile := service.HTTPUpstreamProfileDefault
 	if req != nil {
@@ -232,7 +268,15 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		return nil, err
 	}
 
-	resp, err := entry.client.Do(req)
+	client := entry.client
+	if req != nil && service.HTTPUpstreamRedirectsDisabled(req.Context()) {
+		clientCopy := *entry.client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
+	resp, err := servertiming.Do(client, req)
 	if err != nil {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
@@ -248,6 +292,34 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	})
 
 	return resp, nil
+}
+
+// applyGrokCLIProxyHeaders applies the official Grok Build client identity at
+// the final shared transport boundary. Keying this behavior to the exact CLI
+// proxy host keeps direct api.x.ai traffic unchanged and automatically covers
+// Responses, Chat Completions, media, quota probes, and account tests.
+func applyGrokCLIProxyHeaders(req *http.Request) {
+	if req == nil || req.URL == nil || !strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), grokCLIProxyHost) {
+		return
+	}
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	version := strings.TrimSpace(os.Getenv(grokCLIVersionOverride))
+	if !isSupportedGrokCLIVersion(version) {
+		version = grokCLIStableVersion
+	}
+	req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
+	req.Header.Set("x-grok-client-version", version)
+	req.Header.Set("User-Agent", "xai-grok-workspace/"+version)
+}
+
+func isSupportedGrokCLIVersion(version string) bool {
+	canonical := "v" + version
+	minimum := "v" + grokCLIStableVersion
+	return semver.IsValid(canonical) &&
+		semver.Canonical(canonical) == canonical &&
+		semver.Compare(canonical, minimum) >= 0
 }
 
 // acquireClientWithTLS 获取或创建带 TLS 指纹的客户端
@@ -346,6 +418,93 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	return entry, nil
 }
 
+func (s *httpUpstreamService) clientForRequest(req *http.Request, proxyURL string, entry *upstreamClientEntry) (*http.Client, func(), error) {
+	if entry == nil || entry.client == nil {
+		return nil, nil, errors.New("upstream client is unavailable")
+	}
+
+	client := entry.client
+	var cleanup func()
+	if req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context()) {
+		if strings.TrimSpace(proxyURL) != "" {
+			return nil, nil, errors.New("resolved-ip pinning requires a direct connection")
+		}
+		if req.URL == nil {
+			return nil, nil, errors.New("request url is nil")
+		}
+		host := strings.TrimSpace(req.URL.Hostname())
+		if host == "" {
+			return nil, nil, errors.New("request host is empty")
+		}
+		ips, err := urlvalidator.ResolvePublicIPs(req.Context(), host)
+		if err != nil {
+			return nil, nil, err
+		}
+		baseTransport, ok := entry.client.Transport.(*http.Transport)
+		if !ok || baseTransport == nil {
+			return nil, nil, errors.New("resolved-ip pinning requires an HTTP transport")
+		}
+		transport := baseTransport.Clone()
+		transport.Proxy = nil
+		transport.DialTLSContext = nil
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		transport.DialContext = pinnedDialContext(host, ips, dialer.DialContext)
+		clientCopy := *entry.client
+		clientCopy.Transport = transport
+		client = &clientCopy
+		cleanup = transport.CloseIdleConnections
+	}
+
+	if req != nil && service.HTTPUpstreamRedirectsDisabled(req.Context()) {
+		clientCopy := *client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
+	return client, cleanup, nil
+}
+
+type dialContextFunc func(context.Context, string, string) (net.Conn, error)
+
+func pinnedDialContext(expectedHost string, ips []net.IP, dial dialContextFunc) dialContextFunc {
+	expectedHost = strings.TrimSpace(expectedHost)
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dial address: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(host), expectedHost) {
+			return nil, fmt.Errorf("unexpected dial host %q", host)
+		}
+		if len(ips) == 0 {
+			return nil, errors.New("no validated dial addresses")
+		}
+		if dial == nil {
+			return nil, errors.New("dialer is unavailable")
+		}
+
+		var lastErr error
+		for _, ip := range ips {
+			if err := urlvalidator.ValidatePublicIP(ip); err != nil {
+				return nil, err
+			}
+			conn, dialErr := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+			if ctx != nil && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+		}
+		if lastErr == nil {
+			lastErr = errors.New("all validated dial addresses failed")
+		}
+		return nil, lastErr
+	}
+}
+
 func (s *httpUpstreamService) shouldValidateResolvedIP() bool {
 	if s.cfg == nil {
 		return false
@@ -357,7 +516,8 @@ func (s *httpUpstreamService) shouldValidateResolvedIP() bool {
 }
 
 func (s *httpUpstreamService) validateRequestHost(req *http.Request) error {
-	if !s.shouldValidateResolvedIP() {
+	forceValidation := req != nil && service.HTTPUpstreamResolvedIPValidationRequired(req.Context())
+	if !forceValidation && !s.shouldValidateResolvedIP() {
 		return nil
 	}
 	if req == nil || req.URL == nil {
@@ -1062,6 +1222,11 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 	switch protocolMode {
 	case upstreamProtocolModeOpenAIH2:
 		transport.ForceAttemptHTTP2 = true
+		// 显式配置 http2 并启用 PING 健康探测，剔除代理/NAT 静默掐断的死连接，
+		// 避免请求挂在死连接上直到 TCP 重传超时（分钟级）。
+		if _, err := enableOpenAIHTTP2KeepAlive(transport); err != nil {
+			return nil, err
+		}
 	case upstreamProtocolModeOpenAIH1:
 		transport.ForceAttemptHTTP2 = false
 		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
@@ -1074,6 +1239,22 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		return nil, err
 	}
 	return transport, nil
+}
+
+// enableOpenAIHTTP2KeepAlive 在 http.Transport 上显式配置 HTTP/2 并启用连接健康探测。
+// Go 默认惰性配置 http2 且 ReadIdleTimeout=0（不发健康 PING），无法检测被代理/NAT
+// 静默掐断的死连接。此处主动设置 ReadIdleTimeout/PingTimeout，让死连接被提前 PING
+// 出并关闭，请求得以重建连接而非挂到 TCP 重传超时。返回底层 *http2.Transport 便于测试。
+func enableOpenAIHTTP2KeepAlive(transport *http.Transport) (*http2.Transport, error) {
+	h2, err := http2.ConfigureTransports(transport)
+	if err != nil {
+		return nil, err
+	}
+	if h2 != nil {
+		h2.ReadIdleTimeout = openAIHTTP2ReadIdleTimeout
+		h2.PingTimeout = openAIHTTP2PingTimeout
+	}
+	return h2, nil
 }
 
 // buildUpstreamTransportWithTLSFingerprint 构建带 TLS 指纹伪装的 Transport

@@ -21,6 +21,12 @@ export interface TypeOption {
   [key: string]: unknown
 }
 
+export interface EasyPayCustomMethod {
+  type: string
+  upstreamType: string
+  displayName: string
+}
+
 /** Callback URL paths for a provider. */
 export interface CallbackPaths {
   notifyUrl?: string
@@ -32,6 +38,7 @@ export interface CallbackPaths {
 /** Maps provider key → available payment types. */
 export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   easypay: ['alipay', 'wxpay'],
+  keyingpay: ['alipay', 'wxpay'],
   alipay: ['alipay'],
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
@@ -43,6 +50,14 @@ export const EASYPAY_PAYMENT_MODES = ['qrcode', 'popup'] as const
 
 /** Fixed display order for user-facing payment methods */
 export const METHOD_ORDER = ['alipay', 'alipay_direct', 'wxpay', 'wxpay_direct', 'stripe', 'airwallex'] as const
+
+export function isBuiltInAlipayMethod(type: string): boolean {
+  return type === 'alipay' || type === 'alipay_direct'
+}
+
+export function isBuiltInWxpayMethod(type: string): boolean {
+  return type === 'wxpay' || type === 'wxpay_direct'
+}
 
 /** Payment mode constants */
 export const PAYMENT_MODE_QRCODE = 'qrcode'
@@ -92,6 +107,7 @@ export function getPaymentPopupFeatures(): string {
 /** Webhook paths for each provider (relative to origin). */
 export const WEBHOOK_PATHS: Record<string, string> = {
   easypay: '/api/v1/payment/webhook/easypay',
+  keyingpay: '/api/v1/payment/webhook/keyingpay',
   alipay: '/api/v1/payment/webhook/alipay',
   wxpay: '/api/v1/payment/webhook/wxpay',
   stripe: '/api/v1/payment/webhook/stripe',
@@ -103,6 +119,7 @@ export const RETURN_PATH = '/payment/result'
 /** Fixed callback paths per provider — displayed as read-only after base URL. */
 export const PROVIDER_CALLBACK_PATHS: Record<string, CallbackPaths> = {
   easypay: { notifyUrl: WEBHOOK_PATHS.easypay, returnUrl: RETURN_PATH },
+  keyingpay: { notifyUrl: WEBHOOK_PATHS.keyingpay, returnUrl: RETURN_PATH },
   alipay: { notifyUrl: WEBHOOK_PATHS.alipay, returnUrl: RETURN_PATH },
   wxpay: { notifyUrl: WEBHOOK_PATHS.wxpay },
   // stripe: 不需要回调 URL 配置，Webhook 单独配置。
@@ -117,6 +134,12 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'apiBase', label: '', sensitive: false },
     { key: 'cidAlipay', label: '', sensitive: false, optional: true },
     { key: 'cidWxpay', label: '', sensitive: false, optional: true },
+  ],
+  keyingpay: [
+    { key: 'pid', label: 'PID', sensitive: false },
+    { key: 'merchantPrivateKey', label: '', sensitive: true },
+    { key: 'platformPublicKey', label: '', sensitive: true },
+    { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://api.keyingpay.org', hintKey: 'admin.settings.payment.field_keyingpayApiBaseHint' },
   ],
   alipay: [
     { key: 'appId', label: 'App ID', sensitive: false },
@@ -169,6 +192,34 @@ export function getAvailableTypes(
 ): TypeOption[] {
   const types = PROVIDER_SUPPORTED_TYPES[providerKey] || []
   return types.map(t => resolveTypeLabel(t, providerKey, allTypes, redirectLabel))
+}
+
+export function parseEasyPayCustomMethods(raw: string | undefined): EasyPayCustomMethod[] {
+  if (!raw || !raw.trim()) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(item => ({
+        type: String(item?.type || '').trim(),
+        upstreamType: String(item?.upstreamType || '').trim(),
+        displayName: String(item?.displayName || '').trim(),
+      }))
+      .filter(item => item.type && item.upstreamType)
+  } catch {
+    return []
+  }
+}
+
+export function serializeEasyPayCustomMethods(methods: EasyPayCustomMethod[]): string {
+  const clean = methods
+    .map(method => ({
+      type: method.type.trim(),
+      upstreamType: method.upstreamType.trim(),
+      displayName: method.displayName.trim(),
+    }))
+    .filter(method => method.type && method.upstreamType)
+  return clean.length ? JSON.stringify(clean) : ''
 }
 
 /** Extract base URL from a full callback URL by removing the known path suffix. */

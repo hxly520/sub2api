@@ -62,6 +62,13 @@ func TestWriteSuccessResponse(t *testing.T) {
 			wantBody:        "success",
 		},
 		{
+			name:            "keyingpay returns plain text success",
+			providerKey:     payment.TypeKeyingPay,
+			wantCode:        http.StatusOK,
+			wantContentType: "text/plain",
+			wantBody:        "success",
+		},
+		{
 			name:            "alipay returns plain text success",
 			providerKey:     "alipay",
 			wantCode:        http.StatusOK,
@@ -165,6 +172,12 @@ func TestExtractOutTradeNo(t *testing.T) {
 			providerKey: "alipay",
 			rawBody:     "notify_time=2026-04-20+12%3A00%3A00&out_trade_no=sub2_456",
 			want:        "sub2_456",
+		},
+		{
+			name:        "keyingpay query payload",
+			providerKey: payment.TypeKeyingPay,
+			rawBody:     "pid=1001&out_trade_no=sub2_789&trade_status=TRADE_SUCCESS",
+			want:        "sub2_789",
 		},
 		{
 			name:        "unknown provider",
