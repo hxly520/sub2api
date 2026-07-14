@@ -1130,8 +1130,8 @@ export default {
         sessionStickyWeight: 'session_hash sticky'
       },
       openaiFirstResponse: {
-        title: 'Immediate streaming first response',
-        description: 'Flushes upstream stream events earlier without cancelling, replaying, or switching accounts while waiting.',
+        title: 'OpenAI first-token optimization',
+        description: 'Applies globally. When enabled, streaming TTFT ends when the final successful account returns upstream 2xx headers, excluding routing, failed failovers, and failed requests. When disabled, TTFT ends at the first real semantic output. It never fabricates tokens, replays requests, or changes billing or total duration.',
         timeout: 'Compatibility setting (ms)',
         timeoutHint: 'Safe mode no longer uses this value to cancel upstream requests.'
       },

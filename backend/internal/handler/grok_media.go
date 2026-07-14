@@ -31,6 +31,16 @@ func (h *OpenAIGatewayHandler) GrokVideoGeneration(c *gin.Context) {
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideosGenerations, "")
 }
 
+// GrokVideoEdit handles asynchronous xAI video edits through Grok groups.
+func (h *OpenAIGatewayHandler) GrokVideoEdit(c *gin.Context) {
+	h.handleGrokMedia(c, service.GrokMediaEndpointVideosEdits, "")
+}
+
+// GrokVideoExtension handles asynchronous xAI video extensions through Grok groups.
+func (h *OpenAIGatewayHandler) GrokVideoExtension(c *gin.Context) {
+	h.handleGrokMedia(c, service.GrokMediaEndpointVideosExtensions, "")
+}
+
 // GrokVideoStatus handles xAI video status retrieval through Grok groups.
 func (h *OpenAIGatewayHandler) GrokVideoStatus(c *gin.Context) {
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideoStatus, c.Param("request_id"))
@@ -219,7 +229,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			ChannelMappedModel: mappedModel,
 		}
 		var pricingErr error
-		if endpoint == service.GrokMediaEndpointVideosGenerations {
+		if endpoint.IsVideoGenerationRequest() {
 			mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIVideoPricingSnapshot(
 				requestCtx,
 				apiKey,
@@ -250,7 +260,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 		if mediaPricingSnapshot != nil {
 			holdAmount := mediaPricingSnapshot.EstimatedCost(requestInfo.N, requestInfo.DurationSeconds)
-			if endpoint == service.GrokMediaEndpointVideosGenerations {
+			if endpoint.IsVideoGenerationRequest() {
 				holdAmount = mediaPricingSnapshot.EstimatedCost(1, requestInfo.DurationSeconds)
 			}
 			if holdAmount > 0 {
@@ -336,12 +346,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 	mediaHoldTransferred = mediaHold != nil
 	h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
-	videoGeneration := endpoint == service.GrokMediaEndpointVideosGenerations
+	videoGeneration := endpoint.IsVideoGenerationRequest()
 	actualMediaCost := mediaBalanceActualCost(mediaPricingSnapshot, result, requestInfo.N, requestInfo.DurationSeconds, videoGeneration)
 	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 		reqLog.Warn("grok_media.mark_balance_capture_pending_failed", zap.Error(markErr))
 	}
-	if endpoint == service.GrokMediaEndpointVideosGenerations && strings.TrimSpace(result.ResponseID) != "" {
+	if endpoint.IsVideoGenerationRequest() && strings.TrimSpace(result.ResponseID) != "" {
 		if err := h.gatewayService.BindGrokMediaVideoRequestAccount(requestCtx, apiKey.GroupID, result.ResponseID, account.ID); err != nil {
 			reqLog.Warn("grok_media.bind_video_request_account_failed",
 				zap.Int64("account_id", account.ID),

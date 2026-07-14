@@ -446,7 +446,9 @@ const (
 	SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom         = "openai_advanced_scheduler_weight_quota_headroom"
 	SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse      = "openai_advanced_scheduler_weight_previous_response"
 	SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky         = "openai_advanced_scheduler_weight_session_sticky"
-	// SettingKeyOpenAIFirstResponseEnabled controls pre-output stream failover.
+	// SettingKeyOpenAIFirstResponseEnabled globally controls OpenAI streaming
+	// first-token timing and early flushing. Account-level options must not
+	// override it.
 	SettingKeyOpenAIFirstResponseEnabled   = "openai_first_response_enabled"
 	SettingKeyOpenAIFirstResponseTimeoutMS = "openai_first_response_timeout_ms"
 

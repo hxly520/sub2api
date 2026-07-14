@@ -225,7 +225,8 @@ type ccStreamScanState struct {
 	// Usage 为 include_usage chunk 中最近一次出现的用量（上游可能重复发送，
 	// 总是保留最新值）；终态事件中的用量由调用方在 finalize 阶段自行覆盖。
 	Usage OpenAIUsage
-	// FirstTokenMs 为首个实际输出 chunk（排除 usage-only chunk）的到达时延。
+	// FirstTokenMs 优先采用最终 attempt 的成功响应头时延；没有 dispatch
+	// 标记的内部调用才回退到首个实际输出 chunk。
 	FirstTokenMs *int
 	// SawDone 表示上游发出了 [DONE] 哨兵。
 	SawDone bool
@@ -236,7 +237,7 @@ type ccStreamScanState struct {
 }
 
 // scanCCStream 驱动两条 CC 回退路径共享的 SSE 读循环：提取 data 行、在 [DONE]
-// 哨兵处停止、保留最新 usage、记录首 token 时延，并把每个解析成功的 chunk 交给
+// 哨兵处停止、保留最新 usage、记录首响应时延，并把每个解析成功的 chunk 交给
 // emit 回调做各自的协议转换与写出。读错误按既有约定过滤 context 取消类噪声后
 // 记入 Warn 日志。
 func (s *OpenAIGatewayService) scanCCStream(
@@ -249,7 +250,7 @@ func (s *OpenAIGatewayService) scanCCStream(
 	startTime time.Time,
 	emit func(*apicompat.ChatCompletionsChunk),
 ) ccStreamScanState {
-	var st ccStreamScanState
+	st := ccStreamScanState{FirstTokenMs: openAIFirstTokenAccepted(c)}
 
 	scanner := s.newUpstreamSSEScanner(resp.Body)
 	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)

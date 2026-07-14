@@ -70,7 +70,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	responseID := ""
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -404,7 +404,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			}
 			writeStreamLine(line, shouldFlush)
 
-			// Record first token time
+			// Internal/direct handler calls without a dispatch marker retain the
+			// semantic-token fallback used by tests and compatibility adapters.
 			if firstTokenMs == nil && semanticOutput {
 				ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
 				firstTokenMs = &ms

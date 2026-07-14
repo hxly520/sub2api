@@ -239,6 +239,9 @@ func (s *OpenAIGatewayService) doOpenAIUpstreamWithFirstResponseBudget(
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, passthrough)
 	}
+	if resp != nil {
+		markOpenAIFirstTokenAccepted(ctx, c, resp.StatusCode, time.Now())
+	}
 	return resp, nil
 }
 

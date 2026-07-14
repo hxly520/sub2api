@@ -911,7 +911,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	responseID := ""
 	clientDisconnected := false
 	sawDone := false

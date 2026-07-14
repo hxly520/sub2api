@@ -35,7 +35,9 @@ func (h *OpenAIGatewayHandler) openAIFirstResponseForwardContext(
 	if reqLog != nil {
 		reqLog.Debug("openai.first_response_early_flush_enabled")
 	}
-	return service.WithOpenAIFirstResponseEarlyFlush(ctx)
+	return service.WithOpenAIFastFirstTokenTiming(
+		service.WithOpenAIFirstResponseEarlyFlush(ctx),
+	)
 }
 
 func (h *OpenAIGatewayHandler) reportOpenAIAccountFailoverScheduleResult(

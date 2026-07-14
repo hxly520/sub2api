@@ -723,7 +723,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	state.Model = originalModel
 	var usage OpenAIUsage
 	responseID := ""
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingSSE := make([]string, 0, 4)

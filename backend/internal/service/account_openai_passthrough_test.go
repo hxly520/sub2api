@@ -49,6 +49,26 @@ func TestAccount_IsOpenAIPassthroughEnabled(t *testing.T) {
 	})
 }
 
+func TestAccount_IsOpenAIUpstreamRelay(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{name: "nil", account: nil, want: false},
+		{name: "default off", account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, want: false},
+		{name: "APIKey enabled", account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_upstream_relay": true}}, want: true},
+		{name: "OAuth ignored", account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"openai_upstream_relay": true}}, want: false},
+		{name: "other platform ignored", account: &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_upstream_relay": true}}, want: false},
+		{name: "invalid type ignored", account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_upstream_relay": "true"}}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.account.IsOpenAIUpstreamRelay())
+		})
+	}
+}
+
 func TestAccount_IsOpenAIOAuthPassthroughEnabled(t *testing.T) {
 	t.Run("仅OAuth类型允许返回开启", func(t *testing.T) {
 		oauthAccount := &Account{

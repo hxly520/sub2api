@@ -1478,6 +1478,37 @@
         </div>
       </div>
 
+      <!-- OpenAI APIKey 上游中转站模式：只关闭本地默认 Codex 提示词注入 -->
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.upstreamRelay') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.upstreamRelayDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-upstream-relay-toggle"
+            @click="openaiUpstreamRelayEnabled = !openaiUpstreamRelayEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiUpstreamRelayEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiUpstreamRelayEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI Codex 图片工具统一策略（自动注入 + 客户端显式携带） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -1859,6 +1890,24 @@
               ]"
             />
           </button>
+        </div>
+      </div>
+
+      <!-- OpenAI 订阅档位手动覆盖（Plus/Pro/Free），仅 OAuth 非影子账号 -->
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'oauth' && !isSparkShadow"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.planType') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.planTypeDesc') }}
+            </p>
+          </div>
+          <div class="w-44 flex-shrink-0">
+            <Select v-model="editPlanType" :options="planTypeOptions" />
+          </div>
         </div>
       </div>
 
@@ -2564,6 +2613,9 @@ import {
   applyAntigravityProjectID,
   applyHeaderOverride,
   applyInterceptWarmup,
+  applyPlanType,
+  buildPlanTypeOptions,
+  readPlanType,
   getHeaderOverrideTemplate,
   isHeaderOverridePlatform,
   splitHeaderOverridesObject,
@@ -2785,6 +2837,9 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+const openaiUpstreamRelayEnabled = ref(false)
+// OpenAI 订阅档位（Plus/Pro/Free）手动覆盖值,存于 credentials.plan_type;'' 表示清空/自动识别
+const editPlanType = ref<string>('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const supportedOpenAIEndpointCapabilities: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
@@ -2914,6 +2969,10 @@ const openAICompactModeOptions = computed(() => [
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
 ])
+// OpenAI 订阅档位手动覆盖选项(清空 + Plus/Pro/Free;别名/自定义值友好显示且保留 canonical)
+const planTypeOptions = computed(() =>
+  buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
+)
 const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
@@ -3222,6 +3281,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
+  openaiUpstreamRelayEnabled.value = false
+  editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
@@ -3236,6 +3297,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
+    openaiUpstreamRelayEnabled.value =
+      newAccount.type === 'apikey' && extra?.openai_upstream_relay === true
+    // plan_type 手动覆盖仅 OAuth 有实际调度语义(IsOpenAIChatGPTSubscription 要求 oauth),故只对 oauth 回填
+    editPlanType.value = newAccount.type === 'oauth'
+      ? readPlanType(newAccount.credentials as Record<string, unknown> | undefined)
+      : ''
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     if (newAccount.type === 'apikey') {
       openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
@@ -4239,6 +4306,14 @@ const handleSubmit = async () => {
       updatePayload.credentials = newCredentials
     }
 
+    // OpenAI: 手动覆盖订阅档位 plan_type（Plus/Pro/Free）。仅 OAuth 非影子账号：
+    // 影子账号凭据由母账号管理(且后端会 sanitize),setup-token 无订阅调度语义。
+    if (props.account.platform === 'openai' && props.account.type === 'oauth' && !isSparkShadow.value) {
+      const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
+        ((props.account.credentials as Record<string, unknown>) || {})
+      updatePayload.credentials = applyPlanType({ ...currentCredentials }, editPlanType.value)
+    }
+
     // Antigravity: persist model mapping to credentials (applies to all antigravity types)
     // Antigravity 只支持映射模式
     if (props.account.platform === 'antigravity') {
@@ -4415,6 +4490,11 @@ const handleSubmit = async () => {
         delete newExtra.openai_passthrough
         delete newExtra.openai_oauth_passthrough
       }
+		if (props.account.type === 'apikey' && openaiUpstreamRelayEnabled.value) {
+			newExtra.openai_upstream_relay = true
+		} else {
+			delete newExtra.openai_upstream_relay
+		}
       if (openAICompactMode.value === 'auto') {
         delete newExtra.openai_compact_mode
       } else {

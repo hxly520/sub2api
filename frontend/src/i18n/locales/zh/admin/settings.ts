@@ -1125,8 +1125,8 @@ export default {
         sessionStickyWeight: 'session_hash 粘性'
       },
       openaiFirstResponse: {
-        title: '流式首响应即时刷新',
-        description: '更早向客户端刷新上游流式事件；不会因首字等待取消、重发或切换账号。',
+        title: 'OpenAI 首字 Token 优化',
+        description: '全局生效。开启后，流式请求按最终成功账号收到上游 2xx 响应头的时间记录首字，不计调度排队、失败切号和失败请求；关闭后按首个真实语义输出记录。不会伪造 Token、重发请求或改变计费与总耗时。',
         timeout: '兼容配置（毫秒）',
         timeoutHint: '安全模式不再使用该值取消上游请求。'
       },

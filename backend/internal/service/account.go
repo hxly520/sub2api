@@ -1325,6 +1325,10 @@ func (a *Account) GetGrokBaseURL() string {
 		if strings.TrimSpace(baseURL) == "" || isOfficialGrokAPIBaseURL(baseURL) {
 			return xai.DefaultCLIBaseURL
 		}
+		if _, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
+			return baseURL
+		}
+		return xai.DefaultCLIBaseURL
 	}
 	if baseURL != "" {
 		return baseURL
@@ -1640,6 +1644,19 @@ func (a *Account) IsOpenAIPassthroughEnabled() bool {
 		return enabled
 	}
 	return false
+}
+
+// IsOpenAIUpstreamRelay reports whether an OpenAI API-key account points to
+// another compatible relay that already owns its default prompt policy.
+//
+// This is intentionally narrower than passthrough: cache/session isolation,
+// model mapping, tool conversion, usage, billing, and safety remain enabled.
+func (a *Account) IsOpenAIUpstreamRelay() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_upstream_relay"].(bool)
+	return ok && enabled
 }
 
 // IsOpenAIResponsesWebSocketV2Enabled 返回 OpenAI 账号是否开启 Responses WebSocket v2。

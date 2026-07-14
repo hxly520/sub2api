@@ -198,7 +198,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	instructions := gjson.GetBytes(body, "instructions")
 	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
-	if instructionsEmpty && !compatMessagesBridge {
+	// Accounts explicitly marked as upstream relays own their default prompt
+	// policy. Avoid injecting a second full Codex prompt while retaining all
+	// other gateway compatibility, cache, tool, and billing behavior.
+	if instructionsEmpty && !compatMessagesBridge && !account.IsOpenAIUpstreamRelay() {
 		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
 	}
 

@@ -40,6 +40,22 @@ func (u openAIFirstResponseImmediateUpstream) DoWithTLS(req *http.Request, proxy
 	return u.Do(req, proxyURL, accountID, concurrency)
 }
 
+type openAIFirstResponseStatusUpstream struct {
+	statusCode int
+}
+
+func (u openAIFirstResponseStatusUpstream) Do(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: u.statusCode,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("ok")),
+	}, nil
+}
+
+func (u openAIFirstResponseStatusUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, concurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, concurrency)
+}
+
 func TestOpenAIStreamPayloadCountsAsFirstResponse(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +263,8 @@ func TestOpenAIFirstTokenTimingStartsAtUpstreamDispatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
 	totalRequestStart := time.Now().Add(-5 * time.Second)
 
-	resp, err := svc.doOpenAIUpstreamWithFirstResponseBudget(context.Background(), c, account, req, "", false)
+	fastTimingCtx := WithOpenAIFastFirstTokenTiming(context.Background())
+	resp, err := svc.doOpenAIUpstreamWithFirstResponseBudget(fastTimingCtx, c, account, req, "", false)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -257,10 +274,121 @@ func TestOpenAIFirstTokenTimingStartsAtUpstreamDispatch(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 }
 
+func TestOpenAIFirstTokenTimingUsesSuccessfulResponseHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	svc := &OpenAIGatewayService{httpUpstream: openAIFirstResponseImmediateUpstream{}}
+	account := &Account{ID: 205, Name: "accepted", Platform: PlatformOpenAI, Concurrency: 1}
+	req := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
+
+	fastTimingCtx := WithOpenAIFastFirstTokenTiming(context.Background())
+	resp, err := svc.doOpenAIUpstreamWithFirstResponseBudget(fastTimingCtx, c, account, req, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	accepted := openAIFirstTokenAccepted(c)
+	require.NotNil(t, accepted)
+	require.GreaterOrEqual(t, *accepted, 0)
+	require.Less(t, *accepted, 1000)
+
+	// A later semantic token must not replace the faster accepted-response
+	// sample used for user-visible TTFT and scheduler scoring.
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, resp.Body.Close())
+	resp.Body = io.NopCloser(strings.NewReader(
+		`data: {"type":"response.created","response":{"id":"resp_accepted"}}` + "\n\n" +
+			`data: {"type":"response.output_text.delta","delta":"ok"}` + "\n\n" +
+			`data: {"type":"response.completed","response":{"id":"resp_accepted","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n",
+	))
+	result, err := svc.handleStreamingResponse(
+		context.Background(),
+		resp,
+		c,
+		account,
+		time.Now().Add(-time.Second),
+		"gpt-5.6-sol",
+		"gpt-5.6-sol",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, accepted, result.firstTokenMs)
+}
+
+func TestOpenAIFirstTokenTimingRejectsErrorHeadersAndClearsPriorAttempt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	account := &Account{ID: 206, Name: "retry", Platform: PlatformOpenAI, Concurrency: 1}
+	req := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
+
+	successSvc := &OpenAIGatewayService{httpUpstream: openAIFirstResponseImmediateUpstream{}}
+	fastTimingCtx := WithOpenAIFastFirstTokenTiming(context.Background())
+	successResp, err := successSvc.doOpenAIUpstreamWithFirstResponseBudget(fastTimingCtx, c, account, req, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, openAIFirstTokenAccepted(c))
+	require.NoError(t, successResp.Body.Close())
+
+	errorSvc := &OpenAIGatewayService{httpUpstream: openAIFirstResponseStatusUpstream{statusCode: http.StatusBadGateway}}
+	errorReq := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
+	errorResp, err := errorSvc.doOpenAIUpstreamWithFirstResponseBudget(fastTimingCtx, c, account, errorReq, "", false)
+	require.NoError(t, err)
+	require.NotNil(t, errorResp)
+	require.Nil(t, openAIFirstTokenAccepted(c), "an error attempt must clear the prior success sample")
+	require.NoError(t, errorResp.Body.Close())
+}
+
 func TestOpenAIFirstTokenTimingFallsBackWithoutDispatchMarker(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	fallback := time.Now().Add(-time.Second)
 
 	require.Equal(t, fallback, openAIFirstTokenStart(c, fallback))
+}
+
+func TestOpenAIFirstTokenTimingGlobalOptimizationDisabledKeepsSemanticFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := &OpenAIGatewayService{httpUpstream: openAIFirstResponseImmediateUpstream{}}
+	account := &Account{
+		ID:          207,
+		Name:        "global-off-relay-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Extra:       map[string]any{"openai_upstream_relay": true},
+	}
+	req := httptest.NewRequest(http.MethodPost, "https://upstream.test/v1/responses", nil)
+	require.True(t, account.IsOpenAIUpstreamRelay())
+
+	resp, err := svc.doOpenAIUpstreamWithFirstResponseBudget(context.Background(), c, account, req, "", false)
+	require.NoError(t, err)
+	require.Nil(t, openAIFirstTokenAccepted(c), "relay account mode must not enable fast TTFT when the global setting is off")
+	require.NoError(t, resp.Body.Close())
+
+	// With the global optimization disabled, a successful response header is
+	// not the TTFT endpoint. Delay the first semantic event to prove the
+	// semantic fallback remains active even for an upstream-relay account.
+	time.Sleep(30 * time.Millisecond)
+	resp.Body = io.NopCloser(strings.NewReader(
+		`data: {"type":"response.created","response":{"id":"resp_global_off"}}` + "\n\n" +
+			`data: {"type":"response.output_text.delta","delta":"ok"}` + "\n\n" +
+			`data: {"type":"response.completed","response":{"id":"resp_global_off","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n",
+	))
+	semanticStart := time.Now().Add(-250 * time.Millisecond)
+	result, err := svc.handleStreamingResponse(
+		context.Background(),
+		resp,
+		c,
+		account,
+		semanticStart,
+		"gpt-5.6-sol",
+		"gpt-5.6-sol",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.firstTokenMs)
+	require.GreaterOrEqual(t, *result.firstTokenMs, 20)
 }

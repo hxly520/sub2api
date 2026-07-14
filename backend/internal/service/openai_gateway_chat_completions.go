@@ -509,7 +509,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	state.IncludeUsage = true
 
 	var usage OpenAIUsage
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingSSE := make([]string, 0, 4)

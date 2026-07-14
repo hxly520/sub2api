@@ -148,6 +148,8 @@ curl https://image.example.com/v1beta/models/YOUR_GEMINI_IMAGE_MODEL:generateCon
 POST /v1/videos
 ```
 
+`POST /v1/videos/generations` 是兼容创建入口，使用相同鉴权、模型权限、余额校验和任务查询流程。新接入优先使用 `/v1/videos`。
+
 ```bash
 curl https://image.example.com/v1/videos \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -190,6 +192,36 @@ curl -L https://image.example.com/v1/videos/VIDEO_TASK_ID/content \
 ```
 
 终态响应中的 `url`、`video_url`、`result_url`、`content_url` 等字段会统一指向平台控制的任务内容地址。内容下载可能临时跳转到平台媒体代理域名；客户端应允许 `-L`/跟随 307，并保留 Range 下载能力。
+
+### 4.4 视频编辑与延长
+
+特定视频分组支持以下异步创建入口：
+
+```http
+POST /v1/videos/edits
+POST /v1/videos/extensions
+```
+
+- 编辑请求至少提供当前渠道支持的 `model`、编辑说明 `prompt` 和源视频字段；常用源视频字段为 `video_url`。
+- 延长请求至少提供当前渠道支持的 `model` 和待延长视频信息；可选 `prompt`、`duration`/`seconds` 以当前模型能力为准。
+- 请求正文按 JSON 传递，平台只做通用字段、模型映射、权限、计费和安全校验，不替客户端猜测缺失素材。
+- 创建成功后返回平台公开任务 ID，仍使用 `GET /v1/videos/{task_id}` 查询，使用 `GET /v1/videos/{task_id}/content` 下载。
+- 不支持该能力的分组返回 `404`，不会自动改走普通视频创建，也不会向其他账号重放。
+- 编辑和延长与普通视频创建使用相同的余额预留、成功一次计费、失败释放和媒体 URL 代理规则。
+
+示例：
+
+```bash
+curl https://image.example.com/v1/videos/edits \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: video-edit-20260714-001" \
+  -d '{
+    "model": "YOUR_VIDEO_MODEL",
+    "prompt": "保持主体不变，调整镜头节奏",
+    "video_url": "https://media.example.com/source.mp4"
+  }'
+```
 
 ## 5. 视频通用字段
 

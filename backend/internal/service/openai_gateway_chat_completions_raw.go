@@ -257,7 +257,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	defer firstResponseWatch.Stop()
 
 	var usage OpenAIUsage
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)

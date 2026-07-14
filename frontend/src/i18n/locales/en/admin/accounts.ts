@@ -402,6 +402,9 @@ export default {
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        upstreamRelay: 'Upstream relay mode',
+        upstreamRelayDesc:
+          'For OpenAI API-key relay upstreams only. Skips duplicate local default Codex instructions while preserving client instructions, cache/session affinity, tools, model mapping, and billing. This account option is independent of the global first-token optimization setting.',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           'Disabled by default. Enable to allow responses_websockets_v2 capability (still gated by global and account-type switches).',
@@ -456,6 +459,10 @@ export default {
         responsesStatusAutoUnknown: 'Auto probe: unknown',
         responsesStatusForcedResponses: 'Forced Responses',
         responsesStatusForcedChatCompletions: 'Forced Chat Completions',
+        planType: 'Plan tier (manual override)',
+        planTypeDesc:
+          "Manually correct this account's ChatGPT plan tier (Plus / Pro / Free). Note: a token refresh near expiry or a 429 rate-limit response will auto-overwrite this with the real tier.",
+        planTypeClear: 'Clear (auto-detect)',
         codexCLIOnly: 'Codex official clients only',
         codexCLIOnlyDesc:
           'Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.',

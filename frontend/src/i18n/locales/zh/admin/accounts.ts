@@ -505,6 +505,9 @@ export default {
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
+        upstreamRelay: '上游中转站模式',
+        upstreamRelayDesc:
+          '仅用于 OpenAI APIKey 上游中转。开启后不再重复注入本地默认 Codex 提示词；客户端提示词、缓存键、会话粘性、工具兼容、模型映射和计费保持不变。此开关与系统设置中的全局首字 Token 优化无关。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',
@@ -554,6 +557,9 @@ export default {
         responsesStatusAutoUnknown: '自动探测：未探测',
         responsesStatusForcedResponses: '已强制 Responses',
         responsesStatusForcedChatCompletions: '已强制 Chat Completions',
+        planType: '订阅档位（手动覆盖）',
+        planTypeDesc: '手动纠正本账号的 ChatGPT 订阅档位（Plus / Pro / Free）。注意：令牌临期刷新或命中 429 限流时，会用真实档位自动覆盖此处设置。',
+        planTypeClear: '清空（自动识别）',
         codexCLIOnly: '仅允许 Codex 官方客户端',
         codexCLIOnlyDesc: '仅对 OpenAI OAuth 生效。开启后仅允许 Codex 官方客户端家族访问；关闭后完全绕过并保持原逻辑。',
         codexCLIOnlyAppServer: '允许 Codex app-server 客户端',
