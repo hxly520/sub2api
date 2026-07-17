@@ -27,6 +27,12 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
+| `public-landing/index.html` | Script-free public service entry page |
+| `public-help/index.html` | Script-free API and client configuration guide |
+| `nginx/52token-public-root.inc.example` | Exact-match public root locations |
+| `nginx/52token-public-help.inc.example` | Help page locations and retired download `410` rules |
+| `nginx/52token-static-security-headers.inc.example` | CSP and security headers for public static pages |
+| `CLOUDFLARE_ABUSE_REMEDIATION.md` | Public-page security remediation and upgrade checklist |
 
 ---
 

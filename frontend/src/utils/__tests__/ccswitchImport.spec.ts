@@ -19,7 +19,8 @@ describe('ccswitchImport utils', () => {
     baseUrl: 'https://api.example.com',
     providerName: 'Sub2API',
     apiKey: 'sk-test',
-    usageScript: 'return true'
+    usageScriptBase64: 'dGVzdA==',
+    usageAutoIntervalMinutes: 30
   }
 
   it('adds the Codex model parameter for OpenAI imports', () => {
@@ -35,7 +36,11 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('codex')
     expect(params.get('endpoint')).toBe(baseInput.baseUrl)
     expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
-    expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
+    expect(params.get('apiKey')).toBe(baseInput.apiKey)
+    expect(params.get('enabled')).toBe('true')
+    expect(params.get('usageScript')).toBe(baseInput.usageScriptBase64)
+    expect(params.get('usageEnabled')).toBe('true')
+    expect(params.get('usageAutoInterval')).toBe('30')
   })
 
   it.each([
@@ -67,5 +72,30 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('gemini')
     expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
     expect(params.has('model')).toBe(false)
+  })
+
+  it('removes credentials, query parameters, fragments, and trailing slashes from the endpoint', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({
+        ...baseInput,
+        baseUrl: 'https://name:password@api.example.com/?source=test#fragment',
+        platform: 'anthropic',
+        clientType: 'claude'
+      })
+    )
+
+    expect(params.get('homepage')).toBe('https://api.example.com')
+    expect(params.get('endpoint')).toBe('https://api.example.com')
+  })
+
+  it('rejects non-HTTPS remote endpoints', () => {
+    expect(() =>
+      buildCcSwitchImportDeeplink({
+        ...baseInput,
+        baseUrl: 'http://api.example.com',
+        platform: 'openai',
+        clientType: 'claude'
+      })
+    ).toThrow('HTTPS endpoint')
   })
 })

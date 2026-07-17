@@ -1,0 +1,17 @@
+location = / {
+    root /home/api/sub2api-deploy/public;
+    index index.html;
+    include /etc/nginx/snippets/52token-static-security-headers.inc;
+    add_header Cache-Control "no-store, max-age=0" always;
+    add_header Pragma "no-cache" always;
+}
+
+location = /index.html {
+    root /home/api/sub2api-deploy/public;
+    default_type text/html;
+    charset utf-8;
+
+    include /etc/nginx/snippets/52token-static-security-headers.inc;
+    add_header Cache-Control "no-store, max-age=0" always;
+    add_header Pragma "no-cache" always;
+}

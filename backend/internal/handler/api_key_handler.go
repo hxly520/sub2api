@@ -138,6 +138,20 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 	response.Success(c, dto.APIKeyFromService(key))
 }
 
+// GetCCSwitchUsageTemplate returns the fixed first-party usage query template.
+// POST /api/v1/keys/ccswitch-usage-template
+func (h *APIKeyHandler) GetCCSwitchUsageTemplate(c *gin.Context) {
+	c.Header("Cache-Control", "no-store, max-age=0")
+	c.Header("Pragma", "no-cache")
+
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	response.Success(c, service.GetCCSwitchUsageTemplate())
+}
+
 // Create handles creating a new API key
 // POST /api/v1/api-keys
 func (h *APIKeyHandler) Create(c *gin.Context) {

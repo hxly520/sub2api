@@ -275,7 +275,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		APIKeyACLTrustForwardedIP:        apiKeyACLTrustForwardedIP,
 		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                         settings[SettingKeySiteLogo],
-		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "API Service Management Console"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],
 		DocURL:                           settings[SettingKeyDocURL],

@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta
+      name="description"
+      content="52Token 客户端手动配置、图片生成和视频任务接口教程。"
+    />
+    <title>52Token 帮助文档</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f6f8fa;
+        --surface: #ffffff;
+        --surface-soft: #f1f5f7;
+        --ink: #17212b;
+        --body: #52606d;
+        --muted: #72808e;
+        --line: #dfe6eb;
+        --accent: #0f766e;
+        --accent-strong: #0b5f59;
+        --accent-soft: #e5f4f1;
+        --blue: #245b9e;
+        --blue-soft: #eaf1f8;
+        --amber: #8c5314;
+        --amber-soft: #fff5df;
+        --red: #9b3a39;
+        --red-soft: #fceeed;
+        --code: #24414b;
+        --code-bg: #edf3f4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        background: var(--page);
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background: var(--page);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 15px;
+        line-height: 1.65;
+        letter-spacing: 0;
+      }
+
+      a {
+        color: var(--accent-strong);
+        text-decoration: none;
+      }
+
+      a:hover,
+      a:focus-visible {
+        text-decoration: underline;
+      }
+
+      code {
+        overflow-wrap: anywhere;
+        border-radius: 4px;
+        padding: 2px 5px;
+        color: var(--code);
+        background: var(--code-bg);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.91em;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.97);
+      }
+
+      .topbar-inner,
+      .layout,
+      .footer-inner {
+        width: min(1240px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .topbar-inner {
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 11px;
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .brand:hover,
+      .brand:focus-visible {
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 8px;
+        color: #ffffff;
+        background: var(--accent);
+        font-size: 14px;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .button {
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 7px 13px;
+        color: var(--ink);
+        background: var(--surface);
+        font-size: 14px;
+        font-weight: 620;
+      }
+
+      .button:hover,
+      .button:focus-visible {
+        border-color: #b8c4cd;
+        background: var(--surface-soft);
+        text-decoration: none;
+      }
+
+      .button.primary {
+        border-color: var(--accent);
+        color: #ffffff;
+        background: var(--accent);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 40px;
+        align-items: start;
+        padding: 42px 0 72px;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 92px;
+        max-height: calc(100vh - 116px);
+        overflow: auto;
+        border-right: 1px solid var(--line);
+        padding-right: 22px;
+      }
+
+      .sidebar-title {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 720;
+      }
+
+      .sidebar nav {
+        display: grid;
+        gap: 3px;
+      }
+
+      .sidebar a {
+        display: block;
+        border-radius: 6px;
+        padding: 7px 9px;
+        color: var(--body);
+        font-size: 13px;
+      }
+
+      .sidebar a:hover,
+      .sidebar a:focus-visible {
+        color: var(--accent-strong);
+        background: var(--accent-soft);
+        text-decoration: none;
+      }
+
+      .sidebar .sub {
+        padding-left: 21px;
+        color: var(--muted);
+      }
+
+      .content {
+        min-width: 0;
+        max-width: 900px;
+      }
+
+      .document-head {
+        padding-bottom: 30px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        scroll-margin-top: 88px;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 36px;
+        line-height: 1.22;
+        font-weight: 730;
+      }
+
+      .document-head > p {
+        max-width: 720px;
+        margin: 14px 0 0;
+        color: var(--body);
+        font-size: 16px;
+      }
+
+      .updated {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .section {
+        padding: 42px 0 8px;
+      }
+
+      .section + .section {
+        border-top: 1px solid var(--line);
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 25px;
+        line-height: 1.3;
+        font-weight: 710;
+      }
+
+      h3 {
+        margin: 30px 0 10px;
+        font-size: 18px;
+        line-height: 1.4;
+        font-weight: 680;
+      }
+
+      h4 {
+        margin: 20px 0 8px;
+        font-size: 15px;
+        font-weight: 680;
+      }
+
+      p {
+        margin: 10px 0;
+        color: var(--body);
+      }
+
+      .notice {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 12px;
+        margin: 18px 0;
+        border: 1px solid #c9e2dd;
+        border-radius: 8px;
+        padding: 15px 17px;
+        background: var(--accent-soft);
+      }
+
+      .notice.warning {
+        border-color: #ead2a5;
+        background: var(--amber-soft);
+      }
+
+      .notice.danger {
+        border-color: #ecc3c0;
+        background: var(--red-soft);
+      }
+
+      .notice-mark {
+        width: 24px;
+        height: 24px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 50%;
+        color: var(--accent-strong);
+        background: #ffffff;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .warning .notice-mark {
+        color: var(--amber);
+      }
+
+      .danger .notice-mark {
+        color: var(--red);
+      }
+
+      .notice strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 14px;
+      }
+
+      .notice p {
+        margin: 0;
+        font-size: 13px;
+      }
+
+      .steps {
+        margin: 15px 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+
+      .steps li {
+        position: relative;
+        min-height: 34px;
+        margin: 10px 0;
+        padding-left: 44px;
+        color: var(--body);
+        counter-increment: step;
+      }
+
+      .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #bcded8;
+        border-radius: 50%;
+        color: var(--accent-strong);
+        background: var(--accent-soft);
+        font-size: 12px;
+        font-weight: 720;
+      }
+
+      .table-wrap {
+        width: 100%;
+        margin: 16px 0 22px;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      table {
+        width: 100%;
+        min-width: 620px;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--ink);
+        background: var(--surface-soft);
+        font-weight: 680;
+      }
+
+      tr:last-child td,
+      tr:last-child th {
+        border-bottom: 0;
+      }
+
+      td {
+        color: var(--body);
+      }
+
+      .endpoint {
+        white-space: nowrap;
+      }
+
+      .compat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0;
+      }
+
+      .compat-item {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 15px 16px;
+        background: var(--surface);
+      }
+
+      .compat-item strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      .compat-item p {
+        margin: 0;
+        font-size: 13px;
+      }
+
+      details {
+        margin: 10px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 13px 15px;
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      details[open] summary {
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-soft);
+      }
+
+      .details-body {
+        padding: 6px 15px 14px;
+      }
+
+      .details-body .table-wrap {
+        margin-bottom: 0;
+      }
+
+      .model-table td:first-child {
+        color: var(--ink);
+        font-weight: 620;
+      }
+
+      .field-list {
+        margin: 12px 0;
+        padding-left: 22px;
+        color: var(--body);
+      }
+
+      .field-list li {
+        margin: 7px 0;
+      }
+
+      .legal {
+        margin-top: 24px;
+        border-left: 3px solid var(--blue);
+        padding: 3px 0 3px 15px;
+      }
+
+      .legal strong {
+        color: var(--ink);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .footer-inner {
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 18px;
+      }
+
+      @media (max-width: 900px) {
+        .topbar-inner,
+        .layout,
+        .footer-inner {
+          width: min(1240px, calc(100% - 28px));
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+          gap: 24px;
+          padding-top: 24px;
+        }
+
+        .sidebar {
+          position: static;
+          max-height: none;
+          overflow: visible;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 0 0 18px;
+        }
+
+        .sidebar nav {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .sidebar .sub {
+          padding-left: 9px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        h1 {
+          font-size: 29px;
+        }
+
+        h2 {
+          font-size: 22px;
+        }
+
+        .sidebar nav,
+        .compat-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .top-actions .button:first-child {
+          display: none;
+        }
+
+        .footer-inner {
+          min-height: 98px;
+          flex-direction: column;
+          justify-content: center;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true">52</span>
+          <span>52Token 帮助文档</span>
+        </a>
+        <nav class="top-actions" aria-label="页面入口">
+          <a class="button" href="/">返回首页</a>
+          <a class="button primary" href="/login">登录控制台</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar" aria-label="文档导航">
+        <div class="sidebar-title">目录</div>
+        <nav>
+          <a href="#security">安全与准备</a>
+          <a href="#endpoints">域名与端点</a>
+          <a href="#clients">客户端手动配置</a>
+          <a class="sub" href="#ccswitch">CC Switch</a>
+          <a class="sub" href="#agent-clients">Agent 客户端</a>
+          <a href="#text-api">文本接口</a>
+          <a href="#image-api">图片生成</a>
+          <a href="#video-api">视频生成</a>
+          <a class="sub" href="#video-fields">视频字段</a>
+          <a class="sub" href="#video-models">9 个视频模型</a>
+          <a href="#errors">错误与重试</a>
+          <a href="#statement">兼容性声明</a>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <header class="document-head">
+          <span class="eyebrow">手动配置教程</span>
+          <h1>API 接入、生图与视频任务</h1>
+          <p>
+            本页仅通过静态文字、字段表和编号步骤说明配置方法。页面不读取输入、不调用外部网络、不提供自动安装命令或可执行文件。
+          </p>
+          <div class="updated">更新日期：2026-07-17</div>
+        </header>
+
+        <section class="section" id="security">
+          <h2>安全与准备</h2>
+          <div class="notice danger">
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>不要在本页或任何公开页面输入密钥</strong>
+              <p>
+                API 密钥只应在登录后的密钥管理页面创建，并填入你信任的本地客户端。不要通过聊天、邮件、截图或网页表单发送密钥。
+              </p>
+            </div>
+          </div>
+          <ol class="steps">
+            <li>登录控制台，在“密钥管理”中创建一枚用户密钥。</li>
+            <li>在“可用渠道”页面确认该密钥可使用的模型名称和请求类型。</li>
+            <li>根据客户端要求，手动填写 Base URL、协议类型、模型名和密钥。</li>
+            <li>先发起一次小请求验证配置，确认使用记录与客户端结果一致。</li>
+          </ol>
+          <div class="notice warning">
+            <span class="notice-mark" aria-hidden="true">i</span>
+            <div>
+              <strong>密钥保护建议</strong>
+              <p>
+                不要将密钥写入可公开的代码仓库、前端页面或共享文档。如怀疑泄露，请立即在控制台禁用旧密钥并创建新密钥。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="endpoints">
+          <h2>域名与端点职责</h2>
+          <p>请按功能使用对应域名，不要将下载域名当成生成接口。</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>域名</th>
+                  <th>用途</th>
+                  <th>注意事项</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="endpoint"><code>https://api.52token.org</code></td>
+                  <td>常规文本、工具调用与内容生成兼容接口</td>
+                  <td>客户端是否需要追加 <code>/v1</code> 由其 Base URL 规则决定</td>
+                </tr>
+                <tr>
+                  <td class="endpoint"><code>https://long.52token.org</code></td>
+                  <td>需要较长连接时间的常规 API 请求</td>
+                  <td>仅在客户端长连接经常中断时使用</td>
+                </tr>
+                <tr>
+                  <td class="endpoint"><code>https://image.52token.org</code></td>
+                  <td>图片、视频创建与任务查询，以及画布工作台</td>
+                  <td>不用于普通聊天、账号页面或支付回调</td>
+                </tr>
+                <tr>
+                  <td class="endpoint"><code>https://video.52token.org</code></td>
+                  <td>已生成图片和视频的签名下载地址</td>
+                  <td>只按 API 返回的完整地址访问，不接受创建任务</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="clients">
+          <h2>客户端手动配置</h2>
+          <p>
+            先从客户端官方发布渠道安装软件，再在客户端本地设置页面中填写下列字段。本站不提供远程自动安装或覆盖本地配置的文件。
+          </p>
+
+          <h3>Codex 兼容客户端</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>配置类型</th><td>OpenAI-compatible / Responses</td></tr>
+                <tr><th>Base URL</th><td><code>https://api.52token.org/v1</code></td></tr>
+                <tr><th>Wire API</th><td><code>responses</code></td></tr>
+                <tr><th>API Key</th><td>填写当前用户在控制台创建的密钥</td></tr>
+                <tr><th>Model</th><td>从当前密钥的“可用渠道”页面选择</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Claude Code 兼容客户端</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>配置类型</th><td>Anthropic-compatible Messages</td></tr>
+                <tr><th>Base URL</th><td><code>https://api.52token.org</code></td></tr>
+                <tr><th>API Key</th><td>填写当前用户密钥</td></tr>
+                <tr><th>Model</th><td>使用可用渠道页面显示的完整模型名称</td></tr>
+                <tr><th>Timeout</th><td>长思考任务可在客户端调大超时，但不要在超时后立即重复提交</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Gemini CLI 兼容客户端</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>配置类型</th><td>Gemini-compatible Content</td></tr>
+                <tr><th>Base URL</th><td><code>https://api.52token.org</code></td></tr>
+                <tr><th>Authentication</th><td>在客户端的 API Key 字段填写当前用户密钥</td></tr>
+                <tr><th>Model</th><td>使用可用渠道页面显示的完整模型名称</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="ccswitch">CC Switch 一键导入</h3>
+          <ol class="steps">
+            <li>在本机安装并启动你信任的 CC Switch 客户端。</li>
+            <li>登录 52Token，进入“密钥管理”，在目标密钥右侧点击“导入到 CC Switch”。</li>
+            <li>如果页面要求选择客户端类型，请根据该密钥的分组协议选择。</li>
+            <li>系统打开本机 CC Switch 后，核对 Provider 名称、端点域名和模型，确认无误再完成导入。</li>
+          </ol>
+          <div class="notice">
+            <span class="notice-mark" aria-hidden="true">i</span>
+            <div>
+              <strong>安全版一键导入的范围</strong>
+              <p>
+                导入仅由用户点击触发，并由 CC Switch 显示配置预览后再确认。为保留余额识别，导入包含已固定为当前 Provider <code>/v1/usage</code> 的用量查询模板；模板不包含外部域名、User-Agent 探测、输入监听或动态代码加载。
+              </p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>客户端类型</th><th>Endpoint</th><th>模型规则</th></tr></thead>
+              <tbody>
+                <tr><td>Codex</td><td><code>https://api.52token.org</code></td><td>导入时使用当前支持的 Codex 模型</td></tr>
+                <tr><td>Claude Code</td><td><code>https://api.52token.org</code></td><td>由 CC Switch 中的客户端模型设置决定</td></tr>
+                <tr><td>Gemini CLI</td><td><code>https://api.52token.org</code></td><td>由可用渠道的模型名称决定</td></tr>
+                <tr><td>Antigravity</td><td><code>https://api.52token.org/antigravity</code></td><td>根据选择的本地客户端导入</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="agent-clients">OpenClaw、Hermes 与 TRAE SOLO</h3>
+          <p>这些客户端的配置页面名称可能随版本变化，请以客户端官方说明为准。</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>客户端</th><th>选择的兼容协议</th><th>Base URL</th><th>模型</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>OpenClaw</td><td><code>openai-responses</code></td><td><code>https://api.52token.org/v1</code></td><td>选择当前密钥可用的 Responses 模型</td></tr>
+                <tr><td>OpenClaw</td><td><code>anthropic</code></td><td><code>https://api.52token.org</code></td><td>选择当前密钥可用的 Messages 模型</td></tr>
+                <tr><td>Hermes</td><td><code>codex_responses</code></td><td><code>https://api.52token.org/v1</code></td><td>使用完整模型名称</td></tr>
+                <tr><td>Hermes</td><td><code>anthropic_messages</code></td><td><code>https://api.52token.org</code></td><td>使用完整模型名称</td></tr>
+                <tr><td>TRAE SOLO</td><td>OpenAI Compatible</td><td><code>https://api.52token.org/v1</code></td><td>选择当前密钥可用的对应模型</td></tr>
+                <tr><td>TRAE SOLO</td><td>Anthropic Compatible</td><td><code>https://api.52token.org</code></td><td>选择当前密钥可用的对应模型</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="text-api">
+          <h2>文本与内容生成接口</h2>
+          <p>以下是接口契约说明，不是可直接执行的命令。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>协议</th><th>方法与路径</th><th>鉴权头</th><th>最小必要字段</th></tr></thead>
+              <tbody>
+                <tr><td>Responses</td><td><code>POST /v1/responses</code></td><td><code>Authorization: Bearer &lt;key&gt;</code></td><td><code>model</code>、<code>input</code></td></tr>
+                <tr><td>Chat Completions</td><td><code>POST /v1/chat/completions</code></td><td><code>Authorization: Bearer &lt;key&gt;</code></td><td><code>model</code>、<code>messages</code></td></tr>
+                <tr><td>Messages</td><td><code>POST /v1/messages</code></td><td><code>x-api-key: &lt;key&gt;</code></td><td><code>model</code>、<code>max_tokens</code>、<code>messages</code></td></tr>
+                <tr><td>Gemini Content</td><td><code>POST /v1beta/models/{model}:generateContent</code></td><td><code>x-goog-api-key: &lt;key&gt;</code></td><td><code>contents</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>通用请求要求</h3>
+          <ul class="field-list">
+            <li>JSON 请求必须声明 <code>Content-Type: application/json</code>。</li>
+            <li><code>model</code> 必须与可用渠道页面显示的模型名完全一致。</li>
+            <li>流式请求由客户端按 SSE 或对应协议消费，不要将中途断开自动视为未请求。</li>
+            <li>工具调用字段应按客户端协议发送，不要同时混用多种协议的工具结构。</li>
+          </ul>
+        </section>
+
+        <section class="section" id="image-api">
+          <h2>图片生成与编辑</h2>
+          <p>图片创建和编辑使用 <code>image.52token.org</code>。可用模型以当前密钥的可用渠道为准。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>功能</th><th>方法与端点</th><th>请求格式</th><th>必要字段</th></tr></thead>
+              <tbody>
+                <tr><td>文生图</td><td><code>POST https://image.52token.org/v1/images/generations</code></td><td>JSON</td><td><code>model</code>、<code>prompt</code></td></tr>
+                <tr><td>图片编辑</td><td><code>POST https://image.52token.org/v1/images/edits</code></td><td>multipart/form-data</td><td><code>model</code>、<code>prompt</code>、<code>image</code></td></tr>
+                <tr><td>Gemini 原生生图</td><td><code>POST https://image.52token.org/v1beta/models/{model}:generateContent</code></td><td>JSON</td><td><code>contents</code>、<code>generationConfig</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>OpenAI Images 兼容字段</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>字段</th><th>类型</th><th>用途</th></tr></thead>
+              <tbody>
+                <tr><td><code>model</code></td><td>string</td><td>必填，使用可用渠道显示的图片模型名</td></tr>
+                <tr><td><code>prompt</code></td><td>string</td><td>必填，描述生成或编辑目标</td></tr>
+                <tr><td><code>size</code></td><td>string</td><td>传递期望尺寸，最终效果由当前模型能力决定</td></tr>
+                <tr><td><code>quality</code></td><td>string</td><td>传递期望质量档位，不支持时由渠道按兼容规则处理</td></tr>
+                <tr><td><code>n</code></td><td>integer</td><td>生成数量，受模型和密钥配额限制</td></tr>
+                <tr><td><code>response_format</code></td><td>string</td><td><code>url</code> 或 <code>b64_json</code></td></tr>
+                <tr><td><code>output_format</code></td><td>string</td><td>常用为 PNG 或 JPEG，实际支持以模型为准</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>参考图和本地预览</h3>
+          <ul class="field-list">
+            <li>图片编辑请求将参考图作为 multipart 文件字段上传。</li>
+            <li>画布工作台会将生成结果保存在客户端本地存储中，预览时使用本地 Blob 地址。</li>
+            <li>如返回签名图片地址，域名应为 <code>video.52token.org</code>；请不要修改地址中的任何部分。</li>
+            <li>同步生成耗时较长时请保持连接；已有任务 ID 时应继续查询，不要重复创建。</li>
+          </ul>
+        </section>
+
+        <section class="section" id="video-api">
+          <h2>视频生成任务</h2>
+          <p>
+            当前 9 个公开视频模型共用同一套创建、查询和下载接口。固定 480p 后缀模型已下架；标准按次模型是否支持 <code>resolution=480p</code> 以下方限制为准。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>阶段</th><th>方法与端点</th><th>用途</th></tr></thead>
+              <tbody>
+                <tr><td>创建</td><td><code>POST https://image.52token.org/v1/videos</code></td><td>创建一个新的视频生成任务</td></tr>
+                <tr><td>查询</td><td><code>GET https://image.52token.org/v1/videos/{task_id}</code></td><td>查询原任务状态，不会新建任务</td></tr>
+                <tr><td>下载</td><td><code>GET https://image.52token.org/v1/videos/{task_id}/content</code></td><td>获取已完成任务的视频内容</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>创建任务步骤</h3>
+          <ol class="steps">
+            <li>使用 <code>Authorization: Bearer &lt;key&gt;</code> 鉴权，JSON 请求声明 <code>Content-Type: application/json</code>。</li>
+            <li>请求体至少包含 <code>model</code> 和 <code>prompt</code>，按模型要求增加时长、分辨率和参考素材。</li>
+            <li>建议每个业务任务设置唯一 <code>Idempotency-Key</code>，同一任务恢复时继续使用原值。</li>
+            <li>保存创建响应中的平台任务 ID，后续仅用该 ID 查询。</li>
+          </ol>
+
+          <h3>任务状态与轮询</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>状态</th><th>含义</th><th>客户端处理</th></tr></thead>
+              <tbody>
+                <tr><td><code>creating</code> / <code>queued</code> / <code>pending</code> / <code>running</code></td><td>任务仍在处理</td><td>每 5-10 秒查询一次，使用同一任务 ID</td></tr>
+                <tr><td><code>completed</code> / <code>succeeded</code></td><td>生成完成</td><td>读取平台返回的视频地址，或请求 <code>/content</code></td></tr>
+                <tr><td><code>failed</code> / <code>cancelled</code> / <code>expired</code></td><td>任务终止</td><td>停止轮询；确认需要重做后再创建新任务</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice warning">
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>不要因为等待时间长而重复创建</strong>
+              <p>
+                高分辨率或含参考素材的视频可能需要较长时间。创建后优先使用原任务 ID 继续查询；反复 POST 会形成多个独立生成任务。
+              </p>
+            </div>
+          </div>
+
+          <h3 id="video-fields">视频通用字段</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>字段</th><th>类型</th><th>用途与限制</th></tr></thead>
+              <tbody>
+                <tr><td><code>model</code></td><td>string</td><td>必填，使用可用渠道显示的视频模型名</td></tr>
+                <tr><td><code>prompt</code></td><td>string</td><td>必填，描述画面、运动、镜头和音频需求</td></tr>
+                <tr><td><code>duration</code> / <code>seconds</code></td><td>integer</td><td>视频时长，建议统一使用 <code>duration</code></td></tr>
+                <tr><td><code>aspect_ratio</code></td><td>string</td><td>画面比例，必须使用模型支持的值</td></tr>
+                <tr><td><code>resolution</code></td><td>string</td><td>清晰度；固定分辨率模型由模型名后缀决定</td></tr>
+                <tr><td><code>audio</code></td><td>boolean</td><td>是否生成音频；仅支持布尔值，不要在该字段传地址</td></tr>
+                <tr><td><code>image_url</code></td><td>string</td><td>单张公网 HTTPS 参考图</td></tr>
+                <tr><td><code>image_urls</code></td><td>string[]</td><td>多张参考图</td></tr>
+                <tr><td><code>reference_image_urls</code></td><td>string[]</td><td>附加参考图</td></tr>
+                <tr><td><code>first_image_url</code> / <code>last_image_url</code></td><td>string</td><td>首尾帧，必须根据模型规则成对使用</td></tr>
+                <tr><td><code>video_url</code></td><td>string</td><td>单个参考视频</td></tr>
+                <tr><td><code>reference_videos</code></td><td>string[]</td><td>多个参考视频</td></tr>
+                <tr><td><code>reference_audios</code></td><td>string[]</td><td>多个参考音频</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice">
+            <span class="notice-mark" aria-hidden="true">i</span>
+            <div>
+              <strong>参考素材地址</strong>
+              <p>
+                直接 API 调用应传公网可访问的 HTTPS 图片、视频或音频地址。本地文件路径、<code>blob:</code> 地址和局域网地址无法被接口读取。画布工作台会自动处理用户上传的本地素材。
+              </p>
+            </div>
+          </div>
+
+          <h3 id="video-models">9 个视频模型的字段和限制</h3>
+          <p>是否可调用以当前密钥的可用渠道为准。以下模型都使用同一套任务接口。</p>
+          <div class="table-wrap model-table">
+            <table>
+              <thead>
+                <tr><th>模型</th><th>计量类型</th><th>时长 / 分辨率</th><th>参考素材</th><th>关键限制</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>seedance-2.0</code></td><td>按次</td><td>4-15 秒；480p 或 720p</td><td>最多 4 图、3 视频、1 音频</td><td>提示词最多 5000 字；视频/音频需至少 1 图；首尾帧必须成对且不与其他素材混用</td></tr>
+                <tr><td><code>seedance-2.0-fast</code></td><td>按次</td><td>4-15 秒；480p 或 720p</td><td>最多 4 图、3 视频、1 音频</td><td>提示词最多 5000 字；视频/音频需至少 1 图；首尾帧不与其他素材混用</td></tr>
+                <tr><td><code>seedance-2.0-mini</code></td><td>按次</td><td>4-15 秒；480p 或 720p</td><td>最多 4 图、3 视频、1 音频</td><td>提示词最多 5000 字；视频/音频需至少 1 图；首尾帧需成对</td></tr>
+                <tr><td><code>seedance-2.0-fast-720p</code></td><td>按秒</td><td>必填 4-15 秒；固定 720p</td><td>最多 9 图、3 视频、3 音频</td><td>不要传其他分辨率；视频/音频需至少 1 图；首尾帧需成对</td></tr>
+                <tr><td><code>seedance-2.0-mini-720p</code></td><td>按秒</td><td>必填 4-15 秒；固定 720p</td><td>最多 9 图、3 视频、3 音频</td><td>不要传其他分辨率；视频/音频需至少 1 图；首尾帧需成对</td></tr>
+                <tr><td><code>seedance-2.0-720p</code></td><td>按秒</td><td>必填 4-15 秒；固定 720p</td><td>最多 9 图、3 视频、3 音频</td><td>不要传其他分辨率；视频/音频需至少 1 图；首尾帧需成对</td></tr>
+                <tr><td><code>seedance-2.0-1080p</code></td><td>按秒</td><td>必填 4-15 秒；固定 1080p</td><td>最多 9 图、3 视频、3 音频</td><td>不要传其他分辨率；等待时间和文件通常高于 720p</td></tr>
+                <tr><td><code>seedance-2.0-4k</code></td><td>按秒</td><td>必填 4-15 秒；固定 4K</td><td>最多 9 图、3 视频、3 音频</td><td>不要传其他分辨率；保持长轮询，不要因等待重复创建</td></tr>
+                <tr><td><code>grok-video</code></td><td>按次</td><td>4/6/8/10/12/15 秒；480p 或 720p</td><td>最多 7 图，可同时最多 1 视频，不支持参考音频</td><td>提示词最多 4096 字；多图请求最长按 10 秒处理；不支持首尾帧字段</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>比例限制</h3>
+          <details>
+            <summary>Seedance 系列</summary>
+            <div class="details-body">
+              <p>可用比例为 <code>16:9</code>、<code>9:16</code>、<code>1:1</code>、<code>21:9</code>、<code>3:4</code>、<code>4:3</code>。</p>
+            </div>
+          </details>
+          <details>
+            <summary>Grok Video</summary>
+            <div class="details-body">
+              <p>可用比例为 <code>1:1</code>、<code>16:9</code>、<code>9:16</code>、<code>4:3</code>、<code>3:4</code>、<code>3:2</code>、<code>2:3</code>。</p>
+            </div>
+          </details>
+
+          <h3>完成后的视频地址</h3>
+          <ul class="field-list">
+            <li>任务成功后，查询响应可能在 <code>url</code>、<code>video_url</code>或结果对象中返回平台地址。</li>
+            <li>对外可见的完成地址应使用 <code>video.52token.org</code>，地址中不包含上游主机名。</li>
+            <li>下载地址是短期签名地址，应尽快下载到客户端本地。</li>
+            <li>视频播放器可按需使用 Range 分段请求；不要把地址作为永久公开链接。</li>
+          </ul>
+        </section>
+
+        <section class="section" id="errors">
+          <h2>错误、超时与重试</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>现象</th><th>处理建议</th></tr></thead>
+              <tbody>
+                <tr><td>401 / 403</td><td>检查密钥是否有效、是否属于当前分组，以及鉴权头是否符合当前协议</td></tr>
+                <tr><td>402</td><td>余额或密钥配额不足；图片和视频会在调用前校验可用余额</td></tr>
+                <tr><td>400</td><td>检查模型名、必填字段、分辨率、比例和参考素材数量</td></tr>
+                <tr><td>429</td><td>按错误响应的等待时间后重试，不要高频并发</td></tr>
+                <tr><td>5xx / 连接中断</td><td>文本请求按客户端规则处理；图片和视频若已有任务 ID，必须先查询原任务</td></tr>
+                <tr><td>视频长时间运行</td><td>保持 5-10 秒的查询间隔，延长总等待时间，不要重复创建</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice warning">
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>生图和视频不做自动重放</strong>
+              <p>
+                媒体生成可能已被服务端接受。网络超时不等于任务未创建，因此平台不会将这类请求自动重放到另一账号。有任务 ID 时使用查询接口恢复。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="statement">
+          <h2>兼容性与授权声明</h2>
+          <div class="legal">
+            <p>
+              <strong>兼容性说明：</strong>
+              文档中出现的客户端、协议和模型名称仅用于描述技术兼容性与字段格式，不表示与相关商标权利人存在授权、代理、合作、认可或附属关系。
+            </p>
+            <p>
+              <strong>使用边界：</strong>
+              用户只能接入其有权使用的账号、密钥、模型和内容资源，并应遵守对应服务条款、软件许可和适用法律。本平台不要求、不收集也不代为保管用户的管理员 API 令牌、OAuth 令牌或刷新令牌。
+            </p>
+            <p>
+              <strong>公开页面安全：</strong>
+              本文档不包含可执行 JavaScript、键盘输入监听、自动安装命令、远程下载代码或外部域名数据传输。
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      <div class="footer-inner">
+        <span>&copy; 2026 52Token. 保留所有权利。</span>
+        <div class="footer-links">
+          <a href="/">首页</a>
+          <a href="/login">控制台</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
