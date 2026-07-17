@@ -16,7 +16,35 @@ export interface CcSwitchImportDeeplinkInput {
   clientType: CcSwitchClientType
   providerName: string
   apiKey: string
-  usageScript: string
+  usageScriptBase64: string
+  usageAutoIntervalMinutes: number
+}
+
+function normalizeCcSwitchBaseUrl(value: string): string {
+  const parsed = new URL(value)
+  const isLocalDevelopment = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLocalDevelopment)) {
+    throw new Error('CC Switch imports require an HTTPS endpoint')
+  }
+
+  parsed.username = ''
+  parsed.password = ''
+  parsed.search = ''
+  parsed.hash = ''
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '')
+  return parsed.toString().replace(/\/$/, '')
+}
+
+function normalizeCcSwitchValue(value: string, field: string): string {
+  const normalized = Array.from(value, character => {
+    const code = character.charCodeAt(0)
+    return code <= 31 || code === 127 ? ' ' : character
+  }).join('').trim()
+  if (!normalized) {
+    throw new Error(`CC Switch ${field} is required`)
+  }
+  return normalized
 }
 
 export function resolveCcSwitchImportConfig(
@@ -50,18 +78,26 @@ export function resolveCcSwitchImportConfig(
 }
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
-  const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
+  const baseUrl = normalizeCcSwitchBaseUrl(input.baseUrl)
+  const providerName = normalizeCcSwitchValue(input.providerName, 'provider name').slice(0, 80)
+  const apiKey = normalizeCcSwitchValue(input.apiKey, 'API key')
+  const usageScriptBase64 = normalizeCcSwitchValue(input.usageScriptBase64, 'usage template')
+  if (!Number.isInteger(input.usageAutoIntervalMinutes) || input.usageAutoIntervalMinutes < 1) {
+    throw new Error('CC Switch usage interval must be a positive integer')
+  }
+  const config = resolveCcSwitchImportConfig(input.platform, input.clientType, baseUrl)
   const entries: [string, string][] = [
     ['resource', 'provider'],
     ['app', config.app],
-    ['name', input.providerName],
-    ['homepage', input.baseUrl],
+    ['name', providerName],
+    ['homepage', new URL(baseUrl).origin],
     ['endpoint', config.endpoint],
-    ['apiKey', input.apiKey],
+    ['apiKey', apiKey],
     ['configFormat', 'json'],
+    ['enabled', 'true'],
     ['usageEnabled', 'true'],
-    ['usageScript', btoa(input.usageScript)],
-    ['usageAutoInterval', '30']
+    ['usageScript', usageScriptBase64],
+    ['usageAutoInterval', String(input.usageAutoIntervalMinutes)]
   ]
 
   if (config.model) {

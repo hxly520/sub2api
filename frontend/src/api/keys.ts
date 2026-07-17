@@ -6,6 +6,14 @@
 import { apiClient } from './client'
 import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest, PaginatedResponse } from '@/types'
 
+export interface CcSwitchUsageTemplate {
+  version: number
+  script_base64: string
+  script_sha256: string
+  endpoint_path: string
+  auto_interval_minutes: number
+}
+
 /**
  * List all API keys for current user
  * @param page - Page number (default: 1)
@@ -131,13 +139,19 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
   return update(id, { status })
 }
 
+export async function getCcSwitchUsageTemplate(): Promise<CcSwitchUsageTemplate> {
+  const { data } = await apiClient.post<CcSwitchUsageTemplate>('/keys/ccswitch-usage-template')
+  return data
+}
+
 export const keysAPI = {
   list,
   getById,
   create,
   update,
   delete: deleteKey,
-  toggleStatus
+  toggleStatus,
+  getCcSwitchUsageTemplate
 }
 
 export default keysAPI

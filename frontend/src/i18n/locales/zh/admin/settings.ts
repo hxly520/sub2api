@@ -424,7 +424,7 @@ export default {
         siteNamePlaceholder: 'Sub2API',
         siteSubtitle: '站点副标题',
         siteSubtitleHint: '显示在登录和注册页面',
-        siteSubtitlePlaceholder: '订阅转 API 转换平台',
+        siteSubtitlePlaceholder: 'API 服务管理控制台',
         apiBaseUrl: 'API 端点地址',
         apiBaseUrlHint: '用于"使用密钥"、"导入到 CC Switch"和回调地址建议，留空则使用当前站点地址',
         apiBaseUrlPlaceholder: 'https://api.example.com',
@@ -468,11 +468,11 @@ export default {
         logoReadError: '读取图片文件失败',
         homeContent: '首页内容',
         homeContentPlaceholder:
-          '在此输入首页内容，支持 Markdown & HTML 代码。如果输入的是一个链接，则会使用该链接作为 iframe 的 src 属性。',
+          '输入纯文字或受限 HTML；也可输入 HTTPS 链接以使用受限 iframe 模式。',
         homeContentHint:
-          '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。',
+          '仅保留标题、段落、列表、引用、代码和链接等静态标签。脚本、表单、输入框、图片、内联样式和事件属性会被移除。',
         homeContentIframeWarning:
-          '⚠️ iframe 模式提示：部分网站设置了 X-Frame-Options 或 CSP 安全策略，禁止被嵌入到 iframe 中。如果页面显示空白或报错，请确认目标网站允许被嵌入，或考虑使用 HTML 模式自行构建页面内容。',
+          '安全限制：远程首页只允许 HTTPS，iframe 使用空 sandbox 且不发送 Referrer，脚本、表单、下载和顶层导航不会获得授权。',
         hideCcsImportButton: '隐藏 CCS 导入按钮',
         hideCcsImportButtonHint: '启用后将在 API Keys 页面隐藏"导入 CCS"按钮'
       },

@@ -1,0 +1,25 @@
+location = /help {
+    return 301 /help/;
+}
+
+location ^~ /help/scripts/ {
+    include /etc/nginx/snippets/52token-static-security-headers.inc;
+    add_header Cache-Control "no-store" always;
+    return 410;
+}
+
+location ^~ /help/skills/ {
+    include /etc/nginx/snippets/52token-static-security-headers.inc;
+    add_header Cache-Control "no-store" always;
+    return 410;
+}
+
+location ^~ /help/ {
+    alias /home/api/sub2api-deploy/help/;
+    index index.html;
+    try_files $uri $uri/ /help/index.html;
+
+    include /etc/nginx/snippets/52token-static-security-headers.inc;
+    add_header Cache-Control "no-store, max-age=0" always;
+    add_header Pragma "no-cache" always;
+}
