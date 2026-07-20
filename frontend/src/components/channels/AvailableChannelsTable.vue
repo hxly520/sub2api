@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <div class="table-wrapper">
+    <!-- TablePageLayout uses this hook as the vertical scroll viewport. -->
     <div v-if="loading" class="card py-10 text-center">
       <Icon name="refresh" size="lg" class="inline-block animate-spin text-gray-400" />
     </div>
@@ -11,7 +12,7 @@
 
     <template v-else>
       <!-- Desktop/tablet-wide: keep the original fixed table footprint; model overflow expands vertically. -->
-      <div class="card hidden overflow-hidden lg:block">
+      <div class="hidden lg:block">
         <table class="w-full table-fixed border-collapse text-sm">
             <thead>
               <tr class="border-b border-gray-100 bg-gray-50/50 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/50 dark:text-gray-400">

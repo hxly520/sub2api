@@ -56,7 +56,7 @@ function mountTable() {
 }
 
 describe('AvailableChannelsTable', () => {
-  it('keeps the desktop table within its original footprint and renders a mobile card alternative', () => {
+  it('keeps the desktop table footprint and renders a mobile card alternative', () => {
     const wrapper = mountTable()
     const table = wrapper.get('table')
 
@@ -66,5 +66,15 @@ describe('AvailableChannelsTable', () => {
     expect(wrapper.find('article.card').exists()).toBe(true)
     expect(wrapper.text()).toContain('grok-video')
     expect(wrapper.text()).toContain('seedance-2.0')
+  })
+
+  it('mounts on the vertical scroll hook without clipping the desktop table', () => {
+    const wrapper = mountTable()
+    const desktopWrapper = wrapper.findAll('div').find((node) => node.classes().includes('lg:block'))
+
+    expect(wrapper.classes()).toContain('table-wrapper')
+    expect(desktopWrapper).toBeDefined()
+    expect(desktopWrapper?.classes()).not.toContain('card')
+    expect(desktopWrapper?.classes()).not.toContain('overflow-hidden')
   })
 })

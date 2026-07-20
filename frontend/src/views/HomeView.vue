@@ -21,7 +21,7 @@
       <nav class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4">
         <router-link to="/" class="flex min-w-0 items-center gap-3">
           <img
-            :src="siteLogo || '/logo.png'"
+            :src="siteLogo || '/logo.svg'"
             :alt="siteName"
             class="h-9 w-9 flex-none rounded-lg object-contain"
           />
