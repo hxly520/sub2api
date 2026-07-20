@@ -46,6 +46,9 @@ func (h *OpenAIGatewayHandler) reportOpenAIAccountFailoverScheduleResult(
 	requestedModel string,
 	failoverErr *service.UpstreamFailoverError,
 ) {
+	if failoverErr != nil && !failoverErr.ShouldReportAccountScheduleFailure() {
+		return
+	}
 	if failoverErr == nil || !failoverErr.FirstResponseTimeout {
 		h.reportOpenAIAccountScheduleResult(c, account, requestedModel, false, nil)
 		return

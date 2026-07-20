@@ -26,6 +26,7 @@ func TestRegisterPaymentRoutesIncludesKeyingPayWebhook(t *testing.T) {
 		&adminhandler.PaymentHandler{},
 		middleware.JWTAuthMiddleware(noAuth),
 		middleware.AdminAuthMiddleware(noAuth),
+		middleware.AuditLogMiddleware(noAuth),
 		nil,
 	)
 

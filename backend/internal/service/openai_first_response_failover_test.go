@@ -97,7 +97,7 @@ func TestOpenAIStreamPayloadCountsAsFirstResponse(t *testing.T) {
 	}
 }
 
-func TestOpenAIFirstResponseTimeout_PreambleIsWithheldAndFailsOver(t *testing.T) {
+func TestOpenAIFirstResponseTimeout_PassthroughDoesNotAbortAcceptedStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -115,7 +115,16 @@ func TestOpenAIFirstResponseTimeout_PreambleIsWithheldAndFailsOver(t *testing.T)
 	}
 	ctx := WithOpenAIFirstResponseTimeout(context.Background(), 30*time.Millisecond)
 	svc := &OpenAIGatewayService{}
+	releaseAfter := 80 * time.Millisecond
+	releaseTimer := time.AfterFunc(releaseAfter, func() {
+		_ = upstreamBody.Close()
+	})
+	t.Cleanup(func() {
+		releaseTimer.Stop()
+		_ = upstreamBody.Close()
+	})
 
+	started := time.Now()
 	result, err := svc.handleStreamingResponsePassthrough(
 		ctx,
 		resp,
@@ -125,50 +134,15 @@ func TestOpenAIFirstResponseTimeout_PreambleIsWithheldAndFailsOver(t *testing.T)
 		"gpt-5.6-luna",
 		"gpt-5.6-luna",
 	)
+	elapsed := time.Since(started)
 
 	require.NotNil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.True(t, errors.As(err, &failoverErr))
-	require.True(t, failoverErr.FirstResponseTimeout)
-	require.Equal(t, 30, failoverErr.FirstResponseTimeoutMs)
-	require.Empty(t, recorder.Body.String(), "preamble bytes must remain buffered so another account can retry")
-}
-
-func TestOpenAIFirstResponseTimeout_LargePreambleCannotAutoFlushBeforeFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-
-	// This exceeds the old 4 KiB bufio.Writer capacity but remains below the
-	// explicit bounded first-response queue.
-	largeMetadata := strings.Repeat("x", 32*1024)
-	upstreamBody := newOpenAICompatBlockingReadCloser([]byte(
-		`data: {"type":"response.created","response":{"id":"resp_large","status":"in_progress","metadata":{"padding":"` +
-			largeMetadata + `"}}}` + "\n\n",
-	))
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:       upstreamBody,
-	}
-	ctx := WithOpenAIFirstResponseTimeout(context.Background(), 30*time.Millisecond)
-	svc := &OpenAIGatewayService{}
-
-	_, err := svc.handleStreamingResponse(
-		ctx,
-		resp,
-		c,
-		&Account{ID: 102, Name: "large-preamble", Platform: PlatformOpenAI},
-		time.Now(),
-		"gpt-5.6-luna",
-		"gpt-5.6-luna",
-	)
-
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.FirstResponseTimeout)
-	require.Empty(t, recorder.Body.String(), "large structural preamble must not leak before an account retry")
+	require.False(t, failoverErr.FirstResponseTimeout)
+	require.GreaterOrEqual(t, elapsed, releaseAfter-20*time.Millisecond,
+		"an accepted upstream stream must not be canceled by the legacy first-output timeout")
+	require.Empty(t, recorder.Body.String(), "structural preamble must remain buffered when the stream ends without semantic output")
 }
 
 func TestOpenAIFirstResponseTimeout_SemanticPayloadStopsWatch(t *testing.T) {

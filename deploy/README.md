@@ -33,6 +33,7 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `nginx/52token-public-help.inc.example` | Help page locations and retired download `410` rules |
 | `nginx/52token-static-security-headers.inc.example` | CSP and security headers for public static pages |
 | `CLOUDFLARE_ABUSE_REMEDIATION.md` | Public-page security remediation and upgrade checklist |
+| `EDGE_SECURITY.md` | Reverse proxy, CDN/WAF, trusted proxy, and ingress hardening guide |
 
 ---
 

@@ -91,8 +91,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && !decision.AllowNextStage {
+		h.openAISecurityAuditError(c, decision)
 		return
 	}
 	imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
@@ -162,7 +162,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	)
 	stopJSONKeepalive := func() {}
 	defer func() { stopJSONKeepalive() }()
-
 	reqLog.Debug("openai.images.account_selecting")
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
 		requestCtx,
@@ -173,6 +172,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		parsed.RequiredCapability,
 	)
 	if err != nil {
+		if failoverClientGone(c) {
+			reqLog.Info("openai.images.account_select_aborted_client_disconnected", zap.Error(err))
+			return
+		}
 		reqLog.Warn("openai.images.account_select_failed",
 			zap.Error(err),
 		)

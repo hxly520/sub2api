@@ -206,8 +206,8 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
 		}
-		if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && decision.Blocked {
-			h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && !decision.AllowNextStage {
+			h.openAISecurityAuditError(c, decision)
 			return
 		}
 		imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
@@ -359,6 +359,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		nil,
 		service.OpenAIUpstreamTransportHTTPSSE,
 		service.OpenAIEndpointCapabilityVideos,
+		false,
 		false,
 		false,
 	)
