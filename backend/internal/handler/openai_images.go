@@ -79,9 +79,20 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 	requestModel := parsed.Model
+	ensureCompositeTargetPlatform(c, apiKey, requestModel)
+	clientRequestModel := clientRequestedModel(c, requestModel)
+	routingModel := requestModel
+	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok {
+		routingModel = resolvedModel
+	}
+	if !compositeTargetPlatformAllowed(c, apiKey, requestModel, service.PlatformOpenAI) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
 
 	reqLog = reqLog.With(
-		zap.String("model", requestModel),
+		zap.String("model", clientRequestModel),
+		zap.String("routing_model", routingModel),
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
@@ -103,14 +114,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		defer imageReleaseFunc()
 	}
 
-	if parsed.Multipart {
-		setOpsRequestContext(c, requestModel, parsed.Stream)
-	} else {
-		setOpsRequestContext(c, requestModel, parsed.Stream)
-	}
+	setOpsRequestContext(c, clientRequestModel, parsed.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestModel)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, routingModel)
 	var asyncCreation *openAIImageAsyncCreation
 	if parsed.Async {
 		var handled bool
@@ -158,7 +165,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	requestCtx := withOpenAIAccountScheduleProfile(
 		service.WithOpenAIImageGenerationIntent(c.Request.Context()),
 		c,
-		requestModel,
+		routingModel,
 	)
 	stopJSONKeepalive := func() {}
 	defer func() { stopJSONKeepalive() }()
@@ -167,7 +174,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		requestCtx,
 		apiKey.GroupID,
 		sessionHash,
-		requestModel,
+		routingModel,
 		nil,
 		parsed.RequiredCapability,
 	)
@@ -179,7 +186,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		reqLog.Warn("openai.images.account_select_failed",
 			zap.Error(err),
 		)
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, clientRequestModel, routingModel, service.PlatformOpenAI)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -191,7 +198,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 	if selection == nil || selection.Account == nil {
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, clientRequestModel, routingModel, service.PlatformOpenAI)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimited(c)
 		}
@@ -221,7 +228,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	var mediaHold *service.MediaBalanceHoldCommand
 	mediaHoldTransferred := false
 	if h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
-		mappedModel := requestModel
+		mappedModel := routingModel
 		if value := strings.TrimSpace(channelMapping.MappedModel); value != "" {
 			mappedModel = value
 		}
@@ -238,11 +245,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			requestCtx,
 			apiKey,
 			subject.UserID,
-			requestModel,
+			clientRequestModel,
 			upstreamModel,
 			billingSize,
 			parsed.N,
-			channelMapping.ToUsageFields(requestModel, upstreamModel),
+			clientRequestedUsageFields(c, channelMapping, routingModel, upstreamModel),
 		)
 		if pricingErr != nil {
 			reqLog.Warn("openai.images.capture_pricing_snapshot_failed", zap.Error(pricingErr))
@@ -322,7 +329,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			var imageUpstreamErr *service.OpenAIImagesUpstreamError
 			if errors.As(err, &imageUpstreamErr) {
 				retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-				h.reportOpenAIAccountScheduleResult(c, account, requestModel, !retryableServerError, nil)
+				h.reportOpenAIAccountScheduleResult(c, account, routingModel, !retryableServerError, nil)
 				logEvent := "openai.images.upstream_user_error"
 				if retryableServerError {
 					logEvent = "openai.images.upstream_server_error_after_flush"
@@ -339,7 +346,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				mediaHoldTransferred = mediaHold != nil
-				h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+				h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 				if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 					reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 						zap.Int64("account_id", account.ID),
@@ -357,7 +364,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				h.handleFailoverExhausted(c, failoverErr, streamStarted)
 				return
 			}
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false
 			if !upstreamErrorAlreadyCommunicated {
@@ -382,9 +389,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 			h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 		}
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, result.FirstTokenMs)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, result.FirstTokenMs)
 	} else {
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, nil)
 	}
 
 	userAgent := c.GetHeader("User-Agent")
@@ -427,7 +434,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				return mediaHold.RequestID
 			}(),
-			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, routingModel, upstreamModel),
 		})
 	}); err != nil {
 		logger.L().With(
@@ -435,7 +442,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			zap.Int64("user_id", subject.UserID),
 			zap.Int64("api_key_id", apiKey.ID),
 			zap.Any("group_id", apiKey.GroupID),
-			zap.String("model", requestModel),
+			zap.String("model", clientRequestModel),
 			zap.Int64("account_id", account.ID),
 		).Error("openai.images.record_usage_failed", zap.Error(err))
 	}

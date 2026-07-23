@@ -159,7 +159,8 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 			releaseMediaBalanceHold(h, mediaHold)
 		}
 	}()
-	requestModel := strings.TrimSpace(parsed.Model)
+	routingModel := strings.TrimSpace(parsed.Model)
+	requestModel := clientRequestedModel(c, routingModel)
 	sessionHash := service.OpenAIImageTaskSessionHash(state.publicTaskID)
 	if state.resumedTask != nil && state.resumedTask.AccountID > 0 {
 		if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionHash, state.resumedTask.AccountID); err != nil {
@@ -171,13 +172,13 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	requestCtx := withOpenAIAccountScheduleProfile(
 		service.WithOpenAIImageGenerationIntent(c.Request.Context()),
 		c,
-		requestModel,
+		routingModel,
 	)
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
 		requestCtx,
 		apiKey.GroupID,
 		sessionHash,
-		requestModel,
+		routingModel,
 		nil,
 		service.OpenAIImagesCapabilityAsync,
 	)
@@ -204,12 +205,12 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		return
 	}
 
-	mappedModel := requestModel
+	mappedModel := routingModel
 	if value := strings.TrimSpace(channelMapping.MappedModel); value != "" {
 		mappedModel = value
 	}
 	upstreamModel := account.GetMappedModel(mappedModel)
-	usageFields := channelMapping.ToUsageFields(requestModel, upstreamModel)
+	usageFields := clientRequestedUsageFields(c, channelMapping, routingModel, upstreamModel)
 	billingInputSize := strings.TrimSpace(parsed.ImageSize)
 	if billingInputSize == "" {
 		billingInputSize = strings.TrimSpace(parsed.Size)
@@ -341,14 +342,14 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	if forwardErr != nil {
 		var upstreamUserErr *service.OpenAIImagesUpstreamError
 		if errors.As(forwardErr, &upstreamUserErr) {
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
+			h.reportOpenAIAccountScheduleResult(c, account, routingModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
 			markOpenAIImageTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
 			return
 		}
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(forwardErr, &failoverErr) {
 			mediaHoldTransferred = mediaHold != nil
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				c.Abort()
 				return
@@ -358,7 +359,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 		if !openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, forwardErr) {
 			h.ensureForwardErrorResponse(c, false)
 		}
@@ -371,7 +372,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		return
 	}
 	mediaHoldTransferred = mediaHold != nil
-	h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, result.FirstTokenMs)
+	h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, result.FirstTokenMs)
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
 	if status == "" || status == service.MediaGenerationStatusCreating {
 		status = service.MediaGenerationStatusPending

@@ -1,0 +1,19 @@
+# Reference default virtual hosts. Replace the distribution's default server
+# blocks rather than adding duplicate `default_server` listeners.
+# This prevents a request with an unknown Host/SNI from reaching Sub2API.
+
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    # Nginx >= 1.19.4 can reject an unknown TLS SNI before a certificate is
+    # selected. If unavailable, use the site's existing catch-all certificate
+    # and `return 444` instead.
+    ssl_reject_handshake on;
+}

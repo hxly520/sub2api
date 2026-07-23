@@ -1,0 +1,89 @@
+# Public API origin for api.52token.org.
+# Install cloudflare-real-ip.conf.example separately in conf.d first.
+# The API location intentionally remains a catch-all so OpenAI, Anthropic,
+# Gemini, Codex, OpenClaw, payment callbacks and future official routes keep
+# their existing paths. Cloudflare WAF/Cache Rules provide the public edge
+# policy; do not narrow this location without a route contract review.
+
+server {
+    listen 80;
+    server_name api.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+
+    ssl_certificate     /etc/nginx/cert/52token.org.pem;
+    ssl_certificate_key /etc/nginx/cert/52token.org.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    underscores_in_headers on;
+    client_max_body_size 256m;
+    client_body_timeout 600s;
+    send_timeout 1800s;
+
+    # Preserve the static public/help remediation already used on this host.
+    include /etc/nginx/snippets/52token-public-root.inc;
+    include /etc/nginx/snippets/52token-public-help.inc;
+
+    # The workbench is the only browser origin that needs cross-origin API
+    # access. Keep this allowlist local to api.52token.org.
+    set $sub2api_cors_origin "";
+    if ($http_origin = "https://image.52token.org") {
+        set $sub2api_cors_origin $http_origin;
+    }
+    add_header Access-Control-Allow-Origin $sub2api_cors_origin always;
+    add_header Access-Control-Expose-Headers "X-Request-Id, X-Client-Request-Id, Request-Id, OpenAI-Processing-Ms, X-Accel-Buffering" always;
+    add_header Vary Origin always;
+
+    error_page 418 = @sub2api_cors_preflight;
+    if ($request_method = OPTIONS) { return 418; }
+
+    location @sub2api_cors_preflight {
+        add_header Access-Control-Allow-Origin $sub2api_cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, X-API-Key, X-Goog-API-Key, X-Session-ID, X-Sub2API-Group-ID, Anthropic-Version, Anthropic-Beta, OpenAI-Organization, OpenAI-Project" always;
+        add_header Access-Control-Expose-Headers "X-Request-Id, X-Client-Request-Id, Request-Id, OpenAI-Processing-Ms, X-Accel-Buffering" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header Vary Origin always;
+        return 204;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # $remote_addr is the validated client address after realip. The
+        # direct peer is separately checked by $sub2api_cloudflare_peer.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP $remote_addr;
+        proxy_set_header X-Session-ID $http_x_session_id;
+        proxy_set_header X-Sub2API-Group-ID $http_x_sub2api_group_id;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $sub2api_connection_upgrade;
+
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+        proxy_max_temp_file_size 0;
+        gzip off;
+        tcp_nodelay on;
+        add_header X-Accel-Buffering no always;
+        add_header Cache-Control "no-store, no-transform" always;
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 1800s;
+        proxy_read_timeout 1800s;
+    }
+}

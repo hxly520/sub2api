@@ -78,10 +78,12 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	requestModel := strings.TrimSpace(parsed.Model)
+	routingModel := strings.TrimSpace(parsed.Model)
+	requestModel := clientRequestedModel(c, routingModel)
 	requestFingerprint := service.HashMediaGenerationRequestFingerprint(parsed.Endpoint, body)
 	reqLog = reqLog.With(
 		zap.String("model", requestModel),
+		zap.String("routing_model", routingModel),
 		zap.String("endpoint", parsed.Endpoint),
 		zap.String("upstream_path", parsed.UpstreamPath),
 		zap.Bool("generation", parsed.GenerationRequest),
@@ -223,8 +225,8 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
 	channelMapping := service.ChannelMappingResult{}
-	if requestModel != "" {
-		channelMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestModel)
+	if routingModel != "" {
+		channelMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, routingModel)
 	}
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -288,13 +290,20 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task is unavailable")
 			return
 		}
-		parsed.Model = strings.TrimSpace(storedTask.UpstreamModel)
-		if parsed.Model == "" {
-			parsed.Model = strings.TrimSpace(storedTask.RequestedModel)
-		}
 		requestModel = strings.TrimSpace(storedTask.RequestedModel)
 		if requestModel == "" {
 			requestModel = strings.TrimSpace(storedTask.Model)
+		}
+		routingModel = strings.TrimSpace(storedTask.Model)
+		if routingModel == "" {
+			routingModel = strings.TrimSpace(storedTask.UpstreamModel)
+		}
+		if routingModel == "" {
+			routingModel = requestModel
+		}
+		parsed.Model = strings.TrimSpace(storedTask.UpstreamModel)
+		if parsed.Model == "" {
+			parsed.Model = routingModel
 		}
 		if err := parsed.UseUpstreamTaskIDAtEndpoint(providerTaskID, storedTask.UpstreamEndpoint); err != nil {
 			reqLog.Warn("openai.videos.stored_task_upstream_id_invalid", zap.String("request_id", clientTaskID), zap.Error(err))
@@ -348,14 +357,14 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 	}
 
-	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
+	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, routingModel)
 	routingStart := time.Now()
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 		requestCtx,
 		apiKey.GroupID,
 		"",
 		sessionHash,
-		requestModel,
+		routingModel,
 		nil,
 		service.OpenAIUpstreamTransportHTTPSSE,
 		service.OpenAIEndpointCapabilityVideos,
@@ -365,7 +374,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	)
 	if err != nil {
 		reqLog.Warn("openai.videos.account_select_failed", zap.Error(err))
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, routingModel, service.PlatformOpenAI)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -415,7 +424,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video task routing is unavailable")
 			return
 		}
-		mappedModel := requestModel
+		mappedModel := routingModel
 		if value := strings.TrimSpace(channelMapping.MappedModel); value != "" {
 			mappedModel = value
 		}
@@ -476,7 +485,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			UserID:              subject.UserID,
 			AccountID:           account.ID,
 			GroupID:             apiKey.GroupID,
-			Model:               requestModel,
+			Model:               routingModel,
 			RequestedModel:      requestModel,
 			UpstreamModel:       upstreamModel,
 			Endpoint:            parsed.Endpoint,
@@ -563,7 +572,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	if err != nil {
 		var upstreamUserErr *service.OpenAIImagesUpstreamError
 		if errors.As(err, &upstreamUserErr) {
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
+			h.reportOpenAIAccountScheduleResult(c, account, routingModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
 			reqLog.Warn("openai.videos.upstream_user_error",
 				zap.Int64("account_id", account.ID),
 				zap.Int("status_code", upstreamUserErr.StatusCode),
@@ -577,7 +586,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(err, &failoverErr) && parsed.GenerationRequest {
 			mediaHoldTransferred = true
-			h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				c.Abort()
 				return
@@ -589,7 +598,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			writeOpenAIVideoSafeUpstreamError(c)
 			return
 		}
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, false, nil)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 		if c.Writer.Size() == writerSizeBeforeForward {
 			writeOpenAIVideoSafeUpstreamError(c)
 		} else {
@@ -600,9 +609,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	}
 
 	if result != nil {
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, result.FirstTokenMs)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, result.FirstTokenMs)
 	} else {
-		h.reportOpenAIAccountScheduleResult(c, account, requestModel, true, nil)
+		h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, nil)
 	}
 	if parsed.GenerationRequest {
 		if result == nil || strings.TrimSpace(result.ResponseID) == "" || len(result.ResponseBody) == 0 {
@@ -626,7 +635,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			UserID:              subject.UserID,
 			AccountID:           account.ID,
 			GroupID:             apiKey.GroupID,
-			Model:               requestModel,
+			Model:               routingModel,
 			RequestedModel:      requestModel,
 			UpstreamModel:       upstreamModel,
 			Endpoint:            parsed.Endpoint,

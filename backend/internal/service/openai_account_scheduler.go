@@ -2343,7 +2343,7 @@ func (s *OpenAIGatewayService) HasOpenAIAlternativeAccountForCapability(
 		if !account.IsSchedulable() || account.Platform != platform || !account.IsOpenAICompatible() {
 			continue
 		}
-		if s.isOpenAIAccountRuntimeBlocked(account) {
+		if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel) || s.isOpenAIProxyStreamQuarantined(account) {
 			continue
 		}
 		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
@@ -2363,7 +2363,8 @@ func (s *OpenAIGatewayService) HasOpenAIAlternativeAccountForCapability(
 		}
 		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
 		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, groupID, platform, requestedModel, requireCompact, requiredCapability)
-		if fresh == nil || !openAIStickyAccountMatchesGroup(fresh, groupID) || s.isOpenAIAccountRuntimeBlocked(fresh) {
+		if fresh == nil || !openAIStickyAccountMatchesGroup(fresh, groupID) ||
+			s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel) || s.isOpenAIProxyStreamQuarantined(fresh) {
 			continue
 		}
 		if !s.isOpenAIAccountTransportCompatible(fresh, requiredTransport) {
@@ -2435,6 +2436,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonWithRunt
 		}
 		if checkAccountRuntimeBlock && s.service.isOpenAIAccountRuntimeBlocked(account) {
 			return false, "runtime_blocked"
+		}
+		if s.service.isOpenAIProxyStreamQuarantined(account) {
+			return false, "proxy_stream_quarantined"
 		}
 	}
 	// Quota auto-pause must be evaluated during the initial filter too. Without it the

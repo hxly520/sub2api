@@ -1,0 +1,88 @@
+# Workbench plus image/video generation API origin for image.52token.org.
+# The workbench remains on 127.0.0.1:15731; generation and read-only task
+# routes go to Sub2API on 127.0.0.1:8080. Completed media never downloads from
+# this host: clients receive video.52token.org Worker URLs instead.
+# Install cloudflare-real-ip.conf.example separately in conf.d first.
+
+server {
+    listen 80;
+    server_name image.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name image.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+
+    ssl_certificate     /etc/nginx/cert/52token.org.pem;
+    ssl_certificate_key /etc/nginx/cert/52token.org.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /home/api/sub2api-deploy/images;
+    index index.html;
+    client_max_body_size 60m;
+    client_body_timeout 600s;
+    send_timeout 3600s;
+    proxy_connect_timeout 30s;
+    proxy_send_timeout 3600s;
+    proxy_read_timeout 3600s;
+    access_log off;
+
+    # Never let the image hostname become a second platform/API hostname.
+    # This regex is intentionally before the workbench fallback and before
+    # the API routes below; it does not overlap with generation endpoints.
+    location ~ ^/(api|admin|help|backend-api|openai|anthropic|dashboard|settings|users|accounts|groups|channels|v1/responses|responses|chat/completions)(/|$) {
+        return 404;
+    }
+
+    # Images, Gemini model calls, video creation and read-only task/content
+    # queries. The application still performs authentication and model/group
+    # capability checks; Nginx only preserves the domain boundary and methods.
+    location ~ ^/(v1/(images/(generations|edits)|models|videos|video/generations|contents/generations/tasks)|v1beta/models|images/(generations|edits)|videos|video/generations|contents/generations/tasks)(/|$) {
+        limit_except GET HEAD POST OPTIONS { deny all; }
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP $remote_addr;
+        proxy_set_header X-Session-ID $http_x_session_id;
+        proxy_set_header X-Sub2API-Group-ID $http_x_sub2api_group_id;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $sub2api_connection_upgrade;
+
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+        proxy_max_temp_file_size 0;
+        gzip off;
+        tcp_nodelay on;
+        add_header X-Accel-Buffering no always;
+        add_header Cache-Control "no-store, no-transform" always;
+    }
+
+    # Everything else is the existing workbench frontend. Its internal API
+    # paths are deliberately blocked above, so a bad path cannot expose the
+    # platform console through this hostname.
+    location / {
+        proxy_pass http://127.0.0.1:15731;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $sub2api_connection_upgrade;
+        proxy_buffering off;
+        proxy_cache off;
+    }
+}

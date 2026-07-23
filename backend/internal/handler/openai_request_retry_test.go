@@ -52,6 +52,19 @@ func TestOpenAIMediaCreationHandlersDoNotUseAutomaticReplayBudget(t *testing.T) 
 	}
 }
 
+func TestOpenAIMediaCompositeModelsKeepRoutingAndBillingAttributionSeparate(t *testing.T) {
+	imageSource, err := os.ReadFile("openai_image_tasks.go")
+	require.NoError(t, err)
+	require.Contains(t, string(imageSource), "requestModel := clientRequestedModel(c, routingModel)")
+	require.Regexp(t, `SelectAccountWithSchedulerForImages\([\s\S]*?sessionHash,\s+routingModel,`, string(imageSource))
+
+	videoSource, err := os.ReadFile("openai_videos.go")
+	require.NoError(t, err)
+	require.Contains(t, string(videoSource), "requestModel := clientRequestedModel(c, routingModel)")
+	require.Regexp(t, `SelectAccountWithSchedulerForCapability\([\s\S]*?sessionHash,\s+routingModel,`, string(videoSource))
+	require.Regexp(t, `Model:\s+routingModel,\s+RequestedModel:\s+requestModel,`, string(videoSource))
+}
+
 func TestOpenAIPoolTextHandlersReleaseFailedStickySession(t *testing.T) {
 	for _, file := range []string{
 		"openai_gateway_handler.go",

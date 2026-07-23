@@ -45,6 +45,12 @@ systemctl reload nginx
 
 ## Cloudflare
 
+For `52token.org`, do not add this as a third custom rule. The exact callback
+exception is already part of the first consolidated Skip rule in
+[`CLOUDFLARE_52TOKEN.md`](CLOUDFLARE_52TOKEN.md); the China block rule must remain
+immediately after it. The expression below is the narrow provider requirement
+for installations that do not use that consolidated policy.
+
 Create a narrow rule for the API hostname and exact callback path:
 
 ```text

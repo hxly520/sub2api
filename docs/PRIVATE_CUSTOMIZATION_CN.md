@@ -15,7 +15,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前正式基线：官方 Release `v0.1.163`（release commit `d0bdd7e771636a8d315f542cafd39484f39bd60c`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前正式基线：官方 Release `v0.1.164`（release commit `cd8bb98c44303b2c8f04c0da340447c992f0cb7d`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -54,6 +54,12 @@
 | 故障 pool 逃逸 | 5xx、524、流读取失败或失败终态只在绑定仍指向故障账号时原子解除当前会话粘性，并软降权 2 分钟；不全局封禁，单候选仍可回落 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`repository/gateway_cache.go`、`handler/openai_account_schedule_profile.go` |
 | 首响应记录 | `first_token_ms` 从最终成功 attempt 发出上游请求起，记录收到 2xx 响应头的最早真实确认时间；调度、排队和失败 attempt 不计入 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*`、`service/openai_first_token_timing.go` |
 | 运行时短熔断 | 只隔离明确异常的账号/能力组合，不能因为用户取消或媒体长任务等待永久封禁账号 | `openai_account_runtime_block_fastpath.go` |
+
+52Token 的固定运行策略是 `openai_advanced_scheduler_enabled=true`、
+`openai_advanced_scheduler_sticky_weighted_enabled=false`。官方粘性加权模式继续保留
+用于通用产品兼容，但本部署不把 previous/session affinity bonus 叠加进账号分数；
+新会话直接按智能调度综合分选择，已有会话绑定只承担缓存亲和，并在上述充分 TTFT
+证据成立时原子迁移到更快账号。未来官方升级不得把粘性加权默认打开。
 
 不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时，新会话回到官方兼容选择流程；独立的 `sticky_escape_enabled` 只允许上述有充分成功样本且可原子改绑的性能迁移，关闭该配置即可恢复硬粘性。
 
@@ -95,6 +101,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 用户仅看到本地公开任务 ID。供应商任务 ID、原始响应地址和账号 Base URL只保存在服务端受控字段。
 - 完成后的图片/视频 URL 由 `gateway.video_proxy` 生成短期加密地址；Edge 模式实现位于 `deploy/video-edge-worker/`，Nginx 下载域名示例位于 `deploy/nginx/video.52token.org.conf.example`。
 - Edge Worker 只允许 `/v1/video-content/*` 和 `/v1/image-content/*`，支持 `GET`、`HEAD`、Range 和有限跳转；其他路径必须拒绝。
+- 52Token 的 `image` 橙云、`api` 长流式入口、`long` 退役、两条 WAF、Cache Bypass 和源站隔离步骤统一记录在 `deploy/CLOUDFLARE_52TOKEN.md`；不要再从历史聊天规则拼接生产表达式。
 
 视频创建成功返回任务后，客户端应长轮询同一个任务。轮询中断只暂停查询，不得重新创建。只有终态成功且媒体结果可用时记录一次 usage；重复查询和重复下载不得再次计费。
 
@@ -129,14 +136,15 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.163 合并兼容结论
+### 5.0 v0.1.164 合并兼容结论
 
-- 基线只合入官方 `v0.1.163` Release tree，包含分组 reasoning effort 策略、Responses 客户端工具、Grok 协议与错误兼容、调度快照和后台交互修复；不合入 tag 之后的未发布 `main`。
+- 基线只合入官方 `v0.1.164` Release tree，不合入 tag 之后的未发布 `main`。本版增加 composite group/route、Ollama Cloud 用量刷新、移动支付宝预创建深链，并修复 Codex identity 导入、具体 GPT-5.6 测试模型、OpenAI 输入规范化、Composite Grok/视频路由和代理断流隔离。
 - 保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
-- 新会话只在近似评分内分流；已有粘性会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
+- 账号选择使用高级智能调度但关闭粘性加权。新会话按综合分选择；已有会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
 - OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和失败终态不自动重放。图片和视频创建继续严格一次提交。
-- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.163` 候选；生产切换前继续保留 `v0.1.162` 不可变回滚镜像。
+- Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
+- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.164` 候选；生产切换前继续保留当前 `v0.1.162` 不可变回滚镜像。
 
 ### 5.1 升级前盘点
 
@@ -179,8 +187,9 @@ go test -tags=unit ./internal/server -count=1
 
 cd ../frontend
 pnpm install --frozen-lockfile
-pnpm run type-check
-pnpm run test:unit
+pnpm run lint:check
+pnpm run typecheck
+pnpm run test:run
 pnpm run build
 ```
 

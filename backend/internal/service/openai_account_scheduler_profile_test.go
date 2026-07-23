@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -382,6 +383,51 @@ func TestOpenAIGatewayServiceHasAlternativeExcludesRuntimeBlocked(t *testing.T) 
 
 	hasAlternative, err := svc.HasOpenAIAlternativeAccountForCapability(
 		context.Background(), &groupID, "gpt-5.6-luna", healthy.ID, nil,
+		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityChatCompletions,
+		false, PlatformOpenAI,
+	)
+
+	require.NoError(t, err)
+	require.False(t, hasAlternative)
+}
+
+func TestOpenAIGatewayServiceHasAlternativeExcludesModelRuntimeBlocked(t *testing.T) {
+	groupID := int64(9750)
+	selected := Account{ID: 9751, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}}
+	blocked := Account{ID: 9752, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}}
+	svc := &OpenAIGatewayService{
+		accountRepo: groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{selected, blocked}}},
+	}
+	svc.recordOpenAIAccountModelTransientFailure(&blocked, "gpt-5.6-luna", time.Now())
+	svc.recordOpenAIAccountModelTransientFailure(&blocked, "gpt-5.6-luna", time.Now())
+
+	hasAlternative, err := svc.HasOpenAIAlternativeAccountForCapability(
+		context.Background(), &groupID, "gpt-5.6-luna", selected.ID, nil,
+		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityChatCompletions,
+		false, PlatformOpenAI,
+	)
+
+	require.NoError(t, err)
+	require.False(t, hasAlternative)
+}
+
+func TestOpenAIGatewayServiceHasAlternativeExcludesProxyStreamQuarantined(t *testing.T) {
+	groupID := int64(9760)
+	proxyID := int64(9769)
+	selected := Account{ID: 9761, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}}
+	quarantined := Account{ID: 9762, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}, ProxyID: &proxyID}
+	svc := &OpenAIGatewayService{
+		accountRepo: groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{selected, quarantined}}},
+		cfg: &config.Config{Gateway: config.GatewayConfig{OpenAIProxyStreamCircuit: config.GatewayOpenAIProxyStreamCircuitConfig{
+			FailureThreshold: 1,
+			WindowSeconds:    60,
+			TTLSeconds:       60,
+		}}},
+	}
+	svc.recordOpenAIProxyStreamDisconnect(&quarantined, errors.New("unexpected EOF"), "req-test")
+
+	hasAlternative, err := svc.HasOpenAIAlternativeAccountForCapability(
+		context.Background(), &groupID, "gpt-5.6-luna", selected.ID, nil,
 		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityChatCompletions,
 		false, PlatformOpenAI,
 	)

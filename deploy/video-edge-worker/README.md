@@ -34,3 +34,7 @@ four internal redirects. Image tokens may target a public HTTP URL for legacy
 providers; video targets remain HTTPS-only. It returns only allowlisted media
 headers and generic errors, so upstream response bodies and redirect locations
 never reach users.
+
+For the production DNS roles, exact Worker Routes, consolidated WAF rules,
+cache bypass rule, Nginx origin files, `image` orange-cloud migration, and
+`long` retirement order, use [`../CLOUDFLARE_52TOKEN.md`](../CLOUDFLARE_52TOKEN.md).

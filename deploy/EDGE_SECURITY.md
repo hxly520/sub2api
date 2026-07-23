@@ -182,3 +182,11 @@ cannot absorb volumetric attacks, TLS floods, bandwidth saturation, or a large
 distributed source set. Those require upstream network capacity, CDN/WAF
 filtering, provider firewall rules, and origin isolation. Avoid high-cardinality
 metrics or per-request database security logs during rejection storms.
+
+## 52Token deployment profile
+
+The concrete `52token.org` domain split, exact Cloudflare Skip/Block expressions,
+cache bypass rule, Worker routes, `image` orange-cloud migration, `long` retirement,
+Nginx examples, loopback Docker binding, validation order, and rollback procedure
+are maintained in [`CLOUDFLARE_52TOKEN.md`](CLOUDFLARE_52TOKEN.md). Treat that file
+as one policy set; do not merge individual expressions from older chat messages.
