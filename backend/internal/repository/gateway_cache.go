@@ -19,6 +19,15 @@ var compareAndDeleteSessionAccountScript = redis.NewScript(`
 	return 0
 `)
 
+var compareAndSetSessionAccountScript = redis.NewScript(`
+	local current = redis.call('GET', KEYS[1])
+	if current == ARGV[1] then
+		redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		return 1
+	end
+	return 0
+`)
+
 type gatewayCache struct {
 	rdb *redis.Client
 }
@@ -72,7 +81,24 @@ func (c *gatewayCache) CompareAndDeleteSessionAccountID(ctx context.Context, gro
 	return deleted > 0, nil
 }
 
+func (c *gatewayCache) CompareAndSetSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID, newAccountID int64, ttl time.Duration) (bool, error) {
+	key := buildSessionKey(groupID, sessionHash)
+	updated, err := compareAndSetSessionAccountScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key},
+		expectedAccountID,
+		newAccountID,
+		ttl.Milliseconds(),
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return updated > 0, nil
+}
+
 var _ service.ConditionalGatewayCache = (*gatewayCache)(nil)
+var _ service.ConditionalRebindGatewayCache = (*gatewayCache)(nil)
 
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)

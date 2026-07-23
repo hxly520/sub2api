@@ -380,6 +380,12 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs != 15000 {
 		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeTTFTMs = %d, want 15000", cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs)
 	}
+	if cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs != 1000 {
+		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs = %d, want 1000", cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs)
+	}
+	if cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio != 1.75 {
+		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio = %v, want 1.75", cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio)
+	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate != 0.5 {
 		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeErrorRate = %v, want 0.5", cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate)
 	}
@@ -2189,6 +2195,21 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "sticky_escape_ttft_ms 必须为正数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 0 },
 			wantErr: "gateway.openai_scheduler.sticky_escape_ttft_ms",
+		},
+		{
+			name:    "sticky_escape_min_ttft_delta_ms 必须为正数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs = 0 },
+			wantErr: "gateway.openai_scheduler.sticky_escape_min_ttft_delta_ms",
+		},
+		{
+			name:    "sticky_escape_min_ttft_ratio 必须大于 1",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio = 1 },
+			wantErr: "gateway.openai_scheduler.sticky_escape_min_ttft_ratio",
+		},
+		{
+			name:    "sticky_escape_min_ttft_ratio 不能为 Inf",
+			mutate:  func(c *Config) { c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio = math.Inf(1) },
+			wantErr: "gateway.openai_scheduler.sticky_escape_min_ttft_ratio",
 		},
 		{
 			name:    "sticky_escape_error_rate 不能小于 0",

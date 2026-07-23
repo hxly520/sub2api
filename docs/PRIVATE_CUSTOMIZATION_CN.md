@@ -15,7 +15,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前正式基线：官方 Release `v0.1.155`（tag `41cec0db059ffb82d0efdcfcf07a24ab51fbfe97`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前正式基线：官方 Release `v0.1.163`（release commit `d0bdd7e771636a8d315f542cafd39484f39bd60c`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -47,14 +47,15 @@
 
 | 功能 | 当前行为 | 主要代码入口 |
 | --- | --- | --- |
-| 会话粘性 | 同一会话优先保持可调度账号，减少缓存失效 | `backend/internal/service/openai_account_scheduler.go`、`repository/scheduler_cache.go` |
-| 速度画像 | 按账号、模型族、入站端点和上游端点维护 TTFT/错误率画像，避免 Chat 样本污染 Responses | `openai_account_scheduler.go`、`handler/openai_account_schedule_profile.go` |
-| 快账号优先 | 在分组、模型、传输协议、能力和并发限制内综合 TTFT、错误率、负载、队列和配额余量 | `openai_account_scheduler.go` |
+| 会话粘性 | 同一会话优先保持可调度账号，减少缓存失效；轻微速度波动和瞬时并发不会触发改绑 | `backend/internal/service/openai_account_scheduler.go`、`repository/scheduler_cache.go` |
+| 速度画像 | 按账号、模型族、入站端点和上游端点维护成功 TTFT/错误率画像，避免失败样本、Chat 和 Responses 互相污染 | `openai_account_scheduler.go`、`handler/openai_account_schedule_profile.go` |
+| 快账号优先 | 新会话在分组、模型、传输协议、能力和并发限制内优先综合分最高账号；只有分差不超过 2% 时才在近似账号间分流 | `openai_account_scheduler.go` |
+| 粘性性能迁移 | 当前与候选在同模型/端点/协议下各至少有 3 次成功 TTFT，且候选至少快 1000ms、当前至少慢 1.75 倍时才迁移；先占候选槽位，再用 Redis CAS 原子改绑，CAS 不可用或冲突时保持原账号 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`repository/gateway_cache.go` |
 | 故障 pool 逃逸 | 5xx、524、流读取失败或失败终态只在绑定仍指向故障账号时原子解除当前会话粘性，并软降权 2 分钟；不全局封禁，单候选仍可回落 | `openai_account_scheduler.go`、`openai_sticky_compat.go`、`repository/gateway_cache.go`、`handler/openai_account_schedule_profile.go` |
 | 首响应记录 | `first_token_ms` 从最终成功 attempt 发出上游请求起，记录收到 2xx 响应头的最早真实确认时间；调度、排队和失败 attempt 不计入 | `handler/openai_first_response_failover.go`、`service/openai_first_response_*`、`service/openai_first_token_timing.go` |
 | 运行时短熔断 | 只隔离明确异常的账号/能力组合，不能因为用户取消或媒体长任务等待永久封禁账号 | `openai_account_runtime_block_fastpath.go` |
 
-不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时应回到官方兼容选择流程，而不是进入另一套隐式实验策略。
+不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时，新会话回到官方兼容选择流程；独立的 `sticky_escape_enabled` 只允许上述有充分成功样本且可原子改绑的性能迁移，关闭该配置即可恢复硬粘性。
 
 同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、`5xx/524`、流中断和 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。pool 上游发生这些故障后，当前请求返回真实错误；下一次客户端重试会在绑定仍指向故障账号时原子解除旧粘性，并在 2 分钟软降权窗口内优先选择健康账号。并发请求已经写入的新绑定不会被旧失败请求删除。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
 
@@ -80,6 +81,8 @@ TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系
 - 计费：`service/openai_gateway_usage.go`、`billing_service.go`、媒体定价快照。
 
 同步和异步都是显式模式。同步失败不得自动改成异步再创建一次；异步创建必须使用幂等键，后续只查询已有任务。返回 URL 必须改写为平台代理地址或转换为可直接交付的图片数据。
+
+Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.image_nonstream_keepalive_interval` 发送前导空白保活，默认 `0` 表示关闭，生产建议先以 `10` 秒完成模拟慢请求回归再开启；Gemini 工作台固定调用 `streamGenerateContent?alt=sse`，服务端和客户端都必须忽略 `:` SSE 注释心跳并聚合分块图片。第三方客户端若继续调用非流式 `generateContent`，不能承诺超过边缘无响应超时的长任务。
 
 余额计费用户在调用上游前按创建时渠道价格快照冻结预计费用，原子地从可用余额转入冻结余额；并发创建不能透支。余额不足必须在上游请求前返回 `402`。成功 usage 与冻结结算在同一数据库事务中完成并退还差额；明确失败立即释放，状态不明的媒体创建不得重放，过期时只有 `capture_pending` 或成功任务证据才能扣费，其余退款。订阅分组和 simple mode 保持原有计费行为。
 
@@ -126,14 +129,14 @@ TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.155 合并兼容结论
+### 5.0 v0.1.163 合并兼容结论
 
-- 合入官方 Grok 健康监控、Web SSO 批量导入、主机日志过滤、可选 Server-Timing、免费配额估算和 OpenAI HTTP/2 keep-alive。
-- 合入官方 Codex API Key manifest 代理与故障转移、原生 Responses 工具 namespace、Responses Lite 图像工具、非流式图片保活和流式图片终态修复。
-- 保留私有 Codex APIKey-only 合法空清单兜底、TTFT 口径、协议/缓存兼容、媒体余额预留、统一视频接口、平台代理 URL 和 KeyingPay V2。
-- 官方长上下文计费改为账号级开关并默认关闭；私有渠道显式区间定价继续优先，避免重复阶梯计费。
-- 文本模糊失败不自动重放；故障 pool 只解除当前会话粘性并短时软降权。图片和视频创建继续严格一次提交。
-- Release tag 内 `backend/cmd/server/VERSION` 仍为 `0.1.153`，本候选修正为 `0.1.155`；构建必须显式传入 `VERSION=0.1.155`，不合并 tag 之后的未发布 `main` 提交。
+- 基线只合入官方 `v0.1.163` Release tree，包含分组 reasoning effort 策略、Responses 客户端工具、Grok 协议与错误兼容、调度快照和后台交互修复；不合入 tag 之后的未发布 `main`。
+- 保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
+- 新会话只在近似评分内分流；已有粘性会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
+- OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
+- 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和失败终态不自动重放。图片和视频创建继续严格一次提交。
+- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.163` 候选；生产切换前继续保留 `v0.1.162` 不可变回滚镜像。
 
 ### 5.1 升级前盘点
 
@@ -189,8 +192,8 @@ pnpm run build
 | --- | --- |
 | OpenAI | Responses、Chat Completions、SSE、非流式、工具调用、缓存 usage、Embeddings、账号错误 |
 | Anthropic | Messages、thinking、tool_use/tool_result、cache creation/read、流终态 |
-| Gemini | native `v1beta`、兼容 Chat/Messages、模型列表 |
-| 调度 | 分组隔离、模型/端点画像隔离、粘性、快账号优先、明确拒绝切号、模糊失败不重放 |
+| Gemini | native `v1beta`、兼容 Chat/Messages、模型列表、SSE 注释心跳、分块图片聚合和流终态 |
+| 调度 | 分组隔离、模型/端点/协议画像隔离、近似评分分流、粘性、显著快账号 CAS 迁移、CAS 冲突回退、明确拒绝切号、模糊失败不重放 |
 | 图片 | 同步生成、同步编辑、手动异步、重复查询、失败不扣费、成功一次计费、代理 URL |
 | 视频 | 每个公开模型的创建、查询、内容下载、长轮询恢复、公开 ID、失败不扣费、成功一次计费 |
 | 前端 | 可用渠道长模型列表、移动端、Q 群入口、支付 provider 配置 |
@@ -213,6 +216,7 @@ pnpm run build
 - Codex manifest 兼容只作用于带 `client_version` 的模型清单路径；普通 `/v1/models`、渠道定价模型列表、Responses/Chat 调度和计费不得复用该回退。
 - 显式缓存键优先，自动缓存键不跨用户、不改正文、不影响图片意图。
 - 调度不越过用户分组、模型限制、账号状态、传输协议和并发限制。
+- 快账号迁移不得发送探测请求；候选槽位必须先获取，原子改绑失败后必须释放并继续使用原粘性账号。
 - 全局首响应优化开启时，TTFT 从最终账号真实上游发送开始，以最终成功 attempt 的 2xx 响应头作为最早正常响应；关闭时使用首个真实语义输出。错误切号、调度排队和失败响应不计入，不能发送本地伪造 token 或篡改总耗时。
 - 文本请求最多按明确安全条件故障转移；媒体创建发出后绝不跨账号自动重放。
 - 图片/视频任务使用公开 ID；查询固定回创建账号；成功一次计费，失败不扣费。

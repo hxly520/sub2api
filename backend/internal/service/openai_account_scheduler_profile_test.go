@@ -56,6 +56,28 @@ func TestOpenAIAccountRuntimeStatsRequiresWarmProfileBeforeUsingTTFT(t *testing.
 	require.Equal(t, 1, stats.profileSize())
 }
 
+func TestOpenAIAccountRuntimeStatsStickyPerformanceRequiresSuccessfulTTFT(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+	profile := NewOpenAIAccountScheduleProfile("gpt-5.6-sol", "/v1/responses", "/v1/responses")
+	failedTTFT := 200
+	for i := 0; i < int(openAIAccountProfileMinTTFTSamples); i++ {
+		stats.report(9002, false, &failedTTFT, profile)
+	}
+
+	errorRate, _, hasTTFT := stats.snapshotForStickyPerformance(9002, profile)
+	require.False(t, hasTTFT)
+	require.Greater(t, errorRate, 0.0)
+
+	successTTFT := 750
+	for i := 0; i < int(openAIAccountProfileMinTTFTSamples); i++ {
+		stats.report(9002, true, &successTTFT, profile)
+	}
+
+	_, observed, hasTTFT := stats.snapshotForStickyPerformance(9002, profile)
+	require.True(t, hasTTFT)
+	require.InDelta(t, successTTFT, observed, 1e-9)
+}
+
 func TestDefaultOpenAIAccountSchedulerProfilesDoNotBleedAcrossEndpoints(t *testing.T) {
 	accounts := []*Account{
 		{ID: 9101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 3, Priority: 1},

@@ -651,13 +651,8 @@
               <tbody>
                 <tr>
                   <td class="endpoint"><code>https://api.52token.org</code></td>
-                  <td>常规文本、工具调用与内容生成兼容接口</td>
-                  <td>客户端是否需要追加 <code>/v1</code> 由其 Base URL 规则决定</td>
-                </tr>
-                <tr>
-                  <td class="endpoint"><code>https://long.52token.org</code></td>
-                  <td>需要较长连接时间的常规 API 请求</td>
-                  <td>仅在客户端长连接经常中断时使用</td>
+                  <td>文本、长流式请求、工具调用与内容生成兼容接口</td>
+                  <td>长任务请启用流式响应；客户端是否追加 <code>/v1</code> 由其 Base URL 规则决定</td>
                 </tr>
                 <tr>
                   <td class="endpoint"><code>https://image.52token.org</code></td>
@@ -767,7 +762,9 @@
 
         <section class="section" id="text-api">
           <h2>文本与内容生成接口</h2>
-          <p>以下是接口契约说明，不是可直接执行的命令。</p>
+          <p>
+            文本接口统一使用 <code>https://api.52token.org</code>。以下是接口契约说明，不是可直接执行的命令。
+          </p>
           <div class="table-wrap">
             <table>
               <thead><tr><th>协议</th><th>方法与路径</th><th>鉴权头</th><th>最小必要字段</th></tr></thead>
@@ -775,7 +772,7 @@
                 <tr><td>Responses</td><td><code>POST /v1/responses</code></td><td><code>Authorization: Bearer &lt;key&gt;</code></td><td><code>model</code>、<code>input</code></td></tr>
                 <tr><td>Chat Completions</td><td><code>POST /v1/chat/completions</code></td><td><code>Authorization: Bearer &lt;key&gt;</code></td><td><code>model</code>、<code>messages</code></td></tr>
                 <tr><td>Messages</td><td><code>POST /v1/messages</code></td><td><code>x-api-key: &lt;key&gt;</code></td><td><code>model</code>、<code>max_tokens</code>、<code>messages</code></td></tr>
-                <tr><td>Gemini Content</td><td><code>POST /v1beta/models/{model}:generateContent</code></td><td><code>x-goog-api-key: &lt;key&gt;</code></td><td><code>contents</code></td></tr>
+                <tr><td>Gemini Content</td><td><code>POST /v1beta/models/{model}:streamGenerateContent?alt=sse</code></td><td><code>x-goog-api-key: &lt;key&gt;</code></td><td><code>contents</code></td></tr>
               </tbody>
             </table>
           </div>
@@ -783,6 +780,8 @@
           <ul class="field-list">
             <li>JSON 请求必须声明 <code>Content-Type: application/json</code>。</li>
             <li><code>model</code> 必须与可用渠道页面显示的模型名完全一致。</li>
+            <li>长时间文本任务应使用协议支持的流式模式，例如 Responses/Chat 的 <code>stream=true</code> 或 Gemini 的 <code>streamGenerateContent?alt=sse</code>。</li>
+            <li>非流式请求如果超过边缘网络的无响应等待上限，可能在模型完成前中断，因此不适合作为长任务调用方式。</li>
             <li>流式请求由客户端按 SSE 或对应协议消费，不要将中途断开自动视为未请求。</li>
             <li>工具调用字段应按客户端协议发送，不要同时混用多种协议的工具结构。</li>
           </ul>
@@ -797,7 +796,7 @@
               <tbody>
                 <tr><td>文生图</td><td><code>POST https://image.52token.org/v1/images/generations</code></td><td>JSON</td><td><code>model</code>、<code>prompt</code></td></tr>
                 <tr><td>图片编辑</td><td><code>POST https://image.52token.org/v1/images/edits</code></td><td>multipart/form-data</td><td><code>model</code>、<code>prompt</code>、<code>image</code></td></tr>
-                <tr><td>Gemini 原生生图</td><td><code>POST https://image.52token.org/v1beta/models/{model}:generateContent</code></td><td>JSON</td><td><code>contents</code>、<code>generationConfig</code></td></tr>
+                <tr><td>Gemini 原生生图</td><td><code>POST https://image.52token.org/v1beta/models/{model}:streamGenerateContent?alt=sse</code></td><td>JSON + SSE</td><td><code>contents</code>、<code>generationConfig</code></td></tr>
               </tbody>
             </table>
           </div>
@@ -821,6 +820,7 @@
           <h3>参考图和本地预览</h3>
           <ul class="field-list">
             <li>图片编辑请求将参考图作为 multipart 文件字段上传。</li>
+            <li>Gemini 生图客户端应按 SSE 逐条读取 <code>data:</code> 事件并忽略以冒号开头的协议心跳，直到收到完成事件。</li>
             <li>画布工作台会将生成结果保存在客户端本地存储中，预览时使用本地 Blob 地址。</li>
             <li>如返回签名图片地址，域名应为 <code>video.52token.org</code>；请不要修改地址中的任何部分。</li>
             <li>同步生成耗时较长时请保持连接；已有任务 ID 时应继续查询，不要重复创建。</li>

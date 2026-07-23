@@ -116,6 +116,37 @@ func (s *GatewayCacheSuite) TestCompareAndDeleteSessionAccountID() {
 	require.True(s.T(), errors.Is(err, redis.Nil), "expected redis.Nil after matching compare-and-delete")
 }
 
+func (s *GatewayCacheSuite) TestCompareAndSetSessionAccountID() {
+	conditionalCache, ok := s.cache.(service.ConditionalRebindGatewayCache)
+	require.True(s.T(), ok)
+
+	const (
+		groupID      = int64(1)
+		session      = "compare-set"
+		oldAccount   = int64(201)
+		newAccount   = int64(202)
+		otherAccount = int64(203)
+	)
+	require.NoError(s.T(), s.cache.SetSessionAccountID(s.ctx, groupID, session, oldAccount, time.Minute))
+
+	updated, err := conditionalCache.CompareAndSetSessionAccountID(s.ctx, groupID, session, otherAccount, newAccount, 3*time.Minute)
+	require.NoError(s.T(), err)
+	require.False(s.T(), updated)
+	stored, err := s.cache.GetSessionAccountID(s.ctx, groupID, session)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), oldAccount, stored)
+
+	updated, err = conditionalCache.CompareAndSetSessionAccountID(s.ctx, groupID, session, oldAccount, newAccount, 3*time.Minute)
+	require.NoError(s.T(), err)
+	require.True(s.T(), updated)
+	stored, err = s.cache.GetSessionAccountID(s.ctx, groupID, session)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), newAccount, stored)
+	ttl, err := s.rdb.TTL(s.ctx, buildSessionKey(groupID, session)).Result()
+	require.NoError(s.T(), err)
+	s.AssertTTLWithin(ttl, time.Second, 3*time.Minute)
+}
+
 func (s *GatewayCacheSuite) TestGetSessionAccountID_CorruptedValue() {
 	sessionID := "corrupted"
 	groupID := int64(1)

@@ -253,6 +253,54 @@ func (s *OpenAIGatewayService) compareAndDeleteStickySessionAccountID(ctx contex
 	return primaryDeleted || legacyDeleted, nil
 }
 
+func (s *OpenAIGatewayService) compareAndSetStickySessionAccountID(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	expectedAccountID int64,
+	newAccountID int64,
+	ttl time.Duration,
+) (bool, error) {
+	if s == nil || s.cache == nil || expectedAccountID <= 0 || newAccountID <= 0 {
+		return false, nil
+	}
+	primaryKey := s.openAISessionCacheKey(sessionHash)
+	if primaryKey == "" {
+		return false, nil
+	}
+
+	conditionalCache, ok := s.cache.(ConditionalRebindGatewayCache)
+	if !ok {
+		// Performance migration is optional. Without an atomic compare-and-set,
+		// fail closed so a stale request cannot overwrite a newer binding.
+		return false, nil
+	}
+
+	updated, err := conditionalCache.CompareAndSetSessionAccountID(
+		ctx,
+		derefGroupID(groupID),
+		primaryKey,
+		expectedAccountID,
+		newAccountID,
+		ttl,
+	)
+	if err != nil || !updated {
+		return updated, err
+	}
+	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
+	if legacyKey != "" {
+		_, _ = conditionalCache.CompareAndSetSessionAccountID(
+			ctx,
+			derefGroupID(groupID),
+			legacyKey,
+			expectedAccountID,
+			newAccountID,
+			s.openAIStickyLegacyTTL(ttl),
+		)
+	}
+	return true, nil
+}
+
 // ReleaseOpenAIStickySessionAfterFailure removes a sticky binding only when it
 // still points at the account that failed. It is used for pool-mode upstreams:
 // the current request is never replayed, while the client's next retry can be

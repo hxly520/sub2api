@@ -472,6 +472,14 @@ type ConditionalGatewayCache interface {
 	CompareAndDeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error)
 }
 
+// ConditionalRebindGatewayCache atomically replaces a sticky binding only when
+// it still points at expectedAccountID. This prevents concurrent requests from
+// overwriting a newer routing decision during a performance migration.
+type ConditionalRebindGatewayCache interface {
+	GatewayCache
+	CompareAndSetSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID, newAccountID int64, ttl time.Duration) (bool, error)
+}
+
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
 	if groupID == nil {

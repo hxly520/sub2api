@@ -387,11 +387,14 @@ gateway:
       upstream_cost: 0.0
   # OpenAI 高级调度器补充配置
   openai_scheduler:
-    # 默认保持旧版硬粘性以提高缓存率；仅直连账号需要按历史表现逃逸时才显式开启。
-    # pool_mode 上游池即使开启也会继续等待当前粘性账号，不做本地切换。
-    sticky_escape_enabled: false
-    # TTFT EWMA 超过该阈值（毫秒）时跳过 sticky，默认 15s，避免轻微抖动就逃逸
+    # 默认启用缓存优先的软逃逸；关闭可恢复为硬粘性。
+    # 只读取同模型、同入站/上游端点的成功画像，不发送探测请求。
+    sticky_escape_enabled: true
+    # 严重慢速兜底阈值；仍要求存在至少快 1 秒的健康兼容账号。
     sticky_escape_ttft_ms: 15000
+    # 常规性能迁移必须同时满足：至少快 1 秒，且当前 TTFT 至少为候选的 1.75 倍。
+    sticky_escape_min_ttft_delta_ms: 1000
+    sticky_escape_min_ttft_ratio: 1.75
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
   # 流式文本请求首事件即时刷新。只优化下游首响应，不取消或重放上游请求。

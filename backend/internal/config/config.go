@@ -1221,8 +1221,12 @@ func (w GatewayOpenAIWSSchedulerScoreWeights) IsValid() bool {
 type GatewayOpenAISchedulerConfig struct {
 	// StickyEscapeEnabled: 是否允许 session_hash sticky 在账号健康度劣化时临时逃逸
 	StickyEscapeEnabled bool `mapstructure:"sticky_escape_enabled"`
-	// StickyEscapeTTFTMs: TTFT EWMA 超过该阈值时跳过 sticky
+	// StickyEscapeTTFTMs: TTFT EWMA 超过该阈值时允许严重慢速兜底迁移
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
+	// StickyEscapeMinTTFTDeltaMs: 候选账号至少快多少毫秒才允许性能迁移
+	StickyEscapeMinTTFTDeltaMs int `mapstructure:"sticky_escape_min_ttft_delta_ms"`
+	// StickyEscapeMinTTFTRatio: 当前账号 TTFT 至少为候选账号的多少倍才允许性能迁移
+	StickyEscapeMinTTFTRatio float64 `mapstructure:"sticky_escape_min_ttft_ratio"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
 }
@@ -1697,6 +1701,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Server.TrustedProxiesConfigured = trustedProxiesConfigured
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 15000
+	}
+	if cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs == 0 {
+		cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs = 1000
+	}
+	if cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio == 0 {
+		cfg.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio = 1.75
 	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 0.5
@@ -2420,6 +2430,8 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_enabled", true)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_error_rate", 0.0)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_ttft_ms", 0)
+	viper.SetDefault("gateway.openai_scheduler.sticky_escape_min_ttft_delta_ms", 0)
+	viper.SetDefault("gateway.openai_scheduler.sticky_escape_min_ttft_ratio", 0.0)
 
 	// server.trusted_proxies and security.forwarded_client_ip_headers are the
 	// other exception: load() distinguishes explicit configuration from absence
@@ -3318,6 +3330,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeTTFTMs <= 0 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_ttft_ms must be positive")
+	}
+	if c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTDeltaMs <= 0 {
+		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_min_ttft_delta_ms must be positive")
+	}
+	if c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio <= 1 || math.IsNaN(c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio) || math.IsInf(c.Gateway.OpenAIScheduler.StickyEscapeMinTTFTRatio, 0) {
+		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_min_ttft_ratio must be finite and greater than 1")
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeErrorRate < 0 || c.Gateway.OpenAIScheduler.StickyEscapeErrorRate > 1 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_error_rate must be between 0 and 1")
