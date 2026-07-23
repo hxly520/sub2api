@@ -2409,11 +2409,6 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	return compatible
 }
 
-func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleIgnoringRuntimeBlock(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) bool {
-	compatible, _ := s.isAccountRequestCompatibleReasonIgnoringAccountRuntimeBlock(ctx, account, req)
-	return compatible
-}
-
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonIgnoringAccountRuntimeBlock(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
 	return s.isAccountRequestCompatibleReasonWithRuntimeBlock(ctx, account, req, false)
 }
