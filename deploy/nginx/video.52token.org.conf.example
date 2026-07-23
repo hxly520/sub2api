@@ -1,16 +1,22 @@
 # Download-proxy-only origin for video.52token.org.
 # Cloudflare Worker must intercept /v1/video-content/* and
 # /v1/image-content/*. Every origin request intentionally returns 404.
+# Install cloudflare-real-ip.conf.example separately in conf.d first so a
+# discovered origin IP cannot bypass Cloudflare and reach this virtual host.
 
 server {
     listen 80;
     server_name video.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
     server_name video.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
 
     ssl_certificate     /etc/nginx/cert/52token.org.pem;
     ssl_certificate_key /etc/nginx/cert/52token.org.key;
