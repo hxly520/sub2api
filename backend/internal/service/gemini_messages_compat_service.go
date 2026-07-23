@@ -1583,7 +1583,13 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	var firstTokenMs *int
 
 	if stream {
-		streamRes, err := s.handleNativeStreamingResponse(c, resp, startTime, isOAuth)
+		streamRes, err := s.handleNativeStreamingResponse(
+			c,
+			resp,
+			startTime,
+			isOAuth,
+			s.geminiNativeStreamKeepaliveInterval(isImageGenerationModel(originalModel)),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -2433,6 +2439,30 @@ type geminiNativeStreamResult struct {
 	firstTokenMs *int
 }
 
+type geminiNativeStreamReadEvent struct {
+	line string
+	err  error
+}
+
+func readGeminiNativeStreamLines(body io.Reader) <-chan geminiNativeStreamReadEvent {
+	events := make(chan geminiNativeStreamReadEvent, 1)
+	go func() {
+		defer close(events)
+		reader := bufio.NewReader(body)
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				events <- geminiNativeStreamReadEvent{line: line}
+			}
+			if err != nil {
+				events <- geminiNativeStreamReadEvent{err: err}
+				return
+			}
+		}
+	}()
+	return events
+}
+
 func isGeminiInsufficientScope(headers http.Header, body []byte) bool {
 	if strings.Contains(strings.ToLower(headers.Get("Www-Authenticate")), "insufficient_scope") {
 		return true
@@ -2536,7 +2566,7 @@ func (s *GeminiMessagesCompatService) handleNativeNonStreamingResponse(c *gin.Co
 	return &ClaudeUsage{}, nil
 }
 
-func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, isOAuth bool) (*geminiNativeStreamResult, error) {
+func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, isOAuth bool, keepaliveInterval time.Duration) (*geminiNativeStreamResult, error) {
 	if s.cfg != nil && s.cfg.Gateway.GeminiDebugResponseHeaders {
 		logger.LegacyPrintf("service.gemini_messages_compat", "[GeminiAPI] ========== Streaming Response Headers ==========")
 		for key, values := range resp.Header {
@@ -2567,68 +2597,108 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 		return nil, errors.New("streaming not supported")
 	}
 
-	reader := bufio.NewReader(resp.Body)
 	usage := &ClaudeUsage{}
 	var firstTokenMs *int
+	lastDownstreamWriteAt := time.Now()
+	events := readGeminiNativeStreamLines(resp.Body)
 
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			trimmed := strings.TrimRight(line, "\r\n")
-			if strings.HasPrefix(trimmed, "data:") {
-				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				// Keepalive / done markers
-				if payload == "" || payload == "[DONE]" {
-					_, _ = io.WriteString(c.Writer, line)
-					flusher.Flush()
-				} else {
-					var rawToWrite string
-					rawToWrite = payload
-
-					var rawBytes []byte
-					if isOAuth {
-						innerBytes, err := unwrapGeminiResponse([]byte(payload))
-						if err == nil {
-							rawToWrite = string(innerBytes)
-							rawBytes = innerBytes
-						}
-					} else {
-						rawBytes = []byte(payload)
-					}
-
-					if u := extractGeminiUsage(rawBytes); u != nil {
-						usage = u
-					}
-
-					if firstTokenMs == nil {
-						ms := int(time.Since(startTime).Milliseconds())
-						firstTokenMs = &ms
-					}
-
-					if isOAuth {
-						// SSE format requires double newline (\n\n) to separate events
-						_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", rawToWrite)
-					} else {
-						// Pass-through for AI Studio responses.
-						_, _ = io.WriteString(c.Writer, line)
-					}
-					flusher.Flush()
-				}
-			} else {
-				_, _ = io.WriteString(c.Writer, line)
-				flusher.Flush()
-			}
-		}
-
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
+	var keepaliveTicker *time.Ticker
+	if keepaliveInterval > 0 {
+		keepaliveTicker = time.NewTicker(keepaliveInterval)
+		defer keepaliveTicker.Stop()
+	}
+	var keepaliveCh <-chan time.Time
+	if keepaliveTicker != nil {
+		keepaliveCh = keepaliveTicker.C
 	}
 
-	return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+			}
+			line := event.line
+			if len(line) > 0 {
+				trimmed := strings.TrimRight(line, "\r\n")
+				if strings.HasPrefix(trimmed, "data:") {
+					payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+					// Keepalive / done markers
+					if payload == "" || payload == "[DONE]" {
+						_, _ = io.WriteString(c.Writer, line)
+						flusher.Flush()
+					} else {
+						var rawToWrite string
+						rawToWrite = payload
+
+						var rawBytes []byte
+						if isOAuth {
+							innerBytes, err := unwrapGeminiResponse([]byte(payload))
+							if err == nil {
+								rawToWrite = string(innerBytes)
+								rawBytes = innerBytes
+							}
+						} else {
+							rawBytes = []byte(payload)
+						}
+
+						if u := extractGeminiUsage(rawBytes); u != nil {
+							usage = u
+						}
+
+						if firstTokenMs == nil {
+							ms := int(time.Since(startTime).Milliseconds())
+							firstTokenMs = &ms
+						}
+
+						if isOAuth {
+							// SSE format requires double newline (\n\n) to separate events
+							_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", rawToWrite)
+						} else {
+							// Pass-through for AI Studio responses.
+							_, _ = io.WriteString(c.Writer, line)
+						}
+						flusher.Flush()
+					}
+				} else {
+					_, _ = io.WriteString(c.Writer, line)
+					flusher.Flush()
+				}
+				lastDownstreamWriteAt = time.Now()
+			}
+
+			if errors.Is(event.err, io.EOF) {
+				return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+			}
+			if event.err != nil {
+				return nil, event.err
+			}
+		case <-keepaliveCh:
+			if time.Since(lastDownstreamWriteAt) < keepaliveInterval {
+				continue
+			}
+			if _, err := io.WriteString(c.Writer, ":\n\n"); err != nil {
+				keepaliveCh = nil
+				continue
+			}
+			flusher.Flush()
+			lastDownstreamWriteAt = time.Now()
+		}
+	}
+}
+
+func (s *GeminiMessagesCompatService) geminiNativeStreamKeepaliveInterval(imageGeneration bool) time.Duration {
+	if s == nil || s.cfg == nil {
+		return 0
+	}
+	seconds := s.cfg.Gateway.StreamKeepaliveInterval
+	if imageGeneration {
+		seconds = s.cfg.Gateway.ImageStreamKeepaliveInterval
+	}
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // ForwardAIStudioGET forwards a GET request to AI Studio (generativelanguage.googleapis.com) for

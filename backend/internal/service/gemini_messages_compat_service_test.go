@@ -943,6 +943,47 @@ func TestGeminiMessagesHandleStreamingResponse_ClosesToolBlockBeforeText(t *test
 	require.Equal(t, -1, open, "stream ended with a content block still open")
 }
 
+func TestGeminiNativeStreamingResponse_KeepaliveDoesNotCountAsFirstToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamReader, upstreamWriter := io.Pipe()
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		_, _ = io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}}]}}]}`+"\n\n")
+		_ = upstreamWriter.Close()
+	}()
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       upstreamReader,
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &GeminiMessagesCompatService{}
+	result, err := svc.handleNativeStreamingResponse(c, resp, time.Now(), false, 5*time.Millisecond)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.firstTokenMs)
+	require.GreaterOrEqual(t, *result.firstTokenMs, 20)
+
+	body := rec.Body.String()
+	require.True(t, strings.HasPrefix(body, ":\n\n"), "静默上游期间应先发送 SSE 注释心跳")
+	require.Contains(t, body, `"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}`)
+	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+}
+
+func TestGeminiNativeStreamKeepaliveInterval_UsesImageSpecificSetting(t *testing.T) {
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{Gateway: config.GatewayConfig{
+		StreamKeepaliveInterval:      7,
+		ImageStreamKeepaliveInterval: 11,
+	}}}
+
+	require.Equal(t, 7*time.Second, svc.geminiNativeStreamKeepaliveInterval(false))
+	require.Equal(t, 11*time.Second, svc.geminiNativeStreamKeepaliveInterval(true))
+}
+
 type anthropicContentBlockEvent struct {
 	event     string
 	index     int
