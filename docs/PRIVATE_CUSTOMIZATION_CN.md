@@ -16,8 +16,21 @@
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
 - 当前正式基线：官方 Release `v0.1.164`（release commit `cd8bb98c44303b2c8f04c0da340447c992f0cb7d`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前生产应用代码基线：`08fbef836b9c89c043d4269623b0e73e4aa674b6`，`backend/cmd/server/VERSION=0.1.164`。2026-07-26 只读盘点确认生产 OCI revision 与该提交完全一致；文档提交后的 `main` 是该提交的后代，后续升级必须从最新私有 `main` 起步。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
+
+私有主线谱系：
+
+| 节点 | 定位 | 维护含义 |
+| --- | --- | --- |
+| `e4cea8f8` | 旧私有 `main` / v0.1.155 | 只保留历史，不再作为升级起点 |
+| `7d93ca720` | v0.1.162 兼容线 | 历史中间基线；是否仍有可用镜像由镜像仓库单独确认 |
+| `d5bea143b` | 合并官方 v0.1.164 | 第二父节点为官方 release `cd8bb98c` |
+| `6986037ed` | v164 发布修复 | 清理安全扫描与 lint 问题 |
+| `08fbef836` | 当前生产应用代码 v164 | 加入视频源站防直连；生产 OCI revision，最新私有 `main` 在此基础上继续维护文档和发布流程 |
+
+完整提交历史和 tag 是正式合并的前置条件。浅克隆、`blob:none` 或 sparse checkout 只可用于阅读，不得用于正式版本合并和发布。
 
 私有变更按职责分为四层：
 
@@ -92,6 +105,17 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 余额计费用户在调用上游前按创建时渠道价格快照冻结预计费用，原子地从可用余额转入冻结余额；并发创建不能透支。余额不足必须在上游请求前返回 `402`。成功 usage 与冻结结算在同一数据库事务中完成并退还差额；明确失败立即释放，状态不明的媒体创建不得重放，过期时只有 `capture_pending` 或成功任务证据才能扣费，其余退款。订阅分组和 simple mode 保持原有计费行为。
 
+当前代码有四种图片调用模式，升级和排障时不得混为一套：
+
+| 模式 | 公开入口 | 状态事实源 | 重启恢复与计费边界 |
+| --- | --- | --- | --- |
+| 同步图片 | `/v1/images/generations`、`/v1/images/edits` | 当前 HTTP 请求 | 不创建后台任务；可选 JSON 空白保活不能伪造结果 |
+| 私有 provider-native 异步 | 请求体 `async:true`，随后查询原图片路径的公开任务 ID | PostgreSQL `media_generation_tasks` 与 `media_balance_holds` | 固定创建账号，可恢复轮询；发送后不重放，成功一次计费 |
+| 官方后缀异步 | `/v1/images/generations/async`、`/edits/async`、`/v1/images/tasks/{id}` | Redis `image_task:*`，结果写 S3/R2 | 进程内 goroutine；容器重启不能恢复正在处理的请求，升级前必须确认无在途任务 |
+| 内置批量图片 | `/v1/images/batches*`，前端 `/batch-image` | PostgreSQL `batch_image_*`，Redis只做队列/锁 | Gemini Files 或 Vertex GCS；成功图片结算，worker需同时开启 `enabled` 和 `queue_enabled` |
+
+生产 `image` 域名上的画布工作台是独立服务，不属于本仓库，也不是内置 `/batch-image` 页面。其唯一源码来源是 [`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas)；服务器旧 `images` 目录不得再用于构建或页面回退。运行身份、构建版本、API Base 和日志边界见 [生产运维文档](PRODUCTION_OPERATIONS_CN.md)。
+
 ### 3.5 视频生成与媒体代理
 
 - 统一公开接口：`POST /v1/videos`（兼容 `POST /v1/videos/generations`）、`GET /v1/videos/{task_id}`、`GET /v1/videos/{task_id}/content`。
@@ -113,12 +137,22 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 支付回调必须验证签名并保持幂等。创建、回调、主动查单、退款、退款查询和关闭订单要复用 Sub2API 原有订单状态机，不能绕过平台订单表直接加余额。
 
+### 3.7 公开页面、导入与边缘部署
+
+- CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
+- 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
+- Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
+- 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
+- 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。
+
 ## 4. 数据与配置约束
 
 ### 4.1 数据库
 
 - 媒体任务、公开任务 ID、定价快照、计费终态和幂等信息由迁移维护。
-- `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引，禁止修改已发布的 `178` checksum。
+- 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
+- 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
+- `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
 - 修改 `backend/ent/schema/` 后必须重新生成 Ent 文件，并提交 schema、生成代码、SQL migration 和回归测试。
 - 新迁移必须可重复启动，不能依赖某个生产账号、分组或固定主键。
 - 升级前必须验证旧数据库迁移到新版本；回滚应用前确认新迁移是否向后兼容。
@@ -144,20 +178,21 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和失败终态不自动重放。图片和视频创建继续严格一次提交。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.164` 候选；生产切换前继续保留当前 `v0.1.162` 不可变回滚镜像。
+- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.164`。2026-07-26 生产只读盘点已确认运行 `08fbef836`；旧 v0.1.162 仅是历史基线，只有镜像仓库中存在并记录 digest 时才能作为回滚镜像。
 
 ### 5.1 升级前盘点
 
 1. 记录生产镜像 tag、commit、digest、容器健康、数据库版本和上一稳定回滚镜像。
 2. 确认当前私有分支工作树干净，列出所有 worktree 和未合并分支。
 3. `git fetch` 官方与私有远端，记录官方新 tip 和 `backend/cmd/server/VERSION`。
-4. 使用 `git merge-base`、`git range-diff` 和 `git diff --stat` 区分官方变化与私有补丁；不要用文件覆盖方式升级。
-5. 先阅读官方 migration、路由、协议桥、调度、计费和前端渠道展示变更，再决定 merge、rebase 或重新移植。
+4. 验证 `git rev-parse --is-shallow-repository` 为 `false`，`git rev-list --objects --all --missing=print` 无缺失对象，并完成 `git fsck --full`；浅克隆不得继续升级。
+5. 使用 `git merge-base`、`git range-diff` 和 `git diff --stat` 区分官方变化与私有补丁；不要用文件覆盖方式升级。
+6. 先阅读官方 migration、路由、协议桥、调度、计费和前端渠道展示变更，再决定 merge、rebase 或重新移植。
 
 ### 5.2 合并策略
 
-1. 从官方新 tip 创建 `codex/upgrade-vX.Y.Z-*` 分支。
-2. 优先按功能组移植私有提交：协议/缓存、调度、媒体、支付、前端产品入口、部署文件。
+1. 从当前权威私有 `main` 创建 `codex/upgrade-vX.Y.Z-*` 分支，再合并目标官方 Release tag；不得从官方 tip 新建生产候选后遗漏二开。
+2. 保留当前私有行为和测试；只有官方已提供更合适的同类抽象时，才在同一功能组内重构协议/缓存、调度、媒体、支付、前端产品入口和部署文件。
 3. 官方已实现同类功能时，以官方抽象为主，移植私有行为和测试，不保留两套并行实现。
 4. 冲突解决后先运行对应小测试，再进入全量检查；不要一次解决全部冲突后才验证。
 5. 迁移和生成文件发生冲突时，以 schema 和 migration 意图为依据重新生成，不能手工拼接 Ent 生成代码。
@@ -238,7 +273,7 @@ pnpm run build
 新增或调整二开功能时，同一 PR 至少更新：
 
 1. 本文档的功能清单、代码入口和不可破坏约束。
-2. `docs/MEDIA_API_CN.md` 或对应部署文档中的对外契约。
+2. `docs/MEDIA_API_CN.md`、`docs/PRODUCTION_OPERATIONS_CN.md` 或对应部署文档中的对外契约与运行边界。
 3. 配置示例和迁移说明。
 4. 对应测试矩阵。
 

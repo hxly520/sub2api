@@ -211,14 +211,16 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的私有维护分支在官方 Sub2API 基线上增加协议缓存兼容、账号调度与首响应、OpenAI-compatible 图片/视频任务、媒体下载代理、可用渠道展示和 KeyingPay V2 等扩展。二开遵循“保留官方能力、仅做兼容增加”的原则。
+本仓库 `main` 以当前生产使用的私有版本为准。当前应用代码基线为 Sub2API `v0.1.164`，生产提交 `08fbef836b9c89c043d4269623b0e73e4aa674b6`；后续文档和发布流程提交继续作为它的后代维护。本分支在官方基线上增加协议缓存兼容、账号调度与首响应、OpenAI-compatible 图片/视频任务、媒体下载代理、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“保留官方能力、仅做兼容增加”的原则。
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
+- [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)
+- [独立生图工作台源码仓库](https://github.com/hxly520/infinite-canvas)
 - [图片与视频 API 契约](docs/MEDIA_API_CN.md)
 - [KeyingPay V2 部署说明](deploy/KEYINGPAY_V2.md)
 - [媒体 Edge Worker 部署说明](deploy/video-edge-worker/README.md)
 
-后续合并官方版本前必须先阅读二开维护指南，并完成其中的协议、缓存、调度、媒体、计费、可用渠道和支付回归。渠道价格、账号地址和生产凭据由运行时配置维护，不得写入源码或仓库文档。
+后续合并官方版本必须从当前私有 `main` 创建升级分支，再合并已发布的官方 Release tag；禁止从旧私有分支或官方 `main/latest` 覆盖生产树。升级前必须阅读二开维护指南和生产运维文档，并完成其中的协议、缓存、调度、媒体、计费、可用渠道和支付回归。渠道价格、账号地址和生产凭据由运行时配置维护，不得写入源码或仓库文档。
 
 ## 生态项目
 

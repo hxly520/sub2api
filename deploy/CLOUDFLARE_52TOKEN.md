@@ -4,6 +4,10 @@
 Sub2API/工作台路径，并把图片和视频的完成地址限制在自有域名。本文不包含任何
 SSH 密钥、API Key、支付密钥或 Worker Secret。
 
+画布工作台唯一源码来源为 [`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas)，
+通过固定SHA镜像运行在 `127.0.0.1:15731`。服务器旧 `images` 目录不参与构建、
+运行、Nginx fallback或回滚；Sub2API仓库内 `/batch-image` 也不是该画布工作台。
+
 ## 1. 最终域名职责
 
 | 域名 | Cloudflare | 只承担的职责 |

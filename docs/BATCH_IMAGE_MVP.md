@@ -13,13 +13,23 @@ API users do not see Gemini file names, Vertex job names, GCS paths, signed URLs
 
 ```text
 POST   /v1/images/batches
+GET    /v1/images/batches
+GET    /v1/images/batches/models
 GET    /v1/images/batches/{id}
 GET    /v1/images/batches/{id}/items
 GET    /v1/images/batches/{id}/items/{custom_id}/content
 GET    /v1/images/batches/{id}/download
 POST   /v1/images/batches/{id}/cancel
+DELETE /v1/images/batches/{id}
 DELETE /v1/images/batches/{id}/outputs
 ```
+
+This built-in batch API is served by Sub2API and is used by the `/batch-image`
+page in the bundled frontend. It is not the independently deployed
+[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas)
+workbench served on the production image hostname. See
+the [production operations guide](PRODUCTION_OPERATIONS_CN.md) for the four
+image modes and their storage, recovery, and deployment boundaries.
 
 Submit request:
 

@@ -1,5 +1,14 @@
 # Sub2API Deployment Files
 
+> **Private fork operators:** production for this repository uses a private,
+> immutable image built from the current private `main`. Do not run the
+> upstream one-click installer or deploy `weishaw/sub2api:latest` against the
+> private production database: doing so drops the private protocol, scheduler,
+> media billing, Edge delivery, and payment compatibility layer. Read
+> [`../docs/PRODUCTION_OPERATIONS_CN.md`](../docs/PRODUCTION_OPERATIONS_CN.md)
+> and [`../docs/PRIVATE_CUSTOMIZATION_CN.md`](../docs/PRIVATE_CUSTOMIZATION_CN.md)
+> before any production change.
+
 This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
 
 ## Deployment Methods

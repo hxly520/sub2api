@@ -1,7 +1,8 @@
 # Workbench plus image/video generation API origin for image.52token.org.
-# The workbench remains on 127.0.0.1:15731; generation and read-only task
-# routes go to Sub2API on 127.0.0.1:8080. Completed media never downloads from
-# this host: clients receive video.52token.org Worker URLs instead.
+# The hxly520/infinite-canvas workbench remains on 127.0.0.1:15731; generation
+# and read-only task routes go to Sub2API on 127.0.0.1:8080. No local static
+# page fallback is used. Completed media never downloads from this host:
+# clients receive video.52token.org Worker URLs instead.
 # Install cloudflare-real-ip.conf.example separately in conf.d first.
 
 server {
@@ -23,8 +24,6 @@ server {
     ssl_session_timeout 5m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    root /home/api/sub2api-deploy/images;
-    index index.html;
     client_max_body_size 60m;
     client_body_timeout 600s;
     send_timeout 3600s;
@@ -70,9 +69,9 @@ server {
         add_header Cache-Control "no-store, no-transform" always;
     }
 
-    # Everything else is the existing workbench frontend. Its internal API
-    # paths are deliberately blocked above, so a bad path cannot expose the
-    # platform console through this hostname.
+    # Everything else is the independently versioned infinite-canvas frontend
+    # on port 15731. Its internal API paths are deliberately blocked above, so
+    # a bad path cannot expose the platform console through this hostname.
     location / {
         proxy_pass http://127.0.0.1:15731;
         proxy_http_version 1.1;

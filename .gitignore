@@ -137,6 +137,7 @@ docs/*
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/MEDIA_API_CN.md
 !docs/PRIVATE_CUSTOMIZATION_CN.md
+!docs/PRODUCTION_OPERATIONS_CN.md
 !docs/ASYNC_IMAGE_TASKS.md
 !docs/legal/
 !docs/legal/*.md
