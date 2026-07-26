@@ -9,7 +9,7 @@
 - 官方基线：Sub2API Release `v0.1.164`，commit `cd8bb98c44303b2c8f04c0da340447c992f0cb7d`。
 - 当前应用版本：`backend/cmd/server/VERSION=0.1.164`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
-- 生产主机：`107.172.147.76`。SSH用户名和认证信息由仓库外的密码管理系统保存。
+- 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：服务器只拉取或导入已在CI构建并验证的私有镜像；不在生产机编译源码或镜像。
 
@@ -70,7 +70,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 | 模式 | 路由/触发方式 | 状态与结果存储 | 升级前检查 |
 | --- | --- | --- | --- |
-| 同步图片 | `/v1/images/generations`、`/edits` | 当前请求；可选JSON空白保活 | 检查长请求、Cloudflare超时和真实终态 |
+| 同步图片 | `/v1/images/generations`、`/v1/images/edits` | 当前请求；可选JSON空白保活 | 检查长请求、Cloudflare超时和真实终态 |
 | 私有provider异步 | 请求体 `async:true` | PostgreSQL `media_generation_tasks`、`media_balance_holds` | 检查在途任务、冻结余额、固定账号和终态lease |
 | 官方后缀异步 | `/v1/images/*/async`、`/v1/images/tasks/{id}` | Redis `image_task:*`，结果转存S3/R2 | 容器重启不能恢复处理中goroutine；升级前必须清空或等待在途任务 |
 | 内置批量图片 | `/v1/images/batches*`、前端 `/batch-image` | PostgreSQL `batch_image_*`；Redis队列、锁和重试；Gemini Files或Vertex GCS | 同时确认 `batch_image.enabled=true` 与 `queue_enabled=true`，检查ready/delayed/active/inflight |

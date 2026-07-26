@@ -18,13 +18,14 @@ permissions:
   contents: read
   packages: write
 
-env:
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+concurrency:
+  group: cachecompat-image-main
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build fork image
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -34,25 +35,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to DockerHub
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
       - name: Prepare image metadata
         id: meta
         env:
           VERSION_GUARD: ${{ inputs.version }}
           PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_ENABLED: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
         run: |
           set -euo pipefail
 
@@ -68,7 +57,7 @@ jobs:
 
           owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           short_sha="${GITHUB_SHA::12}"
-          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          build_date="$(git show -s --format=%cI "${GITHUB_SHA}")"
 
           tags=(
             "ghcr.io/${owner_lc}/sub2api:${version}"
@@ -79,7 +68,7 @@ jobs:
             tags+=("ghcr.io/${owner_lc}/sub2api:latest")
           fi
 
-          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+          if [ "${DOCKERHUB_ENABLED}" = "true" ]; then
             tags+=(
               "${DOCKERHUB_USERNAME}/sub2api:${version}"
               "${DOCKERHUB_USERNAME}/sub2api:${version}-${short_sha}"
@@ -94,19 +83,21 @@ jobs:
             printf '%s\n' "${tags[@]}"
             echo "EOF"
             echo "primary=ghcr.io/${owner_lc}/sub2api:${version}-${short_sha}"
+            echo "local=sub2api-validation:${short_sha}"
             echo "version=${version}"
             echo "date=${build_date}"
+            echo "dockerhub_enabled=${DOCKERHUB_ENABLED}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Build and push image
-        id: build
+      - name: Build image locally
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.local }}
           labels: |
             org.opencontainers.image.title=sub2api
             org.opencontainers.image.description=Sub2API compatibility fork
@@ -120,11 +111,51 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test published image
+      - name: Smoke test local image
+        env:
+          IMAGE: ${{ steps.meta.outputs.local }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          docker pull "${{ steps.meta.outputs.primary }}"
-          docker run --rm --entrypoint /app/sub2api "${{ steps.meta.outputs.primary }}" -version
+          output="$(docker run --rm --entrypoint /app/sub2api "${IMAGE}" -version 2>&1)"
+          printf '%s\n' "${output}"
+          grep -Fq "Sub2API ${VERSION} " <<< "${output}"
+          grep -Fq "commit: ${GITHUB_SHA}," <<< "${output}"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to DockerHub
+        if: steps.meta.outputs.dockerhub_enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish verified image
+        id: publish
+        env:
+          IMAGE: ${{ steps.meta.outputs.local }}
+          PRIMARY: ${{ steps.meta.outputs.primary }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            docker tag "${IMAGE}" "${tag}"
+            docker push "${tag}"
+          done <<< "${TAGS}"
+
+          digest="sha256:$(docker buildx imagetools inspect "${PRIMARY}" --raw | sha256sum | awk '{print $1}')"
+          if ! [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid published digest: ${digest}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
 
       - name: Build summary
         run: |
@@ -133,5 +164,5 @@ jobs:
             echo
             printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed 's/^/- `/' | sed 's/$/`/'
             echo
-            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "Digest: \`${{ steps.publish.outputs.digest }}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
