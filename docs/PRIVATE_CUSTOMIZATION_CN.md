@@ -15,8 +15,8 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前正式基线：官方 Release `v0.1.164`（release commit `cd8bb98c44303b2c8f04c0da340447c992f0cb7d`）。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
-- 当前生产应用代码基线：`08fbef836b9c89c043d4269623b0e73e4aa674b6`，`backend/cmd/server/VERSION=0.1.164`。2026-07-26 只读盘点确认生产 OCI revision 与该提交完全一致；文档提交后的 `main` 是该提交的后代，后续升级必须从最新私有 `main` 起步。
+- 当前仓库代码基线：官方 Release `v0.1.168`（release commit `99c8e4bf7564823bafbab369acab6539e734c1bb`），私有兼容合并提交 `d30c42da`，`backend/cmd/server/VERSION=0.1.168`。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前生产应用代码基线仍为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，`backend/cmd/server/VERSION=0.1.164`。2026-07-26 只读盘点确认生产 OCI revision 与该提交完全一致；`v0.1.168` 尚未构建镜像、上传或部署，不能仅凭仓库版本推断生产已经升级。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -29,6 +29,7 @@
 | `d5bea143b` | 合并官方 v0.1.164 | 第二父节点为官方 release `cd8bb98c` |
 | `6986037ed` | v164 发布修复 | 清理安全扫描与 lint 问题 |
 | `08fbef836` | 当前生产应用代码 v164 | 加入视频源站防直连；生产 OCI revision，最新私有 `main` 在此基础上继续维护文档和发布流程 |
+| `d30c42da` | 合并官方 v0.1.168 与媒体冻结修复 | 第二父节点为官方 release `99c8e4bf`；当前仓库代码候选，尚未构建或部署 |
 
 完整提交历史和 tag 是正式合并的前置条件。浅克隆、`blob:none` 或 sparse checkout 只可用于阅读，不得用于正式版本合并和发布。
 
@@ -103,7 +104,7 @@ TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系
 
 Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.image_nonstream_keepalive_interval` 发送前导空白保活，默认 `0` 表示关闭，生产建议先以 `10` 秒完成模拟慢请求回归再开启；Gemini 工作台固定调用 `streamGenerateContent?alt=sse`，服务端和客户端都必须忽略 `:` SSE 注释心跳并聚合分块图片。第三方客户端若继续调用非流式 `generateContent`，不能承诺超过边缘无响应超时的长任务。
 
-余额计费用户在调用上游前按创建时渠道价格快照冻结预计费用，原子地从可用余额转入冻结余额；并发创建不能透支。余额不足必须在上游请求前返回 `402`。成功 usage 与冻结结算在同一数据库事务中完成并退还差额；明确失败立即释放，状态不明的媒体创建不得重放，过期时只有 `capture_pending` 或成功任务证据才能扣费，其余退款。订阅分组和 simple mode 保持原有计费行为。
+余额计费用户在调用上游前按创建时渠道价格快照冻结预计费用，原子地从可用余额转入冻结余额；并发创建不能透支。余额不足必须在上游请求前返回 `402`。成功 usage 与冻结结算在同一数据库事务中完成并退还差额；明确 `4xx`、结构化失败/取消和供应商明确失败立即释放，普通 `5xx`、超时、transport error 或无终态响应继续保留冻结等待核销，且不得重放媒体创建。后台核销服务启动后立即执行并每分钟扫描全站到期冻结：只有 `capture_pending` 或成功任务证据才能扣费，其余到期冻结退款；单用户失败不阻塞其他用户，提交后必须失效余额缓存。成功媒体最终计算费用高于创建时报价时按原冻结报价封顶，不能二次追扣。订阅分组和 simple mode 保持原有计费行为。
 
 当前代码有四种图片调用模式，升级和排障时不得混为一套：
 
@@ -151,6 +152,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 - 媒体任务、公开任务 ID、定价快照、计费终态和幂等信息由迁移维护。
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
+- `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 候选新增的非事务并发索引迁移，服务于全站到期冻结扫描；它尚未进入生产。发布前必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
 - 修改 `backend/ent/schema/` 后必须重新生成 Ent 文件，并提交 schema、生成代码、SQL migration 和回归测试。
@@ -170,15 +172,16 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.164 合并兼容结论
+### 5.0 v0.1.168 合并兼容结论
 
-- 基线只合入官方 `v0.1.164` Release tree，不合入 tag 之后的未发布 `main`。本版增加 composite group/route、Ollama Cloud 用量刷新、移动支付宝预创建深链，并修复 Codex identity 导入、具体 GPT-5.6 测试模型、OpenAI 输入规范化、Composite Grok/视频路由和代理断流隔离。
-- 保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
+- 合并提交 `d30c42da` 只合入官方 `v0.1.168` Release tree，不合入 tag 之后的未发布 `main`。官方新增 Passkey、模型广场、OpenAI Live、Kimi K3、账号/API Key 声明列更新和多项协议、计费及安全审计修复。
+- 冲突处理以官方结构和行为为主，同时保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留与核销、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
 - 账号选择使用高级智能调度但关闭粘性加权。新会话按综合分选择；已有会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
 - OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和失败终态不自动重放。图片和视频创建继续严格一次提交。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签必须共同指向 `0.1.164`。2026-07-26 生产只读盘点已确认运行 `08fbef836`；旧 v0.1.162 仅是历史基线，只有镜像仓库中存在并记录 digest 时才能作为回滚镜像。
+- 仓库 `backend/cmd/server/VERSION=0.1.168`，但生产仍是 `0.1.164` / `08fbef836`。只有 Git commit、CI 镜像标签、OCI revision 和 registry digest 同时可核验后，`v0.1.168` 才能成为可部署候选；本次明确暂停镜像构建和服务器替换。
+- 媒体失败分类和后台核销的聚焦测试、repository 全量测试、`cmd/server` 编译、前端渠道测试、ESLint、`vue-tsc` 与 frozen lockfile 已通过。service 全量测试仅保留既有 `TestContentModerationRuntimeSnapshotRefreshFailureKeepsStaleConfig` 失败，发布前仍需重新核对该已知项。
 
 ### 5.1 升级前盘点
 

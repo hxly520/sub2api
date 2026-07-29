@@ -5,9 +5,8 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前私有主线：`main`；生产应用代码基线为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，文档和发布流程在该提交之后继续维护。
-- 官方基线：Sub2API Release `v0.1.164`，commit `cd8bb98c44303b2c8f04c0da340447c992f0cb7d`。
-- 当前应用版本：`backend/cmd/server/VERSION=0.1.164`。
+- 当前仓库代码候选：私有提交 `d30c42da`，合并官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`），`backend/cmd/server/VERSION=0.1.168`。
+- 当前生产应用代码基线仍为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，运行版本 `0.1.164`；`v0.1.168` 尚未构建镜像、上传或部署。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
@@ -34,6 +33,13 @@
 | 镜像回滚 | 当前daemon没有上一版Sub2API镜像；所有镜像均无 `RepoDigests`，尚无可验证的本机不可变回滚点 |
 
 现网镜像版本、OCI revision和仓库私有v164应用代码完全一致，因此更新后的 `main` 必须保留 `08fbef836` 的完整应用树和二开行为，并在其后维护文档与发布流程。实际生产状态不能只凭前端版本文字判断。
+
+### 2.1 2026-07-29 媒体异常冻结核销
+
+- 核销前发现24条历史异常冻结，共 `2.42 U`。逐条关联媒体任务和成功结果后，22条无出图证据的冻结退款 `2.32 U`；2条存在成功出图证据的冻结按原报价结算 `0.10 U`，对应 hold ID `298`、`323`。
+- 核销在单一数据库事务中执行，完成后旧异常冻结为0；相关余额缓存随后失效。生产 Sub2API 镜像、容器、Nginx和画布工作台均未变更。
+- 审计记录为 `audit_logs.id=3339`，request ID `hold-reconcile-20260729`。操作前回滚快照位于 `/home/api/sub2api-deploy/backups/media-hold-reconcile-before-20260729-195009.jsonl`，SHA256 为 `57770ff7ca39ba929a66efd8dce7c180babf887768dc0d39852055dd3b327fdd`。
+- 仓库候选 `d30c42da` 增加明确失败即时退款、未知终态保留冻结、成功费用按报价封顶及全站到期冻结后台核销。该代码尚未部署，生产当前仍依赖既有请求路径和人工审计。
 
 ## 3. 域名和进程边界
 
@@ -83,6 +89,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 私有提交 `08fbef836` 的239个SQL文件与数据库checksum全部一致，无缺失、无不匹配。
 - 数据库另保留4个历史迁移记录：`020_widen_accounts_type.sql`、`021_add_accounts_strip_reasoning_effort.sql`、`159_openai_first_response_settings.sql`、`160_media_generation_tasks.sql`。
 - 私有迁移 `173_media_generation_tasks.sql` 至 `179_media_balance_hold_dispatch_state.sql` 已进入生产，禁止改名、删除或修改内容。
+- 候选迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 尚未进入生产；部署 `v0.1.168` 时需记录执行结果和 checksum，并验证全站核销索引可用。
 - PostgreSQL实际 `max_connections=100`；当前应用连接池配置为 `max_open=256`、`max_idle=128`，存在连接上限不匹配。
 - 升级前必须备份数据库并记录备份校验、恢复命令和保存位置。当前服务器未发现数据库定时备份任务，仓库外快照状态待确认。
 
@@ -127,7 +134,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 4. `nginx -t`、生效server/upstream、Cloudflare来源判断、证书SAN和到期时间；不复制私钥。
 5. PostgreSQL readiness、数据库大小、迁移总数、checksum差异和任务状态聚合；不读取prompt、URL或凭据字段。
 6. Redis PING、持久化模式、内存、eviction、keyspace和队列长度；不转储任务内容。
-7. 四种图片模式的在途任务、失败、冻结余额、worker队列和对象存储可用性。
+7. 四种图片模式的在途任务、失败、冻结余额、后台核销最近运行结果、worker队列和对象存储可用性；分别统计 active、capture_pending、captured、released，禁止只核对用户余额总数。
 8. 15731工作台的 `infinite-canvas` 镜像tag、digest、OCI revision、首页状态、API Base、模型开关和近时段错误；确认旧 `images` 目录未挂载且未被Nginx引用。
 9. 当前镜像与上一稳定镜像的tag、digest和数据库兼容边界。
 
@@ -143,6 +150,8 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额。
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
+
+当前 `v0.1.168` 只完成代码兼容合并与本地测试，镜像构建已按要求暂停。后续只有在用户明确下达构建指令后才触发 GitHub 镜像工作流，并且只上传候选镜像，不自动替换生产容器。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
