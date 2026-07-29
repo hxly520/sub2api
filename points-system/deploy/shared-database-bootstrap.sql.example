@@ -1,0 +1,37 @@
+\set ON_ERROR_STOP on
+
+-- Run as the owner of the existing Sub2API database. Supply psql variables:
+--   -v points_app_role=points_app
+--   -v points_app_password='LONG_RANDOM_PASSWORD'
+--   -v points_schema=points
+-- The script creates no database and never changes a Sub2API table.
+
+CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
+
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'points_app_role', :'points_app_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'points_app_role')
+\gexec
+SELECT format(
+    'ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
+    :'points_app_role'
+)
+\gexec
+
+SELECT format('CREATE SCHEMA IF NOT EXISTS %I AUTHORIZATION %I', :'points_schema', :'points_app_role')
+\gexec
+SELECT format('ALTER SCHEMA %I OWNER TO %I', :'points_schema', :'points_app_role')
+\gexec
+SELECT format('REVOKE ALL ON SCHEMA %I FROM PUBLIC', :'points_schema')
+\gexec
+SELECT format('GRANT USAGE, CREATE ON SCHEMA %I TO %I', :'points_schema', :'points_app_role')
+\gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'points_app_role')
+\gexec
+SELECT format('REVOKE CREATE ON SCHEMA public FROM %I', :'points_app_role')
+\gexec
+SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'points_app_role')
+\gexec
+SELECT format('ALTER ROLE %I SET statement_timeout = %L', :'points_app_role', '30s')
+\gexec
+SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'points_app_role', '30s')
+\gexec

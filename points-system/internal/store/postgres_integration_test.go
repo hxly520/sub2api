@@ -136,6 +136,51 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 	}
 }
 
+func TestPostgresSharedDatabasePoolPinsMigrationsToIsolatedSchema(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv(pointsTestDatabaseEnv))
+	if databaseURL == "" {
+		t.Skip(pointsTestDatabaseEnv + " is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	admin, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := "points_shared_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+quotedSchema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+quotedSchema+" CASCADE")
+	})
+
+	db, err := pointsstore.NewPointsPool(ctx, databaseURL, schema, 3)
+	if err != nil {
+		t.Fatalf("open shared database points pool: %v", err)
+	}
+	defer db.Close()
+	if err := migrate.Run(ctx, db); err != nil {
+		t.Fatalf("migrate isolated points schema: %v", err)
+	}
+	var currentSchema string
+	var isolatedExists, publicExists bool
+	if err := db.QueryRow(ctx, `SELECT current_schema()`).Scan(&currentSchema); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL,
+		to_regclass('public.points_schema_migrations') IS NOT NULL`,
+		schema+".points_schema_migrations").Scan(&isolatedExists, &publicExists); err != nil {
+		t.Fatal(err)
+	}
+	if currentSchema != schema || !isolatedExists || publicExists {
+		t.Fatalf("schema isolation failed: current=%q isolated=%t public=%t",
+			currentSchema, isolatedExists, publicExists)
+	}
+}
+
 func TestPostgresCleanupSecurityStateDeletesOnlyExpiredRows(t *testing.T) {
 	fixture := newPostgresFixture(t)
 	ctx := context.Background()

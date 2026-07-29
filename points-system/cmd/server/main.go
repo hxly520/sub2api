@@ -16,7 +16,6 @@ import (
 	"github.com/hxly520/sub2api/points-system/internal/store"
 	"github.com/hxly520/sub2api/points-system/internal/sub2client"
 	"github.com/hxly520/sub2api/points-system/internal/worker"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -30,16 +29,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	db, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	db, err := store.NewPointsPool(ctx, cfg.DatabaseURL, cfg.DatabaseSchema, cfg.DatabaseMaxConns)
 	if err != nil {
 		logger.Error("open database", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	if err := db.Ping(ctx); err != nil {
-		logger.Error("ping database", "error", err)
-		os.Exit(1)
-	}
 	if err := migrate.Run(ctx, db); err != nil {
 		logger.Error("run migrations", "error", err)
 		os.Exit(1)

@@ -19,6 +19,8 @@ type HMACKey struct {
 type Config struct {
 	ListenAddr         string
 	DatabaseURL        string
+	DatabaseSchema     string
+	DatabaseMaxConns   int
 	UsageDatabaseURL   string
 	UsageReconcileDays int
 	PublicOrigin       string
@@ -57,6 +59,8 @@ func Load() (Config, error) {
 	cfg := Config{
 		ListenAddr:         env("POINTS_LISTEN_ADDR", ":8090"),
 		DatabaseURL:        strings.TrimSpace(os.Getenv("POINTS_DATABASE_URL")),
+		DatabaseSchema:     env("POINTS_DATABASE_SCHEMA", "points"),
+		DatabaseMaxConns:   intEnv("POINTS_DATABASE_MAX_CONNS", 8),
 		UsageDatabaseURL:   strings.TrimSpace(os.Getenv("POINTS_USAGE_DATABASE_URL")),
 		UsageReconcileDays: intEnv("POINTS_USAGE_RECONCILE_DAYS", 7),
 		PublicOrigin:       strings.TrimRight(strings.TrimSpace(os.Getenv("POINTS_PUBLIC_ORIGIN")), "/"),
@@ -85,6 +89,12 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if c.DatabaseURL == "" {
 		return errors.New("POINTS_DATABASE_URL is required")
+	}
+	if !validDatabaseSchema(c.DatabaseSchema) {
+		return errors.New("POINTS_DATABASE_SCHEMA must be a non-system PostgreSQL identifier")
+	}
+	if c.DatabaseMaxConns < 1 || c.DatabaseMaxConns > 32 {
+		return errors.New("POINTS_DATABASE_MAX_CONNS must be between 1 and 32")
 	}
 	if c.UsageDatabaseURL == "" {
 		return errors.New("POINTS_USAGE_DATABASE_URL is required")
@@ -121,6 +131,26 @@ func (c Config) Validate() error {
 		return errors.New("POINTS_WORKER_INTERVAL must be between 1ns and 1m")
 	}
 	return nil
+}
+
+func validDatabaseSchema(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) == 0 || len(value) > 63 {
+		return false
+	}
+	for index, char := range value {
+		if (char >= 'a' && char <= 'z') || char == '_' ||
+			(index > 0 && char >= '0' && char <= '9') {
+			continue
+		}
+		return false
+	}
+	switch value {
+	case "public", "pg_catalog", "information_schema":
+		return false
+	default:
+		return !strings.HasPrefix(value, "pg_")
+	}
 }
 
 func (c Config) Sub2Configured() bool {

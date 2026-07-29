@@ -1,28 +1,8 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: points
-      POSTGRES_USER: points
-      POSTGRES_PASSWORD: ${POINTS_DB_PASSWORD}
-    volumes:
-      - points-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U points -d points"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks:
-      - points-internal
-
   points-system:
     image: "${POINTS_IMAGE:?POINTS_IMAGE must reference an immutable GHCR digest}"
     restart: unless-stopped
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
+    env_file: ${POINTS_ENV_FILE:-.env}
     ports:
       - "127.0.0.1:${POINTS_HOST_PORT:-8090}:8090"
     read_only: true
@@ -41,15 +21,9 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - points-internal
       - sub2api-readonly
 
-volumes:
-  points-postgres:
-
 networks:
-  points-internal:
-    internal: true
   sub2api-readonly:
     external: true
     name: ${SUB2API_DOCKER_NETWORK:?SUB2API_DOCKER_NETWORK is required}

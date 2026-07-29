@@ -24,15 +24,18 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 1. Sub2API creates a short-lived HMAC launch ticket for the current user.
 2. The points service consumes the one-time nonce and creates an HttpOnly,
    SameSite=Strict session. Administrator sessions are capped at 30 minutes.
-3. A four-connection, read-only PostgreSQL pool aggregates `billing_type=0`
+3. Points tables live in an isolated schema inside the existing Sub2API
+   PostgreSQL database. The write pool is capped at eight connections and
+   refuses to start if that schema is missing or resolves to `public`.
+4. A separate four-connection, read-only PostgreSQL login aggregates `billing_type=0`
    rows whose `actual_cost` is positive over an `Asia/Shanghai` natural day;
    user aggregates below one micro-USD after rounding are omitted as zero.
-4. The policy-defined daily refresh aggregates the preceding natural day into
+5. The policy-defined daily refresh aggregates the preceding natural day into
    immutable snapshot revisions and updates the user's read-only point total.
-5. Check-in locks the daily user/platform counters, calculates a reward using
+6. Check-in locks the daily user/platform counters, calculates a reward using
    `crypto/rand`, reserves every monetary cap, records the immutable rule
    snapshot, and enqueues a balance grant in one serializable transaction.
-6. The outbox worker signs an idempotent Sub2API balance-credit request. A
+7. The outbox worker signs an idempotent Sub2API balance-credit request. A
    retryable or unknown result must be retried with the same transaction UUID
    until Sub2API confirms settlement. Only settled credits can enqueue a debit
    reversal; only a never-attempted pending credit can be cancelled locally.
@@ -130,8 +133,9 @@ is retained as `needs_review` instead of committing an invalid total.
 
 Copy `.env.example` and replace every placeholder. Important details:
 
-- `POINTS_DB_PASSWORD` must match the password embedded in
-  `POINTS_DATABASE_URL` for the Compose-managed points database.
+- `POINTS_DATABASE_URL` connects to the existing Sub2API database with the
+  dedicated points application role. `POINTS_DATABASE_SCHEMA` defaults to
+  `points`; `POINTS_DATABASE_MAX_CONNS` defaults to eight and cannot exceed 32.
 - `POINTS_LAUNCH_HMAC_KEYS` contains versioned `key_id:base64_secret` entries.
 - `POINTS_SUB2_CREDIT_KEY_ID` and `POINTS_SUB2_CREDIT_SECRET` select the active
   versioned, base64-decoded Sub2API balance bridge key.
@@ -146,10 +150,13 @@ Generate 32-byte secrets with a CSPRNG. Never place production secrets in Git.
 
 `compose.example.yml` and `deploy/nginx.conf.example` are templates. Set
 `POINTS_IMAGE` to the verified GHCR digest emitted by the image workflow; the
-production template intentionally has no local `build` fallback. PostgreSQL
-must permit `CREATE EXTENSION btree_gist` during the first migration. If the
-application role cannot create extensions, install `btree_gist` once using a
-database administrator before starting the service.
+production template intentionally has no local `build` fallback and does not
+start another PostgreSQL container. Before first start, take a verified backup
+of the existing Sub2API database, run `deploy/shared-database-bootstrap.sql.example`
+as its owner, and provision the separate read-only login from
+`deploy/usage-reader.sql.example`. The bootstrap installs `btree_gist` and
+creates only the isolated points schema and role; embedded migrations then run
+inside that schema.
 
 The Compose template publishes the service on loopback only and joins the
 existing Sub2API Docker network for the read-only database and balance bridge.
@@ -159,9 +166,10 @@ points container; forwarded client IP headers are ignored from every other
 source. The Nginx launch location disables access logging so one-time tickets
 are not persisted in query-string logs.
 
-The process serializes migrations with a PostgreSQL advisory lock. The first
-policy is disabled. Create a complete policy through the admin API; its effective
-date must be tomorrow or later.
+The process serializes migrations with a PostgreSQL advisory lock and verifies
+`current_schema()` before running them, so a missing schema cannot fall back to
+`public`. The first policy is disabled. Create a complete policy through the
+admin API; its effective date must be tomorrow or later.
 
 Serializable write transactions retry PostgreSQL `40001` serialization failures
 and `40P01` deadlocks with context-aware jittered backoff, up to eight total
@@ -189,8 +197,7 @@ POINTS_TEST_DATABASE_URL='postgres://points_test:points_test@127.0.0.1:5432/poin
 ```
 
 The tagged suite applies the embedded migrations in isolated schemas and
-checks migration idempotency, concurrent daily/user/platform check-in caps,
-settled unreversed check-in totals, and rollback of snapshot-not-ready
-idempotency state. Snapshot revision concurrency, one-time launch-ticket
-storage, outbox lease recovery, balance retry/reversal idempotency, and the
-append-only triggers remain candidates for broader integration coverage.
+checks migration idempotency, expired security-state cleanup, concurrent
+daily/user/platform check-in caps, bounded rejection storage, settled
+unreversed check-in totals, unknown credit reversal guards, and rollback of
+snapshot-not-ready idempotency state.

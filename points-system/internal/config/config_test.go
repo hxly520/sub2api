@@ -26,3 +26,16 @@ func TestParseKeyringUsesBase64AndVersionedKeyID(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabaseSchemaRejectsPublicAndUnsafeNames(t *testing.T) {
+	for _, value := range []string{"points", "points_v2", "tenant42"} {
+		if !validDatabaseSchema(value) {
+			t.Fatalf("valid schema %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", "public", "pg_catalog", "pg_temp_1", "Points", "points-data", "42points"} {
+		if validDatabaseSchema(value) {
+			t.Fatalf("unsafe schema %q was accepted", value)
+		}
+	}
+}
