@@ -5,7 +5,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库代码候选：官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）与私有提交序列 `d30c42da..7e598fbb`，关键提交为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b` 和公开首页 `7e598fbb`；`backend/cmd/server/VERSION=0.1.168`。
+- 当前仓库代码候选：官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）与其后的私有兼容提交；关键功能提交为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b` 和公开首页 `7e598fbb`，发布文档与部署加固继续位于这些提交之后；`backend/cmd/server/VERSION=0.1.168`。
 - 当前生产 Sub2API 代码基线仍为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，运行版本 `0.1.164`。候选镜像构建、上传或拉入服务器缓存均不等于生产容器已经切换。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
@@ -182,6 +182,31 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 9. 余额发放超时后只重试同一交易 UUID；未知 credit 结果禁止直接冲正，必须确认 settled 后再发起关联 debit。确定性 4xx 进入永久失败终态，由管理员检查审计后显式重试；禁止删除幂等账本后重新发放。
 10. 回滚入口时先关闭 Sub2API points 开关，不删除 `points` schema、快照、签到、事务发件箱或 Sub2API `points_balance_credits`。积分容器可独立停止，不能为此停止或回滚 Sub2API。
 11. 同一发布记录必须包含 Sub2API/积分/工作台提交与镜像 tag/digest、数据库备份、两张迁移表、Nginx 配置版本和 Cloudflare Worker 版本。
+
+首次发布的命令记录必须能按以下模板复现，实际执行时把占位符替换为只读盘点结果，密钥只从权限为 `0600` 的临时环境文件读取，不写入 Git 或 shell history：
+
+```bash
+# 备份和离线完整性检查；此过程不停止 PostgreSQL 或 Sub2API。
+docker exec POSTGRES_CONTAINER pg_dump -U POSTGRES_OWNER -d sub2api -Fc --no-owner > BACKUP.dump
+sha256sum BACKUP.dump > BACKUP.dump.sha256
+pg_restore --list BACKUP.dump > BACKUP.restore-list.txt
+
+# 使用数据库 owner/superuser 和仓库内模板初始化独立角色；两个脚本都可重复执行并会收紧旧角色权限。
+docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_OWNER -d sub2api \
+  -v points_app_role=points_app -v points_app_password=POINTS_APP_PASSWORD \
+  < points-system/deploy/shared-database-bootstrap.sql.example
+docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_OWNER -d sub2api \
+  -v points_usage_role=points_usage_reader -v points_usage_password=POINTS_READER_PASSWORD \
+  < points-system/deploy/usage-reader.sql.example
+
+# 只启动积分服务；禁止在这一步执行任何 Sub2API compose up/restart/recreate。
+docker compose --env-file POINTS_ENV_FILE -f points-system/compose.example.yml pull
+docker compose --env-file POINTS_ENV_FILE -f points-system/compose.example.yml up -d --no-deps points-system
+curl --fail --silent http://127.0.0.1:POINTS_HOST_PORT/healthz
+curl --silent --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:POINTS_HOST_PORT/
+```
+
+首启环境固定 `POINTS_USAGE_RECONCILE_DAYS=1`。自动调度在策略未启用时不访问 `usage_logs`；仍须在启动前只读记录昨日行数、表/索引大小、活动连接、长事务、磁盘余量，并在低峰审阅聚合查询 `EXPLAIN`。只有确认资源余量后才可把回算窗口恢复为默认 7 天。备份恢复命令必须另行记录为 `pg_restore --clean --if-exists --create` 到隔离演练实例，禁止直接在生产库试恢复。
 
 ## 10. 回滚边界
 

@@ -28,6 +28,7 @@ func TestRegisterPaymentRoutesIncludesKeyingPayWebhook(t *testing.T) {
 		middleware.AdminAuthMiddleware(noAuth),
 		middleware.AuditLogMiddleware(noAuth),
 		nil,
+		nil,
 	)
 
 	routes := router.Routes()

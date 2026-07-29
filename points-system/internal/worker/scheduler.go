@@ -14,6 +14,7 @@ const defaultSnapshotReconcileDays = 7
 type UsageRefresher interface {
 	RefreshUsageDay(context.Context, time.Time, string) (store.DailyRefreshResult, error)
 	RefreshMinuteForDate(context.Context, time.Time) (int, error)
+	UsageRefreshEnabledForDate(context.Context, time.Time) (bool, error)
 }
 
 type SnapshotScheduler struct {
@@ -107,6 +108,17 @@ func (s *SnapshotScheduler) refreshDueDays(ctx context.Context, now time.Time, p
 	}
 	for offset := s.ReconcileDays - 1; offset >= 0; offset-- {
 		businessDate := mostRecent.AddDate(0, 0, -offset)
+		enabled, enabledErr := s.Store.UsageRefreshEnabledForDate(ctx, businessDate)
+		if enabledErr != nil {
+			s.Logger.Error("load points usage refresh policy failed",
+				"business_date", businessDate.Format("2006-01-02"), "error", enabledErr)
+			continue
+		}
+		if !enabled {
+			s.Logger.Info("points usage snapshot refresh skipped for disabled policy",
+				"business_date", businessDate.Format("2006-01-02"))
+			continue
+		}
 		trigger := "reconcile"
 		if offset == 0 {
 			trigger = primaryTrigger

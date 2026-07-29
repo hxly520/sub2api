@@ -122,9 +122,13 @@ PostgreSQL role receives column-level `SELECT` access only to `usage_logs.id`,
 transactions and limits this pool to four connections.
 
 The scheduler defaults to `00:05` and rechecks the policy version at midnight,
-so a refresh-time change takes effect on its configured natural day. It
-reconciles the latest seven days by default (`POINTS_USAGE_RECONCILE_DAYS`,
-maximum 31). Late rows and source corrections create signed snapshot deltas;
+so a refresh-time change takes effect on its configured natural day. Automatic
+refreshes skip dates whose versioned policy is disabled, so starting the service
+does not scan Sub2API usage data before points are active. It reconciles the
+latest seven days by default (`POINTS_USAGE_RECONCILE_DAYS`, maximum 31). Use a
+one-day window for the first production start until the query plan and database
+headroom have been checked. Late rows and source corrections within that window
+create signed snapshot deltas;
 the snapshot, account totals, point ledger, revision, and refresh audit are
 committed atomically. A correction that would make an account total negative
 is retained as `needs_review` instead of committing an invalid total.

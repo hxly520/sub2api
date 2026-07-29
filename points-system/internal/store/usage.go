@@ -88,6 +88,19 @@ func (s *Store) RefreshMinuteForDate(ctx context.Context, date time.Time) (int, 
 	return policy.RefreshMinute, nil
 }
 
+// UsageRefreshEnabledForDate prevents the automatic scheduler from scanning
+// Sub2API usage data before the versioned points policy is active.
+func (s *Store) UsageRefreshEnabledForDate(ctx context.Context, date time.Time) (bool, error) {
+	policy, err := s.PolicyForDate(ctx, s.BusinessDate(date))
+	if errors.Is(err, domain.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return policy.Enabled, nil
+}
+
 func (s *Store) RefreshUsageDay(ctx context.Context, businessDate time.Time, trigger string) (DailyRefreshResult, error) {
 	if s == nil || s.DB == nil || s.Location == nil || s.UsageSource == nil {
 		return DailyRefreshResult{}, errors.New("usage snapshot refresh is not configured")
