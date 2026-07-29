@@ -44,6 +44,8 @@ Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 
 - 启动时间、restart count `0` 和 healthy 状态在候选载入前后完全一致。
 - Compose 没有改为候选 tag；生产切换仍由维护者手动执行。
 
+服务器安装的是 Docker Compose v2.27.1 插件。为兼容原有运维命令，`2026-07-30` 已安装 `/usr/local/bin/docker-compose` 兼容入口，源码见 [`deploy/docker-compose-compat.sh`](../deploy/docker-compose-compat.sh)；它只把旧命令转发给 `docker compose`，并兼容 `docker-compose --version`。现有 `/home/api/sub2api-deploy/docker-compose.yml` 未被此次兼容修复修改，SHA256 仍为 `d6c6ee9c4e2b186bc130b7df31c11da4d2b9f7c8d7d06a6e7e5841719c6be301`；安装前后 Sub2API、PostgreSQL 和 Redis 的容器 ID、启动时间及 restart count 完全一致。
+
 ## 4. 备份与同库隔离
 
 首次积分部署前已完成一致性 PostgreSQL 备份，期间没有重启 Sub2API 或 PostgreSQL：
