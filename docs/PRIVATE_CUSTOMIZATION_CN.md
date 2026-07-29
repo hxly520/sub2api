@@ -15,8 +15,8 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库代码基线：官方 Release `v0.1.168`（release commit `99c8e4bf7564823bafbab369acab6539e734c1bb`），私有兼容合并提交 `d30c42da`，`backend/cmd/server/VERSION=0.1.168`。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
-- 当前生产应用代码基线仍为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，`backend/cmd/server/VERSION=0.1.164`。2026-07-26 只读盘点确认生产 OCI revision 与该提交完全一致；`v0.1.168` 尚未构建镜像、上传或部署，不能仅凭仓库版本推断生产已经升级。
+- 当前仓库代码基线：官方 Release `v0.1.168`（release commit `99c8e4bf7564823bafbab369acab6539e734c1bb`），官方兼容合并提交 `d30c42da`，媒体冻结修复 `9f1b6bae`，积分系统 `e4179147`，同库隔离部署 `55ac503b`，公开首页 `7e598fbb`，`backend/cmd/server/VERSION=0.1.168`。只跟随已发布 Release/Tag，不把发布后的 `main` 提交自动并入生产候选。
+- 当前生产 Sub2API 代码基线仍为 `08fbef836b9c89c043d4269623b0e73e4aa674b6`，`backend/cmd/server/VERSION=0.1.164`。2026-07-26 只读盘点确认生产 OCI revision 与该提交完全一致；候选镜像的构建或服务器缓存不代表容器已经切换，生产版本必须以运行容器 OCI revision 为准。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -29,7 +29,11 @@
 | `d5bea143b` | 合并官方 v0.1.164 | 第二父节点为官方 release `cd8bb98c` |
 | `6986037ed` | v164 发布修复 | 清理安全扫描与 lint 问题 |
 | `08fbef836` | 当前生产应用代码 v164 | 加入视频源站防直连；生产 OCI revision，最新私有 `main` 在此基础上继续维护文档和发布流程 |
-| `d30c42da` | 合并官方 v0.1.168 与媒体冻结修复 | 第二父节点为官方 release `99c8e4bf`；当前仓库代码候选，尚未构建或部署 |
+| `d30c42da` | 合并官方 v0.1.168 | 第二父节点为官方 release `99c8e4bf`；保留完整私有二开历史 |
+| `9f1b6bae` | 媒体冻结最终核销修复 | 明确失败/空结果即时退款，未知终态保留，全站到期原子核销，成功费用按报价封顶 |
+| `e4179147` | 安全积分与签到系统 | Sub2API 桥接、独立积分服务、版本化策略、事务发件箱、签到金额上限及 PostgreSQL 并发测试 |
+| `55ac503b` | 积分同库隔离部署 | 复用现有 `sub2api` 数据库的独立 `points` schema 和最小权限角色，不启动第二个 PostgreSQL |
+| `7e598fbb` | 未登录公开首页 | 中性功能文案、响应式导航和无脚本静态首页；不改变登录后 Dashboard |
 
 完整提交历史和 tag 是正式合并的前置条件。浅克隆、`blob:none` 或 sparse checkout 只可用于阅读，不得用于正式版本合并和发布。
 
@@ -40,7 +44,7 @@
 | 协议兼容层 | 兼容 OpenAI、Anthropic、Gemini、国内 OpenAI-compatible 实现和第三方客户端 | 不按 User-Agent 或检测器名称伪造能力；工具调用、usage、SSE 和终止事件必须来自真实协议转换 |
 | 调度与缓存层 | 提高会话缓存亲和、账号选择质量和首响应体验 | 分组和账号能力约束优先；失败切换不能产生额外计费请求；TTFT 不得伪造 |
 | 媒体任务层 | 图片/视频创建、轮询、恢复、计费和下载代理 | 创建最多一次；查询可重复；成功只扣一次，失败/取消/过期不扣费；公开响应只使用平台任务 ID 和代理 URL |
-| 产品扩展层 | 可用渠道、Q 群入口、KeyingPay V2 等 | 不改变官方核心数据语义；后台配置为准；敏感配置不进入公开 API 和仓库 |
+| 产品扩展层 | 可用渠道、Q 群入口、KeyingPay V2、独立积分与签到服务等 | 不改变官方核心数据语义；后台配置为准；敏感配置不进入公开 API 和仓库 |
 
 ## 3. 二开功能清单与代码入口
 
@@ -130,7 +134,26 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 视频创建成功返回任务后，客户端应长轮询同一个任务。轮询中断只暂停查询，不得重新创建。只有终态成功且媒体结果可用时记录一次 usage；重复查询和重复下载不得再次计费。
 
-### 3.6 支付扩展
+### 3.6 独立积分与签到系统
+
+- 源码边界：`points-system/` 是独立 Go 服务、独立 PostgreSQL schema 和独立镜像；Sub2API 只负责菜单入口、一次性启动票据和幂等余额发放桥接，不在浏览器计算积分、消费额或奖励金额。
+- 产品口径以 `points-system/PRODUCT_REQUIREMENTS_CN.md` 为唯一事实源。积分是成功余额消费换算的只读统计值，不提供积分兑换余额或订阅结算；默认 `1 U = 10.00` 积分，比例支持两位小数并只影响生效后的新消费。
+- 每日快照默认在 `Asia/Shanghai 00:05` 汇总上一自然日，可通过次日生效的版本化策略调整。生产事实源必须是只读查询 Sub2API `usage_logs` 中 `billing_type=0`、`actual_cost>0` 的成功余额消费，浏览器上报不能作为消费事实。
+- 昨日汇总未成功完成时签到必须返回可重试的准备中状态，不得把缺失快照当作零积分命中首个阶梯，也不得占用当天签到次数。
+- 签到总开关、每日次数、全体/仅消费用户、昨日/总积分依据均由管理员配置。仅消费用户模式必须锁定昨日积分；最低签到消费金额始终按昨日成功余额消费判断，`0 U` 表示关闭额外门槛。
+- 每个积分阶梯只能选择固定余额区间或消费金额百分比区间。百分比基数使用对应统计周期的原始成功消费金额，不得用积分反推；所有金额向下量化到 `0.01 U`，随机值来自 CSPRNG，用户页面只显示实际中奖金额。
+- 用户工作台同时显示总积分、昨日积分、今日签到所得和累计签到赠送金额。累计值只汇总已经成功发放且未冲正的签到余额，不能把 pending、永久失败或已冲正金额用于展示。
+- 单次、单用户每日、全平台每日奖励上限均为管理员配置。签到资格读取、次数和金额占用、规则快照、审计记录及余额发放事务发件箱必须在同一串行化事务中完成。
+- 积分业务写表复用现有 `sub2api` 数据库，但固定在独立 `points` schema，写池默认最多 8 条连接；消费读取使用另一只读账号和最多 4 条连接。启动时 `current_schema()` 不匹配必须失败，禁止回退到 `public` 建表。
+- 业务拒绝按用户、自然日和拒绝原因收敛，恶意轮换幂等键不能无界增加财务表。余额 credit 的网络、超时或 5xx 结果属于未知状态，必须用原 UUID 重试确认到账后才能排队 debit；不得直接标为已冲正。
+- Sub2API 与积分服务使用 Base64 编码的版本化 HMAC 密钥。启动票据为 `key_id.payload.signature` 三段格式并绑定 `aud=points-system`；余额请求签名绑定 key ID、方法、路径、时间戳、交易 UUID 和请求体摘要，同一交易只能入账一次。
+- 用户入口：Sub2API `/points`；管理员入口：`/admin/settings/points`。两个入口都先调用受认证的 Sub2API 启动接口；积分域名根路径不提供工作台，直接访问 `/app/` 或 `/admin/` 没有积分会话时必须拒绝。
+- 主要 Sub2API 入口：`backend/internal/service/points_bridge.go`、`repository/points_bridge_repo.go`、`handler/points_handler.go`、`server/routes/points.go`、`frontend/src/views/user/PointsPortalView.vue`。
+- 主要积分服务入口：`points-system/internal/domain/`、`store/`、`worker/`、`httpapi/`、`sub2client/` 与 `internal/migrate/migrations/`。
+
+后续官方升级不得把积分余额发放改成前端请求参数直写用户余额，不得恢复已删除的积分兑换流程，也不得用浮点数处理积分比例、消费金额、百分比或奖励金额。
+
+### 3.7 支付扩展
 
 - KeyingPay V2 provider：`backend/internal/payment/provider/keyingpay.go`。
 - 工厂、路由、配置和前端入口：`payment/provider/factory.go`、`server/routes/payment.go`、`handler/payment_webhook_handler.go`、`frontend/src/components/payment/`。
@@ -138,10 +161,11 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 支付回调必须验证签名并保持幂等。创建、回调、主动查单、退款、退款查询和关闭订单要复用 Sub2API 原有订单状态机，不能绕过平台订单表直接加余额。
 
-### 3.7 公开页面、导入与边缘部署
+### 3.8 公开页面、导入与边缘部署
 
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
+- Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。
 - Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
 - 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
 - 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。
@@ -153,6 +177,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 媒体任务、公开任务 ID、定价快照、计费终态和幂等信息由迁移维护。
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 候选新增的非事务并发索引迁移，服务于全站到期冻结扫描；它尚未进入生产。发布前必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
+- `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
 - 修改 `backend/ent/schema/` 后必须重新生成 Ent 文件，并提交 schema、生成代码、SQL migration 和回归测试。
@@ -167,6 +192,8 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 图片流超时、keepalive、图片并发和媒体任务设置。
 - `gateway.video_proxy` 模式、公开地址、令牌时效和加密密钥。
 - URL allowlist、CORS、请求体大小和错误切换边界。
+- `points_system` 启用状态、公开启动 URL、启动/余额 HMAC key ID 与 Base64 secret、票据 TTL 和时钟偏差；真实密钥只在部署环境保存。
+- 积分服务的同库 `points` schema、最大 8 条写连接、Sub2API `usage_logs` 最多 4 条只读连接、可信 Nginx CIDR、公开 origin、会话密钥和服务间 HMAC keyring；消费数据账号只授予所需列的 `SELECT` 权限。
 
 仓库只提交字段说明和占位值。真实密钥、账号地址、数据库连接、支付私钥、Worker Secret、SSH/GitHub 凭据不得提交。
 
@@ -174,14 +201,14 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 ### 5.0 v0.1.168 合并兼容结论
 
-- 合并提交 `d30c42da` 只合入官方 `v0.1.168` Release tree，不合入 tag 之后的未发布 `main`。官方新增 Passkey、模型广场、OpenAI Live、Kimi K3、账号/API Key 声明列更新和多项协议、计费及安全审计修复。
+- 合并提交 `d30c42da` 只合入官方 `v0.1.168` Release tree，不合入 tag 之后的未发布 `main`；其后私有提交 `9f1b6bae`、`e4179147`、`55ac503b`、`d83ea1bb`、`7e598fbb` 分别承载媒体核销、积分、同库部署、跨平台测试稳定性和未登录首页。官方新增 Passkey、模型广场、OpenAI Live、Kimi K3、账号/API Key 声明列更新和多项协议、计费及安全审计修复。
 - 冲突处理以官方结构和行为为主，同时保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留与核销、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
 - 账号选择使用高级智能调度但关闭粘性加权。新会话按综合分选择；已有会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
 - OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和失败终态不自动重放。图片和视频创建继续严格一次提交。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- 仓库 `backend/cmd/server/VERSION=0.1.168`，但生产仍是 `0.1.164` / `08fbef836`。只有 Git commit、CI 镜像标签、OCI revision 和 registry digest 同时可核验后，`v0.1.168` 才能成为可部署候选；本次明确暂停镜像构建和服务器替换。
-- 媒体失败分类和后台核销的聚焦测试、repository 全量测试、`cmd/server` 编译、前端渠道测试、ESLint、`vue-tsc` 与 frozen lockfile 已通过。service 全量测试仅保留既有 `TestContentModerationRuntimeSnapshotRefreshFailureKeepsStaleConfig` 失败，发布前仍需重新核对该已知项。
+- 仓库 `backend/cmd/server/VERSION=0.1.168`，但生产 Sub2API 仍是 `0.1.164` / `08fbef836`。当前已授权 GitHub 构建并把候选镜像拉入服务器缓存，Sub2API 容器是否切换仍只由用户手动决定。
+- 后端全量测试、vet、编译，积分服务单元/vet/integration-tag 编译，前端 lint/typecheck/全量测试/生产构建和 Compose 解析已通过。官方纳秒 TTL 测试已在 `d83ea1bb` 改为显式过期快照，Windows 连续 20 次验证通过；真实 PostgreSQL 事务和并发用例必须由 GitHub PostgreSQL 16 CI 最终确认。
 
 ### 5.1 升级前盘点
 
@@ -208,6 +235,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - `server/routes/gateway.go`：路径别名不能绕过鉴权或能力检查。
 - `channel_available.go` 和可用渠道前端：模型来源必须仍为渠道定价。
 - 支付 provider、webhook 和订单生命周期：签名、幂等、金额和状态转换。
+- `points-system/`、Sub2API points bridge 和 `193_points_balance_credit_ledger.sql`：单位精度、次日策略、消费快照修订、最低昨日消费门槛、阶梯边界、金额上限、签到并发、启动票据、余额幂等与失败终态。
 
 ## 6. 发布门禁
 
@@ -229,6 +257,11 @@ pnpm run lint:check
 pnpm run typecheck
 pnpm run test:run
 pnpm run build
+
+cd ../points-system
+go test ./... -count=1
+go vet ./...
+go build ./cmd/server
 ```
 
 实际命令以当前 `Makefile`、`package.json` 和 CI 为准。pnpm 版本应与 CI/Dockerfile 一致，不能因为本机新版 pnpm 改写 lockfile。
@@ -244,6 +277,7 @@ pnpm run build
 | 图片 | 同步生成、同步编辑、手动异步、重复查询、失败不扣费、成功一次计费、代理 URL |
 | 视频 | 每个公开模型的创建、查询、内容下载、长轮询恢复、公开 ID、失败不扣费、成功一次计费 |
 | 前端 | 可用渠道长模型列表、移动端、Q 群入口、支付 provider 配置 |
+| 积分与签到 | 两位小数比例、真实成功消费、00:05 动态刷新、快照修订、总/昨日积分阶梯、最低昨日消费金额、固定/百分比奖励、每日次数、三层金额上限、并发签到、HMAC 轮换、票据重放、同库 schema 隔离、拒绝记录收敛、余额幂等、未知 credit 禁止直接冲正和永久失败人工重试 |
 | 检测兼容 | 按标准协议真实测试，不识别检测器、不伪造模型身份或固定输出 |
 
 收费媒体真实测试应使用最小数量并保存任务 ID、时间窗和 usage 对照。禁止为了“多试几次”自动循环创建付费媒体任务。
@@ -270,6 +304,9 @@ pnpm run build
 - 用户响应和浏览器 Network 不出现供应商域名、账号 Base URL、供应商任务 ID或认证头。
 - 可用渠道只展示渠道定价中且用户有权访问的模型，并在桌面/移动端完整可查看。
 - 支付回调验签、订单幂等和金额校验不能被 WAF 放行规则或前端状态替代。
+- 积分只统计成功余额消费且不可兑换；签到奖励通过余额发放事务发件箱入账。最低签到消费金额只读昨日成功消费，百分比奖励只读对应周期原始消费金额，浏览器参数不能改变用户、积分、消费基数、阶梯或奖励。
+- 积分配置只追加版本并次日生效；仅消费用户必须锁定昨日积分。直接访问积分域名不能建立会话，余额发放必须同时通过 HMAC、时间窗、key ID、交易 UUID 和数据库幂等校验。
+- 积分服务只能在现有 Sub2API 数据库的独立 schema 写入；首次迁移前必须备份数据库，启动或回滚积分容器不得停止、重启或替换运行中的 Sub2API 容器。
 
 ## 8. 文档更新规则
 
