@@ -6,7 +6,7 @@
 
 - 私有候选提交：`2ad2815e075aadf0553be9913518af35d8b0c7b3`。
 - 官方基线：Sub2API Release `v0.1.168`，官方 commit `99c8e4bf7564823bafbab369acab6539e734c1bb`。
-- GitHub Actions 因账户月度额度在 runner 分配前终止；既有候选 SHA 的完整 CI 和安全扫描已经成功，最终两个 Linux/amd64 镜像改由本机构建。
+- GitHub Actions 因账户计费或支出限额在 runner 分配前终止；既有候选 SHA 的完整 CI 和安全扫描已经成功，最终两个 Linux/amd64 镜像改由本机构建。新 push 的 job 均无执行 step，不能解释为代码测试失败。
 - 本机构建使用 Go `1.26.5`、`CGO_ENABLED=0`、`GOOS=linux`、`GOARCH=amd64`；前端使用 pnpm `9.15.9` frozen install 和生产构建。
 - 本机没有 Docker daemon。标准 Docker archive 由 `go-containerregistry` 组装并在写出后重新读取验证；服务器没有编译源码、Go 二进制、前端或 Docker 镜像，只执行了运行时基底导出、文件校验、`docker load` 和一次性冒烟容器。
 

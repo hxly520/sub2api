@@ -160,7 +160,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` GitHub Actions 因账户月度额度在 runner 分配前终止，最终改由受控本机生成标准 Docker archive，服务器只执行 `docker load`。Sub2API 候选只进入服务器缓存，未修改 Compose、未替换或重启现有容器；积分服务已在数据库备份、独立 schema 和最小权限角色准备完成后启动。精确镜像、归档、容器、数据库和 Nginx 状态以本章开头链接的生产记录为准。
+`2026-07-30` GitHub Actions 因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；最终改由受控本机生成标准 Docker archive，服务器只执行 `docker load`。Sub2API 候选只进入服务器缓存，未修改 Compose、未替换或重启现有容器；积分服务已在数据库备份、独立 schema 和最小权限角色准备完成后启动。精确镜像、归档、容器、数据库和 Nginx 状态以本章开头链接的生产记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
