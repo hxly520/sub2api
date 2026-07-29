@@ -136,6 +136,51 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 	}
 }
 
+func TestPostgresDisabledPolicyMarksSnapshotReadyWithoutUsageScan(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx := context.Background()
+	yesterday := fixture.store.BusinessDate(fixture.now).AddDate(0, 0, -1)
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,created_by
+	) VALUES($1,FALSE,9001)`, yesterday.Format("2006-01-02")); err != nil {
+		t.Fatal(err)
+	}
+	source := &failIfCalledUsageSource{}
+	fixture.store.SetUsageSource(source)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		result, err := fixture.store.RefreshUsageDay(ctx, yesterday, "startup")
+		if err != nil {
+			t.Fatalf("mark disabled day ready: %v", err)
+		}
+		if result.RunID == "" || len(result.SourceFingerprint) != 64 || result.SourceRows != 0 ||
+			result.Users != 0 || result.ChangedUsers != 0 {
+			t.Fatalf("unexpected disabled-day result: %+v", result)
+		}
+	}
+	if source.calls != 0 {
+		t.Fatalf("disabled policy queried usage source %d times", source.calls)
+	}
+	var succeededRuns int
+	if err := fixture.db.QueryRow(ctx, `SELECT COUNT(*) FROM points_snapshot_refresh_runs
+		WHERE business_date=$1 AND status='succeeded'`, yesterday.Format("2006-01-02")).Scan(
+		&succeededRuns); err != nil {
+		t.Fatal(err)
+	}
+	if succeededRuns != 1 {
+		t.Fatalf("disabled-day succeeded runs = %d, want 1", succeededRuns)
+	}
+
+	seedCheckinPolicy(t, fixture, 1, 10_000_000, 10_000_000, 100_000, 100_000)
+	checkin, err := fixture.store.CheckIn(ctx, 9101, uuid.NewString(), fixture.now)
+	if err != nil {
+		t.Fatalf("first enabled-day check-in: %v", err)
+	}
+	if checkin.RewardMicroUSD != 100_000 {
+		t.Fatalf("first enabled-day reward = %d, want 100000", checkin.RewardMicroUSD)
+	}
+}
+
 func TestPostgresSharedDatabasePoolPinsMigrationsToIsolatedSchema(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv(pointsTestDatabaseEnv))
 	if databaseURL == "" {
@@ -597,7 +642,7 @@ func seedReadySnapshots(t *testing.T, fixture *postgresFixture, policyVersion in
 		id,business_date,trigger,source_window_start,source_window_end,source_fingerprint,
 		source_users,source_rows,changed_users,delta_spend_microusd,delta_points_hundredths,
 		status,completed_at
-	) VALUES($1,$2,'manual',$3,$4,$5,$6,$6,$6,$7,$8,'succeeded',$9)`, runID,
+	) VALUES($1,$2,'manual',$3,$4,$5,$6::integer,$6::bigint,$6::integer,$7,$8,'succeeded',$9)`, runID,
 		yesterday.Format("2006-01-02"), yesterday, yesterday.AddDate(0, 0, 1),
 		strings.Repeat("b", 64), len(userIDs), spend*int64(len(userIDs)),
 		int64(1_000*len(userIDs)), fixture.now.UTC()); err != nil {
@@ -644,4 +689,14 @@ func concurrentCheckins(t *testing.T, fixture *postgresFixture, userIDs []int64,
 		outcomes = append(outcomes, err)
 	}
 	return outcomes
+}
+
+type failIfCalledUsageSource struct {
+	calls int
+}
+
+func (s *failIfCalledUsageSource) AggregateDay(context.Context, time.Time,
+	time.Time) (pointsstore.UsageDay, error) {
+	s.calls++
+	return pointsstore.UsageDay{}, errors.New("usage source must not be called for a disabled policy")
 }

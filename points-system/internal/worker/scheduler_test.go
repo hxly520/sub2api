@@ -61,7 +61,7 @@ func TestSnapshotSchedulerReconcilesConfiguredWindowOldestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fake := &schedulerStoreStub{refreshMinute: 5, refreshEnabled: true}
+	fake := &schedulerStoreStub{refreshMinute: 5}
 	scheduler := &SnapshotScheduler{
 		Store: fake, Location: location, ReconcileDays: 3,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -81,25 +81,6 @@ func TestSnapshotSchedulerReconcilesConfiguredWindowOldestFirst(t *testing.T) {
 			t.Fatalf("call %d = %s/%s, want %s/%s", i, got, call.trigger,
 				wantDates[i], wantTriggers[i])
 		}
-	}
-}
-
-func TestSnapshotSchedulerDoesNotReadUsageForDisabledPolicy(t *testing.T) {
-	location, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake := &schedulerStoreStub{refreshMinute: 5}
-	scheduler := &SnapshotScheduler{
-		Store: fake, Location: location, ReconcileDays: 7,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	if err := scheduler.refreshDueDays(context.Background(),
-		time.Date(2026, 7, 29, 0, 5, 0, 0, location), "startup"); err != nil {
-		t.Fatal(err)
-	}
-	if len(fake.calls) != 0 {
-		t.Fatalf("disabled policy caused %d usage refresh calls", len(fake.calls))
 	}
 }
 
@@ -134,7 +115,7 @@ func TestSchedulerRunsPolicyWhoseRefreshMinuteIsMidnight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fake := &schedulerStoreStub{refreshMinute: 0, refreshEnabled: true}
+	fake := &schedulerStoreStub{refreshMinute: 0}
 	scheduler := &SnapshotScheduler{
 		Store: fake, Location: location, ReconcileDays: 1,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -155,9 +136,8 @@ type schedulerStoreCall struct {
 }
 
 type schedulerStoreStub struct {
-	refreshMinute  int
-	refreshEnabled bool
-	calls          []schedulerStoreCall
+	refreshMinute int
+	calls         []schedulerStoreCall
 }
 
 func (s *schedulerStoreStub) RefreshUsageDay(_ context.Context, date time.Time,
@@ -168,8 +148,4 @@ func (s *schedulerStoreStub) RefreshUsageDay(_ context.Context, date time.Time,
 
 func (s *schedulerStoreStub) RefreshMinuteForDate(context.Context, time.Time) (int, error) {
 	return s.refreshMinute, nil
-}
-
-func (s *schedulerStoreStub) UsageRefreshEnabledForDate(context.Context, time.Time) (bool, error) {
-	return s.refreshEnabled, nil
 }

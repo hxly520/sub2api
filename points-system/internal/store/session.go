@@ -72,7 +72,7 @@ func (s *Store) CleanupSecurityState(ctx context.Context, now time.Time) error {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM points_launch_ticket_nonces
-			WHERE expires_at <= $1 - INTERVAL '1 day'`, now)
+			WHERE expires_at <= $1::timestamptz - INTERVAL '1 day'`, now)
 		return err
 	})
 }

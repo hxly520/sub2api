@@ -84,6 +84,57 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: points-system/go.sum
+      - name: Validate shared PostgreSQL bootstrap templates
+        run: |
+          set -euo pipefail
+          psql=(docker run --rm --network host -i -e PGPASSWORD=points_test postgres:16-alpine \
+            psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U points_test -d points_test)
+
+          printf '%s\n' \
+            'CREATE TABLE public.usage_logs (' \
+            '  id BIGINT PRIMARY KEY, user_id BIGINT NOT NULL, billing_type INTEGER NOT NULL,' \
+            '  actual_cost NUMERIC(20,10) NOT NULL, created_at TIMESTAMPTZ NOT NULL' \
+            ');' | "${psql[@]}"
+
+          {
+            cat <<'PSQL_VARS'
+          \set points_app_role 'points_ci_app'
+          \set points_app_password 'points_ci_app_password'
+          \set points_schema 'points_ci'
+          PSQL_VARS
+            cat points-system/deploy/shared-database-bootstrap.sql.example
+          } | "${psql[@]}"
+
+          {
+            cat <<'PSQL_VARS'
+          \set points_usage_role 'points_ci_reader'
+          \set points_usage_password 'points_ci_reader_password'
+          PSQL_VARS
+            cat points-system/deploy/usage-reader.sql.example
+          } | "${psql[@]}"
+
+          cat <<'SQL' | "${psql[@]}"
+          DO $audit$
+          BEGIN
+            IF EXISTS (
+              SELECT 1 FROM pg_roles
+              WHERE rolname IN ('points_ci_app','points_ci_reader')
+                AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit)
+            ) THEN
+              RAISE EXCEPTION 'bootstrap role attributes are not minimal';
+            END IF;
+            IF NOT has_column_privilege('points_ci_reader','public.usage_logs','id','SELECT') OR
+               NOT has_column_privilege('points_ci_reader','public.usage_logs','user_id','SELECT') OR
+               NOT has_column_privilege('points_ci_reader','public.usage_logs','billing_type','SELECT') OR
+               NOT has_column_privilege('points_ci_reader','public.usage_logs','actual_cost','SELECT') OR
+               NOT has_column_privilege('points_ci_reader','public.usage_logs','created_at','SELECT') OR
+               has_table_privilege('points_ci_reader','public.usage_logs','INSERT') OR
+               has_table_privilege('points_ci_app','public.usage_logs','SELECT') THEN
+              RAISE EXCEPTION 'bootstrap relation privileges are not isolated';
+            END IF;
+          END
+          $audit$;
+          SQL
       - name: Test, vet, and compile independent points service
         working-directory: points-system
         run: |

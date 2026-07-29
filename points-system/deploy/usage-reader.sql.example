@@ -1,47 +1,69 @@
 \set ON_ERROR_STOP on
 
--- Run as a CREATEROLE-capable owner of the existing Sub2API database:
---   -v points_usage_role=points_usage_reader
---   -v points_usage_password='LONG_RANDOM_PASSWORD'
--- The script is idempotent, rotates the password, removes role memberships,
--- and grants column-level read access only to the existing usage_logs table.
+-- Run exactly once as the PostgreSQL bootstrap superuser. Preload these psql
+-- variables from a root-only file on stdin:
+--   points_usage_role, points_usage_password
+-- The role must not already exist. Any partial failure rolls back.
 
-SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'points_usage_role', :'points_usage_password')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'points_usage_role')
-\gexec
+BEGIN;
+
 SELECT format(
-    'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 4',
+    'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 4',
     :'points_usage_role', :'points_usage_password'
 )
 \gexec
-SELECT format('REVOKE %I FROM %I', parent.rolname, :'points_usage_role')
-FROM pg_auth_members membership
-JOIN pg_roles parent ON parent.oid = membership.roleid
-JOIN pg_roles child ON child.oid = membership.member
-WHERE child.rolname = :'points_usage_role'
-\gexec
-
 SELECT format('ALTER ROLE %I SET default_transaction_read_only = %L', :'points_usage_role', 'on')
 \gexec
 SELECT format('ALTER ROLE %I SET statement_timeout = %L', :'points_usage_role', '30s')
 \gexec
 SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'points_usage_role', '30s')
 \gexec
-
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'points_usage_role')
 \gexec
 SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'points_usage_role')
 \gexec
-SELECT format('REVOKE CREATE ON SCHEMA public FROM %I', :'points_usage_role')
+
+-- A fresh role must not inherit broad database, schema, or table privileges
+-- through PUBLIC. Stop for an explicit ACL review instead of changing shared
+-- production grants automatically.
+SELECT format($audit_sql$
+DO $audit$
+BEGIN
+    IF has_database_privilege(%L, current_database(), 'CREATE') THEN
+        RAISE EXCEPTION 'usage reader inherits CREATE on the shared database';
+    END IF;
+    IF has_schema_privilege(%L, 'public', 'CREATE') THEN
+        RAISE EXCEPTION 'usage reader inherits CREATE on public schema';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind IN ('r','p','v','m','f')
+          AND (
+              has_table_privilege(%L, relation.oid, 'SELECT') OR
+              has_table_privilege(%L, relation.oid, 'INSERT') OR
+              has_table_privilege(%L, relation.oid, 'UPDATE') OR
+              has_table_privilege(%L, relation.oid, 'DELETE') OR
+              has_table_privilege(%L, relation.oid, 'TRUNCATE') OR
+              has_table_privilege(%L, relation.oid, 'REFERENCES') OR
+              has_table_privilege(%L, relation.oid, 'TRIGGER')
+          )
+    ) THEN
+        RAISE EXCEPTION 'usage reader inherits broad privileges on public relations';
+    END IF;
+END
+$audit$;
+$audit_sql$, :'points_usage_role', :'points_usage_role', :'points_usage_role',
+    :'points_usage_role', :'points_usage_role', :'points_usage_role', :'points_usage_role',
+    :'points_usage_role', :'points_usage_role')
 \gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %I', :'points_usage_role')
-\gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %I', :'points_usage_role')
-\gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %I', :'points_usage_role')
-\gexec
+
 SELECT format(
     'GRANT SELECT (id, user_id, billing_type, actual_cost, created_at) ON TABLE public.usage_logs TO %I',
     :'points_usage_role'
 )
 \gexec
+
+COMMIT;

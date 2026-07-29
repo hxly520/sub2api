@@ -172,8 +172,8 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 积分系统已批准构建和独立启动，但不得中断现有 Sub2API。首次发布拆成“构建并记录制品”“备份现有数据库”“同库创建隔离 schema/角色”“启动积分容器与 Nginx 验证”“用户手动切换 Sub2API 后再启用菜单和策略”五个阶段。
 
 1. GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。
-2. 先对现有 `sub2api` 数据库执行一致性备份并记录 SHA256/恢复命令；在同一数据库创建独立 `points` schema 和 `points_app` 最小权限角色，写池默认最多 8 条连接。不得创建第二个 PostgreSQL 容器。
-3. 为 `POINTS_USAGE_DATABASE_URL` 创建另一只读账号，只授予 Sub2API `usage_logs` 所需列的 `SELECT`，并强制只读事务和最多 4 条连接；不得复用 Sub2API 写账号。
+2. 先对现有 `sub2api` 数据库执行一致性备份并记录 SHA256/恢复命令；由 PostgreSQL bootstrap superuser 使用全新的角色名，在同一数据库创建独立 `points` schema 和 `points_app` 最小权限角色，写池默认最多 8 条连接。角色或 schema 已存在时脚本必须停止并转人工 ACL 审计，不得覆盖。不得创建第二个 PostgreSQL 容器。
+3. 由同一 bootstrap superuser 为 `POINTS_USAGE_DATABASE_URL` 创建全新的只读账号，只授予 Sub2API `usage_logs` 所需列的 `SELECT`，并强制只读事务和最多 4 条连接；不得复用 Sub2API 写账号或自动修改共享 PUBLIC ACL。
 4. 生成独立 Base64 32 字节以上的 session、launch、credit 和内部集成密钥。Sub2API 与积分服务只共享对应公约中的同一解码后字节；文档、Compose、shell history 和日志都不能出现真实值。
 5. 运行积分迁移和只读消费查询自检后启动积分容器，再启用 Nginx 精确反代。可信代理 CIDR 必须与实际容器/loopback 网络一致；根路径返回 404。此阶段不得修改、替换或重启现有 Sub2API 容器。
 6. 生产 Sub2API `v0.1.164` 不具备启动票据和余额桥接接口，因此积分服务可先完成 health、schema、迁移、根路径拒绝和内部安全检查，但完整用户签到链路必须等用户手动切换候选 Sub2API 后验证。
@@ -183,30 +183,39 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 10. 回滚入口时先关闭 Sub2API points 开关，不删除 `points` schema、快照、签到、事务发件箱或 Sub2API `points_balance_credits`。积分容器可独立停止，不能为此停止或回滚 Sub2API。
 11. 同一发布记录必须包含 Sub2API/积分/工作台提交与镜像 tag/digest、数据库备份、两张迁移表、Nginx 配置版本和 Cloudflare Worker 版本。
 
-首次发布的命令记录必须能按以下模板复现，实际执行时把占位符替换为只读盘点结果，密钥只从权限为 `0600` 的临时环境文件读取，不写入 Git 或 shell history：
+首次发布的命令记录必须能按以下模板复现，实际执行时把占位符替换为只读盘点结果。数据库密码通过权限为 `0600` 的 psql 变量文件拼接到标准输入，不能出现在命令参数、Git 或 shell history；积分运行环境文件同样必须为 `0600`：
 
 ```bash
-# 备份和离线完整性检查；此过程不停止 PostgreSQL 或 Sub2API。
-docker exec POSTGRES_CONTAINER pg_dump -U POSTGRES_OWNER -d sub2api -Fc --no-owner > BACKUP.dump
+# 备份、摘要和归档目录可读性检查；此过程不停止 PostgreSQL 或 Sub2API。
+umask 077
+docker exec POSTGRES_CONTAINER pg_dump -U POSTGRES_SUPERUSER -d sub2api -Fc --no-owner > BACKUP.dump
 sha256sum BACKUP.dump > BACKUP.dump.sha256
-pg_restore --list BACKUP.dump > BACKUP.restore-list.txt
+pg_restore --list BACKUP.dump > BACKUP.catalog.txt
 
-# 使用数据库 owner/superuser 和仓库内模板初始化独立角色；两个脚本都可重复执行并会收紧旧角色权限。
-docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_OWNER -d sub2api \
-  -v points_app_role=points_app -v points_app_password=POINTS_APP_PASSWORD \
-  < points-system/deploy/shared-database-bootstrap.sql.example
-docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_OWNER -d sub2api \
-  -v points_usage_role=points_usage_reader -v points_usage_password=POINTS_READER_PASSWORD \
-  < points-system/deploy/usage-reader.sql.example
+# 两个变量文件由密钥生成工具写入，内容为 psql \set 指令，权限必须为 0600。
+# 模板要求全新角色并在单一事务中执行；任何 ACL 前置检查失败都会整体回滚。
+cat POINTS_APP_PSQL_VARS points-system/deploy/shared-database-bootstrap.sql.example | \
+  docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_SUPERUSER -d sub2api
+cat POINTS_READER_PSQL_VARS points-system/deploy/usage-reader.sql.example | \
+  docker exec -i POSTGRES_CONTAINER psql -X -v ON_ERROR_STOP=1 -U POSTGRES_SUPERUSER -d sub2api
 
-# 只启动积分服务；禁止在这一步执行任何 Sub2API compose up/restart/recreate。
-docker compose --env-file POINTS_ENV_FILE -f points-system/compose.example.yml pull
-docker compose --env-file POINTS_ENV_FILE -f points-system/compose.example.yml up -d --no-deps points-system
-curl --fail --silent http://127.0.0.1:POINTS_HOST_PORT/healthz
-curl --silent --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:POINTS_HOST_PORT/
+# --env-file 用于 Compose 插值；显式导出同一路径后，service.env_file 才读取该运行时文件。
+export POINTS_ENV_FILE=/absolute/path/points.env
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml config --quiet
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml pull
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml up -d --no-deps points-system
+
+# 等待数据库迁移和服务健康完成，并断言域名根路径仍被拒绝。
+healthy=false
+for attempt in $(seq 1 30); do
+  if curl --fail --silent http://127.0.0.1:POINTS_HOST_PORT/healthz >/dev/null; then healthy=true; break; fi
+  sleep 2
+done
+test "$healthy" = true
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:POINTS_HOST_PORT/)" = 404
 ```
 
-首启环境固定 `POINTS_USAGE_RECONCILE_DAYS=1`。自动调度在策略未启用时不访问 `usage_logs`；仍须在启动前只读记录昨日行数、表/索引大小、活动连接、长事务、磁盘余量，并在低峰审阅聚合查询 `EXPLAIN`。只有确认资源余量后才可把回算窗口恢复为默认 7 天。备份恢复命令必须另行记录为 `pg_restore --clean --if-exists --create` 到隔离演练实例，禁止直接在生产库试恢复。
+首启环境固定 `POINTS_USAGE_RECONCILE_DAYS=1`。自动调度在策略未启用时不访问 `usage_logs`，只幂等写入零值成功就绪标记；仍须在启动前只读记录昨日行数、表/索引大小、活动连接、长事务、磁盘余量，并在低峰审阅聚合查询 `EXPLAIN`。只有确认资源余量后才可把回算窗口恢复为默认 7 天。`pg_restore --list` 只证明归档目录可读，不等于可恢复性验证；完整 `pg_restore --clean --if-exists --create` 必须在服务器外或隔离演练实例执行，禁止直接在生产库试恢复。
 
 ## 10. 回滚边界
 

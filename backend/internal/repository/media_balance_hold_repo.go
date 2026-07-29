@@ -441,7 +441,7 @@ func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID i
 				updated_at = NOW()
 			FROM expired_holds expired
 			WHERE holds.id = expired.id
-			RETURNING hold_amount, settled_amount, status
+			RETURNING holds.hold_amount, holds.settled_amount, holds.status
 		), totals AS (
 			SELECT COALESCE(SUM(hold_amount - settled_amount), 0) AS balance_credit,
 				COALESCE(SUM(hold_amount), 0) AS frozen_debit,

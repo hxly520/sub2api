@@ -111,6 +111,13 @@ func (s *Store) RefreshUsageDay(ctx context.Context, businessDate time.Time, tri
 	date := s.BusinessDate(businessDate)
 	windowStart := date.UTC()
 	windowEnd := date.AddDate(0, 0, 1).UTC()
+	enabled, err := s.UsageRefreshEnabledForDate(ctx, date)
+	if err != nil {
+		return DailyRefreshResult{}, fmt.Errorf("load usage refresh policy: %w", err)
+	}
+	if !enabled {
+		return s.markUsageDayReadyWithoutSource(ctx, date, trigger)
+	}
 	runID := uuid.NewString()
 	result := DailyRefreshResult{RunID: runID, BusinessDate: date}
 
@@ -146,6 +153,54 @@ func (s *Store) RefreshUsageDay(ctx context.Context, businessDate time.Time, tri
 	}
 	s.failRefreshRun(runID, err)
 	return DailyRefreshResult{}, fmt.Errorf("apply usage snapshot refresh: %w", err)
+}
+
+func (s *Store) markUsageDayReadyWithoutSource(ctx context.Context, date time.Time,
+	trigger string) (DailyRefreshResult, error) {
+	windowStart := date.UTC()
+	windowEnd := date.AddDate(0, 0, 1).UTC()
+	result := DailyRefreshResult{
+		BusinessDate: date,
+		SourceFingerprint: security.Fingerprint("points-policy-disabled", dateString(date),
+			windowStart.UnixMicro(), windowEnd.UnixMicro()),
+	}
+	err := s.withSerializableTx(ctx, func(tx pgx.Tx) error {
+		result.RunID = ""
+		result.Users = 0
+		result.SourceRows = 0
+		result.ChangedUsers = 0
+		result.DeltaSpendMicroUSD = 0
+		result.DeltaPointsHundredths = 0
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
+			"points-snapshot-refresh:"+dateString(date)); err != nil {
+			return err
+		}
+		err := tx.QueryRow(ctx, `SELECT id,source_fingerprint,source_users,source_rows,
+			changed_users,delta_spend_microusd,delta_points_hundredths
+			FROM points_snapshot_refresh_runs
+			WHERE business_date=$1 AND status='succeeded'
+			ORDER BY completed_at DESC,created_at DESC LIMIT 1`, dateString(date)).Scan(
+			&result.RunID, &result.SourceFingerprint, &result.Users, &result.SourceRows,
+			&result.ChangedUsers, &result.DeltaSpendMicroUSD, &result.DeltaPointsHundredths)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		result.RunID = uuid.NewString()
+		_, err = tx.Exec(ctx, `INSERT INTO points_snapshot_refresh_runs(
+			id,business_date,trigger,source_window_start,source_window_end,source_fingerprint,
+			source_users,source_rows,changed_users,delta_spend_microusd,delta_points_hundredths,
+			status,completed_at
+		) VALUES($1,$2,$3,$4,$5,$6,0,0,0,0,0,'succeeded',NOW())`, result.RunID,
+			dateString(date), trigger, windowStart, windowEnd, result.SourceFingerprint)
+		return err
+	})
+	if err != nil {
+		return DailyRefreshResult{}, fmt.Errorf("mark disabled usage day ready: %w", err)
+	}
+	return result, nil
 }
 
 func (s *Store) applyUsageDayTx(ctx context.Context, tx pgx.Tx, runID, trigger string, date time.Time,

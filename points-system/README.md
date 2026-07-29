@@ -124,11 +124,13 @@ transactions and limits this pool to four connections.
 The scheduler defaults to `00:05` and rechecks the policy version at midnight,
 so a refresh-time change takes effect on its configured natural day. Automatic
 refreshes skip dates whose versioned policy is disabled, so starting the service
-does not scan Sub2API usage data before points are active. It reconciles the
-latest seven days by default (`POINTS_USAGE_RECONCILE_DAYS`, maximum 31). Use a
-one-day window for the first production start until the query plan and database
-headroom have been checked. Late rows and source corrections within that window
-create signed snapshot deltas;
+does not scan Sub2API usage data before points are active. A disabled date still
+gets one idempotent zero-value readiness marker, allowing the first enabled day
+to use an all-user zero-point tier without reporting that yesterday is pending.
+It reconciles the latest seven days by default (`POINTS_USAGE_RECONCILE_DAYS`,
+maximum 31). Use a one-day window for the first production start until the query
+plan and database headroom have been checked. Late rows and source corrections
+within that window create signed snapshot deltas;
 the snapshot, account totals, point ledger, revision, and refresh audit are
 committed atomically. A correction that would make an account total negative
 is retained as `needs_review` instead of committing an invalid total.
@@ -157,10 +159,12 @@ Generate 32-byte secrets with a CSPRNG. Never place production secrets in Git.
 production template intentionally has no local `build` fallback and does not
 start another PostgreSQL container. Before first start, take a verified backup
 of the existing Sub2API database, run `deploy/shared-database-bootstrap.sql.example`
-as its owner, and provision the separate read-only login from
-`deploy/usage-reader.sql.example`. The bootstrap installs `btree_gist` and
-creates only the isolated points schema and role; embedded migrations then run
-inside that schema.
+as the PostgreSQL bootstrap superuser, and provision the separate read-only login
+from `deploy/usage-reader.sql.example`. Both templates require fresh role names,
+run in a transaction, and fail instead of changing shared PUBLIC ACLs. Supply
+their psql variables through a root-only stdin file rather than process arguments.
+The bootstrap installs `btree_gist` and creates only the isolated points schema
+and role; embedded migrations then run inside that schema.
 
 The Compose template publishes the service on loopback only and joins the
 existing Sub2API Docker network for the read-only database and balance bridge.

@@ -38,7 +38,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: points-system/go.mod
+          go-version-file: backend/go.mod
           check-latest: false
           cache-dependency-path: points-system/go.sum
       - name: Run govulncheck

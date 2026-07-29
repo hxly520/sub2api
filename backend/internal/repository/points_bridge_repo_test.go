@@ -15,7 +15,7 @@ func TestPointsBridgeRepositoryAppliesCreditAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	transactionID := uuid.MustParse("b754d48e-2bb3-4d61-9428-e8de88c18670")
 	input := service.PointsBalanceCreditInput{
@@ -56,7 +56,7 @@ func TestPointsBridgeRepositoryReturnsOriginalIdempotentResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	transactionID := uuid.MustParse("b754d48e-2bb3-4d61-9428-e8de88c18670")
 	input := service.PointsBalanceCreditInput{

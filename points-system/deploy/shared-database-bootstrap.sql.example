@@ -1,32 +1,20 @@
 \set ON_ERROR_STOP on
 
--- Run as a CREATEROLE-capable owner of the existing Sub2API database. Supply:
---   -v points_app_role=points_app
---   -v points_app_password='LONG_RANDOM_PASSWORD'
---   -v points_schema=points
--- The script creates no database and never changes a Sub2API table. Re-running
--- it rotates the password and removes inherited role memberships.
+-- Run exactly once as the PostgreSQL bootstrap superuser. Preload these psql
+-- variables from a root-only file on stdin:
+--   points_app_role, points_app_password, points_schema
+-- The role and schema must not already exist. Any partial failure rolls back.
+
+BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
 
-SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'points_app_role', :'points_app_password')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'points_app_role')
-\gexec
 SELECT format(
-    'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 8',
+    'CREATE ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 8',
     :'points_app_role', :'points_app_password'
 )
 \gexec
-SELECT format('REVOKE %I FROM %I', parent.rolname, :'points_app_role')
-FROM pg_auth_members membership
-JOIN pg_roles parent ON parent.oid = membership.roleid
-JOIN pg_roles child ON child.oid = membership.member
-WHERE child.rolname = :'points_app_role'
-\gexec
-
-SELECT format('CREATE SCHEMA IF NOT EXISTS %I AUTHORIZATION %I', :'points_schema', :'points_app_role')
-\gexec
-SELECT format('ALTER SCHEMA %I OWNER TO %I', :'points_schema', :'points_app_role')
+SELECT format('CREATE SCHEMA %I AUTHORIZATION %I', :'points_schema', :'points_app_role')
 \gexec
 SELECT format('REVOKE ALL ON SCHEMA %I FROM PUBLIC', :'points_schema')
 \gexec
@@ -34,17 +22,48 @@ SELECT format('GRANT USAGE, CREATE ON SCHEMA %I TO %I', :'points_schema', :'poin
 \gexec
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'points_app_role')
 \gexec
-SELECT format('REVOKE CREATE ON SCHEMA public FROM %I', :'points_app_role')
-\gexec
 SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'points_app_role')
-\gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %I', :'points_app_role')
-\gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %I', :'points_app_role')
-\gexec
-SELECT format('REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM %I', :'points_app_role')
 \gexec
 SELECT format('ALTER ROLE %I SET statement_timeout = %L', :'points_app_role', '30s')
 \gexec
 SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'points_app_role', '30s')
 \gexec
+
+-- Fail closed when PUBLIC grants would give the fresh role write or Sub2API
+-- table access outside its isolated schema. Do not revoke shared production
+-- ACLs automatically.
+SELECT format($audit_sql$
+DO $audit$
+BEGIN
+    IF has_database_privilege(%L, current_database(), 'CREATE') THEN
+        RAISE EXCEPTION 'points role inherits CREATE on the shared database';
+    END IF;
+    IF has_schema_privilege(%L, 'public', 'CREATE') THEN
+        RAISE EXCEPTION 'points role inherits CREATE on public schema';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind IN ('r','p','v','m','f')
+          AND (
+              has_table_privilege(%L, relation.oid, 'SELECT') OR
+              has_table_privilege(%L, relation.oid, 'INSERT') OR
+              has_table_privilege(%L, relation.oid, 'UPDATE') OR
+              has_table_privilege(%L, relation.oid, 'DELETE') OR
+              has_table_privilege(%L, relation.oid, 'TRUNCATE') OR
+              has_table_privilege(%L, relation.oid, 'REFERENCES') OR
+              has_table_privilege(%L, relation.oid, 'TRIGGER')
+          )
+    ) THEN
+        RAISE EXCEPTION 'points role inherits privileges on public relations';
+    END IF;
+END
+$audit$;
+$audit_sql$, :'points_app_role', :'points_app_role', :'points_app_role',
+    :'points_app_role', :'points_app_role', :'points_app_role', :'points_app_role',
+    :'points_app_role', :'points_app_role')
+\gexec
+
+COMMIT;
