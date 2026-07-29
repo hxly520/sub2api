@@ -24,6 +24,7 @@
 - `/home/api/sub2api-deploy/image-archives/sub2api-0.1.168-2ad2815e-linux-amd64.tar`
 - `/home/api/sub2api-deploy/image-archives/sub2api-points-0.1.168-2ad2815e-linux-amd64.tar`
 - 两个文件均为 `0600 root:root`，服务器 SHA256 与本地一致。
+- 为绕开本机到 Docker Hub 的网络阻断，服务器仅执行 `docker save` 导出既有运行时基底，再由本机下载组装；压缩基底保存在 `/home/api/sub2api-deploy/backups/runtime-base-v0.1.164-4736d53e.tar.gz`，大小 `45,185,166` bytes，SHA256 为 `12b4c84cb0515312d68a4a29aaf8c135d0df878a0931fa6ace8700bc5d850c4d`，权限 `0600 root:root`。该操作不是镜像构建，也没有触碰运行容器。
 
 Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 客户端和 UID/GID 1000 基底，去掉旧 binary/resources/data/entrypoint 五层后追加新应用层。最终为 8 层，`layers`、`diff_ids` 和非空 History 数量一致。积分归档是单层 scratch 静态镜像，内含 CA bundle、Go zoneinfo 和专用 HTTP healthcheck，运行用户为数字 UID/GID `65532:65532`。
 
