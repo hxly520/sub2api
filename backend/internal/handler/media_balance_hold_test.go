@@ -21,6 +21,8 @@ func TestShouldRetainMediaBalanceHoldAfterDispatch(t *testing.T) {
 	}{
 		{name: "nil", want: false},
 		{name: "explicit user rejection", err: &service.OpenAIImagesUpstreamError{StatusCode: http.StatusBadRequest, Message: "invalid size"}},
+		{name: "mapped explicit rejection", err: &service.OpenAIImagesUpstreamError{StatusCode: http.StatusInternalServerError, Message: "hidden rejection", MediaOutcomeKnownFailed: true}},
+		{name: "marked plain rejection", err: service.MarkDefinitiveMediaGenerationFailure(errors.New("content policy rejection"))},
 		{name: "known failover rejection", err: &service.UpstreamFailoverError{StatusCode: http.StatusForbidden, MediaOutcomeKnownFailed: true}},
 		{name: "known provider cancellation", err: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, MediaOutcomeKnownFailed: true}},
 		{name: "generic bad gateway", err: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway}, want: true},

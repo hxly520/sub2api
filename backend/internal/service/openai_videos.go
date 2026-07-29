@@ -1219,9 +1219,10 @@ func (s *OpenAIGatewayService) handleOpenAIVideoErrorResponse(ctx context.Contex
 	s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, resp.Header, body, upstreamModel)
 	setOpsUpstreamError(c, statusCode, "video upstream request failed", "")
 	return nil, &OpenAIImagesUpstreamError{
-		StatusCode: statusCode,
-		ErrorType:  "upstream_error",
-		Message:    "Video upstream request failed",
+		StatusCode:              statusCode,
+		ErrorType:               "upstream_error",
+		Message:                 "Video upstream request failed",
+		MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(statusCode, body),
 	}
 }
 

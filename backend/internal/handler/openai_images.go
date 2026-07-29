@@ -370,7 +370,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			// ForwardImages has crossed the dispatched boundary. Unclassified
 			// transport, timeout, and malformed-response errors may have been
 			// accepted upstream, so retain the hold for reconciliation.
-			mediaHoldTransferred = mediaHold != nil
+			mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false

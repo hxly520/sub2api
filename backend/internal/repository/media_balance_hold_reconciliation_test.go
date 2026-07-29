@@ -17,12 +17,12 @@ func TestReconcileExpiredMediaBalanceHoldsForUser_SettlesAtomically(t *testing.T
 	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`(?s)WITH reconciled AS .*UPDATE media_balance_holds.*RETURNING hold_amount, settled_amount, status`).
+	mock.ExpectExec(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_generation_tasks`).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance_credit", "frozen_debit", "count"}).AddRow(1.25, 2.0, int64(2)))
-	mock.ExpectExec(`(?s)UPDATE users.*SET balance = balance \+ \$1.*frozen_balance = COALESCE\(frozen_balance, 0\) - \$2`).
-		WithArgs(1.25, 2.0, int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_balance_holds.*UPDATE users.*SELECT totals.reconciled_count`).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"reconciled_count", "updated_user_count"}).AddRow(int64(2), int64(1)))
 	mock.ExpectCommit()
 
 	repo := &usageBillingRepository{db: db}
@@ -38,9 +38,12 @@ func TestReconcileExpiredMediaBalanceHoldsForUser_IsIdempotentWhenNoActiveHoldsR
 	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`(?s)WITH reconciled AS .*UPDATE media_balance_holds`).
+	mock.ExpectExec(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_generation_tasks`).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance_credit", "frozen_debit", "count"}).AddRow(0.0, 0.0, int64(0)))
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_balance_holds`).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"reconciled_count", "updated_user_count"}).AddRow(int64(0), int64(0)))
 	mock.ExpectCommit()
 
 	repo := &usageBillingRepository{db: db}
@@ -62,16 +65,16 @@ func TestReconcileExpiredMediaBalanceHolds_ContinuesAfterOneUserFails(t *testing
 		WillReturnRows(sqlmock.NewRows([]string{"user_id", "first_expires_at"}).AddRow(int64(11), firstExpiry).AddRow(int64(22), secondExpiry))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`(?s)WITH reconciled AS .*UPDATE media_balance_holds`).
+	mock.ExpectExec(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_generation_tasks`).
 		WithArgs(int64(11)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance_credit", "frozen_debit", "count"}).AddRow(1.0, 1.0, int64(1)))
-	mock.ExpectExec(`(?s)UPDATE users.*SET balance = balance \+ \$1`).
-		WithArgs(1.0, 1.0, int64(11)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_balance_holds`).
+		WithArgs(int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"reconciled_count", "updated_user_count"}).AddRow(int64(1), int64(1)))
 	mock.ExpectCommit()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`(?s)WITH reconciled AS .*UPDATE media_balance_holds`).
+	mock.ExpectExec(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_generation_tasks`).
 		WithArgs(int64(22)).
 		WillReturnError(errors.New("temporary database error"))
 	mock.ExpectRollback()
@@ -91,12 +94,12 @@ func TestReconcileExpiredMediaBalanceHolds_RejectsInconsistentFrozenBalance(t *t
 	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`(?s)WITH reconciled AS .*UPDATE media_balance_holds`).
+	mock.ExpectExec(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_generation_tasks`).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"balance_credit", "frozen_debit", "count"}).AddRow(1.0, 1.0, int64(1)))
-	mock.ExpectExec(`(?s)UPDATE users.*SET balance = balance \+ \$1`).
-		WithArgs(1.0, 1.0, int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`(?s)WITH expired_holds AS MATERIALIZED .*UPDATE media_balance_holds`).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"reconciled_count", "updated_user_count"}).AddRow(int64(1), int64(0)))
 	mock.ExpectRollback()
 
 	repo := &usageBillingRepository{db: db}

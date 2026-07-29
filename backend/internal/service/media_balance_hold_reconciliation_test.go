@@ -48,6 +48,19 @@ type mediaHoldBalanceCacheStub struct {
 	userIDs []int64
 }
 
+type blockingMediaHoldReconciliationRepo struct {
+	started chan struct{}
+}
+
+func (r *blockingMediaHoldReconciliationRepo) ReconcileExpiredMediaBalanceHolds(ctx context.Context, _ *MediaBalanceHoldReconciliationCursor, _ int) (*MediaBalanceHoldReconciliationResult, error) {
+	select {
+	case r.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (c *mediaHoldBalanceCacheStub) InvalidateUserBalance(_ context.Context, userID int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -108,5 +121,28 @@ func TestMediaBalanceHoldReconciliationService_StartRunsImmediately(t *testing.T
 	case <-repo.called:
 	case <-time.After(time.Second):
 		t.Fatal("reconciliation did not run at startup")
+	}
+}
+
+func TestMediaBalanceHoldReconciliationService_StopCancelsActiveRun(t *testing.T) {
+	repo := &blockingMediaHoldReconciliationRepo{started: make(chan struct{}, 1)}
+	svc := NewMediaBalanceHoldReconciliationService(repo, nil, time.Hour, 10)
+	svc.Start()
+
+	select {
+	case <-repo.started:
+	case <-time.After(time.Second):
+		t.Fatal("reconciliation did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		svc.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not cancel the active reconciliation run")
 	}
 }

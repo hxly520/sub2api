@@ -313,14 +313,12 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 
 	accountRelease, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, new(bool), reqLog)
 	if !acquired {
-		// The persisted creation intent must keep its hold resumable under the
-		// same idempotency key. Expiry reconciliation refunds it if never sent.
-		mediaHoldTransferred = mediaHold != nil
+		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "account_slot_unavailable")
 		return
 	}
 	writerSizeBeforeForward := c.Writer.Size()
 	if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
-		mediaHoldTransferred = mediaHold != nil
+		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "hold_dispatch_failed")
 		reqLog.Warn("openai.images.mark_async_balance_dispatched_failed", zap.String("request_id", state.publicTaskID), zap.Error(err))
 		h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image billing reservation is unavailable")
 		return
@@ -343,10 +341,9 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		var upstreamUserErr *service.OpenAIImagesUpstreamError
 		if errors.As(forwardErr, &upstreamUserErr) {
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
-			if service.IsDefinitiveMediaGenerationFailure(upstreamUserErr.StatusCode, []byte(upstreamUserErr.Error())) {
-				markOpenAIImageTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
-			} else {
-				mediaHoldTransferred = mediaHold != nil
+			mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(forwardErr)
+			if !mediaHoldTransferred {
+				markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
 			}
 			return
 		}
@@ -354,7 +351,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		if errors.As(forwardErr, &failoverErr) {
 			mediaHoldTransferred = mediaHold != nil && !failoverErr.MediaOutcomeKnownFailed
 			if failoverErr.MediaOutcomeKnownFailed {
-				markOpenAIImageTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
+				markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
 			}
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
@@ -366,7 +363,10 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
-		mediaHoldTransferred = mediaHold != nil
+		mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(forwardErr)
+		if !mediaHoldTransferred {
+			markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "upstream_rejected")
+		}
 		h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 		if !openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, forwardErr) {
 			h.ensureForwardErrorResponse(c, false)
@@ -375,9 +375,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		return
 	}
 	if result == nil || strings.TrimSpace(result.ResponseID) == "" || len(result.ResponseBody) == 0 {
-		// A malformed 2xx response does not prove that the upstream failed to
-		// create a task. Keep the intent and hold resumable by idempotency key.
-		mediaHoldTransferred = mediaHold != nil
+		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "invalid_upstream_task_response")
 		h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream image task response is invalid")
 		return
 	}
@@ -414,6 +412,9 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	}
 	result.ResponseBody = clientBody
 	finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, &outcome)
+	if !ensureOpenAIImageTaskResultDeliverable(c, h, reqLog, apiKey.ID, result, &outcome) {
+		return
+	}
 	writeOpenAIImageForwardResponse(c, result)
 }
 
@@ -486,6 +487,9 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 		}
 		storedResult.ResponseBody = clientBody
 		finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, storedResult, task)
+		if !ensureOpenAIImageTaskResultDeliverable(c, h, reqLog, apiKey.ID, storedResult, task) {
+			return
+		}
 		writeOpenAIImageForwardResponse(c, storedResult)
 		return
 	}
@@ -566,7 +570,36 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageTaskStatus(
 	}
 	result.ResponseBody = clientBody
 	finalizeOpenAIImageTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, freshTask)
+	if !ensureOpenAIImageTaskResultDeliverable(c, h, reqLog, apiKey.ID, result, freshTask) {
+		return
+	}
 	writeOpenAIImageForwardResponse(c, result)
+}
+
+func ensureOpenAIImageTaskResultDeliverable(
+	c *gin.Context,
+	h *OpenAIGatewayHandler,
+	reqLog *zap.Logger,
+	apiKeyID int64,
+	result *service.OpenAIForwardResult,
+	task *service.MediaGenerationTask,
+) bool {
+	if result == nil || !service.IsMediaGenerationSuccessStatus(result.MediaStatus) {
+		return true
+	}
+	if h == nil || h.gatewayService == nil || task == nil {
+		return false
+	}
+	freshTask, err := h.gatewayService.GetMediaGenerationTaskByTaskID(c.Request.Context(), apiKeyID, task.ClientTaskID())
+	if err == nil && freshTask != nil && freshTask.UsageRecordedAt != nil && service.IsMediaGenerationSuccessStatus(freshTask.Status) {
+		return true
+	}
+	reqLog.Warn("openai.images.result_delivery_blocked_unsettled",
+		zap.String("request_id", task.ClientTaskID()),
+		zap.Error(err),
+	)
+	h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image result settlement is incomplete")
+	return false
 }
 
 func finalizeOpenAIImageTaskFromStatus(
@@ -585,7 +618,7 @@ func finalizeOpenAIImageTaskFromStatus(
 	}
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
 	if service.IsMediaGenerationFailureStatus(status) {
-		markOpenAIImageTaskTerminalDetached(h, apiKey.ID, task.ClientTaskID(), status, "image_task_failed")
+		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, task.ClientTaskID(), status, "image_task_failed")
 		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task))
 		return
 	}
@@ -752,7 +785,7 @@ func persistOpenAIImageTaskDetached(ctx context.Context, h *OpenAIGatewayHandler
 	return lastErr
 }
 
-func markOpenAIImageTaskTerminalDetached(h *OpenAIGatewayHandler, apiKeyID int64, taskID, status, finalizationError string) {
+func markMediaGenerationTaskTerminalDetached(h *OpenAIGatewayHandler, apiKeyID int64, taskID, status, finalizationError string) {
 	if h == nil || h.gatewayService == nil || strings.TrimSpace(taskID) == "" {
 		return
 	}

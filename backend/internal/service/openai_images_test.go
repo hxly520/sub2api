@@ -1267,6 +1267,60 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
 
+func TestOpenAIGatewayServiceForwardImages_APIKeyCompletedWithoutImageIsDefinitiveFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name        string
+		requestBody string
+		contentType string
+		response    string
+	}{
+		{
+			name:        "non-stream response",
+			requestBody: `{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`,
+			contentType: "application/json",
+			response:    `{"created":1710000007,"data":[]}`,
+		},
+		{
+			name:        "completed stream",
+			requestBody: `{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`,
+			contentType: "text/event-stream",
+			response:    "data: {\"type\":\"image_generation.completed\",\"data\":[]}\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			svc := &OpenAIGatewayService{
+				cfg: &config.Config{},
+				httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{tt.contentType}},
+					Body:       io.NopCloser(strings.NewReader(tt.response)),
+				}},
+			}
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			account := &Account{
+				ID: 7, Name: "openai-apikey-empty", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "test-api-key", "base_url": "https://image-upstream.example/v1"},
+			}
+
+			result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+			require.Nil(t, result)
+			require.Error(t, err)
+			require.True(t, IsMarkedDefinitiveMediaGenerationFailure(err))
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceForwardImages_APIKeyClassifiesMediaFailureOutcome(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)

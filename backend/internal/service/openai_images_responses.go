@@ -37,6 +37,9 @@ type OpenAIImagesUpstreamError struct {
 	Message           string
 	Param             string
 	UpstreamRequestID string
+	// MediaOutcomeKnownFailed is based on the original upstream response, not
+	// on a status code later rewritten for client presentation.
+	MediaOutcomeKnownFailed bool
 }
 
 func (e *OpenAIImagesUpstreamError) Error() string {
@@ -732,11 +735,12 @@ func openAIImagesIncompleteUpstreamError(response gjson.Result) *OpenAIImagesUps
 		message = fmt.Sprintf("Upstream image generation incomplete: %s", reason)
 	}
 	return &OpenAIImagesUpstreamError{
-		StatusCode:        statusCode,
-		ErrorType:         errType,
-		Code:              "response_incomplete",
-		Message:           sanitizeUpstreamErrorMessage(message),
-		UpstreamRequestID: strings.TrimSpace(response.Get("id").String()),
+		StatusCode:              statusCode,
+		ErrorType:               errType,
+		Code:                    "response_incomplete",
+		Message:                 sanitizeUpstreamErrorMessage(message),
+		UpstreamRequestID:       strings.TrimSpace(response.Get("id").String()),
+		MediaOutcomeKnownFailed: true,
 	}
 }
 
@@ -753,12 +757,13 @@ func openAIImagesUpstreamErrorFromGJSON(errorObj gjson.Result, upstreamRequestID
 		message = "Upstream request failed"
 	}
 	return &OpenAIImagesUpstreamError{
-		StatusCode:        statusCode,
-		ErrorType:         errType,
-		Code:              code,
-		Message:           sanitizeUpstreamErrorMessage(message),
-		Param:             param,
-		UpstreamRequestID: strings.TrimSpace(upstreamRequestID),
+		StatusCode:              statusCode,
+		ErrorType:               errType,
+		Code:                    code,
+		Message:                 sanitizeUpstreamErrorMessage(message),
+		Param:                   param,
+		UpstreamRequestID:       strings.TrimSpace(upstreamRequestID),
+		MediaOutcomeKnownFailed: true,
 	}
 }
 
@@ -803,12 +808,13 @@ func openAIImagesUpstreamErrorFromHTTP(statusCode int, header http.Header, body 
 		requestID = strings.TrimSpace(header.Get("x-request-id"))
 	}
 	return &OpenAIImagesUpstreamError{
-		StatusCode:        statusCode,
-		ErrorType:         errType,
-		Code:              code,
-		Message:           message,
-		Param:             param,
-		UpstreamRequestID: requestID,
+		StatusCode:              statusCode,
+		ErrorType:               errType,
+		Code:                    code,
+		Message:                 message,
+		Param:                   param,
+		UpstreamRequestID:       requestID,
+		MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(statusCode, body),
 	}
 }
 
@@ -865,10 +871,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 		"Upstream request failed",
 	); matched {
 		upErr := &OpenAIImagesUpstreamError{
-			StatusCode:        status,
-			ErrorType:         errType,
-			Message:           errMsg,
-			UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
+			StatusCode:              status,
+			ErrorType:               errType,
+			Message:                 errMsg,
+			UpstreamRequestID:       strings.TrimSpace(resp.Header.Get("x-request-id")),
+			MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(resp.StatusCode, body),
 		}
 		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
 		return nil, upErr
@@ -889,10 +896,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 			Detail:             upstreamDetail,
 		})
 		upErr := &OpenAIImagesUpstreamError{
-			StatusCode:        http.StatusInternalServerError,
-			ErrorType:         "upstream_error",
-			Message:           "Upstream gateway error",
-			UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
+			StatusCode:              http.StatusInternalServerError,
+			ErrorType:               "upstream_error",
+			Message:                 "Upstream gateway error",
+			UpstreamRequestID:       strings.TrimSpace(resp.Header.Get("x-request-id")),
+			MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(resp.StatusCode, body),
 		}
 		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
 		return nil, upErr
@@ -1272,10 +1280,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 		//     image_gen 工具未执行）。这是上游的概率性失败，此时才按可重试处理。
 		if refusal := extractOpenAIImagesModelRefusal(body); refusal != "" {
 			refusalErr := &OpenAIImagesUpstreamError{
-				StatusCode: http.StatusBadRequest,
-				ErrorType:  "image_generation_user_error",
-				Code:       "content_policy_violation",
-				Message:    sanitizeUpstreamErrorMessage(refusal),
+				StatusCode:              http.StatusBadRequest,
+				ErrorType:               "image_generation_user_error",
+				Code:                    "content_policy_violation",
+				Message:                 sanitizeUpstreamErrorMessage(refusal),
+				MediaOutcomeKnownFailed: true,
 			}
 			setOpsUpstreamError(c, http.StatusBadRequest, refusalErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
 			writeOpenAIImagesUpstreamErrorResponse(c, refusalErr)
@@ -1286,9 +1295,10 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 		// handler 必须禁止自动重放；RetryableOnSameAccount 仅保留为旧协议诊断字段。
 		setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(body))
 		return OpenAIUsage{}, 0, nil, &UpstreamFailoverError{
-			StatusCode:             http.StatusBadGateway,
-			ResponseBody:           body,
-			RetryableOnSameAccount: true,
+			StatusCode:              http.StatusBadGateway,
+			ResponseBody:            body,
+			RetryableOnSameAccount:  true,
+			MediaOutcomeKnownFailed: true,
 		}
 	}
 	if strings.TrimSpace(firstMeta.Model) == "" {
@@ -1426,7 +1436,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			}
 			reconcileOpenAIResponsesImageResultSizes(finalResults, nil)
 			if len(finalResults) == 0 {
-				outputErr := fmt.Errorf("upstream did not return image output")
+				outputErr := MarkDefinitiveMediaGenerationFailure(fmt.Errorf("upstream did not return image output"))
 				// 软失败：response.completed 事件里没有图片。记录上游诊断摘要到 ops，
 				// 与非流式路径保持一致，避免上游响应信息丢失。
 				setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(dataBytes))

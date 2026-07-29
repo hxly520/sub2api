@@ -363,20 +363,59 @@ func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID i
 		return false, nil
 	}
 	// A capture marker or successful async task consumes the hold. Every other
-	// expired active hold is refunded. Updating the holds before adjusting the
-	// user makes the classification and its monetary effect one transaction.
-	var balanceCredit, frozenDebit float64
-	var reconciledCount int64
+	// expired active hold is refunded and its task is terminalized in the same
+	// transaction, so a late poll cannot turn a refunded task into a free result.
+	// All arithmetic remains NUMERIC inside PostgreSQL; float64 must not sit on
+	// the settlement path.
+	// This is deliberately a separate statement: if a concurrent poll commits a
+	// success while this UPDATE waits on the task row, the settlement query gets
+	// a fresh READ COMMITTED snapshot and captures rather than refunds it.
+	if _, err := tx.ExecContext(ctx, `
+		WITH expired_holds AS MATERIALIZED (
+			SELECT id, api_key_id, request_id
+			FROM media_balance_holds
+			WHERE user_id = $1
+				AND status IN ('reserved', 'dispatched', 'capture_pending')
+				AND expires_at <= NOW()
+			FOR UPDATE
+		)
+		UPDATE media_generation_tasks tasks
+		SET status = 'expired',
+			finalization_lease_token = NULL,
+			finalization_lease_until = NULL,
+			finalization_error = 'balance_hold_expired',
+			updated_at = NOW()
+		FROM expired_holds expired
+		WHERE tasks.api_key_id = expired.api_key_id
+			AND expired.request_id = 'media_balance_hold:' || tasks.public_task_id
+			AND LOWER(BTRIM(tasks.status)) NOT IN (
+				'complete', 'completed', 'success', 'succeeded', 'done',
+				'fail', 'failed', 'failure', 'error', 'rejected', 'denied', 'aborted',
+				'cancel', 'cancelled', 'canceled',
+				'expire', 'expired', 'timeout', 'timed_out'
+			)
+	`, userID); err != nil {
+		return false, err
+	}
+
+	var reconciledCount, updatedUserCount int64
 	if err := tx.QueryRowContext(ctx, `
-		WITH reconciled AS (
+		WITH expired_holds AS MATERIALIZED (
+			SELECT id, api_key_id, request_id, status, hold_amount, capture_amount
+			FROM media_balance_holds
+			WHERE user_id = $1
+				AND status IN ('reserved', 'dispatched', 'capture_pending')
+				AND expires_at <= NOW()
+			FOR UPDATE
+		), reconciled AS (
 			UPDATE media_balance_holds holds
 			SET status = CASE
-					WHEN holds.status = 'capture_pending'
+					WHEN expired.status = 'capture_pending'
 						OR EXISTS (
 							SELECT 1
 							FROM media_generation_tasks tasks
-							WHERE tasks.api_key_id = holds.api_key_id
-								AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
+							WHERE tasks.api_key_id = expired.api_key_id
+								AND expired.request_id = 'media_balance_hold:' || tasks.public_task_id
 								AND LOWER(BTRIM(tasks.status)) IN (
 									'complete', 'completed', 'success', 'succeeded', 'done'
 								)
@@ -385,55 +424,53 @@ func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID i
 					ELSE 'released'
 				END,
 				settled_amount = CASE
-					WHEN holds.status = 'capture_pending'
+					WHEN expired.status = 'capture_pending'
 						OR EXISTS (
 							SELECT 1
 							FROM media_generation_tasks tasks
-							WHERE tasks.api_key_id = holds.api_key_id
-								AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
+							WHERE tasks.api_key_id = expired.api_key_id
+								AND expired.request_id = 'media_balance_hold:' || tasks.public_task_id
 								AND LOWER(BTRIM(tasks.status)) IN (
 									'complete', 'completed', 'success', 'succeeded', 'done'
 								)
 						)
-					THEN COALESCE(holds.capture_amount, holds.hold_amount)
+					THEN COALESCE(expired.capture_amount, expired.hold_amount)
 					ELSE 0
 				END,
 				settled_at = NOW(),
 				updated_at = NOW()
-			WHERE holds.user_id = $1
-				AND holds.status IN ('reserved', 'dispatched', 'capture_pending')
-				AND holds.expires_at <= NOW()
+			FROM expired_holds expired
+			WHERE holds.id = expired.id
 			RETURNING hold_amount, settled_amount, status
+		), totals AS (
+			SELECT COALESCE(SUM(hold_amount - settled_amount), 0) AS balance_credit,
+				COALESCE(SUM(hold_amount), 0) AS frozen_debit,
+				COUNT(*) AS reconciled_count,
+				COALESCE(BOOL_AND(settled_amount >= 0 AND settled_amount <= hold_amount), TRUE) AS amounts_valid
+			FROM reconciled
+		), updated_user AS (
+			UPDATE users
+			SET balance = users.balance + totals.balance_credit,
+				frozen_balance = COALESCE(users.frozen_balance, 0) - totals.frozen_debit,
+				updated_at = NOW()
+			FROM totals
+			WHERE users.id = $1
+				AND users.deleted_at IS NULL
+				AND totals.reconciled_count > 0
+				AND totals.amounts_valid
+				AND COALESCE(users.frozen_balance, 0) >= totals.frozen_debit
+			RETURNING users.id
 		)
-		SELECT
-			COALESCE(SUM(hold_amount - settled_amount), 0),
-			COALESCE(SUM(hold_amount), 0),
-			COUNT(*)
-		FROM reconciled
-	`, userID).Scan(&balanceCredit, &frozenDebit, &reconciledCount); err != nil {
+		SELECT totals.reconciled_count, COUNT(updated_user.id)
+		FROM totals LEFT JOIN updated_user ON TRUE
+		GROUP BY totals.reconciled_count
+	`, userID).Scan(&reconciledCount, &updatedUserCount); err != nil {
 		return false, err
 	}
 	if reconciledCount == 0 {
 		return false, nil
 	}
-	if balanceCredit < -0.00000001 || frozenDebit <= 0 {
-		return false, errors.New("expired media hold settlement amount is inconsistent")
-	}
-	result, err := tx.ExecContext(ctx, `
-		UPDATE users
-		SET balance = balance + $1,
-			frozen_balance = COALESCE(frozen_balance, 0) - $2,
-			updated_at = NOW()
-		WHERE id = $3 AND deleted_at IS NULL AND COALESCE(frozen_balance, 0) >= $2
-	`, balanceCredit, frozenDebit, userID)
-	if err != nil {
-		return false, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected != 1 {
+	if updatedUserCount != 1 {
 		return false, errors.New("expired media frozen balance is inconsistent")
 	}
 	return true, nil

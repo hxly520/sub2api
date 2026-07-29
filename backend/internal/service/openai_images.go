@@ -843,6 +843,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			}
 			return nil, err
 		}
+		if streamCount <= 0 {
+			return nil, MarkDefinitiveMediaGenerationFailure(fmt.Errorf("upstream image stream completed without image output"))
+		}
 		usage = streamUsage
 		imageCount = streamCount
 		imageOutputSizes := streamSizes
@@ -877,7 +880,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			nonStreamCount = extractOpenAIImageCountFromJSONBytes(responseBody)
 			nonStreamSizes = collectOpenAIResponseImageOutputSizesFromJSONBytes(responseBody)
 			if nonStreamCount == 0 {
-				return nil, fmt.Errorf("upstream image response did not contain an image")
+				return nil, MarkDefinitiveMediaGenerationFailure(fmt.Errorf("upstream image response did not contain an image"))
 			}
 			c.Data(resp.StatusCode, responseContentType, responseBody)
 		}

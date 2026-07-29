@@ -48,6 +48,8 @@ type MediaBalanceHoldReconciliationService struct {
 	startOnce    sync.Once
 	stopOnce     sync.Once
 	wg           sync.WaitGroup
+	runCtx       context.Context
+	cancel       context.CancelFunc
 
 	lockCache  LeaderLockCache
 	db         *sql.DB
@@ -60,12 +62,15 @@ func NewMediaBalanceHoldReconciliationService(
 	interval time.Duration,
 	batchSize int,
 ) *MediaBalanceHoldReconciliationService {
+	runCtx, cancel := context.WithCancel(context.Background())
 	return &MediaBalanceHoldReconciliationService{
 		repo:         repo,
 		balanceCache: balanceCache,
 		interval:     interval,
 		batchSize:    batchSize,
 		stopCh:       make(chan struct{}),
+		runCtx:       runCtx,
+		cancel:       cancel,
 		instanceID:   uuid.NewString(),
 	}
 }
@@ -107,11 +112,21 @@ func (s *MediaBalanceHoldReconciliationService) Stop() {
 		return
 	}
 	s.stopOnce.Do(func() { close(s.stopCh) })
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.wg.Wait()
 }
 
 func (s *MediaBalanceHoldReconciliationService) runOnce() {
-	lockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if s == nil {
+		return
+	}
+	runCtx := s.runCtx
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+	lockCtx, cancel := context.WithTimeout(runCtx, 2*time.Second)
 	release, acquired := tryAcquireSingletonLeaderLock(
 		lockCtx,
 		s.lockCache,
@@ -126,13 +141,13 @@ func (s *MediaBalanceHoldReconciliationService) runOnce() {
 	}
 	defer release()
 
-	ctx, cancel := context.WithTimeout(context.Background(), mediaBalanceHoldReconciliationTimeout)
+	ctx, cancel := context.WithTimeout(runCtx, mediaBalanceHoldReconciliationTimeout)
 	defer cancel()
 	var cursor *MediaBalanceHoldReconciliationCursor
 	for {
 		result, err := s.repo.ReconcileExpiredMediaBalanceHolds(ctx, cursor, s.batchSize)
 		if result != nil {
-			s.invalidateBalanceCaches(result.ReconciledUserIDs)
+			s.invalidateBalanceCaches(ctx, result.ReconciledUserIDs)
 		}
 		if err != nil {
 			slog.Error("[MediaBalanceHoldReconciliation] batch failed", "error", err)
@@ -148,12 +163,18 @@ func (s *MediaBalanceHoldReconciliationService) runOnce() {
 	}
 }
 
-func (s *MediaBalanceHoldReconciliationService) invalidateBalanceCaches(userIDs []int64) {
+func (s *MediaBalanceHoldReconciliationService) invalidateBalanceCaches(parent context.Context, userIDs []int64) {
 	if s.balanceCache == nil {
 		return
 	}
+	if parent == nil {
+		parent = context.Background()
+	}
 	for _, userID := range userIDs {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if parent.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 		err := s.balanceCache.InvalidateUserBalance(ctx, userID)
 		cancel()
 		if err != nil {

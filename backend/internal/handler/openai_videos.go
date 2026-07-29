@@ -408,6 +408,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	if storedTask != nil && !parsed.ContentRequest && openAIVideoTaskNeedsFinalization(storedTask) {
 		storedResult := openAIVideoForwardResultFromStoredTask(storedTask)
 		finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, storedResult, storedTask)
+		if !ensureOpenAIVideoTaskResultDeliverable(c, h, reqLog, apiKey.ID, storedResult, storedTask) {
+			return
+		}
 		if err := writeOpenAIVideoStoredResponse(c, h, storedTask, videoResponseBaseURL); err != nil {
 			reqLog.Warn("openai.videos.recovered_edge_url_failed", zap.String("request_id", storedTask.ClientTaskID()), zap.Error(err))
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
@@ -532,16 +535,14 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream || parsed.ContentRequest, &streamStarted, reqLog)
 	if !accountAcquired {
 		if parsed.GenerationRequest {
-			// Keep the persisted intent resumable. A task that never reaches a
-			// successful state is refunded by expiry reconciliation.
-			mediaHoldTransferred = mediaHold != nil
+			markMediaGenerationTaskTerminalDetached(h, apiKey.ID, generationPublicTaskID, service.MediaGenerationStatusFailed, "account_slot_unavailable")
 		}
 		return
 	}
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 	if parsed.GenerationRequest {
 		if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
-			mediaHoldTransferred = mediaHold != nil
+			markMediaGenerationTaskTerminalDetached(h, apiKey.ID, generationPublicTaskID, service.MediaGenerationStatusFailed, "hold_dispatch_failed")
 			reqLog.Warn("openai.videos.mark_balance_dispatched_failed", zap.String("request_id", generationPublicTaskID), zap.Error(err))
 			h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Video billing reservation is unavailable")
 			return
@@ -621,7 +622,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	}
 	if parsed.GenerationRequest {
 		if result == nil || strings.TrimSpace(result.ResponseID) == "" || len(result.ResponseBody) == 0 {
-			mediaHoldTransferred = mediaHold != nil
+			markMediaGenerationTaskTerminalDetached(h, apiKey.ID, generationPublicTaskID, service.MediaGenerationStatusFailed, "invalid_upstream_task_response")
 			reqLog.Warn("openai.videos.invalid_generation_response", zap.Int64("account_id", account.ID))
 			writeOpenAIVideoSafeUpstreamError(c)
 			return
@@ -696,6 +697,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if service.IsMediaGenerationSuccessStatus(status) {
 			finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, task)
 		}
+		if !ensureOpenAIVideoTaskResultDeliverable(c, h, reqLog, apiKey.ID, result, task) {
+			return
+		}
 		if err := writeOpenAIVideoForwardResponse(c, h, result, task, videoResponseBaseURL); err != nil {
 			reqLog.Warn("openai.videos.forward_edge_url_failed", zap.String("request_id", publicTaskID), zap.Error(err))
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
@@ -731,11 +735,40 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	storedTask = freshTask
 	applyOpenAIVideoStoredTaskToForwardResult(result, storedTask)
 	finalizeOpenAIVideoTaskFromStatus(c, h, reqLog, apiKey, subject, subscription, account, result, storedTask)
+	if !ensureOpenAIVideoTaskResultDeliverable(c, h, reqLog, apiKey.ID, result, storedTask) {
+		return
+	}
 	if err := writeOpenAIVideoForwardResponse(c, h, result, storedTask, videoResponseBaseURL); err != nil {
 		reqLog.Warn("openai.videos.status_edge_url_failed", zap.String("request_id", clientTaskID), zap.Error(err))
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video content URL is unavailable")
 	}
 	reqLog.Debug("openai.videos.request_completed", zap.Int64("account_id", account.ID))
+}
+
+func ensureOpenAIVideoTaskResultDeliverable(
+	c *gin.Context,
+	h *OpenAIGatewayHandler,
+	reqLog *zap.Logger,
+	apiKeyID int64,
+	result *service.OpenAIForwardResult,
+	task *service.MediaGenerationTask,
+) bool {
+	if result == nil || !service.IsMediaGenerationSuccessStatus(result.VideoStatus) {
+		return true
+	}
+	if h == nil || h.gatewayService == nil || task == nil {
+		return false
+	}
+	freshTask, err := h.gatewayService.GetOpenAIVideoTaskByTaskID(c.Request.Context(), apiKeyID, task.ClientTaskID())
+	if err == nil && freshTask != nil && freshTask.UsageRecordedAt != nil && service.IsMediaGenerationSuccessStatus(freshTask.Status) {
+		return true
+	}
+	reqLog.Warn("openai.videos.result_delivery_blocked_unsettled",
+		zap.String("request_id", task.ClientTaskID()),
+		zap.Error(err),
+	)
+	h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Video result settlement is incomplete")
+	return false
 }
 
 func finalizeOpenAIVideoTaskFromStatus(

@@ -1076,6 +1076,7 @@ func TestForwardGrokMediaImagesGenerationRejectsEmptySuccessfulResponse(t *testi
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.True(t, failoverErr.MediaOutcomeKnownFailed)
 	require.JSONEq(t, `{"data":[]}`, string(failoverErr.ResponseBody))
 	require.Empty(t, recorder.Body.String())
 }

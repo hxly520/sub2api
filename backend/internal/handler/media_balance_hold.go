@@ -17,8 +17,14 @@ func shouldRetainMediaBalanceHoldAfterDispatch(err error) bool {
 	if err == nil {
 		return false
 	}
+	if service.IsMarkedDefinitiveMediaGenerationFailure(err) {
+		return false
+	}
 	var upstreamUserErr *service.OpenAIImagesUpstreamError
 	if errors.As(err, &upstreamUserErr) {
+		if upstreamUserErr.MediaOutcomeKnownFailed {
+			return false
+		}
 		return !service.IsDefinitiveMediaGenerationFailure(upstreamUserErr.StatusCode, []byte(upstreamUserErr.Error()))
 	}
 	var failoverErr *service.UpstreamFailoverError

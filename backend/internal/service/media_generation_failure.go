@@ -2,9 +2,42 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
+
+// DefinitiveMediaGenerationError preserves a known terminal no-output outcome
+// across client-facing status remapping and error passthrough rules.
+type DefinitiveMediaGenerationError struct {
+	cause error
+}
+
+func (e *DefinitiveMediaGenerationError) Error() string {
+	if e == nil || e.cause == nil {
+		return "media generation failed"
+	}
+	return e.cause.Error()
+}
+
+func (e *DefinitiveMediaGenerationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func MarkDefinitiveMediaGenerationFailure(err error) error {
+	if err == nil || IsMarkedDefinitiveMediaGenerationFailure(err) {
+		return err
+	}
+	return &DefinitiveMediaGenerationError{cause: err}
+}
+
+func IsMarkedDefinitiveMediaGenerationFailure(err error) bool {
+	var marked *DefinitiveMediaGenerationError
+	return errors.As(err, &marked)
+}
 
 // IsDefinitiveMediaGenerationFailure reports whether an upstream response
 // proves that media creation was rejected or reached a failed terminal state.

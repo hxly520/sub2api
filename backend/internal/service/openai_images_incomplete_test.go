@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -121,6 +122,30 @@ func TestImagesOAuthNonStreaming_CompletedNoImageTriggersSameAccountRetry(t *tes
 	}
 	if !failoverErr.RetryableOnSameAccount {
 		t.Fatal("soft-failure should prefer same-account retry (probabilistic upstream failure)")
+	}
+}
+
+func TestImagesOAuthStreaming_CompletedNoImageIsDefinitiveFailure(t *testing.T) {
+	upstreamSSE := "event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_x\",\"status\":\"completed\",\"output\":[]}}\n\n"
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamSSE)),
+	}
+
+	svc := &OpenAIGatewayService{}
+	_, imageCount, _, _, err := svc.handleOpenAIImagesOAuthStreamingResponse(
+		resp, c, time.Now(), "b64_json", "image_generation", "gpt-image-2",
+	)
+	if imageCount != 0 {
+		t.Fatalf("expected zero images, got %d", imageCount)
+	}
+	if !IsMarkedDefinitiveMediaGenerationFailure(err) {
+		t.Fatalf("completed stream without image must be a definitive failure, got %T: %v", err, err)
 	}
 }
 

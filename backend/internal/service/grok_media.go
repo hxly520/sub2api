@@ -431,9 +431,10 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		if countOpenAIResponseImageOutputsFromJSONBytes(respBody) <= 0 {
 			setOpsUpstreamError(c, http.StatusBadGateway, "xAI upstream returned no image output", truncateString(string(respBody), 512))
 			return nil, &UpstreamFailoverError{
-				StatusCode:      http.StatusBadGateway,
-				ResponseBody:    respBody,
-				ResponseHeaders: resp.Header.Clone(),
+				StatusCode:              http.StatusBadGateway,
+				MediaOutcomeKnownFailed: true,
+				ResponseBody:            respBody,
+				ResponseHeaders:         resp.Header.Clone(),
 			}
 		}
 	}
@@ -873,7 +874,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 		})
 		MarkResponseCommitted(c)
 		writeGrokMediaErrorResponse(c, http.StatusForbidden, "invalid_request_error", clientMsg, false)
-		return nil, fmt.Errorf("grok content policy rejection: %s", clientMsg)
+		return nil, MarkDefinitiveMediaGenerationFailure(fmt.Errorf("grok content policy rejection: %s", clientMsg))
 	}
 
 	if status, errType, errMsg, matched := applyErrorPassthroughRule(
@@ -887,7 +888,11 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 	); matched {
 		MarkResponseCommitted(c)
 		writeGrokMediaErrorResponse(c, status, errType, errMsg, false)
-		return nil, fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, upstreamMsg)
+		responseErr := fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, upstreamMsg)
+		if IsDefinitiveMediaGenerationFailure(resp.StatusCode, body) {
+			responseErr = MarkDefinitiveMediaGenerationFailure(responseErr)
+		}
+		return nil, responseErr
 	}
 
 	if !account.ShouldHandleErrorCode(resp.StatusCode) {
@@ -903,7 +908,11 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 		})
 		MarkResponseCommitted(c)
 		writeGrokMediaErrorResponse(c, http.StatusInternalServerError, "upstream_error", "Upstream gateway error", false)
-		return nil, fmt.Errorf("upstream error: %d (not in custom error codes) message=%s", resp.StatusCode, upstreamMsg)
+		responseErr := fmt.Errorf("upstream error: %d (not in custom error codes) message=%s", resp.StatusCode, upstreamMsg)
+		if IsDefinitiveMediaGenerationFailure(resp.StatusCode, body) {
+			responseErr = MarkDefinitiveMediaGenerationFailure(responseErr)
+		}
+		return nil, responseErr
 	}
 
 	kind := "http_error"
@@ -932,7 +941,11 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 
 	MarkResponseCommitted(c)
 	writeGrokMediaErrorResponse(c, resp.StatusCode, grokMediaErrorType(resp.StatusCode), upstreamMsg, true)
-	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
+	responseErr := fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
+	if IsDefinitiveMediaGenerationFailure(resp.StatusCode, body) {
+		responseErr = MarkDefinitiveMediaGenerationFailure(responseErr)
+	}
+	return nil, responseErr
 }
 
 func grokMediaErrorType(statusCode int) string {

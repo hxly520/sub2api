@@ -55,8 +55,16 @@ func TestMediaBalanceHoldReconciliation_AllUsersAndSettlementOutcomes(t *testing
 		return mediaReconciliationFixture{user: user, key: key, hold: hold}
 	}
 
-	released := newFixture("released", "")
+	releasedTaskID := "reconciliation-expired-task-" + uuid.NewString()
+	released := newFixture("released", service.MediaBalanceHoldRequestID(releasedTaskID))
 	_, err := mediaRepo.MarkMediaBalanceDispatched(ctx, released.hold)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `
+		INSERT INTO media_generation_tasks (
+			task_id, public_task_id, api_key_id, user_id, account_id, model,
+			request_fingerprint, status, media_type, created_at, updated_at
+		) VALUES ($1, $1, $2, $3, 0, 'image-model', $4, 'pending', 'image', NOW(), NOW())
+	`, releasedTaskID, released.key.ID, released.user.ID, released.hold.RequestFingerprint)
 	require.NoError(t, err)
 	require.NoError(t, expireMediaHold(ctx, released.hold))
 
@@ -87,6 +95,13 @@ func TestMediaBalanceHoldReconciliation_AllUsersAndSettlementOutcomes(t *testing
 	assertMediaReconciliationBalance(t, ctx, released, 10, 0, "released", 0)
 	assertMediaReconciliationBalance(t, ctx, capturePending, 9.25, 0, "captured", 0.75)
 	assertMediaReconciliationBalance(t, ctx, successfulTask, 8, 0, "captured", 2)
+	var releasedTaskStatus, releasedTaskError string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT status, COALESCE(finalization_error, '') FROM media_generation_tasks
+		WHERE api_key_id = $1 AND public_task_id = $2
+	`, released.key.ID, releasedTaskID).Scan(&releasedTaskStatus, &releasedTaskError))
+	require.Equal(t, service.MediaGenerationStatusExpired, releasedTaskStatus)
+	require.Equal(t, "balance_hold_expired", releasedTaskError)
 
 	second, err := reconciliationRepo.ReconcileExpiredMediaBalanceHolds(ctx, nil, 1000)
 	require.NoError(t, err)
