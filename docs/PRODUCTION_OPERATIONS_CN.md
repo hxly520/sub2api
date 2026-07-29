@@ -2,6 +2,8 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
+`2026-07-30` 本机构建镜像、服务器导入、积分同库部署和公网边界的实际结果见 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md)。后续排障不得只参考部署前快照。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
@@ -11,7 +13,7 @@
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
-- 生产变更原则：服务器只拉取或导入已在CI构建并验证的私有镜像；不在生产机编译源码或镜像。
+- 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
 
 正式维护不得使用 shallow、partial clone 或 sparse checkout。升级前必须确认完整历史、完整对象和官方 tag均已获取。
 
@@ -51,6 +53,7 @@
 - `api.52token.org`
 - `image.52token.org`
 - `video.52token.org`
+- `points.52token.org`
 - `gpt-codex.top`
 - `api.gpt-codex.top`
 - `image.gpt-codex.top`
@@ -60,12 +63,14 @@
 ```text
 Cloudflare -> Nginx :443 -> 127.0.0.1:8080  Sub2API
                          -> 127.0.0.1:15731  独立画布工作台
+                         -> 127.0.0.1:8090   独立积分服务
 Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 ```
 
 - `api.52token.org` 是Sub2API完整API入口。
 - `image.52token.org` 只把允许的图片、Gemini、视频和任务路径转到Sub2API，其余页面转到独立画布工作台。
 - `video.52token.org` 源站对媒体路径固定返回404，必须由Cloudflare Worker截获。
+- `points.52token.org` 只开放一次性 ticket、积分页面资源和积分 API；根路径与公网健康路径返回404，无积分会话时页面返回401。当前生产 Sub2API `v0.1.164` 尚不签发 ticket，必须等待维护者手工切换候选并配置 bridge 后再启用菜单。
 - `15731` 工作台源码不属于本仓库，唯一源码来源是 [`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas)。生产实际运行的是该仓库构建镜像内的 `/usr/share/nginx/html`。
 - `basketikun/infinite-canvas` 仅是工作台的上游参考与合并来源，不是52Token生产构建源；Sub2API仓库也不得复制一份工作台源码形成第三个来源。
 - 宿主 `/home/api/sub2api-deploy/images` 只是未挂载、无 `.git` 的旧 `v0.5.0` 页面快照，已退出构建、发布、运行和回滚链路；Nginx不得以该目录作为页面fallback。
@@ -73,7 +78,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 工作台仓库当前 `VERSION=v0.5.0`、`web/package.json=0.1.0`、README徽章为 `v0.2.0`，且没有Git tag。这些页面/文件版本文字不一致，不能作为生产版本证据。
 - 工作台默认API Base为 `https://image.52token.org`，默认只启用Image2和Gemini图片模型。文本、视频和音频模型默认空；相关能力需要明确配置其他API Base。
 - 仓库内 `/batch-image` 是Sub2API自带批量生图页，与15731画布工作台不是同一产品。
-- 积分服务部署后必须使用新内网端口，并复用现有 `sub2api` 数据库的独立 `points` schema 和最小权限角色，由 Nginx 精确反代；不得新建 PostgreSQL 容器。Sub2API 菜单先生成一次性签名启动票据。积分域名根路径不能作为公开首页，未持有积分会话时 `/app/` 和 `/admin/` 均拒绝访问。
+- 积分服务已使用 `127.0.0.1:8090`，复用现有 `sub2api` 数据库的独立 `points` schema 和最小权限角色，由 Nginx 精确反代；没有新建 PostgreSQL 容器。Sub2API 菜单必须先生成一次性签名启动票据。积分域名根路径不能作为公开首页，未持有积分会话时 `/app/` 和 `/admin/` 均拒绝访问。
 
 ## 4. 四种图片模式
 
@@ -149,13 +154,13 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 1. 从完整克隆的当前私有 `main` 创建 `codex/upgrade-vX.Y.Z-*`。
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
 3. 解决协议、调度、四种图片模式、媒体计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 中的完整门禁。
-4. 通过CI构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和commit；发布摘要必须记录registry digest。
+4. 通过 CI 或受控本机构建环境构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和 commit；发布摘要必须记录 manifest digest、image ID 和传输归档 SHA256。
 5. 上传/拉取新镜像但不立即替换运行容器；先记录旧镜像和数据库备份点。
 6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额。
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-当前已获授权通过 GitHub 构建 Sub2API 与积分服务候选镜像。Sub2API 镜像只拉入服务器缓存，不修改 Compose、不替换或重启现有容器；积分服务可在数据库备份、独立 schema 和最小权限角色准备完成后直接启动验证。
+`2026-07-30` GitHub Actions 因账户月度额度在 runner 分配前终止，最终改由受控本机生成标准 Docker archive，服务器只执行 `docker load`。Sub2API 候选只进入服务器缓存，未修改 Compose、未替换或重启现有容器；积分服务已在数据库备份、独立 schema 和最小权限角色准备完成后启动。精确镜像、归档、容器、数据库和 Nginx 状态以本章开头链接的生产记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 

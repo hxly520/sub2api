@@ -192,6 +192,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
 - [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)
+- [2026-07-30 v0.1.168 候选与积分系统生产记录](docs/PRODUCTION_DEPLOYMENT_20260730_CN.md)
 - [积分与签到系统部署说明](points-system/README.md)
 - [积分与签到结算口径](points-system/PRODUCT_REQUIREMENTS_CN.md)
 - [独立生图工作台源码仓库](https://github.com/hxly520/infinite-canvas)
