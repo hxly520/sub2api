@@ -2,13 +2,31 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"go.uber.org/zap"
 )
 
 const mediaUsageRecordMaxAttempts = 3
+
+func shouldRetainMediaBalanceHoldAfterDispatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	var upstreamUserErr *service.OpenAIImagesUpstreamError
+	if errors.As(err, &upstreamUserErr) {
+		return !service.IsDefinitiveMediaGenerationFailure(upstreamUserErr.StatusCode, []byte(upstreamUserErr.Error()))
+	}
+	var failoverErr *service.UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		return !failoverErr.MediaOutcomeKnownFailed
+	}
+	return true
+}
 
 func newMediaBalanceHoldCommand(apiKeyID, userID int64, requestID, requestFingerprint, payloadHash string, amount float64) *service.MediaBalanceHoldCommand {
 	return &service.MediaBalanceHoldCommand{
@@ -25,9 +43,25 @@ func releaseMediaBalanceHold(h *OpenAIGatewayHandler, cmd *service.MediaBalanceH
 	if h == nil || h.gatewayService == nil || cmd == nil || strings.TrimSpace(cmd.RequestID) == "" || cmd.HoldAmount <= 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = h.gatewayService.ReleaseMediaBalance(ctx, cmd)
+	var lastErr error
+	for attempt := 0; attempt < mediaUsageRecordMaxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lastErr = h.gatewayService.ReleaseMediaBalance(ctx, cmd)
+		cancel()
+		if lastErr == nil {
+			return
+		}
+		if attempt+1 < mediaUsageRecordMaxAttempts {
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+		}
+	}
+	logger.L().Error("media_balance_hold.release_failed",
+		zap.String("request_id", cmd.RequestID),
+		zap.Int64("user_id", cmd.UserID),
+		zap.Int64("api_key_id", cmd.APIKeyID),
+		zap.Float64("hold_amount", cmd.HoldAmount),
+		zap.Error(lastErr),
+	)
 }
 
 func markMediaBalanceHoldForCapture(h *OpenAIGatewayHandler, cmd *service.MediaBalanceHoldCommand, actualCost float64) error {
@@ -111,6 +145,13 @@ func mediaBalanceActualCost(snapshot *service.MediaGenerationPricingSnapshot, re
 		}
 	}
 	return snapshot.EstimatedCost(count, duration)
+}
+
+func mediaBalanceSettledCost(cmd *service.MediaBalanceHoldCommand, actualCost float64) float64 {
+	if cmd == nil || cmd.HoldAmount <= 0 || actualCost <= cmd.HoldAmount {
+		return actualCost
+	}
+	return cmd.HoldAmount
 }
 
 func mediaBalanceHoldCommandForTask(task *service.MediaGenerationTask) *service.MediaBalanceHoldCommand {

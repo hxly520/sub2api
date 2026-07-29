@@ -29,11 +29,13 @@ type OpenAIRecordUsageInput struct {
 	UpstreamEndpoint          string
 	UserAgent                 string // 请求的 User-Agent
 	IPAddress                 string // 请求的客户端 IP 地址
+	SessionID                 string // 客户端显式会话标识（session_id / X-Session-Id 等请求头），仅用于用量行会话关联
 	RequestPayloadHash        string
 	APIKeyService             APIKeyQuotaUpdater
 	QuotaPlatform             string // user×platform quota platform resolved by the handler before async billing.
 	MediaPricingSnapshot      *MediaGenerationPricingSnapshot
 	MediaBalanceHoldRequestID string
+	MediaBalanceHoldAmount    float64
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	ChannelUsageFields
@@ -57,6 +59,7 @@ type CyberPolicyUsageInput struct {
 	UpstreamEndpoint   string
 	UserAgent          string
 	IPAddress          string
+	SessionID          string
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
 	ChannelUsageFields
@@ -91,6 +94,7 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 		UpstreamEndpoint:   in.UpstreamEndpoint,
 		UserAgent:          in.UserAgent,
 		IPAddress:          in.IPAddress,
+		SessionID:          in.SessionID,
 		RequestPayloadHash: in.RequestPayloadHash,
 		APIKeyService:      in.APIKeyService,
 		ChannelUsageFields: in.ChannelUsageFields,
@@ -219,6 +223,20 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		).Warn("openai_usage.pricing_missing_record_zero_cost", zap.Error(err))
 		cost = &CostBreakdown{BillingMode: string(BillingModeToken)}
 	}
+	if cost != nil {
+		calculatedCost := cost.ActualCost
+		cappedCost := capMediaBalanceHoldActualCost(calculatedCost, input.MediaBalanceHoldRequestID, input.MediaBalanceHoldAmount)
+		if cappedCost < calculatedCost {
+			logger.L().Warn("media_balance_hold.actual_cost_capped_to_quote",
+				zap.String("request_id", input.MediaBalanceHoldRequestID),
+				zap.Int64("user_id", user.ID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Float64("calculated_cost", calculatedCost),
+				zap.Float64("quoted_hold", cappedCost),
+			)
+		}
+		cost.ActualCost = cappedCost
+	}
 
 	// Determine billing type
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -250,7 +268,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		RequestID:           requestID,
 		Model:               result.Model,
 		RequestedModel:      requestedModel,
-		UpstreamModel:       optionalNonEqualStringPtr(result.UpstreamModel, result.Model),
+		UpstreamModel:       optionalTrimmedStringPtr(result.UpstreamModel),
 		ServiceTier:         result.ServiceTier,
 		ReasoningEffort:     result.ReasoningEffort,
 		InboundEndpoint:     optionalTrimmedStringPtr(input.InboundEndpoint),
@@ -329,6 +347,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if input.IPAddress != "" {
 		usageLog.IPAddress = &input.IPAddress
 	}
+
+	// 添加 SessionID（客户端显式会话标识；缺失/无效时保持 nil）
+	usageLog.SessionID = optionalTrimmedStringPtr(input.SessionID)
 
 	if apiKey.GroupID != nil {
 		usageLog.GroupID = apiKey.GroupID

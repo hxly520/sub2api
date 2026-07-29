@@ -572,6 +572,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	if err != nil {
 		var upstreamUserErr *service.OpenAIImagesUpstreamError
 		if errors.As(err, &upstreamUserErr) {
+			if parsed.GenerationRequest {
+				mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
+			}
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, !service.IsOpenAIImagesRetryableUpstreamError(upstreamUserErr), nil)
 			reqLog.Warn("openai.videos.upstream_user_error",
 				zap.Int64("account_id", account.ID),
@@ -585,7 +588,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(err, &failoverErr) && parsed.GenerationRequest {
-			mediaHoldTransferred = true
+			mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			if c.Writer.Size() != writerSizeBeforeForward {
 				c.Abort()
@@ -597,6 +600,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			// resumable with the same account and idempotency key instead.
 			writeOpenAIVideoSafeUpstreamError(c)
 			return
+		}
+		if parsed.GenerationRequest {
+			mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 		}
 		h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 		if c.Writer.Size() == writerSizeBeforeForward {
@@ -615,6 +621,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	}
 	if parsed.GenerationRequest {
 		if result == nil || strings.TrimSpace(result.ResponseID) == "" || len(result.ResponseBody) == 0 {
+			mediaHoldTransferred = mediaHold != nil
 			reqLog.Warn("openai.videos.invalid_generation_response", zap.Int64("account_id", account.ID))
 			writeOpenAIVideoSafeUpstreamError(c)
 			return
@@ -848,7 +855,7 @@ func recordOpenAIVideoFinalUsage(
 		VideoStatus:          statusResult.VideoStatus,
 	}
 	mediaHold := mediaBalanceHoldCommandForTask(task)
-	actualMediaCost := mediaBalanceActualCost(task.PricingSnapshot(), recordResult, videoCount, durationSeconds, true)
+	actualMediaCost := mediaBalanceSettledCost(mediaHold, mediaBalanceActualCost(task.PricingSnapshot(), recordResult, videoCount, durationSeconds, true))
 	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 		reqLog.Warn("openai.videos.mark_balance_capture_pending_failed", zap.String("request_id", clientTaskID), zap.Error(markErr))
 	}
@@ -872,6 +879,12 @@ func recordOpenAIVideoFinalUsage(
 					return mediaHold.RequestID
 				}
 				return ""
+			}(),
+			MediaBalanceHoldAmount: func() float64 {
+				if mediaHold == nil {
+					return 0
+				}
+				return mediaHold.HoldAmount
 			}(),
 			ChannelUsageFields: usageFields,
 		})

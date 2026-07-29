@@ -351,62 +351,73 @@ func normalizeMediaBalanceRepoAmount(value float64) float64 {
 }
 
 func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int64) error {
+	_, err := reconcileExpiredMediaBalanceHolds(ctx, tx, userID)
+	return err
+}
+
+// reconcileExpiredMediaBalanceHolds atomically classifies and settles every
+// expired active hold for one user. The caller owns the transaction so this is
+// shared by the request-path lazy cleanup and the global reconciliation job.
+func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int64) (bool, error) {
 	if tx == nil || userID <= 0 {
-		return nil
+		return false, nil
 	}
-	// Only a captured success marker or a successful async task can settle an
-	// expired hold. Unsent, failed, and unresolved requests are refunded.
-	var releaseAmount float64
+	// A capture marker or successful async task consumes the hold. Every other
+	// expired active hold is refunded. Updating the holds before adjusting the
+	// user makes the classification and its monetary effect one transaction.
+	var balanceCredit, frozenDebit float64
+	var reconciledCount int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(hold_amount), 0)
-		FROM (
-			SELECT holds.hold_amount
-			FROM media_balance_holds holds
-			LEFT JOIN media_generation_tasks tasks
-				ON tasks.api_key_id = holds.api_key_id
-				AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
-			WHERE holds.user_id = $1
-				AND holds.status IN ('reserved', 'dispatched')
-				AND holds.expires_at <= NOW()
-				AND (
-					tasks.id IS NULL
-					OR LOWER(BTRIM(tasks.status)) NOT IN (
-						'complete', 'completed', 'success', 'succeeded', 'done'
-					)
-				)
-			FOR UPDATE OF holds
-		) expired_holds
-	`, userID).Scan(&releaseAmount); err != nil {
-		return err
-	}
-	var captureHoldAmount, captureAmount float64
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(hold_amount), 0), COALESCE(SUM(actual_amount), 0)
-		FROM (
-			SELECT holds.hold_amount, COALESCE(holds.capture_amount, holds.hold_amount) AS actual_amount
-			FROM media_balance_holds holds
-				LEFT JOIN media_generation_tasks tasks
-					ON tasks.api_key_id = holds.api_key_id
-					AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
-				WHERE holds.user_id = $1
-					AND (
-						holds.status = 'capture_pending'
-						OR (
-							holds.status IN ('reserved', 'dispatched')
-							AND LOWER(BTRIM(tasks.status)) IN (
-								'complete', 'completed', 'success', 'succeeded', 'done'
-							)
+		WITH reconciled AS (
+			UPDATE media_balance_holds holds
+			SET status = CASE
+					WHEN holds.status = 'capture_pending'
+						OR EXISTS (
+							SELECT 1
+							FROM media_generation_tasks tasks
+							WHERE tasks.api_key_id = holds.api_key_id
+								AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
+								AND LOWER(BTRIM(tasks.status)) IN (
+									'complete', 'completed', 'success', 'succeeded', 'done'
+								)
 						)
-				)
+					THEN 'captured'
+					ELSE 'released'
+				END,
+				settled_amount = CASE
+					WHEN holds.status = 'capture_pending'
+						OR EXISTS (
+							SELECT 1
+							FROM media_generation_tasks tasks
+							WHERE tasks.api_key_id = holds.api_key_id
+								AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
+								AND LOWER(BTRIM(tasks.status)) IN (
+									'complete', 'completed', 'success', 'succeeded', 'done'
+								)
+						)
+					THEN COALESCE(holds.capture_amount, holds.hold_amount)
+					ELSE 0
+				END,
+				settled_at = NOW(),
+				updated_at = NOW()
+			WHERE holds.user_id = $1
+				AND holds.status IN ('reserved', 'dispatched', 'capture_pending')
 				AND holds.expires_at <= NOW()
-			FOR UPDATE OF holds
-		) capture_holds
-	`, userID).Scan(&captureHoldAmount, &captureAmount); err != nil {
-		return err
+			RETURNING hold_amount, settled_amount, status
+		)
+		SELECT
+			COALESCE(SUM(hold_amount - settled_amount), 0),
+			COALESCE(SUM(hold_amount), 0),
+			COUNT(*)
+		FROM reconciled
+	`, userID).Scan(&balanceCredit, &frozenDebit, &reconciledCount); err != nil {
+		return false, err
 	}
-	totalExpired := releaseAmount + captureHoldAmount
-	if totalExpired <= 0 {
-		return nil
+	if reconciledCount == 0 {
+		return false, nil
+	}
+	if balanceCredit < -0.00000001 || frozenDebit <= 0 {
+		return false, errors.New("expired media hold settlement amount is inconsistent")
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE users
@@ -414,56 +425,16 @@ func releaseExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID int
 			frozen_balance = COALESCE(frozen_balance, 0) - $2,
 			updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL AND COALESCE(frozen_balance, 0) >= $2
-	`, releaseAmount+captureHoldAmount-captureAmount, totalExpired, userID)
+	`, balanceCredit, frozenDebit, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if affected != 1 {
-		return errors.New("expired media frozen balance is inconsistent")
+		return false, errors.New("expired media frozen balance is inconsistent")
 	}
-	_, err = tx.ExecContext(ctx, `
-		UPDATE media_balance_holds holds
-		SET status = 'released', settled_amount = 0, settled_at = NOW(), updated_at = NOW()
-		WHERE holds.user_id = $1
-			AND holds.status IN ('reserved', 'dispatched')
-			AND holds.expires_at <= NOW()
-			AND NOT EXISTS (
-				SELECT 1
-				FROM media_generation_tasks tasks
-				WHERE tasks.api_key_id = holds.api_key_id
-					AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
-					AND LOWER(BTRIM(tasks.status)) IN (
-						'complete', 'completed', 'success', 'succeeded', 'done'
-					)
-			)
-	`, userID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `
-		UPDATE media_balance_holds holds
-		SET status = 'captured', settled_amount = COALESCE(holds.capture_amount, holds.hold_amount), settled_at = NOW(), updated_at = NOW()
-		WHERE holds.user_id = $1
-			AND holds.expires_at <= NOW()
-			AND (
-				holds.status = 'capture_pending'
-				OR (
-					holds.status IN ('reserved', 'dispatched')
-					AND EXISTS (
-						SELECT 1
-						FROM media_generation_tasks tasks
-						WHERE tasks.api_key_id = holds.api_key_id
-							AND holds.request_id = 'media_balance_hold:' || tasks.public_task_id
-							AND LOWER(BTRIM(tasks.status)) IN (
-								'complete', 'completed', 'success', 'succeeded', 'done'
-						)
-					)
-				)
-			)
-	`, userID)
-	return err
+	return true, nil
 }

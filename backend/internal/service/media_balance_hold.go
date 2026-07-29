@@ -151,6 +151,13 @@ func (s *OpenAIGatewayService) SettleMediaBalanceHoldCommand(cmd *UsageBillingCo
 	cmd.BalanceCost = 0
 }
 
+func capMediaBalanceHoldActualCost(actualCost float64, requestID string, holdAmount float64) float64 {
+	if strings.TrimSpace(requestID) == "" || holdAmount <= 0 || actualCost <= holdAmount {
+		return actualCost
+	}
+	return normalizeMediaBalanceAmount(holdAmount)
+}
+
 func (p *MediaGenerationPricingSnapshot) EstimatedCost(count, durationSeconds int) float64 {
 	if p == nil || p.UnitPrice <= 0 || p.RateMultiplier < 0 {
 		return 0

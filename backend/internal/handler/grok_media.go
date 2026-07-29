@@ -401,7 +401,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			if errors.As(err, &failoverErr) {
 				credentialPreDispatchFailure := endpoint.IsGenerationRequest() && failoverErr.IsCredentialFailure()
 				if endpoint.IsGenerationRequest() && !credentialPreDispatchFailure {
-					mediaHoldTransferred = mediaHold != nil
+					mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 				}
 				if failoverClientGone(c) {
 					reqLog.Info("grok_media.failover_aborted_client_disconnected",
@@ -442,6 +442,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				h.handleFailoverExhausted(c, failoverErr, false)
 				return
 			}
+			if endpoint.IsGenerationRequest() {
+				mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
+			}
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			if !service.IsResponseCommitted(c) && c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
@@ -456,7 +459,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		mediaHoldTransferred = mediaHold != nil
 		h.reportOpenAIAccountScheduleResult(c, account, routingModel, true, nil)
 		videoGeneration := endpoint.IsVideoGenerationRequest()
-		actualMediaCost := mediaBalanceActualCost(mediaPricingSnapshot, result, requestInfo.N, requestInfo.DurationSeconds, videoGeneration)
+		actualMediaCost := mediaBalanceSettledCost(mediaHold, mediaBalanceActualCost(mediaPricingSnapshot, result, requestInfo.N, requestInfo.DurationSeconds, videoGeneration))
 		if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 			reqLog.Warn("grok_media.mark_balance_capture_pending_failed", zap.Error(markErr))
 		}
@@ -536,6 +539,7 @@ func recordGrokMediaUsage(
 ) {
 	userAgent := c.GetHeader("User-Agent")
 	clientIP := ip.GetClientIP(c)
+	sessionID := service.ExtractClientSessionID(c)
 	payloadForHash := body
 	if len(payloadForHash) == 0 && strings.TrimSpace(requestID) != "" {
 		payloadForHash = []byte(requestID)
@@ -567,12 +571,19 @@ func recordGrokMediaUsage(
 			RequestPayloadHash:   service.HashUsageRequestPayload(payloadForHash),
 			APIKeyService:        h.apiKeyService,
 			QuotaPlatform:        quotaPlatform,
+			SessionID:            sessionID,
 			MediaPricingSnapshot: mediaPricingSnapshot,
 			MediaBalanceHoldRequestID: func() string {
 				if mediaHold == nil {
 					return ""
 				}
 				return mediaHold.RequestID
+			}(),
+			MediaBalanceHoldAmount: func() float64 {
+				if mediaHold == nil {
+					return 0
+				}
+				return mediaHold.HoldAmount
 			}(),
 			ChannelUsageFields: channelUsageFields,
 		})

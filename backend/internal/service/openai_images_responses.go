@@ -920,9 +920,10 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 	})
 	if shouldDisable {
 		return nil, &UpstreamFailoverError{
-			StatusCode:             resp.StatusCode,
-			ResponseBody:           body,
-			RetryableOnSameAccount: false,
+			StatusCode:              resp.StatusCode,
+			MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(resp.StatusCode, body),
+			ResponseBody:            body,
+			RetryableOnSameAccount:  false,
 		}
 	}
 
@@ -1754,9 +1755,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			})
 			shouldDisable := s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, requestModel)
 			return nil, &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseBody:           respBody,
-				RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				StatusCode:              resp.StatusCode,
+				MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(resp.StatusCode, respBody),
+				ResponseBody:            respBody,
+				RetryableOnSameAccount:  !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
 		return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, requestModel)
@@ -1887,9 +1889,10 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	responseBody := openAIImagesUpstreamErrorResponseBody(upstreamErr)
 	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
 	return &UpstreamFailoverError{
-		StatusCode:             upstreamErr.StatusCode,
-		ResponseBody:           responseBody,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
+		StatusCode:              upstreamErr.StatusCode,
+		MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(upstreamErr.StatusCode, responseBody),
+		ResponseBody:            responseBody,
+		ResponseHeaders:         headers,
+		RetryableOnSameAccount:  !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
 	}
 }

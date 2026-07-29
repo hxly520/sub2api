@@ -96,6 +96,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
+		zap.String("img_quality", parsed.Quality),
+		zap.String("img_size", parsed.Size),
 	)
 
 	if !service.GroupAllowsImageGeneration(apiKey.Group) {
@@ -328,6 +330,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		} else {
 			var imageUpstreamErr *service.OpenAIImagesUpstreamError
 			if errors.As(err, &imageUpstreamErr) {
+				mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 				retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
 				h.reportOpenAIAccountScheduleResult(c, account, routingModel, !retryableServerError, nil)
 				logEvent := "openai.images.upstream_user_error"
@@ -345,7 +348,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				mediaHoldTransferred = mediaHold != nil
+				mediaHoldTransferred = mediaHold != nil && shouldRetainMediaBalanceHoldAfterDispatch(err)
 				h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 				if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 					reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
@@ -364,6 +367,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				h.handleFailoverExhausted(c, failoverErr, streamStarted)
 				return
 			}
+			// ForwardImages has crossed the dispatched boundary. Unclassified
+			// transport, timeout, and malformed-response errors may have been
+			// accepted upstream, so retain the hold for reconciliation.
+			mediaHoldTransferred = mediaHold != nil
 			h.reportOpenAIAccountScheduleResult(c, account, routingModel, false, nil)
 			upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false
@@ -408,8 +415,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if result != nil {
 		upstreamModel = result.UpstreamModel
 	}
+	sessionID := service.ExtractClientSessionID(c)
 	mediaHoldTransferred = mediaHold != nil
-	actualMediaCost := mediaBalanceActualCost(mediaPricingSnapshot, result, parsed.N, 0, false)
+	actualMediaCost := mediaBalanceSettledCost(mediaHold, mediaBalanceActualCost(mediaPricingSnapshot, result, parsed.N, 0, false))
 	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 		reqLog.Warn("openai.images.mark_balance_capture_pending_failed", zap.Error(markErr))
 	}
@@ -427,12 +435,19 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			RequestPayloadHash:   requestPayloadHash,
 			APIKeyService:        h.apiKeyService,
 			QuotaPlatform:        quotaPlatform,
+			SessionID:            sessionID,
 			MediaPricingSnapshot: mediaPricingSnapshot,
 			MediaBalanceHoldRequestID: func() string {
 				if mediaHold == nil {
 					return ""
 				}
 				return mediaHold.RequestID
+			}(),
+			MediaBalanceHoldAmount: func() float64 {
+				if mediaHold == nil {
+					return 0
+				}
+				return mediaHold.HoldAmount
 			}(),
 			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, routingModel, upstreamModel),
 		})

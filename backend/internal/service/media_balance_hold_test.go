@@ -61,3 +61,11 @@ func TestUsageBillingFingerprintIncludesMediaSettlement(t *testing.T) {
 	changedCost.MediaBalanceHoldActualCost = 1.5
 	require.NotEqual(t, first, buildUsageBillingFingerprint(&changedCost))
 }
+
+func TestCapMediaBalanceHoldActualCost(t *testing.T) {
+	t.Parallel()
+
+	require.InDelta(t, 0.05, capMediaBalanceHoldActualCost(0.10, "media_balance_hold:test", 0.05), 0.00000001)
+	require.InDelta(t, 0.04, capMediaBalanceHoldActualCost(0.04, "media_balance_hold:test", 0.05), 0.00000001)
+	require.InDelta(t, 0.10, capMediaBalanceHoldActualCost(0.10, "", 0.05), 0.00000001)
+}

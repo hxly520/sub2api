@@ -919,9 +919,10 @@ func (s *OpenAIGatewayService) ForwardVideo(
 			})
 			s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, upstreamModel)
 			return nil, &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseBody:           respBody,
-				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				StatusCode:              resp.StatusCode,
+				MediaOutcomeKnownFailed: IsDefinitiveMediaGenerationFailure(resp.StatusCode, respBody),
+				ResponseBody:            respBody,
+				RetryableOnSameAccount:  account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
 		return s.handleOpenAIVideoErrorResponse(upstreamCtx, resp, c, account, upstreamModel)
