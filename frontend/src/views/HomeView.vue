@@ -16,77 +16,423 @@
     </div>
   </div>
 
-  <div v-else class="flex min-h-screen flex-col bg-gray-50 dark:bg-dark-950">
-    <header class="border-b border-gray-200 bg-white/95 px-5 dark:border-dark-800 dark:bg-dark-900/95">
-      <nav class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4">
-        <router-link to="/" class="flex min-w-0 items-center gap-3">
+  <div
+    v-else
+    data-testid="default-home"
+    class="min-h-screen overflow-x-hidden bg-white text-gray-950 dark:bg-dark-950 dark:text-white"
+  >
+    <header
+      data-testid="home-header"
+      class="sticky top-0 z-50 border-b border-gray-200/80 bg-white/95 dark:border-dark-800 dark:bg-dark-950/95"
+    >
+      <nav
+        class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
+        :aria-label="t('home.nav.primary')"
+      >
+        <a href="#top" class="flex min-w-0 items-center gap-3" @click="closeMobileNav">
           <img
             :src="siteLogo || '/logo.svg'"
             :alt="siteName"
-            class="h-9 w-9 flex-none rounded-lg object-contain"
+            class="h-9 w-9 flex-none rounded-md object-contain"
           />
-          <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">
+          <span class="max-w-40 truncate text-sm font-semibold sm:max-w-56 sm:text-base">
             {{ siteName }}
           </span>
-        </router-link>
+        </a>
 
-        <div class="flex items-center gap-2">
-          <LocaleSwitcher />
+        <div
+          data-testid="home-desktop-nav"
+          class="hidden items-center gap-1 lg:flex"
+        >
+          <a
+            v-for="item in sectionNavItems"
+            :key="item.href"
+            :href="item.href"
+            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
+          >
+            {{ item.label }}
+          </a>
           <a
             v-if="docUrl"
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
-            :title="t('home.viewDocs')"
+            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
           >
-            <Icon name="book" size="md" />
+            {{ t('home.nav.docs') }}
           </a>
+        </div>
+
+        <div class="flex flex-none items-center gap-1.5 sm:gap-2">
+          <div class="hidden sm:block">
+            <LocaleSwitcher />
+          </div>
           <button
             type="button"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+            :aria-label="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
-            <Icon v-if="isDark" name="sun" size="md" />
-            <Icon v-else name="moon" size="md" />
+            <Icon v-if="isDark" name="sun" size="sm" />
+            <Icon v-else name="moon" size="sm" />
           </button>
-          <router-link
-            :to="isAuthenticated ? dashboardPath : '/login'"
-            class="inline-flex min-h-9 items-center rounded-lg bg-gray-900 px-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+
+          <template v-if="isAuthenticated">
+            <router-link
+              :to="dashboardPath"
+              class="inline-flex h-9 items-center justify-center rounded-md bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 sm:px-4"
+            >
+              {{ t('home.dashboard') }}
+            </router-link>
+          </template>
+          <template v-else>
+            <router-link
+              to="/login"
+              data-testid="home-login-link"
+              class="hidden h-9 items-center justify-center rounded-md px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-200 dark:hover:bg-dark-800 dark:hover:text-white md:inline-flex"
+            >
+              {{ t('home.login') }}
+            </router-link>
+            <router-link
+              v-if="registrationEnabled"
+              to="/register"
+              data-testid="home-register-link"
+              class="inline-flex h-9 items-center justify-center rounded-md bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 sm:px-4"
+            >
+              {{ t('home.register') }}
+            </router-link>
+          </template>
+
+          <button
+            type="button"
+            data-testid="home-mobile-menu-button"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white lg:hidden"
+            :aria-expanded="mobileNavOpen"
+            :aria-label="t('home.nav.toggle')"
+            @click="mobileNavOpen = !mobileNavOpen"
           >
-            {{ isAuthenticated ? t('home.dashboard') : t('home.login') }}
-          </router-link>
+            <Icon :name="mobileNavOpen ? 'x' : 'menu'" size="sm" />
+          </button>
         </div>
       </nav>
+
+      <div
+        v-if="mobileNavOpen"
+        data-testid="home-mobile-menu"
+        class="border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-800 dark:bg-dark-950 lg:hidden"
+      >
+        <div class="mx-auto grid max-w-7xl grid-cols-2 gap-1 sm:grid-cols-3">
+          <a
+            v-for="item in sectionNavItems"
+            :key="`mobile-${item.href}`"
+            :href="item.href"
+            class="rounded-md px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800"
+            @click="closeMobileNav"
+          >
+            {{ item.label }}
+          </a>
+          <a
+            v-if="docUrl"
+            :href="docUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-md px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800"
+            @click="closeMobileNav"
+          >
+            {{ t('home.nav.docs') }}
+          </a>
+          <router-link
+            v-if="!isAuthenticated"
+            to="/login"
+            class="rounded-md px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-dark-200 dark:hover:bg-dark-800 md:hidden"
+            @click="closeMobileNav"
+          >
+            {{ t('home.login') }}
+          </router-link>
+          <div class="flex items-center px-3 py-1 sm:hidden">
+            <LocaleSwitcher />
+          </div>
+        </div>
+      </div>
     </header>
 
-    <main class="flex-1 px-5 py-12 sm:py-16">
-      <div class="mx-auto max-w-6xl">
-        <section class="mx-auto max-w-3xl text-center" aria-labelledby="home-title">
-          <span
-            class="inline-flex min-h-7 items-center rounded-full border border-primary-200 bg-primary-50 px-3 text-xs font-semibold text-primary-700 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300"
-          >
-            {{ t('home.consoleLabel') }}
-          </span>
-          <h1
-            id="home-title"
-            class="mt-5 text-4xl font-bold leading-tight text-gray-950 dark:text-white sm:text-5xl"
-          >
-            {{ siteName }}
-          </h1>
-          <p class="mt-4 text-lg text-gray-600 dark:text-dark-300">
-            {{ siteSubtitle }}
-          </p>
-          <p class="mx-auto mt-3 max-w-2xl text-sm leading-6 text-gray-500 dark:text-dark-400">
-            {{ t('home.consoleDescription') }}
-          </p>
-          <div class="mt-8 flex flex-wrap justify-center gap-3">
-            <router-link
-              :to="isAuthenticated ? dashboardPath : '/login'"
-              class="btn btn-primary min-h-10 px-5"
+    <main>
+      <section
+        id="top"
+        data-testid="home-hero"
+        class="home-hero relative isolate flex min-h-[calc(100svh-12rem)] items-center overflow-hidden border-b border-gray-200 bg-gray-50 sm:min-h-[calc(100svh-8rem)] dark:border-dark-800 dark:bg-dark-950"
+        aria-labelledby="home-title"
+      >
+        <div class="home-grid pointer-events-none absolute inset-0 -z-20" aria-hidden="true"></div>
+        <div class="home-scene pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+          <span class="home-scene-line home-scene-line-left"></span>
+          <span class="home-scene-line home-scene-line-right"></span>
+          <span class="home-scene-marker home-scene-marker-one"></span>
+          <span class="home-scene-marker home-scene-marker-two"></span>
+          <span class="home-scene-marker home-scene-marker-three"></span>
+        </div>
+
+        <div class="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+          <div class="mx-auto max-w-4xl text-center">
+            <img
+              :src="siteLogo || '/logo.svg'"
+              :alt="siteName"
+              class="mx-auto h-16 w-16 rounded-lg object-contain shadow-sm ring-1 ring-gray-200 dark:ring-dark-700 sm:h-20 sm:w-20"
+            />
+            <p
+              class="mt-6 inline-flex items-center gap-2 rounded-md border border-primary-200 bg-white px-3 py-1.5 text-xs font-semibold text-primary-800 shadow-sm dark:border-primary-800 dark:bg-dark-900 dark:text-primary-200"
             >
-              {{ isAuthenticated ? t('home.goToDashboard') : t('home.loginConsole') }}
+              <span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true"></span>
+              {{ t('home.hero.eyebrow') }}
+            </p>
+            <h1
+              id="home-title"
+              class="mt-5 break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl lg:text-6xl dark:text-white"
+            >
+              {{ siteName }}
+            </h1>
+            <p class="mx-auto mt-5 max-w-3xl text-lg font-medium leading-8 text-gray-700 dark:text-dark-200">
+              {{ siteSubtitle }}
+            </p>
+            <p class="mx-auto mt-3 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base dark:text-dark-300">
+              {{ t('home.hero.description') }}
+            </p>
+
+            <div class="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+              <router-link
+                :to="primaryEntryPath"
+                data-testid="home-primary-entry"
+                class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-primary-500 dark:text-dark-950 dark:hover:bg-primary-400"
+              >
+                {{ primaryEntryLabel }}
+                <Icon name="arrowRight" size="sm" class="ml-2" />
+              </router-link>
+              <a
+                href="#overview"
+                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-900 dark:text-white dark:hover:border-dark-500 dark:hover:bg-dark-800"
+              >
+                {{ t('home.hero.secondaryAction') }}
+              </a>
+            </div>
+
+            <ul class="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-medium text-gray-600 dark:text-dark-300">
+              <li v-for="item in heroAssurances" :key="item" class="inline-flex items-center gap-1.5">
+                <Icon name="checkCircle" size="xs" class="text-emerald-600 dark:text-emerald-400" />
+                {{ item }}
+              </li>
+            </ul>
+          </div>
+
+          <div
+            class="home-service-flow mx-auto mt-10 hidden max-w-5xl grid-cols-4 border-y border-gray-200 bg-white/80 sm:grid dark:border-dark-700 dark:bg-dark-900/80"
+            aria-hidden="true"
+          >
+            <div
+              v-for="(item, index) in serviceFlowItems"
+              :key="item.label"
+              class="home-flow-item relative flex min-h-24 flex-col items-center justify-center gap-2 px-3 py-4 text-center"
+            >
+              <span
+                :class="[
+                  'inline-flex h-9 w-9 items-center justify-center rounded-md',
+                  item.iconClass,
+                ]"
+              >
+                <Icon :name="item.icon" size="sm" />
+              </span>
+              <span class="text-xs font-semibold text-gray-700 dark:text-dark-200">{{ item.label }}</span>
+              <span v-if="index < serviceFlowItems.length - 1" class="home-flow-pulse"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="overview"
+        data-testid="home-overview"
+        class="scroll-mt-20 border-b border-gray-200 bg-white py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-950"
+        aria-labelledby="overview-title"
+      >
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="max-w-3xl">
+            <p class="text-xs font-semibold text-primary-700 dark:text-primary-300">
+              {{ t('home.overview.eyebrow') }}
+            </p>
+            <h2 id="overview-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
+              {{ t('home.overview.title') }}
+            </h2>
+            <p class="mt-4 text-base leading-7 text-gray-600 dark:text-dark-300">
+              {{ t('home.overview.description') }}
+            </p>
+          </div>
+
+          <div class="mt-10 grid border-y border-gray-200 sm:grid-cols-2 lg:grid-cols-4 dark:border-dark-800">
+            <article
+              v-for="item in overviewItems"
+              :key="item.title"
+              class="border-b border-gray-200 px-1 py-7 sm:px-6 lg:border-b-0 lg:border-r lg:last:border-r-0 dark:border-dark-800"
+            >
+              <span :class="['inline-flex h-10 w-10 items-center justify-center rounded-md', item.iconClass]">
+                <Icon :name="item.icon" size="md" />
+              </span>
+              <h3 class="mt-5 text-base font-semibold text-gray-950 dark:text-white">{{ item.title }}</h3>
+              <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ item.description }}</p>
+            </article>
+          </div>
+
+          <div class="mt-10">
+            <p class="text-xs font-semibold text-gray-500 dark:text-dark-400">
+              {{ t('home.overview.catalogLabel') }}
+            </p>
+            <div class="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 sm:grid-cols-3 lg:grid-cols-5 dark:border-dark-700 dark:bg-dark-700">
+              <div
+                v-for="item in capabilityItems"
+                :key="item.label"
+                class="flex min-h-20 items-center gap-3 bg-gray-50 px-4 py-4 dark:bg-dark-900"
+              >
+                <Icon :name="item.icon" size="sm" :class="item.iconClass" />
+                <span class="text-sm font-semibold text-gray-800 dark:text-dark-100">{{ item.label }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="reliability"
+        data-testid="home-reliability"
+        class="scroll-mt-20 border-b border-emerald-950 bg-[#0b2925] py-16 text-white sm:py-20"
+        aria-labelledby="reliability-title"
+      >
+        <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:px-8">
+          <div>
+            <p class="text-xs font-semibold text-emerald-300">{{ t('home.reliability.eyebrow') }}</p>
+            <h2 id="reliability-title" class="mt-3 text-3xl font-bold leading-tight sm:text-4xl">
+              {{ t('home.reliability.title') }}
+            </h2>
+            <p class="mt-4 max-w-xl text-base leading-7 text-emerald-50/80">
+              {{ t('home.reliability.description') }}
+            </p>
+            <a
+              href="#guide"
+              class="mt-7 inline-flex min-h-10 items-center rounded-md border border-emerald-200/40 px-4 text-sm font-semibold text-white transition-colors hover:border-emerald-100 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/60"
+            >
+              {{ t('home.reliability.action') }}
+              <Icon name="arrowRight" size="sm" class="ml-2" />
+            </a>
+          </div>
+
+          <div class="border-t border-white/15">
+            <article
+              v-for="item in reliabilityItems"
+              :key="item.title"
+              class="grid gap-3 border-b border-white/15 py-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-5"
+            >
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-md bg-white/10 text-emerald-200">
+                <Icon :name="item.icon" size="md" />
+              </span>
+              <div>
+                <h3 class="text-base font-semibold">{{ item.title }}</h3>
+                <p class="mt-2 text-sm leading-6 text-emerald-50/75">{{ item.description }}</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="guide"
+        data-testid="home-guide"
+        class="scroll-mt-20 border-b border-gray-200 bg-gray-50 py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-900"
+        aria-labelledby="guide-title"
+      >
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="mx-auto max-w-3xl text-center">
+            <p class="text-xs font-semibold text-amber-700 dark:text-amber-300">{{ t('home.guide.eyebrow') }}</p>
+            <h2 id="guide-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
+              {{ t('home.guide.title') }}
+            </h2>
+            <p class="mt-4 text-base leading-7 text-gray-600 dark:text-dark-300">{{ t('home.guide.description') }}</p>
+          </div>
+
+          <ol class="mt-12 grid gap-8 md:grid-cols-3 md:gap-0">
+            <li
+              v-for="(item, index) in guideItems"
+              :key="item.title"
+              class="relative border-t border-gray-300 pt-7 md:border-l md:border-t-0 md:px-8 md:pt-0 first:md:border-l-0 dark:border-dark-600"
+            >
+              <span class="inline-flex h-8 min-w-8 items-center justify-center rounded-md bg-amber-100 px-2 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                {{ String(index + 1).padStart(2, '0') }}
+              </span>
+              <h3 class="mt-5 text-lg font-semibold text-gray-950 dark:text-white">{{ item.title }}</h3>
+              <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">{{ item.description }}</p>
+            </li>
+          </ol>
+
+          <div class="mt-10 flex justify-center">
+            <a
+              v-if="docUrl"
+              :href="docUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex min-h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-950 dark:text-white dark:hover:bg-dark-800"
+            >
+              <Icon name="book" size="sm" class="mr-2" />
+              {{ t('home.guide.docsAction') }}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="faq"
+        data-testid="home-faq"
+        class="scroll-mt-20 border-b border-gray-200 bg-white py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-950"
+        aria-labelledby="faq-title"
+      >
+        <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:px-8">
+          <div>
+            <p class="text-xs font-semibold text-blue-700 dark:text-blue-300">{{ t('home.faq.eyebrow') }}</p>
+            <h2 id="faq-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
+              {{ t('home.faq.title') }}
+            </h2>
+            <p class="mt-4 max-w-md text-base leading-7 text-gray-600 dark:text-dark-300">{{ t('home.faq.description') }}</p>
+          </div>
+
+          <div class="border-t border-gray-200 dark:border-dark-700">
+            <details
+              v-for="item in faqItems"
+              :key="item.question"
+              class="home-faq-item border-b border-gray-200 dark:border-dark-700"
+            >
+              <summary
+                class="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left text-sm font-semibold text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-white sm:text-base"
+              >
+                <span>{{ item.question }}</span>
+                <Icon name="chevronDown" size="sm" class="faq-chevron flex-none text-gray-400 transition-transform" />
+              </summary>
+              <p class="max-w-3xl pb-5 pr-8 text-sm leading-7 text-gray-600 dark:text-dark-300">
+                {{ item.answer }}
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-primary-800 py-14 text-white dark:bg-primary-900" aria-labelledby="home-cta-title">
+        <div class="mx-auto flex max-w-7xl flex-col gap-7 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div class="max-w-3xl">
+            <p class="text-xs font-semibold text-primary-100">{{ t('home.cta.eyebrow') }}</p>
+            <h2 id="home-cta-title" class="mt-2 text-3xl font-bold leading-tight">{{ t('home.cta.title') }}</h2>
+            <p class="mt-3 text-sm leading-6 text-primary-50/85 sm:text-base">{{ t('home.cta.description') }}</p>
+          </div>
+          <div class="flex flex-col gap-3 sm:flex-row lg:flex-none">
+            <router-link
+              :to="primaryEntryPath"
+              class="inline-flex min-h-11 items-center justify-center rounded-md bg-white px-5 text-sm font-semibold text-primary-900 transition-colors hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              {{ primaryEntryLabel }}
               <Icon name="arrowRight" size="sm" class="ml-2" />
             </router-link>
             <a
@@ -94,100 +440,35 @@
               :href="docUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="btn btn-secondary min-h-10 px-5"
+              class="inline-flex min-h-11 items-center justify-center rounded-md border border-white/50 px-5 text-sm font-semibold text-white transition-colors hover:border-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
-              <Icon name="book" size="sm" class="mr-2" />
-              {{ t('home.viewDocs') }}
+              {{ t('home.cta.docsAction') }}
             </a>
           </div>
-        </section>
-
-        <section
-          class="mt-14 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-800 dark:bg-dark-900"
-          :aria-label="t('home.capabilitiesTitle')"
-        >
-          <div
-            class="flex flex-col gap-2 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-dark-800"
-          >
-            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
-              {{ t('home.capabilitiesTitle') }}
-            </h2>
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-primary-700 dark:text-primary-300">
-              <span class="h-2 w-2 rounded-full bg-green-500"></span>
-              {{ t('home.entryAvailable') }}
-            </span>
-          </div>
-          <div class="grid md:grid-cols-3">
-            <article class="min-w-0 px-5 py-6 md:border-r md:border-gray-200 dark:md:border-dark-800">
-              <span class="text-xs font-semibold text-gray-400 dark:text-dark-500">01</span>
-              <h3 class="mt-3 text-base font-semibold text-gray-900 dark:text-white">
-                {{ t('home.features.keyManagement') }}
-              </h3>
-              <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
-                {{ t('home.features.keyManagementDesc') }}
-              </p>
-            </article>
-            <article
-              class="min-w-0 border-t border-gray-200 px-5 py-6 md:border-r md:border-t-0 dark:border-dark-800"
-            >
-              <span class="text-xs font-semibold text-gray-400 dark:text-dark-500">02</span>
-              <h3 class="mt-3 text-base font-semibold text-blue-700 dark:text-blue-300">
-                {{ t('home.features.usageRecords') }}
-              </h3>
-              <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
-                {{ t('home.features.usageRecordsDesc') }}
-              </p>
-            </article>
-            <article class="min-w-0 border-t border-gray-200 px-5 py-6 md:border-t-0 dark:border-dark-800">
-              <span class="text-xs font-semibold text-gray-400 dark:text-dark-500">03</span>
-              <h3 class="mt-3 text-base font-semibold text-amber-700 dark:text-amber-300">
-                {{ t('home.features.quotaControls') }}
-              </h3>
-              <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
-                {{ t('home.features.quotaControlsDesc') }}
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <aside
-          class="mt-5 flex gap-3 rounded-lg border border-gray-200 bg-white px-4 py-4 dark:border-dark-800 dark:bg-dark-900"
-          :aria-label="t('home.securityNoticeTitle')"
-        >
-          <span
-            class="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary-50 text-xs font-bold text-primary-700 dark:bg-primary-950/50 dark:text-primary-300"
-          >i</span>
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
-              {{ t('home.securityNoticeTitle') }}
-            </h2>
-            <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-400">
-              {{ t('home.securityNoticeDescription') }}
-            </p>
-          </div>
-        </aside>
-      </div>
+        </div>
+      </section>
     </main>
 
-    <footer class="border-t border-gray-200 bg-white px-5 dark:border-dark-800 dark:bg-dark-900">
-      <div
-        class="mx-auto flex min-h-[72px] max-w-6xl flex-col items-center justify-center gap-2 py-4 text-center text-xs text-gray-500 sm:flex-row sm:justify-between sm:text-left dark:text-dark-400"
-      >
-        <span>&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}</span>
-        <div class="flex items-center gap-4">
-          <a
-            v-if="docUrl"
-            :href="docUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="hover:text-gray-800 dark:hover:text-white"
-          >
-            {{ t('home.docs') }}
-          </a>
-          <router-link to="/login" class="hover:text-gray-800 dark:hover:text-white">
-            {{ t('home.login') }}
-          </router-link>
+    <footer class="border-t border-gray-200 bg-gray-50 dark:border-dark-800 dark:bg-dark-950">
+      <div class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+        <div class="flex min-w-0 items-center gap-3">
+          <img :src="siteLogo || '/logo.svg'" alt="" class="h-8 w-8 flex-none rounded-md object-contain" />
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-gray-950 dark:text-white">{{ siteName }}</p>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">{{ t('home.footer.tagline') }}</p>
+          </div>
         </div>
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500 dark:text-dark-400">
+          <a href="#overview" class="hover:text-gray-900 dark:hover:text-white">{{ t('home.nav.overview') }}</a>
+          <a href="#guide" class="hover:text-gray-900 dark:hover:text-white">{{ t('home.nav.guide') }}</a>
+          <a href="#faq" class="hover:text-gray-900 dark:hover:text-white">{{ t('home.nav.faq') }}</a>
+          <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer" class="hover:text-gray-900 dark:hover:text-white">
+            {{ t('home.nav.docs') }}
+          </a>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-dark-400">
+          &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
+        </p>
       </div>
     </footer>
   </div>
@@ -201,44 +482,193 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import {
   sanitizeHomeContentFrameUrl,
-  sanitizeHomeContentHtml
+  sanitizeHomeContentHtml,
 } from '@/utils/homeContent'
 import { sanitizeUrl } from '@/utils/url'
+
+type HomeIconName =
+  | 'key'
+  | 'sync'
+  | 'chart'
+  | 'shield'
+  | 'chat'
+  | 'terminal'
+  | 'sparkles'
+  | 'play'
+  | 'search'
+  | 'globe'
+  | 'server'
+  | 'clock'
+  | 'document'
+  | 'checkCircle'
+
+interface HomeContentItem {
+  icon: HomeIconName
+  title: string
+  description: string
+  iconClass?: string
+}
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 
+const mobileNavOpen = ref(false)
+const isDark = ref(document.documentElement.classList.contains('dark'))
+
 const siteName = computed(
-  () => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API'
+  () => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API',
 )
 const siteLogo = computed(() =>
   sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', {
     allowRelative: true,
-    allowDataUrl: true
-  })
+    allowDataUrl: true,
+  }),
 )
 const siteSubtitle = computed(
-  () => appStore.cachedPublicSettings?.site_subtitle || t('home.defaultSubtitle')
+  () => appStore.cachedPublicSettings?.site_subtitle || t('home.defaultSubtitle'),
 )
 const docUrl = computed(() =>
-  sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
+  sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''),
 )
-const rawHomeContent = computed(() => appStore.cachedPublicSettings?.home_content?.trim() || '')
+const registrationEnabled = computed(
+  () => appStore.cachedPublicSettings?.registration_enabled === true,
+)
+const rawHomeContent = computed(
+  () => appStore.cachedPublicSettings?.home_content?.trim() || '',
+)
 const customHomeFrameUrl = computed(() => sanitizeHomeContentFrameUrl(rawHomeContent.value))
 const customHomeHtml = computed(() =>
-  customHomeFrameUrl.value ? '' : sanitizeHomeContentHtml(rawHomeContent.value)
+  customHomeFrameUrl.value ? '' : sanitizeHomeContentHtml(rawHomeContent.value),
 )
 const hasCustomHomeContent = computed(
-  () => Boolean(customHomeFrameUrl.value || customHomeHtml.value.trim())
+  () => Boolean(customHomeFrameUrl.value || customHomeHtml.value.trim()),
 )
 
-const isDark = ref(document.documentElement.classList.contains('dark'))
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const dashboardPath = computed(() =>
-  authStore.isAdmin ? '/admin/dashboard' : '/dashboard'
+  authStore.isAdmin ? '/admin/dashboard' : '/dashboard',
 )
+const primaryEntryPath = computed(() => {
+  if (isAuthenticated.value) return dashboardPath.value
+  return registrationEnabled.value ? '/register' : '/login'
+})
+const primaryEntryLabel = computed(() => {
+  if (isAuthenticated.value) return t('home.goToDashboard')
+  return registrationEnabled.value ? t('home.startNow') : t('home.loginConsole')
+})
 const currentYear = new Date().getFullYear()
+
+const sectionNavItems = computed(() => [
+  { href: '#overview', label: t('home.nav.overview') },
+  { href: '#reliability', label: t('home.nav.reliability') },
+  { href: '#guide', label: t('home.nav.guide') },
+  { href: '#faq', label: t('home.nav.faq') },
+])
+
+const heroAssurances = computed(() => [
+  t('home.hero.assurances.clearUsage'),
+  t('home.hero.assurances.flexibleAccess'),
+  t('home.hero.assurances.visibleStatus'),
+])
+
+const serviceFlowItems = computed(() => [
+  { icon: 'key' as const, label: t('home.flow.access'), iconClass: 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200' },
+  { icon: 'sync' as const, label: t('home.flow.routing'), iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200' },
+  { icon: 'server' as const, label: t('home.flow.service'), iconClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-200' },
+  { icon: 'chart' as const, label: t('home.flow.records'), iconClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/35 dark:text-amber-200' },
+])
+
+const overviewItems = computed<HomeContentItem[]>(() => [
+  {
+    icon: 'key',
+    title: t('home.overview.items.access.title'),
+    description: t('home.overview.items.access.description'),
+    iconClass: 'bg-primary-50 text-primary-700 dark:bg-primary-900/35 dark:text-primary-200',
+  },
+  {
+    icon: 'sync',
+    title: t('home.overview.items.routing.title'),
+    description: t('home.overview.items.routing.description'),
+    iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200',
+  },
+  {
+    icon: 'chart',
+    title: t('home.overview.items.usage.title'),
+    description: t('home.overview.items.usage.description'),
+    iconClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/35 dark:text-amber-200',
+  },
+  {
+    icon: 'shield',
+    title: t('home.overview.items.control.title'),
+    description: t('home.overview.items.control.description'),
+    iconClass: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200',
+  },
+])
+
+const capabilityItems = computed(() => [
+  { icon: 'chat' as const, label: t('home.overview.catalog.conversation'), iconClass: 'text-primary-600 dark:text-primary-300' },
+  { icon: 'terminal' as const, label: t('home.overview.catalog.code'), iconClass: 'text-blue-600 dark:text-blue-300' },
+  { icon: 'sparkles' as const, label: t('home.overview.catalog.image'), iconClass: 'text-amber-600 dark:text-amber-300' },
+  { icon: 'play' as const, label: t('home.overview.catalog.video'), iconClass: 'text-rose-600 dark:text-rose-300' },
+  { icon: 'search' as const, label: t('home.overview.catalog.tools'), iconClass: 'text-emerald-600 dark:text-emerald-300' },
+])
+
+const reliabilityItems = computed<HomeContentItem[]>(() => [
+  {
+    icon: 'globe',
+    title: t('home.reliability.items.status.title'),
+    description: t('home.reliability.items.status.description'),
+  },
+  {
+    icon: 'sync',
+    title: t('home.reliability.items.continuity.title'),
+    description: t('home.reliability.items.continuity.description'),
+  },
+  {
+    icon: 'document',
+    title: t('home.reliability.items.records.title'),
+    description: t('home.reliability.items.records.description'),
+  },
+])
+
+const guideItems = computed(() => [
+  {
+    title: t('home.guide.items.account.title'),
+    description: t('home.guide.items.account.description'),
+  },
+  {
+    title: t('home.guide.items.credential.title'),
+    description: t('home.guide.items.credential.description'),
+  },
+  {
+    title: t('home.guide.items.configure.title'),
+    description: t('home.guide.items.configure.description'),
+  },
+])
+
+const faqItems = computed(() => [
+  {
+    question: t('home.faq.items.start.question'),
+    answer: t('home.faq.items.start.answer'),
+  },
+  {
+    question: t('home.faq.items.capabilities.question'),
+    answer: t('home.faq.items.capabilities.answer'),
+  },
+  {
+    question: t('home.faq.items.usage.question'),
+    answer: t('home.faq.items.usage.answer'),
+  },
+  {
+    question: t('home.faq.items.failure.question'),
+    answer: t('home.faq.items.failure.answer'),
+  },
+])
+
+function closeMobileNav() {
+  mobileNavOpen.value = false
+}
 
 function toggleTheme() {
   isDark.value = !isDark.value
@@ -267,6 +697,90 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.home-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px);
+  background-position: center;
+  background-size: 48px 48px;
+}
+
+.dark .home-grid {
+  background-image:
+    linear-gradient(rgba(71, 85, 105, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.22) 1px, transparent 1px);
+}
+
+.home-scene-line {
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  width: 1px;
+  background: rgba(13, 148, 136, 0.2);
+}
+
+.home-scene-line-left {
+  left: 12%;
+}
+
+.home-scene-line-right {
+  right: 12%;
+}
+
+.home-scene-marker {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(13, 148, 136, 0.55);
+  border-radius: 9999px;
+  background: #f8fafc;
+  box-shadow: 0 0 0 5px rgba(13, 148, 136, 0.08);
+}
+
+.dark .home-scene-marker {
+  background: #020617;
+}
+
+.home-scene-marker-one {
+  top: 22%;
+  left: calc(12% - 3px);
+}
+
+.home-scene-marker-two {
+  top: 62%;
+  right: calc(12% - 3px);
+}
+
+.home-scene-marker-three {
+  right: calc(12% - 3px);
+  bottom: 14%;
+}
+
+.home-flow-item:not(:nth-child(2n)) {
+  border-right: 1px solid rgb(229 231 235);
+}
+
+.home-flow-item:nth-child(-n + 2) {
+  border-bottom: 1px solid rgb(229 231 235);
+}
+
+.dark .home-flow-item:not(:nth-child(2n)),
+.dark .home-flow-item:nth-child(-n + 2) {
+  border-color: rgb(51 65 85);
+}
+
+.home-flow-pulse {
+  display: none;
+}
+
+.home-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-faq-item[open] .faq-chevron {
+  transform: rotate(180deg);
+}
+
 .safe-home-content :deep(h1),
 .safe-home-content :deep(h2),
 .safe-home-content :deep(h3) {
@@ -295,5 +809,50 @@ onMounted(() => {
   border-radius: 8px;
   padding: 1rem;
   background: #f7f9fb;
+}
+
+@media (min-width: 640px) {
+  .home-flow-item {
+    border-right: 1px solid rgb(229 231 235);
+    border-bottom: 0 !important;
+  }
+
+  .home-flow-item:last-child {
+    border-right: 0;
+  }
+
+  .dark .home-flow-item {
+    border-color: rgb(51 65 85);
+  }
+
+  .home-flow-pulse {
+    position: absolute;
+    top: 50%;
+    right: -18px;
+    z-index: 2;
+    display: block;
+    width: 36px;
+    height: 2px;
+    background: #0d9488;
+    animation: home-signal 2.8s ease-in-out infinite;
+  }
+}
+
+@keyframes home-signal {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scaleX(0.35);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-flow-pulse {
+    animation: none;
+  }
 }
 </style>

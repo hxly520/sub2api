@@ -11,26 +11,142 @@ export default {
     switchToDark: 'Switch to Dark Mode',
     dashboard: 'Dashboard',
     login: 'Login',
+    register: 'Create account',
+    startNow: 'Get started',
     loginConsole: 'Sign in to Console',
     goToDashboard: 'Go to Dashboard',
     customPageTitle: 'Custom Home Content',
-    defaultSubtitle: 'API Service Management Console',
-    consoleLabel: 'Service Entry',
-    consoleDescription: 'Sign in to manage keys, access scopes, usage quotas, and request records.',
-    capabilitiesTitle: 'Console Capabilities',
-    entryAvailable: 'Service entry available',
-    securityNoticeTitle: 'Security notice',
-    securityNoticeDescription:
-      'The public home page does not read keyboard input or collect API keys, OAuth tokens, refresh tokens, or administrator credentials. Handle sensitive information only in the authenticated key management page.',
-    features: {
-      keyManagement: 'Keys and Access Control',
-      keyManagementDesc: 'Create, disable, and update personal keys with the required access scope.',
-      usageRecords: 'Usage Records',
-      usageRecordsDesc: 'Review request status, usage, and errors when diagnosing client configuration.',
-      quotaControls: 'Quotas and Risk Notices',
-      quotaControlsDesc: 'Set key quotas and expiration dates to reduce unintended usage from misconfiguration.'
+    defaultSubtitle: 'Stable, transparent, and manageable intelligent services',
+    nav: {
+      primary: 'Public navigation',
+      toggle: 'Open or close the navigation menu',
+      overview: 'Overview',
+      reliability: 'Reliable service',
+      guide: 'Guide',
+      faq: 'FAQ',
+      docs: 'Documentation'
+    },
+    hero: {
+      eyebrow: 'Stable access · Clear usage · Flexible control',
+      description:
+        'Use one credential for conversation, reasoning, code, image, and video capabilities. Review status, usage, and cost in one place for individual or team workflows.',
+      secondaryAction: 'Explore capabilities',
+      assurances: {
+        clearUsage: 'Clear usage records',
+        flexibleAccess: 'Flexible access scopes',
+        visibleStatus: 'Visible service status'
+      }
+    },
+    flow: {
+      access: 'Unified access',
+      routing: 'Flexible routing',
+      service: 'Capabilities',
+      records: 'Usage records'
+    },
+    overview: {
+      eyebrow: 'Overview',
+      title: 'Manage first-time access and everyday operations in one place',
+      description:
+        'Credentials, service paths, usage records, and team permissions stay together, reducing repeated setup and keeping every request accountable.',
+      items: {
+        access: {
+          title: 'One credential system',
+          description: 'Create credentials per project and assign an independent access scope to each use case.'
+        },
+        routing: {
+          title: 'Flexible service paths',
+          description: 'Match requests with an available path and reduce the impact of an isolated service issue.'
+        },
+        usage: {
+          title: 'Transparent usage and cost',
+          description: 'Review request status, usage details, and cost records without switching between systems.'
+        },
+        control: {
+          title: 'Scoped permissions and quotas',
+          description: 'Set access boundaries, quotas, and expiration dates for individual and team use.'
+        }
+      },
+      catalogLabel: 'Available capabilities follow the live Console catalog',
+      catalog: {
+        conversation: 'Conversation and reasoning',
+        code: 'Code collaboration',
+        image: 'Image creation',
+        video: 'Video creation',
+        tools: 'Search and tools'
+      }
+    },
+    reliability: {
+      eyebrow: 'Reliable service',
+      title: 'Visible status and complete records for everyday operations',
+      description:
+        'The platform brings service state and request outcomes together and routes across available paths so investigation and follow-up have clear context.',
+      action: 'View the guide',
+      items: {
+        status: {
+          title: 'Service status in one place',
+          description: 'Review available capabilities and channel state before choosing how to run a request.'
+        },
+        continuity: {
+          title: 'Automatic path adjustment',
+          description: 'When the current path is unavailable, configured policy can try another available path.'
+        },
+        records: {
+          title: 'Request records remain available',
+          description: 'Keep status, usage, and error context together when reviewing results or client setup.'
+        }
+      }
+    },
+    guide: {
+      eyebrow: 'Guide',
+      title: 'Complete the initial setup in three steps',
+      description: 'Create an account, issue a credential, and configure the service address required by your workflow.',
+      docsAction: 'Read the complete guide',
+      items: {
+        account: {
+          title: 'Create and sign in to an account',
+          description: 'Enter the Console to review currently available features and service status.'
+        },
+        credential: {
+          title: 'Issue an access credential',
+          description: 'Create a credential for the intended use and set its scope, quota, and expiration.'
+        },
+        configure: {
+          title: 'Follow the configuration guide',
+          description: 'Set the service address and credential while keeping the rest of your workflow unchanged.'
+        }
+      }
+    },
+    faq: {
+      eyebrow: 'FAQ',
+      title: 'What to know before getting started',
+      description: 'Use the signed-in Console as the source of truth for current capabilities, pricing, and status.',
+      items: {
+        start: {
+          question: 'How do I get started?',
+          answer: 'Create an account, open the Console, issue an access credential, and follow the guide to configure the service address.'
+        },
+        capabilities: {
+          question: 'Which capabilities are available?',
+          answer: 'The catalog can include conversation, reasoning, code collaboration, image creation, video creation, search, and tools. Check the Console for the current list.'
+        },
+        usage: {
+          question: 'Where can I review usage and cost?',
+          answer: 'The signed-in Console provides balance, request records, usage details, and cost information.'
+        },
+        failure: {
+          question: 'How should I investigate a failed request?',
+          answer: 'Check service status and request records first, then verify the credential scope, quota, and client configuration against the reported error.'
+        }
+      }
+    },
+    cta: {
+      eyebrow: 'Get started',
+      title: 'Ready for a unified intelligent service experience?',
+      description: 'Create an account, open the Console, and follow the guide to complete the initial setup.',
+      docsAction: 'Read the guide'
     },
     footer: {
+      tagline: 'Stable, transparent, and manageable intelligent services',
       allRightsReserved: 'All rights reserved.'
     }
   },

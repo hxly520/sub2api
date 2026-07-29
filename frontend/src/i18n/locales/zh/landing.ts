@@ -11,26 +11,142 @@ export default {
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
     login: '登录',
+    register: '注册',
+    startNow: '立即开始',
     loginConsole: '登录控制台',
     goToDashboard: '进入控制台',
     customPageTitle: '自定义首页内容',
-    defaultSubtitle: 'API 服务管理控制台',
-    consoleLabel: '服务入口',
-    consoleDescription: '登录后可管理密钥、访问范围、使用配额和请求记录。',
-    capabilitiesTitle: '控制台功能',
-    entryAvailable: '服务入口正常',
-    securityNoticeTitle: '安全提示',
-    securityNoticeDescription:
-      '公开首页不读取键盘输入，不收集 API 密钥、OAuth 令牌、刷新令牌或管理员凭据。请仅在登录后的密钥管理页面操作敏感信息。',
-    features: {
-      keyManagement: '密钥与访问控制',
-      keyManagementDesc: '创建、禁用和更新个人密钥，并配置必要的访问范围。',
-      usageRecords: '使用记录',
-      usageRecordsDesc: '查看请求状态、用量和错误信息，便于定位客户端配置问题。',
-      quotaControls: '配额与风险提醒',
-      quotaControlsDesc: '按需设置密钥配额和有效期，降低误配置造成的意外使用。'
+    defaultSubtitle: '稳定、清晰、可管理的智能服务平台',
+    nav: {
+      primary: '公开导航',
+      toggle: '打开或关闭导航菜单',
+      overview: '功能概览',
+      reliability: '稳定服务',
+      guide: '使用指南',
+      faq: '常见问题',
+      docs: '文档'
+    },
+    hero: {
+      eyebrow: '稳定连接 · 清晰计量 · 灵活管理',
+      description:
+        '用一套访问凭证连接对话、推理、代码、图像与视频能力。状态、用量和费用集中查看，个人与团队都能快速开始。',
+      secondaryAction: '查看功能概览',
+      assurances: {
+        clearUsage: '用量明细清晰可查',
+        flexibleAccess: '访问范围灵活配置',
+        visibleStatus: '服务状态集中查看'
+      }
+    },
+    flow: {
+      access: '统一接入',
+      routing: '灵活调度',
+      service: '能力服务',
+      records: '用量记录'
+    },
+    overview: {
+      eyebrow: '功能概览',
+      title: '从首次接入到日常管理，都在同一处完成',
+      description:
+        '平台将访问凭证、服务路径、用量记录和团队权限集中管理，减少重复配置，让每一次使用都有清晰依据。',
+      items: {
+        access: {
+          title: '一套凭证，统一管理',
+          description: '按项目创建和管理访问凭证，并为不同用途配置独立的访问范围。'
+        },
+        routing: {
+          title: '服务路径灵活选择',
+          description: '根据当前可用状态匹配合适路径，降低单一路径异常带来的影响。'
+        },
+        usage: {
+          title: '用量与费用清晰可查',
+          description: '集中查看请求状态、使用明细和费用记录，日常核对更直接。'
+        },
+        control: {
+          title: '权限与额度按需分配',
+          description: '为个人或团队设置访问边界、额度和有效期，控制使用范围。'
+        }
+      },
+      catalogLabel: '可用能力以控制台实时展示为准',
+      catalog: {
+        conversation: '对话与推理',
+        code: '代码协作',
+        image: '图像创作',
+        video: '视频创作',
+        tools: '搜索与工具'
+      }
+    },
+    reliability: {
+      eyebrow: '稳定服务',
+      title: '用可见状态与完整记录支撑日常使用',
+      description:
+        '平台持续汇总服务状态与请求结果，并在可用路径之间进行调度，让问题定位和后续处理都有依据。',
+      action: '查看使用指南',
+      items: {
+        status: {
+          title: '服务状态集中展示',
+          description: '在同一页面查看可用能力和渠道状态，选择服务时更有把握。'
+        },
+        continuity: {
+          title: '异常路径自动调整',
+          description: '当当前路径不可用时，平台可按既定策略尝试其他可用路径。'
+        },
+        records: {
+          title: '请求记录持续可查',
+          description: '保留状态、用量与错误信息，便于核对结果并排查客户端配置。'
+        }
+      }
+    },
+    guide: {
+      eyebrow: '使用指南',
+      title: '三步完成首次配置',
+      description: '从创建账号到发起首次请求，只需完成必要的账号、凭证和服务地址配置。',
+      docsAction: '阅读完整使用文档',
+      items: {
+        account: {
+          title: '创建并登录账号',
+          description: '完成账号注册后进入控制台，查看当前可用功能和服务状态。'
+        },
+        credential: {
+          title: '生成访问凭证',
+          description: '按用途创建凭证，并设置需要的访问范围、额度与有效期。'
+        },
+        configure: {
+          title: '按文档完成配置',
+          description: '填写服务地址和访问凭证，保留原有业务流程即可开始使用。'
+        }
+      }
+    },
+    faq: {
+      eyebrow: '常见问题',
+      title: '开始之前，你可能想了解',
+      description: '具体可用能力、价格与状态请以登录后的控制台实时信息为准。',
+      items: {
+        start: {
+          question: '如何开始使用？',
+          answer: '注册并进入控制台，创建访问凭证后，按照使用文档完成服务地址配置。'
+        },
+        capabilities: {
+          question: '平台提供哪些能力？',
+          answer: '可用范围包括对话与推理、代码协作、图像创作、视频创作、搜索与工具等，具体内容以控制台实时展示为准。'
+        },
+        usage: {
+          question: '在哪里查看用量与费用？',
+          answer: '登录控制台后可查看余额、请求记录、使用明细和费用信息。'
+        },
+        failure: {
+          question: '遇到请求失败时如何排查？',
+          answer: '先查看服务状态和请求记录，再根据错误信息核对访问范围、额度与客户端配置。'
+        }
+      }
+    },
+    cta: {
+      eyebrow: '现在开始',
+      title: '准备好使用统一的智能服务了吗？',
+      description: '创建账号并进入控制台，按照使用文档完成首次配置。',
+      docsAction: '阅读使用文档'
     },
     footer: {
+      tagline: '稳定、清晰、可管理的智能服务入口',
       allRightsReserved: '保留所有权利。'
     }
   },

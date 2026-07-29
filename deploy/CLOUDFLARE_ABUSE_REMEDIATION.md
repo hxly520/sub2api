@@ -31,12 +31,20 @@ renamed.
 - The production subtitle is `API 服务管理控制台`; custom home content remains
   empty and the CC Switch import button remains enabled.
 
-Current production file checksums:
+Production file checksums observed during the containment rollout:
 
 | File | SHA-256 |
 | --- | --- |
 | Public entry | `c5874fcd2ff5a4ea633610530d2151143b2182bb379531c3f618343ef4a0280a` |
 | Public help | `926823de877cbb5548db011743ffa2ad9a3e39fb54598108e4b87e6c69d68395` |
+
+The repository now contains a neutral, script-free public landing redesign
+that mirrors the Vue `/home` information hierarchy while remaining independent
+from the application bundle. It has not been copied to production by this
+change. Its candidate SHA-256 is
+`86eb43d94050780fd9dc81da6e189c469f709bffa11c63eed195cdc065d229e5`.
+After a separately approved static-file rollout, verify the deployed bytes and
+update the production checksum above.
 
 ## CC Switch Compatibility
 
@@ -62,6 +70,10 @@ recognition even if provider import still appeared to work.
 
 - `HomeView.vue` uses a neutral service-console entry instead of commercial or
   provider-specific marketing copy.
+- `deploy/public-landing/index.html` provides the same neutral feature,
+  reliability, onboarding, FAQ, documentation, registration, and login entry
+  points for the exact-match production root without loading scripts or
+  external resources.
 - Custom home HTML is sanitized through a DOMPurify allowlist. Scripts, forms,
   inputs, media, inline styles, event attributes, and unsafe URL schemes are
   removed.
