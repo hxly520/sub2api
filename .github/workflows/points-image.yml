@@ -1,0 +1,150 @@
+name: Points System Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_version_tag:
+        description: 'Also publish the current Sub2API version tag'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: points-system-image-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build independent points image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: points_test
+          POSTGRES_PASSWORD: points_test
+          POSTGRES_DB: points_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U points_test -d points_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POINTS_TEST_DATABASE_URL: postgres://points_test:points_test@127.0.0.1:5432/points_test?sslmode=disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: points-system/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: points-system/go.sum
+
+      - name: Verify points service
+        working-directory: points-system
+        run: |
+          go test ./... -count=1
+          go vet ./...
+          go build ./cmd/server
+          go test -tags=integration ./internal/store -count=1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare image metadata
+        id: meta
+        env:
+          PUBLISH_VERSION_TAG: ${{ inputs.publish_version_tag }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          short_sha="${GITHUB_SHA::12}"
+          version="$(tr -d '[:space:]' < backend/cmd/server/VERSION)"
+          tags=("ghcr.io/${owner_lc}/sub2api-points:sha-${short_sha}")
+          if [ "${PUBLISH_VERSION_TAG}" = "true" ]; then
+            tags+=("ghcr.io/${owner_lc}/sub2api-points:${version}-${short_sha}")
+          fi
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+            echo "primary=ghcr.io/${owner_lc}/sub2api-points:sha-${short_sha}"
+            echo "local=sub2api-points-validation:${short_sha}"
+            echo "version=${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: points-system
+          file: points-system/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.local }}
+          labels: |
+            org.opencontainers.image.title=sub2api-points
+            org.opencontainers.image.description=Independent Sub2API points and check-in service
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=points-system
+          cache-to: type=gha,mode=max,scope=points-system
+
+      - name: Smoke test local image
+        env:
+          IMAGE: ${{ steps.meta.outputs.local }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Architecture}}' "${IMAGE}")" = "amd64"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE}")" = "${GITHUB_SHA}"
+          docker run --rm --entrypoint /bin/sh "${IMAGE}" -c \
+            'test -x /usr/local/bin/points-server && test "$(id -u)" != "0"'
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish verified image
+        id: publish
+        env:
+          IMAGE: ${{ steps.meta.outputs.local }}
+          PRIMARY: ${{ steps.meta.outputs.primary }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            docker tag "${IMAGE}" "${tag}"
+            docker push "${tag}"
+          done <<< "${TAGS}"
+
+          digest="sha256:$(docker buildx imagetools inspect "${PRIMARY}" --raw | sha256sum | awk '{print $1}')"
+          if ! [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid published digest: ${digest}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build summary
+        run: |
+          {
+            echo "## Published image tags"
+            echo
+            printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed 's/^/- `/' | sed 's/$/`/'
+            echo
+            echo "Digest: \`${{ steps.publish.outputs.digest }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -120,6 +120,11 @@ func RegisterUserRoutes(
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
 		}
 
+		points := authenticated.Group("/points")
+		{
+			points.POST("/launch", h.Points.LaunchUser)
+		}
+
 		// 卡密兑换
 		redeem := authenticated.Group("/redeem")
 		{

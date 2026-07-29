@@ -124,6 +124,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  pointsSystem: defineFlag({
+    key: 'points_system_enabled',
+    mode: 'opt-in',
+    label: 'Points System',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags

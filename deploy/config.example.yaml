@@ -1282,6 +1282,24 @@ update:
   proxy_url: ""
 
 # =============================================================================
+# Independent Points System (独立积分与签到系统)
+# =============================================================================
+# 业务比例、签到门槛、奖励阶梯和金额安全上限在积分服务的版本化策略中配置。
+# 此处只定义 Sub2API 与积分服务之间的入口和信任边界。
+points_system:
+  enabled: false
+  public_url: "https://points.example.com"
+  menu_label: "积分中心"
+  launch_key_id: "launch-v1"
+  # Base64/base64url of at least 32 random bytes; never commit a real value.
+  launch_secret: "BASE64URL_32_BYTE_SECRET"
+  credit_key_id: "credit-v1"
+  # Base64/base64url of at least 32 random bytes; use a different key.
+  credit_secret: "BASE64URL_DIFFERENT_32_BYTE_SECRET"
+  launch_ttl_seconds: 60
+  clock_skew_seconds: 60
+
+# =============================================================================
 # Image Storage (异步图片任务结果对象存储)
 # =============================================================================
 # 长耗时生图套 Cloudflare 会 524 超时，异步图片任务接口（/v1/images/generations/async

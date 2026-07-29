@@ -1,0 +1,13 @@
+-- Run as the Sub2API PostgreSQL owner after replacing the role and password.
+-- If the database/schema names differ, adjust sub2api/public before running.
+CREATE ROLE points_usage_reader LOGIN PASSWORD 'CHANGE_ME_LONG_RANDOM_PASSWORD';
+ALTER ROLE points_usage_reader SET default_transaction_read_only = on;
+ALTER ROLE points_usage_reader SET statement_timeout = '30s';
+
+GRANT CONNECT ON DATABASE sub2api TO points_usage_reader;
+GRANT USAGE ON SCHEMA public TO points_usage_reader;
+GRANT SELECT (id, user_id, billing_type, actual_cost, created_at)
+    ON TABLE public.usage_logs TO points_usage_reader;
+
+-- Explicitly remove broad defaults if this role existed before hardening.
+REVOKE CREATE ON SCHEMA public FROM points_usage_reader;

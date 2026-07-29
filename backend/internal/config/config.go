@@ -3,6 +3,7 @@ package config
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -99,6 +100,7 @@ type Config struct {
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
+	PointsSystem            PointsSystemConfig            `mapstructure:"points_system"`
 }
 
 type LogConfig struct {
@@ -160,6 +162,70 @@ type UpdateConfig struct {
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
 	ProxyURL string `mapstructure:"proxy_url"`
+}
+
+// PointsSystemConfig controls the trust boundary between Sub2API and the
+// independently deployed points service. Reward rules and monetary limits live
+// in the points service database; this block only configures signed SSO and the
+// idempotent balance-credit bridge.
+type PointsSystemConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`
+	PublicURL        string `mapstructure:"public_url"`
+	MenuLabel        string `mapstructure:"menu_label"`
+	LaunchKeyID      string `mapstructure:"launch_key_id"`
+	LaunchSecret     string `mapstructure:"launch_secret"`
+	CreditKeyID      string `mapstructure:"credit_key_id"`
+	CreditSecret     string `mapstructure:"credit_secret"`
+	LaunchTTLSeconds int    `mapstructure:"launch_ttl_seconds"`
+	ClockSkewSeconds int    `mapstructure:"clock_skew_seconds"`
+}
+
+func (c PointsSystemConfig) Active() bool {
+	if !c.Enabled || strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) ||
+		!validPointsKeyID(c.CreditKeyID) {
+		return false
+	}
+	launchKey, launchErr := c.LaunchKey()
+	creditKey, creditErr := c.CreditKey()
+	return launchErr == nil && creditErr == nil && len(launchKey) >= 32 && len(creditKey) >= 32
+}
+
+func (c PointsSystemConfig) LaunchKey() ([]byte, error) {
+	return decodePointsSystemSecret(c.LaunchSecret)
+}
+
+func (c PointsSystemConfig) CreditKey() ([]byte, error) {
+	return decodePointsSystemSecret(c.CreditSecret)
+}
+
+func decodePointsSystemSecret(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("secret is required")
+	}
+	if decoded, err := base64.RawURLEncoding.DecodeString(raw); err == nil {
+		return decoded, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("secret must be base64 or base64url")
+	}
+	return decoded, nil
+}
+
+func validPointsKeyID(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) == 0 || len(value) > 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 type IdempotencyConfig struct {
@@ -2250,6 +2316,18 @@ func setDefaults() {
 	viper.SetDefault("idempotency.cleanup_interval_seconds", 60)
 	viper.SetDefault("idempotency.cleanup_batch_size", 500)
 
+	// Independent points system integration. Monetary rules are intentionally
+	// not configured here; the points service stores versioned rules in its DB.
+	viper.SetDefault("points_system.enabled", false)
+	viper.SetDefault("points_system.public_url", "")
+	viper.SetDefault("points_system.menu_label", "积分中心")
+	viper.SetDefault("points_system.launch_key_id", "v1")
+	viper.SetDefault("points_system.launch_secret", "")
+	viper.SetDefault("points_system.credit_key_id", "v1")
+	viper.SetDefault("points_system.credit_secret", "")
+	viper.SetDefault("points_system.launch_ttl_seconds", 60)
+	viper.SetDefault("points_system.clock_skew_seconds", 60)
+
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
@@ -3587,6 +3665,39 @@ func (c *Config) Validate() error {
 	}
 	if c.Concurrency.PingInterval < 5 || c.Concurrency.PingInterval > 30 {
 		return fmt.Errorf("concurrency.ping_interval must be between 5-30 seconds")
+	}
+	if c.PointsSystem.Enabled {
+		if err := ValidateAbsoluteHTTPURL(c.PointsSystem.PublicURL); err != nil {
+			return fmt.Errorf("points_system.public_url invalid: %w", err)
+		}
+		pointsURL, _ := url.Parse(strings.TrimSpace(c.PointsSystem.PublicURL))
+		if pointsURL != nil && (pointsURL.RawQuery != "" || pointsURL.User != nil) {
+			return fmt.Errorf("points_system.public_url must not include credentials or query parameters")
+		}
+		if len(strings.TrimSpace(c.PointsSystem.MenuLabel)) > 64 {
+			return fmt.Errorf("points_system.menu_label must not exceed 64 characters")
+		}
+		if !validPointsKeyID(c.PointsSystem.LaunchKeyID) {
+			return fmt.Errorf("points_system.launch_key_id is invalid")
+		}
+		launchKey, err := c.PointsSystem.LaunchKey()
+		if err != nil || len(launchKey) < 32 {
+			return fmt.Errorf("points_system.launch_secret must decode to at least 32 bytes")
+		}
+		if !validPointsKeyID(c.PointsSystem.CreditKeyID) {
+			return fmt.Errorf("points_system.credit_key_id is invalid")
+		}
+		creditKey, err := c.PointsSystem.CreditKey()
+		if err != nil || len(creditKey) < 32 {
+			return fmt.Errorf("points_system.credit_secret must decode to at least 32 bytes")
+		}
+		if c.PointsSystem.LaunchTTLSeconds < 15 || c.PointsSystem.LaunchTTLSeconds > 300 {
+			return fmt.Errorf("points_system.launch_ttl_seconds must be between 15 and 300")
+		}
+		if c.PointsSystem.ClockSkewSeconds < 5 || c.PointsSystem.ClockSkewSeconds > 300 {
+			return fmt.Errorf("points_system.clock_skew_seconds must be between 5 and 300")
+		}
+		warnIfInsecureURL("points_system.public_url", c.PointsSystem.PublicURL)
 	}
 	if err := ValidateDingTalkConfig(c.DingTalk); err != nil {
 		return fmt.Errorf("dingtalk_connect: %w", err)

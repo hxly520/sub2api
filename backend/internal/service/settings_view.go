@@ -331,6 +331,8 @@ type PublicSettings struct {
 	GitHubOAuthEnabled       bool
 	GoogleOAuthEnabled       bool
 	Version                  string
+	PointsSystemEnabled      bool
+	PointsSystemMenuLabel    string
 
 	BalanceLowNotifyEnabled     bool
 	AccountQuotaNotifyEnabled   bool

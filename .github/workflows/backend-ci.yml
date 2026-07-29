@@ -58,6 +58,42 @@ jobs:
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 
+  points-system:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: points_test
+          POSTGRES_PASSWORD: points_test
+          POSTGRES_DB: points_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U points_test -d points_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POINTS_TEST_DATABASE_URL: postgres://points_test:points_test@127.0.0.1:5432/points_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: points-system/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: points-system/go.sum
+      - name: Test, vet, and compile independent points service
+        working-directory: points-system
+        run: |
+          go test ./... -count=1
+          go vet ./...
+          go build ./cmd/server
+      - name: PostgreSQL transaction and concurrency tests
+        working-directory: points-system
+        run: go test -tags=integration ./internal/store -count=1
+
   video-edge-worker:
     runs-on: ubuntu-latest
     steps:

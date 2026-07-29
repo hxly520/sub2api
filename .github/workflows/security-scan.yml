@@ -30,6 +30,23 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  points-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: points-system/go.mod
+          check-latest: false
+          cache-dependency-path: points-system/go.sum
+      - name: Run govulncheck
+        working-directory: points-system
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
   frontend-security:
     runs-on: ubuntu-latest
     steps:

@@ -80,6 +80,19 @@ services:
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
 
       # =======================================================================
+      # Independent Points System (optional)
+      # =======================================================================
+      - POINTS_SYSTEM_ENABLED=${POINTS_SYSTEM_ENABLED:-false}
+      - POINTS_SYSTEM_PUBLIC_URL=${POINTS_SYSTEM_PUBLIC_URL:-}
+      - POINTS_SYSTEM_MENU_LABEL=${POINTS_SYSTEM_MENU_LABEL:-积分中心}
+      - POINTS_SYSTEM_LAUNCH_KEY_ID=${POINTS_SYSTEM_LAUNCH_KEY_ID:-launch-v1}
+      - POINTS_SYSTEM_LAUNCH_SECRET=${POINTS_SYSTEM_LAUNCH_SECRET:-}
+      - POINTS_SYSTEM_CREDIT_KEY_ID=${POINTS_SYSTEM_CREDIT_KEY_ID:-credit-v1}
+      - POINTS_SYSTEM_CREDIT_SECRET=${POINTS_SYSTEM_CREDIT_SECRET:-}
+      - POINTS_SYSTEM_LAUNCH_TTL_SECONDS=${POINTS_SYSTEM_LAUNCH_TTL_SECONDS:-60}
+      - POINTS_SYSTEM_CLOCK_SKEW_SECONDS=${POINTS_SYSTEM_CLOCK_SKEW_SECONDS:-60}
+
+      # =======================================================================
       # Setup Configuration
       # =======================================================================
       - SETUP_MIGRATION_TIMEOUT_SECONDS=${SETUP_MIGRATION_TIMEOUT_SECONDS:-0}

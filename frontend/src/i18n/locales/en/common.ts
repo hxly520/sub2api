@@ -174,6 +174,8 @@ export default {
     ops: 'Ops',
     promoCodes: 'Promo Codes',
     settings: 'Settings',
+    pointsCenter: 'Points Center',
+    pointsSettings: 'Points System',
     myAccount: 'My Account',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
@@ -199,6 +201,13 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+  },
+
+  pointsPortal: {
+    opening: 'Opening Points Center',
+    failed: 'Points Center is temporarily unavailable',
+    retry: 'Retry',
+    back: 'Back',
   },
 
   // Auth

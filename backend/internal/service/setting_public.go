@@ -11,8 +11,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
+
+func pointsSystemMenuLabel(cfg *config.Config) string {
+	if cfg != nil {
+		if label := strings.TrimSpace(cfg.PointsSystem.MenuLabel); label != "" {
+			return label
+		}
+	}
+	return "积分中心"
+}
 
 func normalizeLoginAgreementMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -342,6 +352,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		OIDCOAuthProviderName:            oidcProviderName,
 		GitHubOAuthEnabled:               gitHubEnabled,
 		GoogleOAuthEnabled:               googleEnabled,
+		PointsSystemEnabled:              s.cfg != nil && s.cfg.PointsSystem.Active(),
+		PointsSystemMenuLabel:            pointsSystemMenuLabel(s.cfg),
 		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
 		AccountQuotaNotifyEnabled:        settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
 		BalanceLowNotifyThreshold:        balanceLowNotifyThreshold,
@@ -532,6 +544,8 @@ type PublicSettingsInjectionPayload struct {
 	BackendModeEnabled               bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool                     `json:"payment_enabled"`
 	Version                          string                   `json:"version"`
+	PointsSystemEnabled              bool                     `json:"points_system_enabled"`
+	PointsSystemMenuLabel            string                   `json:"points_system_menu_label"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移），高峰时段等服务端本地时间窗口的展示标注用
 	ServerTimezone              string  `json:"server_timezone"`
 	ServerUTCOffset             string  `json:"server_utc_offset"`
@@ -605,6 +619,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		PaymentEnabled:                   settings.PaymentEnabled,
 		Version:                          s.version,
+		PointsSystemEnabled:              settings.PointsSystemEnabled,
+		PointsSystemMenuLabel:            settings.PointsSystemMenuLabel,
 		ServerTimezone:                   timezone.Name(),
 		ServerUTCOffset:                  timezone.UTCOffset(),
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,

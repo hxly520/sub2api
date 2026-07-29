@@ -174,6 +174,8 @@ export default {
     ops: '运维监控',
     promoCodes: '优惠码',
     settings: '系统设置',
+    pointsCenter: '积分中心',
+    pointsSettings: '积分系统',
     myAccount: '我的账户',
     lightMode: '浅色模式',
     darkMode: '深色模式',
@@ -199,6 +201,13 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+  },
+
+  pointsPortal: {
+    opening: '正在进入积分中心',
+    failed: '积分中心暂时未就绪',
+    retry: '重试',
+    back: '返回',
   },
 
   // Auth

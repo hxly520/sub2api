@@ -56,6 +56,12 @@ declare module 'vue-router' {
     requiresRiskControl?: boolean
 
     /**
+     * Whether this route requires the independent points system integration.
+     * @default false
+     */
+    requiresPointsSystem?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string
