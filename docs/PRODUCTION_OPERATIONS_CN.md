@@ -52,6 +52,7 @@
 - 两个服务复用 PostgreSQL `17.8` 的同一个 `sub2api` 数据库。积分写表位于独立 `points` schema，共 19 张表、2 条积分迁移；`points_app` 写角色连接上限为 8，`points_usage_reader` 只读角色连接上限为 4 且只允许读取 `usage_logs` 指定列。
 - Sub2API `public.schema_migrations` 当前共 250 条记录，私有迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 和 `193_points_balance_credit_ledger.sql` 均已应用；积分迁移只记录在 `points.points_schema_migrations`，两套迁移表不得混用。
 - 首次积分部署前备份位于 `/home/api/sub2api-deploy/backups/sub2api-before-points-20260730-033634.dump`，SHA256 为 `b48e6a8d8bcb2d50f12e301da16ece87174f94edf535702aa12e575cbed3c293`。积分服务的启动、建 schema 和 Nginx 平滑 reload 均未停止 Sub2API 业务。
+- 后续加固候选已发布并只拉入服务器缓存：Sub2API `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c@sha256:d50f01b1344763616e8198a23107e5f37d815460a5feae902c5bf447cf069f99`，积分服务 `ghcr.io/hxly520/sub2api-points:0.1.168-339422728b2c@sha256:bd04ab7ddf53c33625faef35d34ac1e379a9bf09e2de94ab92711680429ac09d`，OCI revision 均为 `339422728b2ceb87b4a81bb08229d370c4ca589d`。该候选包含管理员积分配置入口、TOTP step-up、余额缓存代次和内部 bridge 加固；生产 Compose 与运行容器仍为 `2ad2815e`，不得把服务器缓存状态写成已上线。
 
 ## 3. 域名和进程边界
 

@@ -34,6 +34,24 @@ Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 
 - Sub2API 一次性容器输出 `Sub2API 0.1.168` 和完整候选 commit；默认 entrypoint 成功降权至 UID/GID 1000；`pg_dump`、`psql`、CA、时区和 resources 可用。
 - 积分镜像成功加载 `Asia/Shanghai`；只读根文件系统、无 capability、专用 healthcheck 均已在正式容器验证。
 
+### 2.1 管理员积分入口与余额缓存加固候选
+
+用户确认生产页面缺少积分配置后，仓库 `main` 于 `2026-07-30` 快进到提交 `339422728b2ceb87b4a81bb08229d370c4ca589d`。该提交新增始终对管理员可见的“系统设置 > 积分系统”标签和 `/admin/settings/points` 入口、管理员 disabled 状态下的策略台启动、TOTP step-up、余额缓存用户代次/CAS、credit 缓存同步重试、内部端点 fail-close 限流及对应测试。普通用户 `/points` 仍受 `POINTS_SYSTEM_ENABLED` 控制。
+
+GitHub Actions 已在新提交上触发，但仍在 runner 分配前被账户计费或支出限额终止，两个 job 均无执行 step：
+
+- Sub2API：`https://github.com/hxly520/sub2api/actions/runs/30507215061`
+- 积分服务：`https://github.com/hxly520/sub2api/actions/runs/30507215626`
+
+随后按既有受控本机构建边界完成 Linux/amd64 候选。服务器只通过 `docker save` 流式导出当前运行时基底；源码、前端、Go 编译、镜像层组装、OCI 标签和归档校验均在本机完成。制品通过 GHCR Registry v2 上传并回读清单、config 与 labels，再由服务器使用临时 `DOCKER_CONFIG` 拉入缓存；临时登录目录在命令结束时删除。
+
+| 镜像 | 不可变 tag | registry digest | image ID | archive SHA256 | bytes |
+| --- | --- | --- | --- | --- | ---: |
+| Sub2API 加固候选 | `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c` | `sha256:d50f01b1344763616e8198a23107e5f37d815460a5feae902c5bf447cf069f99` | `sha256:a8abdd92bb9f59082d9bbecbdf4812b8f1a441aed4f189bc674104f07074625b` | `544b4a91fcd3e9c0cfd700ffd915956103b39a546a4c724f8ef4b4b3b9ec117c` | 87,545,344 |
+| 积分服务加固候选 | `ghcr.io/hxly520/sub2api-points:0.1.168-339422728b2c` | `sha256:bd04ab7ddf53c33625faef35d34ac1e379a9bf09e2de94ab92711680429ac09d` | `sha256:40c35815f6cbc575d871452fbc858f9ab93e647e8ad0df65fc3c1de7aa1046f3` | `168a1ec1bff3e908f611da0eb3bebc30846fccd213f7dec8ca0ecc8f977722bf` | 12,605,440 |
+
+Sub2API 候选的 `-version` 输出为 `0.1.168`、完整 revision `339422728...` 和 release build；积分候选以非 root `65532:65532` 运行，容器内二进制 SHA256 为 `a0ead5e3721e13e59f365f423b82d4a15d94d85e0231c946097eb036fa7fec5e`，与本地交叉编译产物一致。生产 Compose 和两个运行容器仍引用 `0.1.168-2ad2815e`；两者均 healthy、restart count `0`，本次仅增加服务器缓存镜像，没有替换或重启服务。
+
 ## 3. 生产 Sub2API 手工切换与后续边界
 
 候选载入阶段没有替换生产 Sub2API；维护者随后自行在 `2026-07-30 07:36 CST` 完成手工切换。后续只读复核结果：

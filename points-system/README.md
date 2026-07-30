@@ -38,6 +38,15 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
+- Hardened revision `339422728b2ceb87b4a81bb08229d370c4ca589d` has been
+  published and pulled into the production host image cache without replacing
+  either running container. The immutable Sub2API and points tags are
+  `0.1.168-339422728b2c`, with registry digests
+  `sha256:d50f01b1344763616e8198a23107e5f37d815460a5feae902c5bf447cf069f99`
+  and
+  `sha256:bd04ab7ddf53c33625faef35d34ac1e379a9bf09e2de94ab92711680429ac09d`
+  respectively. Production remains on `2ad2815e` until the maintainer performs
+  the manual Compose switch.
 
 ## Runtime Architecture
 
