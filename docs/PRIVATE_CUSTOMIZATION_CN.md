@@ -145,11 +145,13 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 签到总开关、每日次数、全体/仅消费用户、昨日/总积分依据均由管理员配置。仅消费用户模式必须锁定昨日积分；最低签到消费金额始终按昨日成功余额消费判断，`0 U` 表示关闭额外门槛。
 - 每个积分阶梯只能选择固定余额区间或消费金额百分比区间。百分比基数使用对应统计周期的原始成功消费金额，不得用积分反推；所有金额向下量化到 `0.01 U`，随机值来自 CSPRNG，用户页面只显示实际中奖金额。
 - 用户工作台同时显示总积分、昨日积分、今日签到所得和累计签到赠送金额。累计值只汇总已经成功发放且未冲正的签到余额，不能把 pending、永久失败或已冲正金额用于展示。
+- 用户工作区 `/app/` 与管理员工作区 `/admin/` 是两套中文页面和脚本。用户端只提供总积分、昨日积分、昨日消费、今日/累计签到赠送、7/30/90 日积分趋势和个人记录；策略、手工赠送、快照刷新、重试及冲正只存在于管理员端。普通用户必须同时被页面、管理员脚本和 `/api/v1/admin/*` 权限校验拦截。
 - 单次、单用户每日、全平台每日奖励上限均为管理员配置。签到资格读取、次数和金额占用、规则快照、审计记录及余额发放事务发件箱必须在同一串行化事务中完成。
 - 积分业务写表复用现有 `sub2api` 数据库，但固定在独立 `points` schema，写池默认最多 8 条连接；消费读取使用另一只读账号和最多 4 条连接。启动时 `current_schema()` 不匹配必须失败，禁止回退到 `public` 建表。
 - 业务拒绝按用户、自然日和拒绝原因收敛，恶意轮换幂等键不能无界增加财务表。余额 credit 的网络、超时或 5xx 结果属于未知状态，必须用原 UUID 重试确认到账后才能排队 debit；不得直接标为已冲正。
 - Sub2API 与积分服务使用 Base64 编码的版本化 HMAC 密钥。启动票据为 `key_id.payload.signature` 三段格式并绑定 `aud=points-system`；余额请求签名绑定 key ID、方法、路径、时间戳、交易 UUID 和请求体摘要，同一交易只能入账一次。
 - 用户入口：Sub2API `/points`；管理员入口：系统设置内的“积分系统”标签及独立路由 `/admin/settings/points`。管理员入口不依赖用户菜单开关，可在 `points_system.enabled=false` 时检查桥接状态并通过 step-up 启动策略控制台；普通用户入口仍必须保持关闭。积分域名根路径不提供工作台，直接访问 `/app/` 或 `/admin/` 没有积分会话时必须拒绝。
+- 普通用户开放必须同时满足 Sub2API 菜单开关和积分服务当前生效策略完整启用。积分服务在用户 ticket、页面、静态资源和 API 四层执行关闭态校验，旧会话与手工 URL 不能绕过；功能验收前两层开关均保持关闭，仅管理员调试链路可用。
 - Sub2API 余额缓存使用 Redis 用户代次保护回源写入：余额失效或扣减必须原子推进代次，旧数据库读取只能在代次未变化时回填。积分 credit 已提交但缓存失效失败时返回可重试 `503`，积分发件箱用原 UUID 重试，不能把未完成缓存同步的交易标为 settled。
 - `/api/internal/points/credits` 只允许容器网络访问，公网 Nginx 必须精确返回 `404`，应用内部再执行 fail-close 限流与 HMAC。积分 Nginx 仅对含票据的 `/launch` 关闭访问日志，其余拒绝、越权和限流请求必须保留边缘证据。
 - 主要 Sub2API 入口：`backend/internal/service/points_bridge.go`、`repository/points_bridge_repo.go`、`handler/points_handler.go`、`server/routes/points.go`、`frontend/src/views/user/PointsPortalView.vue`。
@@ -170,6 +172,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
 - Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。
+- 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
 - Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
 - 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
 - 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。

@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hxly520/sub2api/points-system/internal/config"
 	"github.com/hxly520/sub2api/points-system/internal/domain"
+	"github.com/hxly520/sub2api/points-system/internal/security"
 	"github.com/hxly520/sub2api/points-system/internal/store"
 )
 
@@ -134,33 +138,203 @@ func TestPolicyRequestMapsCheckinEligibilityAndSafetyLimits(t *testing.T) {
 	}
 }
 
-func TestAdminWebUsesCanonicalPolicyFieldsWithoutRedemptionControls(t *testing.T) {
-	html, err := webFS.ReadFile("web/index.html")
+func TestRoleSeparatedWebAssetsAreChineseAndLeastPrivilege(t *testing.T) {
+	userHTML, err := webFS.ReadFile("web/user.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	javascript, err := webFS.ReadFile("web/assets/app.js")
+	userJS, err := webFS.ReadFile("web/assets/user.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(html) + string(javascript)
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminJS, err := webFS.ReadFile("web/assets/admin.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	userContent := string(userHTML) + string(userJS)
+	adminContent := string(adminHTML) + string(adminJS)
+	for _, required := range []string{"lang=\"zh-CN\"", "我的总积分", "昨日积分", "累计签到赠送", "points-chart", "个人积分记录", "签到奖励记录"} {
+		if !strings.Contains(userContent, required) {
+			t.Fatalf("user web is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/api/v1/admin/", "grant-form", "policy-form", "admin.js", "管理员"} {
+		if strings.Contains(userContent, forbidden) {
+			t.Fatalf("user web exposes administrator content %q", forbidden)
+		}
+	}
 	for _, required := range []string{
+		"lang=\"zh-CN\"",
 		"policy-minimum-spend",
 		"policy-consumer-only",
 		"policy-refresh-time",
-		"total-checkin-rewards",
-		"settled_checkin_reward_microusd",
 		"points_per_usd_hundredths",
 		"reward_percentage_min_ppm",
 		"checkin_platform_daily_cap_microusd",
 	} {
-		if !strings.Contains(content, required) {
+		if !strings.Contains(adminContent, required) {
 			t.Fatalf("admin web is missing %q", required)
 		}
 	}
 	for _, forbidden := range []string{"policy-min-redeem", "policy-max-redeem", "microusd_per_point"} {
-		if strings.Contains(content, forbidden) {
+		if strings.Contains(adminContent, forbidden) {
 			t.Fatalf("admin web still contains removed field %q", forbidden)
+		}
+	}
+}
+
+func testRoleServer(role string, enabled bool) *Server {
+	policy := domain.Policy{Enabled: enabled, Mode: domain.PolicyModeAllUsers,
+		Basis: domain.PolicyBasisYesterday, PointsPerUSDHundredths: 1_000, RefreshMinute: 5}
+	server := &Server{
+		Config: configForWebTest(), mux: http.NewServeMux(), limits: security.NewRateLimiter(),
+		sessionLookup: func(context.Context, string, time.Time) (store.Session, error) {
+			return store.Session{UserID: 7, Role: role, Theme: "light", Language: "zh-CN",
+				ExpiresAt: time.Now().Add(time.Hour)}, nil
+		},
+		policyLookup: func(context.Context, time.Time) (domain.Policy, error) { return policy, nil },
+	}
+	server.routes()
+	return server
+}
+
+func configForWebTest() config.Config {
+	return config.Config{Timezone: time.UTC, PublicOrigin: "https://points.example.test",
+		SessionSecret: []byte("01234567890123456789012345678901")}
+}
+
+func requestWithSession(method, path string) *http.Request {
+	request := httptest.NewRequest(method, "https://points.example.test"+path, nil)
+	request.AddCookie(&http.Cookie{Name: "points_session", Value: "test-session-token"})
+	return request
+}
+
+func TestUserWebCannotSeeOrCallAdministratorSurface(t *testing.T) {
+	server := testRoleServer("user", true)
+	for _, test := range []struct {
+		path string
+		want int
+	}{
+		{path: "/app/", want: http.StatusOK},
+		{path: "/assets/user.js", want: http.StatusOK},
+		{path: "/admin/", want: http.StatusForbidden},
+		{path: "/assets/admin.js", want: http.StatusForbidden},
+		{path: "/api/v1/admin/me", want: http.StatusForbidden},
+		{path: "/api/v1/admin/policies", want: http.StatusForbidden},
+	} {
+		recorder := httptest.NewRecorder()
+		server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, test.path))
+		if recorder.Code != test.want {
+			t.Fatalf("GET %s status = %d, want %d", test.path, recorder.Code, test.want)
+		}
+	}
+}
+
+func TestDisabledPolicyRejectsUserButKeepsAdminWorkspace(t *testing.T) {
+	userServer := testRoleServer("user", false)
+	for _, path := range []string{"/app/", "/assets/user.js", "/api/v1/me", "/api/v1/daily-points"} {
+		recorder := httptest.NewRecorder()
+		userServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, path))
+		if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "points_disabled") {
+			t.Fatalf("disabled user GET %s: status=%d body=%s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	adminServer := testRoleServer("admin", false)
+	recorder := httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/admin/"))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "积分管理后台") {
+		t.Fatalf("disabled admin workspace: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin/" {
+		t.Fatalf("admin app redirect: status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
+	}
+}
+
+func TestDisabledPolicyRejectsUserLaunchBeforeSessionCreation(t *testing.T) {
+	now := time.Now().UTC()
+	secret := []byte("01234567890123456789012345678901")
+	ticket, err := security.SignLaunchTicket(security.LaunchClaims{
+		Issuer: "sub2api", Audience: "points-system", Subject: 8, Role: "user", Theme: "light",
+		Language: "zh-CN", Nonce: "disabled-user-launch", IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
+	}, "launch-v1", secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := testRoleServer("user", false)
+	server.Config.LaunchIssuer = "sub2api"
+	server.Config.LaunchAudience = "points-system"
+	server.Config.LaunchKeys = map[string][]byte{"launch-v1": secret}
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+		"https://points.example.test/launch?ticket="+ticket, nil))
+	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "points_disabled") {
+		t.Fatalf("disabled launch: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPolicyAccessRequiresEnabledValidPolicy(t *testing.T) {
+	valid := domain.Policy{Enabled: true, Mode: domain.PolicyModeAllUsers,
+		Basis: domain.PolicyBasisYesterday, PointsPerUSDHundredths: 1_000, RefreshMinute: 5}
+	if !policyAllowsUserAccess(valid) {
+		t.Fatal("enabled valid policy did not allow user access")
+	}
+	valid.Enabled = false
+	if policyAllowsUserAccess(valid) {
+		t.Fatal("disabled policy allowed user access")
+	}
+	valid.Enabled = true
+	valid.PointsPerUSDHundredths = 0
+	if policyAllowsUserAccess(valid) {
+		t.Fatal("invalid policy allowed user access")
+	}
+}
+
+func TestDailyPointResponseContainsNoIdentityOrPolicyInternals(t *testing.T) {
+	body, err := json.Marshal(store.DailyPoint{BusinessDate: time.Now(), ActualCostMicroUSD: 1_000_000,
+		AwardedPointsHundredths: 1_000, Status: "ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(body)
+	for _, forbidden := range []string{"user_id", "policy_version", "source_fingerprint", "source_max_usage_log_id"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("daily point response exposed %q: %s", forbidden, content)
+		}
+	}
+}
+
+func TestPublicActivityResponsesHideInternalIdentifiers(t *testing.T) {
+	ledger, err := json.Marshal(publicLedgerEntry{Kind: "usage_points", DeltaPointsHundredths: 100,
+		TotalAfterHundredths: 200, CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := json.Marshal(publicBalanceGrant{AmountMicroUSD: 10_000, Kind: "checkin",
+		Status: "settled", CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(ledger) + string(grant)
+	for _, forbidden := range []string{"user_id", "external_event_id", "policy_version", "reference_id",
+		"metadata", "last_error", "reason", "transaction_id", "request_fingerprint"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("public activity response exposed %q: %s", forbidden, content)
+		}
+	}
+}
+
+func TestQueryDaysUsesBoundedDefault(t *testing.T) {
+	for raw, expected := range map[string]int{"": 30, "0": 30, "-1": 30, "91": 30, "bad": 30, "7": 7, "90": 90} {
+		request := httptest.NewRequest(http.MethodGet, "https://points.example.test/api/v1/daily-points?days="+raw, nil)
+		if actual := queryDays(request); actual != expected {
+			t.Fatalf("queryDays(%q) = %d, want %d", raw, actual, expected)
 		}
 	}
 }

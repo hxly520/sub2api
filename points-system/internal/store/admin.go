@@ -22,6 +22,13 @@ type Snapshot struct {
 	UpdatedAt               time.Time `json:"updated_at"`
 }
 
+type DailyPoint struct {
+	BusinessDate            time.Time `json:"business_date"`
+	ActualCostMicroUSD      int64     `json:"actual_cost_microusd"`
+	AwardedPointsHundredths int64     `json:"awarded_points_hundredths"`
+	Status                  string    `json:"status"`
+}
+
 func (s *Store) Snapshot(ctx context.Context, userID int64, businessDate time.Time) (Snapshot, error) {
 	var snapshot Snapshot
 	err := s.DB.QueryRow(ctx, `SELECT user_id,business_date,actual_cost_microusd,
@@ -36,6 +43,33 @@ func (s *Store) Snapshot(ctx context.Context, userID int64, businessDate time.Ti
 		&snapshot.SourceRowCount, &snapshot.SourceMaxUsageLogID, &snapshot.SourceFingerprint,
 		&snapshot.UpdatedAt)
 	return snapshot, translateNotFound(err)
+}
+
+func (s *Store) DailyPoints(ctx context.Context, userID int64, limit int) ([]DailyPoint, error) {
+	if limit <= 0 || limit > 90 {
+		limit = 30
+	}
+	rows, err := s.DB.Query(ctx, `SELECT business_date,actual_cost_microusd,
+		awarded_points_hundredths,status
+		FROM (
+			SELECT business_date,actual_cost_microusd,awarded_points_hundredths,status
+			FROM points_daily_snapshots WHERE user_id=$1
+			ORDER BY business_date DESC LIMIT $2
+		) recent ORDER BY business_date`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]DailyPoint, 0, limit)
+	for rows.Next() {
+		var item DailyPoint
+		if err := rows.Scan(&item.BusinessDate, &item.ActualCostMicroUSD,
+			&item.AwardedPointsHundredths, &item.Status); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 func (s *Store) Audit(ctx context.Context, actorID int64, action, targetType, targetID, requestID string, detail []byte) error {

@@ -608,6 +608,49 @@ func TestPostgresReverseBalanceGrantRequiresKnownCreditOutcome(t *testing.T) {
 	}
 }
 
+func TestPostgresDailyPointsAreUserScopedAndChronological(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	baseDate := fixture.store.BusinessDate(fixture.now).AddDate(0, 0, -2)
+	for day := 0; day < 2; day++ {
+		date := baseDate.AddDate(0, 0, day)
+		runID := uuid.New()
+		if _, err := fixture.db.Exec(ctx, `INSERT INTO points_snapshot_refresh_runs(
+			id,business_date,trigger,source_window_start,source_window_end,source_fingerprint,
+			source_users,source_rows,changed_users,delta_spend_microusd,delta_points_hundredths,
+			status,completed_at
+		) VALUES($1,$2,'manual',$3,$4,$5,2,2,2,2000000,2000,'succeeded',$6)`, runID,
+			date.Format("2006-01-02"), date, date.AddDate(0, 0, 1), strings.Repeat("d", 64),
+			fixture.now.UTC()); err != nil {
+			t.Fatalf("insert daily-points refresh run: %v", err)
+		}
+		for _, userID := range []int64{7301, 7302} {
+			points := int64((day + 1) * 100)
+			if userID == 7302 {
+				points += 10_000
+			}
+			if _, err := fixture.db.Exec(ctx, `INSERT INTO points_daily_snapshots(
+				user_id,business_date,actual_cost_microusd,accounted_spend_microusd,
+				points_per_usd_hundredths,target_points_hundredths,awarded_points_hundredths,
+				revision,status,source_row_count,source_max_usage_log_id,source_fingerprint,last_refresh_run_id
+			) VALUES($1,$2,1000000,1000000,1000,$3,$3,1,'ready',1,$1,$4,$5)`, userID,
+				date.Format("2006-01-02"), points, fmt.Sprintf("%064x", userID+int64(day)), runID); err != nil {
+				t.Fatalf("insert daily point for user %d: %v", userID, err)
+			}
+		}
+	}
+
+	items, err := fixture.store.DailyPoints(ctx, 7301, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].AwardedPointsHundredths != 100 ||
+		items[1].AwardedPointsHundredths != 200 || !items[0].BusinessDate.Before(items[1].BusinessDate) {
+		t.Fatalf("unexpected user-scoped daily points: %+v", items)
+	}
+}
+
 func seedCheckinPolicy(t *testing.T, fixture *postgresFixture, dailyLimit int,
 	platformCap, userCap, singleCap, reward int64) int64 {
 	t.Helper()

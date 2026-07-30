@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"errors"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,12 +21,14 @@ import (
 var webFS embed.FS
 
 type Server struct {
-	Config       config.Config
-	Store        *store.Store
-	Logger       *slog.Logger
-	limits       *security.RateLimiter
-	mux          *http.ServeMux
-	trustedProxy *net.IPNet
+	Config        config.Config
+	Store         *store.Store
+	Logger        *slog.Logger
+	limits        *security.RateLimiter
+	mux           *http.ServeMux
+	trustedProxy  *net.IPNet
+	sessionLookup func(context.Context, string, time.Time) (store.Session, error)
+	policyLookup  func(context.Context, time.Time) (domain.Policy, error)
 }
 
 type principal struct {
@@ -38,6 +39,7 @@ type principal struct {
 type contextKey string
 
 const principalKey contextKey = "points-principal"
+const policyKey contextKey = "points-policy"
 
 func New(cfg config.Config, pointsStore *store.Store, logger *slog.Logger) (*Server, error) {
 	if pointsStore == nil {
@@ -64,27 +66,31 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes() {
-	assets, _ := fs.Sub(webFS, "web")
-	s.mux.Handle("GET /assets/", http.FileServer(http.FS(assets)))
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("GET /launch", s.launch)
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
-	s.mux.Handle("GET /app/", s.auth(false, false, http.HandlerFunc(s.page)))
-	s.mux.Handle("GET /admin/", s.auth(true, false, http.HandlerFunc(s.page)))
+	s.mux.Handle("GET /app/", s.auth(false, false, true, http.HandlerFunc(s.userPage)))
+	s.mux.Handle("GET /admin/", s.auth(true, false, false, http.HandlerFunc(s.adminPage)))
+	s.mux.Handle("GET /assets/app.css", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/app.css", "text/css; charset=utf-8"))))
+	s.mux.Handle("GET /assets/common.js", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/common.js", "text/javascript; charset=utf-8"))))
+	s.mux.Handle("GET /assets/user.js", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/user.js", "text/javascript; charset=utf-8"))))
+	s.mux.Handle("GET /assets/admin.js", s.auth(true, false, false, http.HandlerFunc(s.webAsset("web/assets/admin.js", "text/javascript; charset=utf-8"))))
 
-	s.mux.Handle("GET /api/v1/me", s.auth(false, false, http.HandlerFunc(s.me)))
-	s.mux.Handle("GET /api/v1/ledger", s.auth(false, false, http.HandlerFunc(s.ledger)))
-	s.mux.Handle("POST /api/v1/checkins", s.auth(false, true, s.rate("checkin", 6, time.Minute, http.HandlerFunc(s.checkin))))
-	s.mux.Handle("GET /api/v1/balance-grants", s.auth(false, false, http.HandlerFunc(s.balanceGrants)))
-	s.mux.Handle("POST /api/v1/logout", s.auth(false, true, http.HandlerFunc(s.logout)))
+	s.mux.Handle("GET /api/v1/me", s.auth(false, false, true, http.HandlerFunc(s.me)))
+	s.mux.Handle("GET /api/v1/ledger", s.auth(false, false, true, http.HandlerFunc(s.ledger)))
+	s.mux.Handle("GET /api/v1/daily-points", s.auth(false, false, true, http.HandlerFunc(s.dailyPoints)))
+	s.mux.Handle("POST /api/v1/checkins", s.auth(false, true, true, s.rate("checkin", 6, time.Minute, http.HandlerFunc(s.checkin))))
+	s.mux.Handle("GET /api/v1/balance-grants", s.auth(false, false, true, http.HandlerFunc(s.balanceGrants)))
+	s.mux.Handle("POST /api/v1/logout", s.auth(false, true, false, http.HandlerFunc(s.logout)))
 
-	s.mux.Handle("GET /api/v1/admin/policies", s.auth(true, false, http.HandlerFunc(s.policies)))
-	s.mux.Handle("POST /api/v1/admin/policies", s.auth(true, true, http.HandlerFunc(s.createPolicy)))
-	s.mux.Handle("POST /api/v1/admin/grants", s.auth(true, true, http.HandlerFunc(s.manualGrant)))
-	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth(true, false, http.HandlerFunc(s.adminBalanceGrants)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth(true, true, http.HandlerFunc(s.retryBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth(true, true, http.HandlerFunc(s.reverseBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/snapshots/refresh", s.auth(true, true, http.HandlerFunc(s.refreshSnapshots)))
+	s.mux.Handle("GET /api/v1/admin/me", s.auth(true, false, false, http.HandlerFunc(s.adminMe)))
+	s.mux.Handle("GET /api/v1/admin/policies", s.auth(true, false, false, http.HandlerFunc(s.policies)))
+	s.mux.Handle("POST /api/v1/admin/policies", s.auth(true, true, false, http.HandlerFunc(s.createPolicy)))
+	s.mux.Handle("POST /api/v1/admin/grants", s.auth(true, true, false, http.HandlerFunc(s.manualGrant)))
+	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth(true, false, false, http.HandlerFunc(s.adminBalanceGrants)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth(true, true, false, http.HandlerFunc(s.retryBalanceGrant)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth(true, true, false, http.HandlerFunc(s.reverseBalanceGrant)))
+	s.mux.Handle("POST /api/v1/admin/snapshots/refresh", s.auth(true, true, false, http.HandlerFunc(s.refreshSnapshots)))
 
 }
 
@@ -98,8 +104,20 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (s *Server) page(w http.ResponseWriter, _ *http.Request) {
-	body, err := webFS.ReadFile("web/index.html")
+func (s *Server) userPage(w http.ResponseWriter, r *http.Request) {
+	if p, ok := principalFrom(r); ok && p.Session.Role == "admin" {
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+		return
+	}
+	s.servePage(w, "web/user.html")
+}
+
+func (s *Server) adminPage(w http.ResponseWriter, _ *http.Request) {
+	s.servePage(w, "web/admin.html")
+}
+
+func (s *Server) servePage(w http.ResponseWriter, name string) {
+	body, err := webFS.ReadFile(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "asset_error", "Internal server error")
 		return
@@ -108,6 +126,20 @@ func (s *Server) page(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+func (s *Server) webAsset(name, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		body, err := webFS.ReadFile(name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not_found", "Not found")
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}
 }
 
 func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +158,17 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Invalid launch ticket")
 		return
 	}
+	if claims.Role != "admin" {
+		policy, policyErr := s.currentPolicy(r.Context(), now)
+		if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !policyAllowsUserAccess(policy)) {
+			writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
+			return
+		}
+		if policyErr != nil {
+			s.fail(w, r, policyErr)
+			return
+		}
+	}
 	token, err := security.RandomToken(32)
 	if err != nil {
 		s.fail(w, r, err)
@@ -143,14 +186,15 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, destination, http.StatusSeeOther)
 }
 
-func (s *Server) auth(admin, csrf bool, next http.Handler) http.Handler {
+func (s *Server) auth(admin, csrf, requireEnabled bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(s.cookieName())
 		if err != nil || cookie.Value == "" {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 			return
 		}
-		session, err := s.Store.Session(r.Context(), cookie.Value, time.Now().UTC())
+		now := time.Now().UTC()
+		session, err := s.lookupSession(r.Context(), cookie.Value, now)
 		if err != nil {
 			s.clearSessionCookie(w)
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -159,6 +203,19 @@ func (s *Server) auth(admin, csrf bool, next http.Handler) http.Handler {
 		if admin && session.Role != "admin" {
 			writeError(w, http.StatusForbidden, "forbidden", "Forbidden")
 			return
+		}
+		ctx := context.WithValue(r.Context(), principalKey, principal{Session: session, Token: cookie.Value})
+		if requireEnabled && session.Role == "user" {
+			policy, policyErr := s.currentPolicy(ctx, now)
+			if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !policyAllowsUserAccess(policy)) {
+				writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
+				return
+			}
+			if policyErr != nil {
+				s.fail(w, r, policyErr)
+				return
+			}
+			ctx = context.WithValue(ctx, policyKey, policy)
 		}
 		if csrf {
 			if r.Header.Get("Origin") != s.Config.PublicOrigin {
@@ -170,9 +227,44 @@ func (s *Server) auth(admin, csrf bool, next http.Handler) http.Handler {
 				return
 			}
 		}
-		ctx := context.WithValue(r.Context(), principalKey, principal{Session: session, Token: cookie.Value})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (s *Server) lookupSession(ctx context.Context, token string, now time.Time) (store.Session, error) {
+	if s.sessionLookup != nil {
+		return s.sessionLookup(ctx, token, now)
+	}
+	if s.Store == nil {
+		return store.Session{}, domain.ErrNotFound
+	}
+	return s.Store.Session(ctx, token, now)
+}
+
+func (s *Server) currentPolicy(ctx context.Context, now time.Time) (domain.Policy, error) {
+	date := now
+	if s.Store != nil {
+		date = s.Store.BusinessDate(now)
+	} else if s.Config.Timezone != nil {
+		local := now.In(s.Config.Timezone)
+		date = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, s.Config.Timezone)
+	}
+	if s.policyLookup != nil {
+		return s.policyLookup(ctx, date)
+	}
+	if s.Store == nil {
+		return domain.Policy{}, domain.ErrNotFound
+	}
+	return s.Store.PolicyForDate(ctx, date)
+}
+
+func policyAllowsUserAccess(policy domain.Policy) bool {
+	return policy.Enabled && policy.ValidateForEnable() == nil
+}
+
+func policyFrom(r *http.Request) (domain.Policy, bool) {
+	policy, ok := r.Context().Value(policyKey).(domain.Policy)
+	return policy, ok
 }
 
 func (s *Server) rate(scope string, limit int, window time.Duration, next http.Handler) http.Handler {

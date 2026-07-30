@@ -17,17 +17,18 @@ import (
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
+	now := time.Now()
 	account, err := s.Store.Account(r.Context(), p.Session.UserID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	count, awarded, err := s.Store.CheckinStatus(r.Context(), p.Session.UserID, time.Now())
+	count, awarded, err := s.Store.CheckinStatus(r.Context(), p.Session.UserID, now)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	yesterday := s.Store.BusinessDate(time.Now()).AddDate(0, 0, -1)
+	yesterday := s.Store.BusinessDate(now).AddDate(0, 0, -1)
 	snapshot, snapshotErr := s.Store.Snapshot(r.Context(), p.Session.UserID, yesterday)
 	if snapshotErr != nil && !errors.Is(snapshotErr, domain.ErrNotFound) {
 		s.fail(w, r, snapshotErr)
@@ -37,12 +38,37 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if snapshotErr == nil {
 		snapshotValue = publicSnapshot(snapshot)
 	}
+	policy, policyLoaded := policyFrom(r)
+	if !policyLoaded {
+		policy, err = s.currentPolicy(r.Context(), now)
+		if errors.Is(err, domain.ErrNotFound) {
+			policy = domain.Policy{}
+			err = nil
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	dailyLimit := 0
+	if policy.CheckinDailyLimit != nil {
+		dailyLimit = *policy.CheckinDailyLimit
+	}
+	pointsEnabled := policyAllowsUserAccess(policy)
+	checkinEnabled := pointsEnabled && policy.CheckinEnabled
+	checkinAvailable := checkinEnabled && dailyLimit > count
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
 		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret), "account": account,
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
+		"features": map[string]any{
+			"points_enabled":      pointsEnabled,
+			"checkin_enabled":     checkinEnabled,
+			"checkin_daily_limit": dailyLimit,
+			"checkin_available":   checkinAvailable,
+		},
 	})
 }
 
@@ -57,6 +83,28 @@ func publicSnapshot(snapshot store.Snapshot) map[string]any {
 	}
 }
 
+func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r)
+	policy, err := s.currentPolicy(r.Context(), time.Now())
+	if errors.Is(err, domain.ErrNotFound) {
+		policy = domain.Policy{}
+		err = nil
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
+		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
+		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret),
+		"features": map[string]any{
+			"points_enabled":  policyAllowsUserAccess(policy),
+			"checkin_enabled": policy.Enabled && policy.CheckinEnabled,
+		},
+	})
+}
+
 func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
 	entries, err := s.Store.Ledger(r.Context(), p.Session.UserID, queryLimit(r))
@@ -64,7 +112,33 @@ func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, entries)
+	items := make([]publicLedgerEntry, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, publicLedgerEntry{
+			Kind: entry.Kind, DeltaPointsHundredths: entry.DeltaPointsHundredths,
+			TotalAfterHundredths: entry.TotalAfterHundredths,
+			BusinessDate:         entry.BusinessDate, CreatedAt: entry.CreatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+type publicLedgerEntry struct {
+	Kind                  string     `json:"kind"`
+	DeltaPointsHundredths int64      `json:"delta_points_hundredths"`
+	TotalAfterHundredths  int64      `json:"total_after_hundredths"`
+	BusinessDate          *time.Time `json:"business_date,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+}
+
+func (s *Server) dailyPoints(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r)
+	items, err := s.Store.DailyPoints(r.Context(), p.Session.UserID, queryDays(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) checkin(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +163,20 @@ func (s *Server) balanceGrants(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	result := make([]publicBalanceGrant, 0, len(items))
+	for _, item := range items {
+		result = append(result, publicBalanceGrant{AmountMicroUSD: item.AmountMicroUSD,
+			Kind: item.Kind, Status: item.Status, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+type publicBalanceGrant struct {
+	AmountMicroUSD int64     `json:"amount_microusd"`
+	Kind           string    `json:"kind"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -293,6 +380,14 @@ func queryLimit(r *http.Request) int {
 		return 50
 	}
 	return limit
+}
+
+func queryDays(r *http.Request) int {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil || days <= 0 || days > 90 {
+		return 30
+	}
+	return days
 }
 
 func idempotencyKey(r *http.Request) (string, error) {

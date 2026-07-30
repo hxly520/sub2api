@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>积分中心</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="user-shell">
+  <header class="user-topbar">
+    <div class="brand-lockup">
+      <span class="brand-mark" aria-hidden="true">积</span>
+      <div>
+        <strong>积分中心</strong>
+        <span>个人积分看板</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="user-id" class="identity-chip">个人账户</span>
+      <button id="refresh-dashboard" class="button secondary compact" type="button">刷新</button>
+      <button id="logout" class="button ghost compact" type="button">退出</button>
+    </div>
+  </header>
+
+  <main class="dashboard-page">
+    <div id="notice" role="status" aria-live="polite" class="notice hidden"></div>
+
+    <section class="scoreboard" aria-label="积分概览">
+      <div class="score-primary">
+        <span class="metric-label">我的总积分</span>
+        <strong id="total-points" class="score-value">0.00</strong>
+        <span class="metric-foot">当前可用累计积分</span>
+      </div>
+      <div class="score-metric points-accent">
+        <span class="metric-label">昨日积分</span>
+        <strong id="yesterday-points">0.00</strong>
+        <span id="snapshot-date" class="metric-foot">暂无结算</span>
+      </div>
+      <div class="score-metric spend-accent">
+        <span class="metric-label">昨日消费</span>
+        <strong id="yesterday-spend">0.00 U</strong>
+        <span class="metric-foot">已成功结算消费</span>
+      </div>
+      <div class="score-metric today-accent">
+        <span class="metric-label">今日签到赠送</span>
+        <strong id="today-rewards">0.00 U</strong>
+        <span id="checkin-count" class="metric-foot">今日已签到 0 次</span>
+      </div>
+      <div class="score-metric reward-accent">
+        <span class="metric-label">累计签到赠送</span>
+        <strong id="total-checkin-rewards">0.00 U</strong>
+        <span class="metric-foot">已到账且未冲正</span>
+      </div>
+    </section>
+
+    <section class="checkin-band" aria-labelledby="checkin-title">
+      <div>
+        <span class="section-kicker">每日签到</span>
+        <h1 id="checkin-title">今日签到赠送待领取</h1>
+        <p id="checkin-detail">签到状态加载中</p>
+      </div>
+      <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
+    </section>
+
+    <section class="chart-panel" aria-labelledby="chart-title">
+      <div class="section-heading chart-heading">
+        <div>
+          <span class="section-kicker">每日趋势</span>
+          <h2 id="chart-title">消费积分曲线</h2>
+        </div>
+        <div class="period-control" role="group" aria-label="趋势时间范围">
+          <button class="period-button" type="button" data-days="7">近 7 日</button>
+          <button class="period-button active" type="button" data-days="30">近 30 日</button>
+          <button class="period-button" type="button" data-days="90">近 90 日</button>
+        </div>
+      </div>
+      <div class="chart-stage">
+        <canvas id="points-chart" role="img" aria-label="每日消费积分折线图"></canvas>
+        <div id="chart-tooltip" class="chart-tooltip hidden" role="status"></div>
+        <div id="chart-empty" class="empty-state hidden">暂无每日积分记录</div>
+      </div>
+      <div class="chart-summary">
+        <div><span>区间积分</span><strong id="period-points">0.00</strong></div>
+        <div><span>区间消费</span><strong id="period-spend">0.00 U</strong></div>
+        <div><span>有记录天数</span><strong id="active-days">0</strong></div>
+      </div>
+    </section>
+
+    <section class="records-grid" aria-label="个人积分与赠送记录">
+      <section class="table-panel">
+        <div class="section-heading">
+          <div><span class="section-kicker">积分明细</span><h2>个人积分记录</h2></div>
+          <button id="refresh-ledger" class="button secondary compact" type="button">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>类型</th><th>积分变动</th><th>变动后积分</th><th>业务日期</th></tr></thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="table-panel">
+        <div class="section-heading">
+          <div><span class="section-kicker">赠送明细</span><h2>签到奖励记录</h2></div>
+          <button id="refresh-grants" class="button secondary compact" type="button">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>赠送金额</th><th>类型</th><th>状态</th></tr></thead>
+            <tbody id="grants-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/assets/common.js" defer></script>
+  <script src="/assets/user.js" defer></script>
+</body>
+</html>

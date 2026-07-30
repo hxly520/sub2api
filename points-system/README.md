@@ -95,6 +95,7 @@ access log.
 | --- | --- | --- |
 | GET | `/launch?ticket=...` | Exchange a one-time Sub2API launch ticket |
 | GET | `/api/v1/me` | Account, check-in, snapshot, and CSRF state |
+| GET | `/api/v1/daily-points?days=7|30|90` | User-scoped chronological daily points and successful spend |
 | GET | `/api/v1/ledger` | Read-only point ledger |
 | POST | `/api/v1/checkins` | Check in; requires `Idempotency-Key` |
 | GET | `/api/v1/balance-grants` | Current user's balance reward delivery history |
@@ -106,16 +107,24 @@ access log.
 | POST | `/api/v1/admin/snapshots/refresh` | Idempotently refresh a past day |
 | GET | `/healthz` | Database-backed health check |
 
-The built-in user and admin workspaces are served at `/app/` and `/admin/`.
-Both require a session created by `/launch`; the domain root returns 404. The
-user overview includes total/yesterday points, today's reward, and the total of
-settled check-in credits that have not been reversed.
+The built-in user and administrator workspaces are separate Chinese pages at
+`/app/` and `/admin/`, with separate scripts. Both require a session created by
+`/launch`; the domain root returns 404. A user session cannot fetch the admin
+page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
+total/yesterday points, successful yesterday spend, today's and settled
+unreversed check-in credits, a 7/30/90-day points trend, and personal records;
+it contains no policy, manual grant, snapshot, retry, or reversal controls.
 
 Sub2API's Points tab in System Settings and the administrator route
 `/admin/settings/points` are always visible to authenticated administrators, including while
 `points_system.enabled=false`, so an administrator can inspect bridge status
 and use step-up authentication to launch the policy workspace. The ordinary
 user menu and `/points` route remain hidden unless the enabled switch is on.
+The points service independently rejects user launch tickets, user pages,
+user assets, and user APIs when the effective points policy is missing,
+disabled, or incomplete. This closes stale-session and direct-URL paths while
+leaving the authenticated administrator workspace available for pre-release
+debugging.
 The Sub2API status endpoint returns only non-secret state such as
 enabled/configured/active, public URL, key IDs, TTL, and clock skew; it never
 returns launch or credit key material.
