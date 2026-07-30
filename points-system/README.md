@@ -97,12 +97,11 @@ access log.
 | GET | `/api/v1/ledger` | Read-only point ledger |
 | POST | `/api/v1/checkins` | Check in; requires `Idempotency-Key` |
 | GET | `/api/v1/balance-grants` | Current user's balance reward delivery history |
+| GET | `/api/v1/admin/users/points` | Paginated per-user total and previous-day consumption points |
 | GET/POST | `/api/v1/admin/policies` | List or append policy versions |
-| POST | `/api/v1/admin/grants` | Enqueue an audited manual balance grant |
-| GET | `/api/v1/admin/balance-grants` | Inspect all balance grants |
-| POST | `/api/v1/admin/balance-grants/{id}/retry` | Retry a failed delivery |
-| POST | `/api/v1/admin/balance-grants/{id}/reverse` | Reverse/cancel a delivery |
-| POST | `/api/v1/admin/snapshots/refresh` | Idempotently refresh a past day |
+| GET | `/api/v1/admin/balance-grants` | Inspect check-in reward deliveries only |
+| POST | `/api/v1/admin/balance-grants/{id}/retry` | Retry a failed check-in reward delivery |
+| POST | `/api/v1/admin/balance-grants/{id}/reverse` | Audit and reverse/cancel a check-in reward delivery |
 | GET | `/healthz` | Database-backed health check |
 
 The built-in user and administrator workspaces are separate Chinese pages at
@@ -117,6 +116,19 @@ administrator session cannot invoke the user account, ledger, check-in, or
 grant APIs, and the shared logout route is the only role-neutral write route.
 Session reads used by pages, assets, and APIs do not update `last_seen_at`, so a
 single page load does not create parallel write locks in the shared database.
+
+The administrator workspace has no independent manual balance-grant control;
+Sub2API remains the only administrator surface for direct balance changes. It
+also has no manual snapshot-refresh control. Daily snapshots are internal,
+idempotent accounting records produced automatically at the configured refresh
+time, while the one-time full historical baseline is executed only by the
+audited `points-history-backfill` operations workflow below. The administrator
+user directory reads only `users.id` and `users.deleted_at` from Sub2API, then
+exposes points and successful-spend totals plus the prior natural day's
+settlement state. Zero-spend users remain visible with zero totals. The delivery
+workspace contains check-in reward records only; legacy manual-grant rows remain
+in the database for audit but are not listed or mutable through the points HTTP
+API.
 
 Sub2API opens both workspaces inside its authenticated right-hand content area.
 It appends the exact allowlisted `ui_mode=embedded` value to `/launch`; the
@@ -271,10 +283,12 @@ The launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
 its browser origin must exactly match `POINTS_EMBED_PARENT_ORIGIN` including any
 non-default port.
 
-The user profile field `checkin_attempt_available` means only that the check-in
-entry is enabled and the configured daily count has not been exhausted. Spend,
-snapshot, tier, and remaining monetary caps are revalidated transactionally on
-submission; the UI must not describe this field as a guaranteed reward.
+The user profile field `checkin_available` is a read-only eligibility result. It
+checks that check-in is enabled, the daily count remains, yesterday's snapshot
+is ready and review-free, minimum prior-day spend and the selected points tier
+match, and both user and platform monetary caps have remaining headroom. The
+same rules are revalidated transactionally on submission, which remains
+authoritative if eligibility changes after the profile response.
 
 The process serializes migrations with a PostgreSQL advisory lock and verifies
 `current_schema()` before running them, so a missing schema cannot fall back to

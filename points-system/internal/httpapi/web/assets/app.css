@@ -973,6 +973,36 @@ textarea:disabled {
   min-width: 1040px;
 }
 
+.users-points-table {
+  min-width: 980px;
+}
+
+.table-pagination {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 15px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.table-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+
+.settlement-note p {
+  margin: 0;
+  padding: 17px 20px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
 .command-layout {
   display: grid;
   grid-template-columns: minmax(320px, 560px) minmax(280px, 1fr);

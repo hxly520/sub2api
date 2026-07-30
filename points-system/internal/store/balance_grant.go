@@ -39,7 +39,7 @@ type EnqueueBalanceGrantRequest struct {
 
 func enqueueBalanceGrantTx(ctx context.Context, tx pgx.Tx, req EnqueueBalanceGrantRequest) (BalanceGrant, error) {
 	if req.UserID <= 0 || req.AmountMicroUSD <= 0 || req.AmountMicroUSD%domain.MicroUSDPerCent != 0 ||
-		(req.Kind != "checkin" && req.Kind != "manual_grant") || req.ExternalEventID == "" || req.PolicyVersion <= 0 {
+		req.Kind != "checkin" || req.ExternalEventID == "" || req.PolicyVersion <= 0 {
 		return BalanceGrant{}, fmt.Errorf("invalid balance grant")
 	}
 	id, err := uuid.NewRandom()
@@ -59,102 +59,6 @@ func enqueueBalanceGrantTx(ctx context.Context, tx pgx.Tx, req EnqueueBalanceGra
 	RETURNING created_at,updated_at`, id, req.UserID, req.AmountMicroUSD, req.Kind,
 		req.ExternalEventID, fingerprint, req.PolicyVersion, req.Now, req.Reason).Scan(&grant.CreatedAt, &grant.UpdatedAt)
 	return grant, err
-}
-
-type ManualBalanceGrantRequest struct {
-	UserID         int64
-	AmountMicroUSD int64
-	ActorID        int64
-	IdempotencyKey string
-	Reason         string
-	Now            time.Time
-}
-
-func (s *Store) CreateManualBalanceGrant(ctx context.Context, req ManualBalanceGrantRequest) (BalanceGrant, error) {
-	date := s.BusinessDate(req.Now)
-	var result BalanceGrant
-	err := s.withSerializableTx(ctx, func(tx pgx.Tx) error {
-		result = BalanceGrant{}
-		policy, err := policyForDate(ctx, tx, date)
-		if err != nil {
-			return err
-		}
-		if !policy.Enabled {
-			return domain.ErrDisabled
-		}
-		if req.UserID <= 0 || req.ActorID <= 0 || req.AmountMicroUSD <= 0 ||
-			req.AmountMicroUSD%domain.MicroUSDPerCent != 0 || req.IdempotencyKey == "" || req.Reason == "" {
-			return fmt.Errorf("invalid manual balance grant")
-		}
-		fingerprint := security.Fingerprint(req.UserID, req.AmountMicroUSD, req.Reason, policy.VersionNo)
-		claimed, err := claimIdempotency(ctx, tx, "manual_balance_grant", req.IdempotencyKey, fingerprint)
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			var reference string
-			if err := tx.QueryRow(ctx, `SELECT COALESCE(result_reference,'') FROM points_idempotency
-				WHERE scope='manual_balance_grant' AND external_event_id=$1`, req.IdempotencyKey).Scan(&reference); err != nil {
-				return err
-			}
-			if reference == "" {
-				return domain.ErrInvalidState
-			}
-			return scanBalanceGrant(tx.QueryRow(ctx, balanceGrantSelect+` WHERE id=$1`, reference), &result)
-		}
-		if policy.CheckinPlatformDailyCapMicroUSD == nil || policy.CheckinUserDailyCapMicroUSD == nil ||
-			policy.CheckinSingleAwardCapMicroUSD == nil {
-			return domain.ErrPolicyIncomplete
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO points_checkin_platform_daily_limits(business_date)
-			VALUES($1) ON CONFLICT(business_date) DO NOTHING`, dateString(date)); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO points_checkin_daily(user_id,business_date)
-			VALUES($1,$2) ON CONFLICT(user_id,business_date) DO NOTHING`, req.UserID, dateString(date)); err != nil {
-			return err
-		}
-		var platformUsed, userUsed int64
-		if err := tx.QueryRow(ctx, `SELECT awarded_microusd FROM points_checkin_platform_daily_limits
-			WHERE business_date=$1 FOR UPDATE`, dateString(date)).Scan(&platformUsed); err != nil {
-			return err
-		}
-		if err := tx.QueryRow(ctx, `SELECT awarded_microusd FROM points_checkin_daily
-			WHERE user_id=$1 AND business_date=$2 FOR UPDATE`, req.UserID, dateString(date)).Scan(&userUsed); err != nil {
-			return err
-		}
-		allowed, err := limitCheckinReward(req.AmountMicroUSD, *policy.CheckinSingleAwardCapMicroUSD,
-			*policy.CheckinPlatformDailyCapMicroUSD, platformUsed, *policy.CheckinUserDailyCapMicroUSD, userUsed)
-		if err != nil || allowed != req.AmountMicroUSD {
-			return domain.ErrCapExhausted
-		}
-		result, err = enqueueBalanceGrantTx(ctx, tx, EnqueueBalanceGrantRequest{
-			UserID: req.UserID, AmountMicroUSD: req.AmountMicroUSD, Kind: "manual_grant",
-			ExternalEventID: req.IdempotencyKey, PolicyVersion: policy.VersionNo, Reason: req.Reason, Now: req.Now,
-		})
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE points_checkin_platform_daily_limits
-			SET awarded_microusd=awarded_microusd+$1,updated_at=NOW() WHERE business_date=$2`,
-			req.AmountMicroUSD, dateString(date)); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE points_checkin_daily SET awarded_microusd=awarded_microusd+$1,
-			updated_at=NOW() WHERE user_id=$2 AND business_date=$3`, req.AmountMicroUSD, req.UserID, dateString(date)); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE points_idempotency SET result_reference=$1
-			WHERE scope='manual_balance_grant' AND external_event_id=$2`, result.ID, req.IdempotencyKey); err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO points_admin_audit(actor_user_id,action,target_type,target_id,
-			request_id,detail) VALUES($1,'balance_grant.create','balance_grant',$2,$3,
-			jsonb_build_object('user_id',$4,'amount_microusd',$5,'reason',$6))`,
-			req.ActorID, result.ID, req.IdempotencyKey, req.UserID, req.AmountMicroUSD, req.Reason)
-		return err
-	})
-	return result, err
 }
 
 type ClaimedBalanceGrant struct {

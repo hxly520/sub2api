@@ -82,17 +82,16 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/ledger", s.auth("user", false, true, http.HandlerFunc(s.ledger)))
 	s.mux.Handle("GET /api/v1/daily-points", s.auth("user", false, true, http.HandlerFunc(s.dailyPoints)))
 	s.mux.Handle("POST /api/v1/checkins", s.auth("user", true, true, s.rate("checkin", 6, time.Minute, http.HandlerFunc(s.checkin))))
-	s.mux.Handle("GET /api/v1/balance-grants", s.auth("user", false, true, http.HandlerFunc(s.balanceGrants)))
+	s.mux.Handle("GET /api/v1/balance-grants", s.auth("user", false, true, http.HandlerFunc(s.checkinBalanceGrants)))
 	s.mux.Handle("POST /api/v1/logout", s.auth("", true, false, http.HandlerFunc(s.logout)))
 
 	s.mux.Handle("GET /api/v1/admin/me", s.auth("admin", false, false, http.HandlerFunc(s.adminMe)))
+	s.mux.Handle("GET /api/v1/admin/users/points", s.auth("admin", false, false, http.HandlerFunc(s.adminUserPoints)))
 	s.mux.Handle("GET /api/v1/admin/policies", s.auth("admin", false, false, http.HandlerFunc(s.policies)))
 	s.mux.Handle("POST /api/v1/admin/policies", s.auth("admin", true, false, http.HandlerFunc(s.createPolicy)))
-	s.mux.Handle("POST /api/v1/admin/grants", s.auth("admin", true, false, http.HandlerFunc(s.manualGrant)))
-	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth("admin", false, false, http.HandlerFunc(s.adminBalanceGrants)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth("admin", true, false, http.HandlerFunc(s.retryBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth("admin", true, false, http.HandlerFunc(s.reverseBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/snapshots/refresh", s.auth("admin", true, false, http.HandlerFunc(s.refreshSnapshots)))
+	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth("admin", false, false, http.HandlerFunc(s.adminCheckinBalanceGrants)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth("admin", true, false, http.HandlerFunc(s.retryCheckinBalanceGrant)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth("admin", true, false, http.HandlerFunc(s.reverseCheckinBalanceGrant)))
 
 }
 

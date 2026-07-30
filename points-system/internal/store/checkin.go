@@ -33,6 +33,71 @@ type checkinMetrics struct {
 	RewardBaseMicroUSD     int64
 }
 
+// CheckinAvailable performs the same read-only eligibility checks used by
+// CheckIn. CheckIn remains authoritative because eligibility can change after
+// this advisory result is returned.
+func (s *Store) CheckinAvailable(ctx context.Context, userID int64, now time.Time) (bool, error) {
+	if s == nil || s.DB == nil || s.Location == nil || userID <= 0 {
+		return false, errors.New("invalid check-in availability request")
+	}
+	date := s.BusinessDate(now)
+	policy, err := policyForDate(ctx, s.DB, date)
+	if errors.Is(err, domain.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !policy.Enabled || !policy.CheckinEnabled || policy.ValidateForEnable() != nil {
+		return false, nil
+	}
+
+	count, userAwardedMicroUSD, err := s.CheckinStatus(ctx, userID, now)
+	if err != nil {
+		return false, err
+	}
+	if policy.CheckinDailyLimit == nil || count >= *policy.CheckinDailyLimit {
+		return false, nil
+	}
+	metrics, err := checkinMetricsFor(ctx, s.DB, userID, date, policy)
+	if err != nil {
+		if isCheckinIneligibility(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := validateCheckinSpend(policy, metrics.YesterdaySpendMicroUSD); err != nil {
+		return false, nil
+	}
+	if _, ok := tierForPoints(policy, metrics.BasisPointsHundredths); !ok {
+		return false, nil
+	}
+
+	var platformAwardedMicroUSD int64
+	if err := s.DB.QueryRow(ctx, `SELECT COALESCE((SELECT awarded_microusd
+		FROM points_checkin_platform_daily_limits WHERE business_date=$1),0)::bigint`,
+		dateString(date)).Scan(&platformAwardedMicroUSD); err != nil {
+		return false, err
+	}
+	_, err = limitCheckinReward(1, *policy.CheckinSingleAwardCapMicroUSD,
+		*policy.CheckinPlatformDailyCapMicroUSD, platformAwardedMicroUSD,
+		*policy.CheckinUserDailyCapMicroUSD, userAwardedMicroUSD)
+	if err != nil {
+		if isCheckinIneligibility(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func isCheckinIneligibility(err error) bool {
+	return errors.Is(err, domain.ErrDisabled) || errors.Is(err, domain.ErrPolicyIncomplete) ||
+		errors.Is(err, domain.ErrCapExhausted) || errors.Is(err, domain.ErrCheckinLimit) ||
+		errors.Is(err, domain.ErrCheckinSpendMinimum) || errors.Is(err, domain.ErrSnapshotNotReady) ||
+		errors.Is(err, domain.ErrNoMatchingTier) || errors.Is(err, domain.ErrInvalidState)
+}
+
 func (s *Store) CheckIn(ctx context.Context, userID int64, eventID string, now time.Time) (CheckinResult, error) {
 	if userID <= 0 || eventID == "" {
 		return CheckinResult{}, fmt.Errorf("invalid check-in request")
@@ -81,7 +146,7 @@ func (s *Store) CheckIn(ctx context.Context, userID int64, eventID string, now t
 			return recordConvergedCheckinRejectionTx(ctx, tx, userID, date, policy, checkinMetrics{},
 				domain.RewardCalculation{}, 0, "rejected", checkinRejectionLimit)
 		}
-		metrics, err := checkinMetricsTx(ctx, tx, userID, date, policy)
+		metrics, err := checkinMetricsFor(ctx, tx, userID, date, policy)
 		if err != nil {
 			return err
 		}
@@ -200,10 +265,10 @@ func (s *Store) CheckIn(ctx context.Context, userID int64, eventID string, now t
 	return result, nil
 }
 
-func checkinMetricsTx(ctx context.Context, tx pgx.Tx, userID int64, date time.Time,
+func checkinMetricsFor(ctx context.Context, q queryer, userID int64, date time.Time,
 	policy domain.Policy) (checkinMetrics, error) {
 	var hasUnresolvedSnapshot bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM points_daily_snapshots
+	if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM points_daily_snapshots
 		WHERE user_id=$1 AND status='needs_review')`, userID).Scan(&hasUnresolvedSnapshot); err != nil {
 		return checkinMetrics{}, err
 	}
@@ -212,7 +277,7 @@ func checkinMetricsTx(ctx context.Context, tx pgx.Tx, userID int64, date time.Ti
 	}
 	yesterday := date.AddDate(0, 0, -1)
 	var snapshotReady bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(
+	if err := q.QueryRow(ctx, `SELECT EXISTS(
 		SELECT 1 FROM points_snapshot_refresh_runs
 		WHERE business_date=$1 AND status='succeeded'
 	)`, dateString(yesterday)).Scan(&snapshotReady); err != nil {
@@ -223,7 +288,7 @@ func checkinMetricsTx(ctx context.Context, tx pgx.Tx, userID int64, date time.Ti
 	}
 	var metrics checkinMetrics
 	var snapshotStatus string
-	err := tx.QueryRow(ctx, `SELECT COALESCE(actual_cost_microusd,0),COALESCE(awarded_points_hundredths,0),status
+	err := q.QueryRow(ctx, `SELECT COALESCE(actual_cost_microusd,0),COALESCE(awarded_points_hundredths,0),status
 		FROM points_daily_snapshots WHERE user_id=$1 AND business_date=$2`, userID, dateString(yesterday)).Scan(
 		&metrics.YesterdaySpendMicroUSD, &metrics.BasisPointsHundredths, &snapshotStatus)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -238,7 +303,7 @@ func checkinMetricsTx(ctx context.Context, tx pgx.Tx, userID int64, date time.Ti
 	}
 	metrics.RewardBaseMicroUSD = metrics.YesterdaySpendMicroUSD
 	if policy.Basis == domain.PolicyBasisTotal {
-		err := tx.QueryRow(ctx, `SELECT total_points_hundredths,total_spend_microusd
+		err := q.QueryRow(ctx, `SELECT total_points_hundredths,total_spend_microusd
 			FROM points_accounts WHERE user_id=$1`, userID).Scan(
 			&metrics.BasisPointsHundredths, &metrics.RewardBaseMicroUSD)
 		if errors.Is(err, pgx.ErrNoRows) {

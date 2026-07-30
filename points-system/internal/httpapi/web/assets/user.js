@@ -20,7 +20,7 @@
     const count = ui.number(data.checkin?.count);
     const features = data.features || {};
     const limit = ui.number(features.checkin_daily_limit);
-    const available = features.checkin_attempt_available === true;
+    const available = features.checkin_available === true;
 
     ui.byId("checkin-count").textContent = `今日已签到 ${count} 次`;
     button.disabled = !available;

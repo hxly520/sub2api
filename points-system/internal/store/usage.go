@@ -415,7 +415,7 @@ func applyUsageSnapshotTx(ctx context.Context, tx pgx.Tx, runID, trigger string,
 		points_per_usd_hundredths,target_points_hundredths,previous_awarded_points_hundredths,
 		awarded_points_hundredths,delta_points_hundredths,status,source_row_count,
 		source_max_usage_log_id,source_fingerprint
-	) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+	) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 		target.UserID, dateString(date), revision, target.ActualCostMicroUSD, reason, runID,
 		nullablePreviousSpend(previous), target.ActualCostMicroUSD-previous.ActualCostMicroUSD,
 		nullablePreviousAccountedSpend(previous), accountedSpend, target.PolicyVersion,

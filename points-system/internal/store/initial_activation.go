@@ -58,9 +58,9 @@ func (s *Store) CreateInitialActivationPolicy(ctx context.Context, actorUserID,
 		if _, err := tx.Exec(ctx, `INSERT INTO points_admin_audit(
 			actor_user_id,action,target_type,target_id,detail
 		) VALUES($1,'policy.initial_activate','policy',$2,
-			jsonb_build_object('effective_date',$3,'enabled',TRUE,'checkin_enabled',FALSE,
-			'points_per_usd_hundredths',$4,'refresh_minute',5))`, actorUserID, version,
-			dateString(effectiveDate), pointsPerUSDHundredths); err != nil {
+			jsonb_build_object('effective_date',$3::text,'enabled',TRUE,'checkin_enabled',FALSE,
+			'points_per_usd_hundredths',$4::bigint,'refresh_minute',5))`, actorUserID,
+			fmt.Sprint(version), dateString(effectiveDate), pointsPerUSDHundredths); err != nil {
 			return err
 		}
 		var err error

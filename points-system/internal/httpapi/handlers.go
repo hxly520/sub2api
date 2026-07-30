@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -56,7 +54,14 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	pointsEnabled := policyAllowsUserAccess(policy)
 	checkinEnabled := pointsEnabled && policy.CheckinEnabled
-	checkinAttemptAvailable := checkinEnabled && dailyLimit > count
+	checkinAvailable := false
+	if checkinEnabled {
+		checkinAvailable, err = s.Store.CheckinAvailable(r.Context(), p.Session.UserID, now)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
@@ -64,10 +69,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
 		"features": map[string]any{
-			"points_enabled":            pointsEnabled,
-			"checkin_enabled":           checkinEnabled,
-			"checkin_daily_limit":       dailyLimit,
-			"checkin_attempt_available": checkinAttemptAvailable,
+			"points_enabled":      pointsEnabled,
+			"checkin_enabled":     checkinEnabled,
+			"checkin_daily_limit": dailyLimit,
+			"checkin_available":   checkinAvailable,
 		},
 	})
 }
@@ -277,112 +282,6 @@ func (request policyRequest) toPolicy(effectiveDate time.Time, actorID int64) do
 	}
 }
 
-func (s *Server) manualGrant(w http.ResponseWriter, r *http.Request) {
-	p, _ := principalFrom(r)
-	key, err := idempotencyKey(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "idempotency_required", err.Error())
-		return
-	}
-	var request struct {
-		UserID int64  `json:"user_id"`
-		Amount string `json:"amount"`
-		Reason string `json:"reason"`
-	}
-	if err := decodeJSON(w, r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid grant")
-		return
-	}
-	amountMicroUSD, amountErr := parseDollarAmount(request.Amount)
-	if request.UserID <= 0 || amountErr != nil || strings.TrimSpace(request.Reason) == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid grant")
-		return
-	}
-	if len(request.Reason) > 500 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Reason is too long")
-		return
-	}
-	result, err := s.Store.CreateManualBalanceGrant(r.Context(), store.ManualBalanceGrantRequest{
-		UserID: request.UserID, AmountMicroUSD: amountMicroUSD, ActorID: p.Session.UserID,
-		IdempotencyKey: key, Reason: request.Reason, Now: time.Now(),
-	})
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, result)
-}
-
-func (s *Server) adminBalanceGrants(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListBalanceGrants(r.Context(), 0, true, queryLimit(r))
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, items)
-}
-
-func (s *Server) retryBalanceGrant(w http.ResponseWriter, r *http.Request) {
-	p, _ := principalFrom(r)
-	id := r.PathValue("id")
-	if err := s.Store.RetryBalanceGrant(r.Context(), id, p.Session.UserID, time.Now()); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "status": "pending"})
-}
-
-func (s *Server) reverseBalanceGrant(w http.ResponseWriter, r *http.Request) {
-	p, _ := principalFrom(r)
-	id := r.PathValue("id")
-	var request struct {
-		Reason string `json:"reason"`
-	}
-	if err := decodeJSON(w, r, &request); err != nil || strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 500 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "A reversal reason is required")
-		return
-	}
-	if err := s.Store.ReverseBalanceGrant(r.Context(), id, request.Reason, p.Session.UserID, time.Now()); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "status": "reversal_pending"})
-}
-
-func (s *Server) refreshSnapshots(w http.ResponseWriter, r *http.Request) {
-	p, _ := principalFrom(r)
-	var request struct {
-		BusinessDate string `json:"business_date"`
-	}
-	if err := decodeJSON(w, r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid refresh request")
-		return
-	}
-	date, err := time.ParseInLocation("2006-01-02", request.BusinessDate, s.Config.Timezone)
-	if err != nil || !date.Before(s.Store.BusinessDate(time.Now())) {
-		writeError(w, http.StatusBadRequest, "invalid_business_date", "Business date must be before today")
-		return
-	}
-	result, err := s.Store.ProcessUsageDay(r.Context(), date)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	detail, err := json.Marshal(result)
-	if err != nil {
-		s.fail(w, r, fmt.Errorf("marshal snapshot refresh audit: %w", err))
-		return
-	}
-	auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := s.Store.Audit(auditCtx, p.Session.UserID, "snapshot.refresh", "business_date", request.BusinessDate,
-		r.Header.Get("X-Request-ID"), detail); err != nil {
-		s.fail(w, r, fmt.Errorf("write snapshot refresh audit: %w", err))
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
 func queryLimit(r *http.Request) int {
 	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil || limit <= 0 || limit > 200 {
@@ -410,48 +309,4 @@ func idempotencyKey(r *http.Request) (string, error) {
 		}
 	}
 	return key, nil
-}
-
-func parseDollarAmount(raw string) (int64, error) {
-	raw = strings.TrimSpace(raw)
-	parts := strings.Split(raw, ".")
-	if len(parts) > 2 || parts[0] == "" || len(parts[0]) > 12 {
-		return 0, fmt.Errorf("invalid monetary amount")
-	}
-	for _, value := range parts[0] {
-		if value < '0' || value > '9' {
-			return 0, fmt.Errorf("invalid monetary amount")
-		}
-	}
-	fraction := ""
-	if len(parts) == 2 {
-		fraction = parts[1]
-		if len(fraction) > 2 {
-			return 0, fmt.Errorf("invalid monetary amount")
-		}
-		for _, value := range fraction {
-			if value < '0' || value > '9' {
-				return 0, fmt.Errorf("invalid monetary amount")
-			}
-		}
-	}
-	for len(fraction) < 2 {
-		fraction += "0"
-	}
-	dollars, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || dollars > (1<<63-1)/1_000_000 {
-		return 0, fmt.Errorf("invalid monetary amount")
-	}
-	cents := int64(0)
-	if fraction != "" {
-		cents, err = strconv.ParseInt(fraction, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid monetary amount")
-		}
-	}
-	amount := dollars*1_000_000 + cents*domain.MicroUSDPerCent
-	if amount <= 0 {
-		return 0, fmt.Errorf("invalid monetary amount")
-	}
-	return amount, nil
 }

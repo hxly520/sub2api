@@ -364,6 +364,41 @@ func TestPostgresConcurrentCheckinsRespectAllLimits(t *testing.T) {
 	}
 }
 
+func TestPostgresCheckinAvailabilityTracksAuthoritativeEligibility(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	version := seedCheckinPolicy(t, fixture, 1, 10_000_000, 10_000_000, 100_000, 100_000)
+	const userID int64 = 1401
+	ctx := context.Background()
+
+	available, err := fixture.store.CheckinAvailable(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatalf("check availability before yesterday is settled: %v", err)
+	}
+	if available {
+		t.Fatal("check-in was available before yesterday's snapshot was ready")
+	}
+
+	seedReadySnapshots(t, fixture, version, userID)
+	available, err = fixture.store.CheckinAvailable(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatalf("check availability after yesterday is settled: %v", err)
+	}
+	if !available {
+		t.Fatal("check-in was unavailable after all eligibility rules were satisfied")
+	}
+
+	if _, err := fixture.store.CheckIn(ctx, userID, uuid.NewString(), fixture.now); err != nil {
+		t.Fatalf("complete eligible check-in: %v", err)
+	}
+	available, err = fixture.store.CheckinAvailable(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatalf("check availability after reaching the daily limit: %v", err)
+	}
+	if available {
+		t.Fatal("check-in remained available after reaching the daily limit")
+	}
+}
+
 func TestPostgresAccountCountsOnlySettledUnreversedCheckinRewards(t *testing.T) {
 	fixture := newPostgresFixture(t)
 	version := seedCheckinPolicy(t, fixture, 1, 10_000_000, 10_000_000, 100_000, 100_000)

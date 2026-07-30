@@ -2,13 +2,19 @@
 
 (() => {
   const ui = window.PointsUI;
-  const state = { policies: [], grants: [], reverseID: "", view: "overview" };
+  const state = {
+    policies: [],
+    grants: [],
+    users: [],
+    usersPage: { limit: 50, offset: 0, total: 0 },
+    reverseID: "",
+    view: "overview"
+  };
   const viewTitles = {
     overview: "运行总览",
+    users: "用户明细",
     policies: "策略管理",
-    grants: "手工赠送",
-    snapshots: "快照刷新",
-    operations: "赠送任务"
+    operations: "签到发放记录"
   };
 
   function localDate(daysAhead) {
@@ -98,6 +104,32 @@
       (policy) => `${policy.tiers?.length || 0} 档`
     ], "尚未创建策略版本");
     renderOverview();
+  }
+
+  async function loadAdminUsers() {
+    const page = state.usersPage;
+    const data = await ui.api(`/api/v1/admin/users/points?limit=${page.limit}&offset=${page.offset}`);
+    state.users = Array.isArray(data?.items) ? data.items : [];
+    page.total = Math.max(0, ui.number(data?.total));
+    page.limit = Math.max(1, ui.number(data?.limit) || page.limit);
+    page.offset = Math.max(0, ui.number(data?.offset));
+    ui.renderRows("admin-users-body", state.users, [
+      "user_id",
+      (user) => ui.points(user.total_points_hundredths),
+      (user) => ui.points(user.yesterday_points_hundredths),
+      (user) => ui.money(user.total_spend_microusd),
+      (user) => ui.money(user.yesterday_spend_microusd),
+      (user) => ui.date(user.snapshot_business_date),
+      (user) => ui.statusChip(user.snapshot_status)
+    ], "暂无用户积分账户");
+
+    const first = page.total === 0 ? 0 : page.offset + 1;
+    const last = Math.min(page.total, page.offset + state.users.length);
+    ui.byId("admin-users-page-summary").textContent = page.total === 0
+      ? "共 0 位用户"
+      : `第 ${first}-${last} 位，共 ${page.total} 位用户`;
+    ui.byId("admin-users-prev").disabled = page.offset === 0;
+    ui.byId("admin-users-next").disabled = page.offset + state.users.length >= page.total;
   }
 
   function actionButton(label, className, handler) {
@@ -303,7 +335,7 @@
   }
 
   async function refreshAll() {
-    const results = await Promise.allSettled([loadPolicies(), loadAdminGrants()]);
+    const results = await Promise.allSettled([loadPolicies(), loadAdminGrants(), loadAdminUsers()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;
   }
@@ -325,54 +357,22 @@
       }
     });
     ui.byId("refresh-admin-grants").addEventListener("click", () => loadAdminGrants().catch((error) => ui.notice(error.message, true)));
+    ui.byId("refresh-admin-users").addEventListener("click", () => loadAdminUsers().catch((error) => ui.notice(error.message, true)));
+    ui.byId("admin-users-prev").addEventListener("click", () => {
+      state.usersPage.offset = Math.max(0, state.usersPage.offset - state.usersPage.limit);
+      loadAdminUsers().catch((error) => ui.notice(error.message, true));
+    });
+    ui.byId("admin-users-next").addEventListener("click", () => {
+      if (state.usersPage.offset + state.usersPage.limit >= state.usersPage.total) return;
+      state.usersPage.offset += state.usersPage.limit;
+      loadAdminUsers().catch((error) => ui.notice(error.message, true));
+    });
     ui.byId("toggle-policy-form").addEventListener("click", () => ui.byId("policy-form").classList.toggle("hidden"));
     ui.byId("cancel-policy").addEventListener("click", () => ui.byId("policy-form").classList.add("hidden"));
     ui.byId("add-tier").addEventListener("click", addTier);
     ui.byId("policy-consumer-only").addEventListener("change", syncConsumerOnly);
     ui.byId("policy-checkin-enabled").addEventListener("change", syncCheckinControls);
     ui.byId("policy-enabled").addEventListener("change", syncCheckinControls);
-
-    ui.byId("grant-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const button = event.currentTarget.querySelector('[type="submit"]');
-      ui.setButtonBusy(button, true, "提交中");
-      try {
-        await ui.api("/api/v1/admin/grants", {
-          method: "POST",
-          headers: { "Idempotency-Key": ui.idempotencyKey() },
-          body: JSON.stringify({
-            user_id: Number(ui.byId("grant-user").value),
-            amount: ui.byId("grant-amount").value,
-            reason: ui.byId("grant-reason").value.trim()
-          })
-        });
-        event.currentTarget.reset();
-        ui.notice("赠送任务已创建");
-        await loadAdminGrants();
-      } catch (error) {
-        ui.notice(error.message, true);
-      } finally {
-        ui.setButtonBusy(button, false);
-      }
-    });
-
-    ui.byId("snapshot-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const button = event.currentTarget.querySelector('[type="submit"]');
-      ui.setButtonBusy(button, true, "刷新中");
-      try {
-        const result = await ui.api("/api/v1/admin/snapshots/refresh", {
-          method: "POST",
-          body: JSON.stringify({ business_date: ui.byId("snapshot-business-date").value })
-        });
-        ui.byId("snapshot-result").textContent = `${ui.date(result.business_date)}：扫描 ${result.users || 0} 个用户，更新 ${result.changed_users || 0} 个用户，积分变动 ${ui.points(result.delta_points_hundredths)}`;
-        ui.notice("消费快照刷新完成");
-      } catch (error) {
-        ui.notice(error.message, true);
-      } finally {
-        ui.setButtonBusy(button, false);
-      }
-    });
 
     ui.byId("policy-form").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -454,8 +454,6 @@
       const tomorrow = localDate(1);
       ui.byId("policy-date").min = tomorrow;
       ui.byId("policy-date").value = tomorrow;
-      ui.byId("snapshot-business-date").max = localDate(-1);
-      ui.byId("snapshot-business-date").value = localDate(-1);
       addTier();
       syncConsumerOnly();
       syncCheckinControls();

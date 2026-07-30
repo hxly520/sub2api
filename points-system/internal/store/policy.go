@@ -77,8 +77,8 @@ func (s *Store) CreatePolicyAtomic(ctx context.Context, policy domain.Policy, no
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO points_admin_audit(actor_user_id,action,target_type,target_id,detail)
 			VALUES($1,'policy.create','policy',$2,jsonb_build_object(
-				'effective_date',$3,'enabled',$4,'basis',$5,'mode',$6
-			))`, policy.CreatedBy, policy.VersionNo, dateString(policy.EffectiveDate),
+				'effective_date',$3::text,'enabled',$4::boolean,'basis',$5::text,'mode',$6::text
+			))`, policy.CreatedBy, fmt.Sprint(policy.VersionNo), dateString(policy.EffectiveDate),
 			policy.Enabled, policy.Basis, policy.Mode)
 		return err
 	})

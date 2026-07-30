@@ -481,21 +481,6 @@ func TestQueryDaysUsesBoundedDefault(t *testing.T) {
 	}
 }
 
-func TestParseDollarAmountUsesExactCents(t *testing.T) {
-	tests := map[string]int64{"0.01": 10_000, "1": 1_000_000, "12.34": 12_340_000, "12.3": 12_300_000}
-	for input, expected := range tests {
-		actual, err := parseDollarAmount(input)
-		if err != nil || actual != expected {
-			t.Fatalf("parseDollarAmount(%q) = %d, %v", input, actual, err)
-		}
-	}
-	for _, input := range []string{"", "0", "-1", "1.001", "1e2", ".50"} {
-		if _, err := parseDollarAmount(input); err == nil {
-			t.Fatalf("invalid amount %q was accepted", input)
-		}
-	}
-}
-
 func TestSnapshotNotReadyIsRetryableServiceUnavailable(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	writeDomainError(recorder, domain.ErrSnapshotNotReady)

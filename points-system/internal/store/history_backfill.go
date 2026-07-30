@@ -260,8 +260,8 @@ func (s *Store) CreateHistoryBackfillJob(ctx context.Context, plan HistoryBackfi
 		if _, insertErr = tx.Exec(ctx, `INSERT INTO points_admin_audit(
 			actor_user_id,action,target_type,target_id,detail
 		) VALUES($1,'usage_history_backfill.create','usage_history_backfill',$2,
-			jsonb_build_object('from_date',$3,'through_date',$4,'policy_version',$5,
-			'points_per_usd_hundredths',$6,'plan_fingerprint',$7))`, actorUserID, jobID,
+			jsonb_build_object('from_date',$3::text,'through_date',$4::text,'policy_version',$5::bigint,
+			'points_per_usd_hundredths',$6::bigint,'plan_fingerprint',$7::text))`, actorUserID, jobID,
 			dateString(plan.FromDate), dateString(plan.ThroughDate), plan.PolicyVersion,
 			plan.PointsPerUSDHundredths, plan.ConfirmationFingerprint); insertErr != nil {
 			return insertErr
@@ -326,7 +326,7 @@ func (s *Store) ResumeHistoryBackfillJob(ctx context.Context, jobID string,
 			if _, auditErr := tx.Exec(ctx, `INSERT INTO points_admin_audit(
 				actor_user_id,action,target_type,target_id,detail
 			) VALUES($1,'usage_history_backfill.resume','usage_history_backfill',$2,
-				jsonb_build_object('next_date',$3))`, actorUserID, jobID,
+				jsonb_build_object('next_date',$3::text))`, actorUserID, jobID,
 				dateString(current.NextDate)); auditErr != nil {
 				return auditErr
 			}
@@ -552,7 +552,7 @@ func (s *Store) ProcessHistoryBackfillDay(ctx context.Context,
 			if _, auditErr := tx.Exec(ctx, `INSERT INTO points_admin_audit(
 				actor_user_id,action,target_type,target_id,detail
 			) VALUES($1,'usage_history_backfill.complete','usage_history_backfill',$2,
-				jsonb_build_object('through_date',$3,'refresh_run_id',$4))`, current.CreatedBy,
+				jsonb_build_object('through_date',$3::text,'refresh_run_id',$4::text))`, current.CreatedBy,
 				jobID, dateString(date), runID); auditErr != nil {
 				return auditErr
 			}
@@ -690,7 +690,7 @@ func (s *Store) markHistoryBackfillFailed(job HistoryBackfillJob, backfillErr er
 		_, err = tx.Exec(ctx, `INSERT INTO points_admin_audit(
 			actor_user_id,action,target_type,target_id,detail
 		) SELECT created_by,'usage_history_backfill.fail','usage_history_backfill',id,
-			jsonb_build_object('next_date',next_date,'error',$1)
+			jsonb_build_object('next_date',next_date,'error',$1::text)
 			FROM points_usage_history_backfill_jobs WHERE id=$2 AND status='failed'`, message, job.ID)
 		return err
 	})

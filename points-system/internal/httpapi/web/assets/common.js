@@ -47,13 +47,13 @@
     complete: "已完成",
     completed: "已完成",
     success: "成功",
+    missing: "未生成",
     rejected: "未通过"
   };
 
   const kindMessages = {
     usage_points: "消费积分",
     checkin: "签到赠送",
-    manual_grant: "手工赠送",
     reversal: "冲正"
   };
 

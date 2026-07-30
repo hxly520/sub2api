@@ -66,4 +66,13 @@ $audit_sql$, :'points_app_role', :'points_app_role', :'points_app_role',
     :'points_app_role', :'points_app_role')
 \gexec
 
+-- The administrator points directory needs only stable user IDs and the
+-- soft-delete marker. It must not read email, balance, credentials, group
+-- membership, or any other Sub2API user column.
+SELECT format(
+    'GRANT SELECT (id, deleted_at) ON TABLE public.users TO %I',
+    :'points_app_role'
+)
+\gexec
+
 COMMIT;
