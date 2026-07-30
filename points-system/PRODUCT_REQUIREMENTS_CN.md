@@ -4,8 +4,8 @@
 
 ## 0. 当前生产基线与入口契约
 
-- 截至 `2026-07-30`，Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.168-2ad2815e`，积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.168-2ad2815e`；两者 OCI revision 均为 `2ad2815e075aadf0553be9913518af35d8b0c7b3`，容器均 healthy、restart count `0`。
-- 当前积分镜像由受控本机构建后导入服务器，GHCR 尚无可核验的 manifest digest/RepoDigest；本地 archive manifest digest 不是 registry digest，后续发布必须如实区分。
+- 截至 `2026-07-30 19:07 CST`，Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`；积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.168-c0fe91506bca`，OCI revision `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`。两者均 healthy、restart count `0`，积分切换未重建或重启 Sub2API。
+- 当前积分镜像 registry digest 为 `sha256:8a9b7f51ce454450fc797aeeb7bfea008351cdba354327ae6cf40d3ddbdb4148`。服务器因私有 GHCR 未登录，使用本机生成并校验的标准 Docker archive 执行 `docker load`；归档 SHA256 为 `d8bed76bd257e4ecb3e72dddb5e26c11147274738a3e7e316e2015c85568ef7d`。registry digest、image ID 与 archive SHA256 必须继续分开记录。
 - 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 19 张表、2 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。
 - Sub2API 当前共应用 250 条 public 迁移，`192_media_balance_hold_reconciliation_index_notx.sql` 与 `193_points_balance_credit_ledger.sql` 均已进入生产；积分迁移必须继续记录在 `points.points_schema_migrations`，不得混入 Sub2API 迁移表。
 - 系统设置内的“积分系统”标签和管理员入口 `/admin/settings/points` 必须始终对已认证管理员可见，即使 `points_system.enabled=false`，以便检查桥接状态并经 step-up 进入策略台；普通用户菜单和 `/points` 只在 enabled 开启时显示。配置或状态 API 只能返回是否配置、Key ID、URL、TTL 等非敏感元数据，禁止回传 launch/credit 密钥原值。

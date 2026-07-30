@@ -21,15 +21,17 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
 ## Production Baseline (2026-07-30)
 
-- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.168-2ad2815e`, OCI revision
-  `2ad2815e075aadf0553be9913518af35d8b0c7b3`; the container is healthy with
+- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`, OCI revision
+  `339422728b2ceb87b4a81bb08229d370c4ca589d`; the container is healthy with
   restart count zero.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.168-2ad2815e` at the same revision and is
-  also healthy with restart count zero. This image was built in the controlled
-  local environment and imported with `docker load`; GHCR does not currently
-  have a verifiable manifest digest for it. Do not describe the local archive
-  manifest digest as a registry digest.
+  `ghcr.io/hxly520/sub2api-points:0.1.168-c0fe91506bca`, OCI revision
+  `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`, and is also healthy with restart
+  count zero. Its GHCR registry digest is
+  `sha256:8a9b7f51ce454450fc797aeeb7bfea008351cdba354327ae6cf40d3ddbdb4148`.
+  The production host imported the locally verified Docker archive because it
+  has no private-package registry login; the archive SHA256 is
+  `d8bed76bd257e4ecb3e72dddb5e26c11147274738a3e7e316e2015c85568ef7d`.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 19 tables and two points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
@@ -38,15 +40,11 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
-- Hardened revision `339422728b2ceb87b4a81bb08229d370c4ca589d` has been
-  published and pulled into the production host image cache without replacing
-  either running container. The immutable Sub2API and points tags are
-  `0.1.168-339422728b2c`, with registry digests
-  `sha256:d50f01b1344763616e8198a23107e5f37d815460a5feae902c5bf447cf069f99`
-  and
-  `sha256:bd04ab7ddf53c33625faef35d34ac1e379a9bf09e2de94ab92711680429ac09d`
-  respectively. Production remains on `2ad2815e` until the maintainer performs
-  the manual Compose switch.
+- Sub2API public setting `points_system_enabled` and policy version 1 both
+  remain disabled. The ordinary user menu is hidden, a user launch ticket is
+  rejected with `403 points_disabled`, and the administrator-only launch,
+  Chinese workspace, read-only policy check, CSRF logout, and post-logout 401
+  flow have been verified without changing any financial table.
 
 ## Runtime Architecture
 
