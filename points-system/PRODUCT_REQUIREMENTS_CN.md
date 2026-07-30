@@ -2,6 +2,14 @@
 
 本文是积分系统的实现约束，代码、数据库迁移、管理界面和后续版本合并均不得偏离。
 
+## 0. 当前生产基线与入口契约
+
+- 截至 `2026-07-30`，Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.168-2ad2815e`，积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.168-2ad2815e`；两者 OCI revision 均为 `2ad2815e075aadf0553be9913518af35d8b0c7b3`，容器均 healthy、restart count `0`。
+- 当前积分镜像由受控本机构建后导入服务器，GHCR 尚无可核验的 manifest digest/RepoDigest；本地 archive manifest digest 不是 registry digest，后续发布必须如实区分。
+- 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 19 张表、2 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。
+- Sub2API 当前共应用 250 条 public 迁移，`192_media_balance_hold_reconciliation_index_notx.sql` 与 `193_points_balance_credit_ledger.sql` 均已进入生产；积分迁移必须继续记录在 `points.points_schema_migrations`，不得混入 Sub2API 迁移表。
+- 系统设置内的“积分系统”标签和管理员入口 `/admin/settings/points` 必须始终对已认证管理员可见，即使 `points_system.enabled=false`，以便检查桥接状态并经 step-up 进入策略台；普通用户菜单和 `/points` 只在 enabled 开启时显示。配置或状态 API 只能返回是否配置、Key ID、URL、TTL 等非敏感元数据，禁止回传 launch/credit 密钥原值。
+
 ## 1. 积分性质
 
 - 积分是成功余额消费换算出的只读统计分值，用于展示和签到阶梯判定。
@@ -54,4 +62,10 @@
 - Sub2API 余额写入和积分服务结算采用可重试的事务发件箱；同一交易重复请求只能返回第一次结果，不能重复加款。
 - 管理员可配置单次、单用户每日和全平台每日余额安全上限。待处理、成功、重试、冲正和人工操作都必须保留审计日志；业务拒绝按用户、自然日和拒绝原因收敛为稳定审计记录，请求级频率由 Nginx 反代访问日志记录，防止恶意轮换幂等键造成数据库无界增长。
 - 余额发放出现网络、超时或 5xx 等未知结果时，必须以原交易 UUID 重试到 Sub2API 明确确认到账后才能发起关联扣回；未知结果不得直接标为已冲正。只有从未尝试的待发放记录可以本地取消。
+- Sub2API 余额缓存的数据库回源必须受 Redis 用户代次保护：缓存失效和余额扣减原子推进代次，旧读取只有在代次未变化时才能回填，禁止并发旧值覆盖新余额。
+- credit 已在 PostgreSQL 提交但余额缓存同步失败时，Sub2API 必须返回可重试 `503`；积分发件箱必须用原交易 UUID 重试，不能把缓存尚未同步的发放标记为 settled 或生成第二笔发放。
+- `/api/internal/points/credits` 必须使用 Redis fail-close 应用限流，默认每分钟 120 次；限流存储异常时拒绝请求。公网 Nginx 对该精确路径的 `POST/OPTIONS` 必须返回 `404`，只允许积分容器通过 Docker 网络直连，HMAC 不能作为唯一网络边界。
+- Nginx 只允许 `/launch` 关闭 access log，避免一次性 ticket 写入查询串日志；积分页面、管理页面、API、拒绝、越权和限流请求均须保留访问证据，同时严禁记录 ticket、cookie、HMAC 或密钥原值。
+- 生产 `points.env`、bridge env 和 psql 变量文件必须为 `root:root 0600`。密钥不得进入 Git、Compose 输出、shell history、日志或任何读取/状态 API 响应。
+- 管理员手工刷新历史消费快照时，刷新与管理员审计共同构成成功条件；审计序列化或写入失败必须让请求失败，禁止忽略审计错误后返回刷新成功。
 - 策略版本只追加且次日生效；历史签到必须保存完整规则快照和计算基数，不能被后续配置修改。

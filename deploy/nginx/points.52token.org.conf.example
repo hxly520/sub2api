@@ -1,11 +1,18 @@
 # Points is reachable only through a one-time launch ticket issued by Sub2API.
-# Access logging is disabled because /launch carries that ticket in the query.
+# Only /launch disables access logging because its query carries the ticket.
 server {
     listen 80;
     server_name points.52token.org;
 
     if ($sub2api_cloudflare_peer = 0) { return 444; }
-    return 301 https://$host$request_uri;
+
+    location = /launch {
+        # Redirect requests can still contain a launch ticket in the query.
+        access_log off;
+        return 301 https://$host$request_uri;
+    }
+
+    location / { return 301 https://$host$request_uri; }
 }
 
 server {
@@ -19,7 +26,6 @@ server {
     ssl_session_timeout 5m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    access_log off;
     client_max_body_size 2m;
     client_body_timeout 15s;
     proxy_connect_timeout 5s;
@@ -28,6 +34,7 @@ server {
 
     location = /launch {
         limit_except GET { deny all; }
+        access_log off;
 
         proxy_pass http://127.0.0.1:8090;
         proxy_http_version 1.1;

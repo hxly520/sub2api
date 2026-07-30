@@ -9,6 +9,25 @@ export interface PointsLaunchResponse {
   launch_url: string
 }
 
+export interface PointsBridgeStatus {
+  enabled: boolean
+  configured: boolean
+  active: boolean
+  public_url: string
+  menu_label: string
+  launch_key_id: string
+  launch_secret_configured: boolean
+  credit_key_id: string
+  credit_secret_configured: boolean
+  launch_ttl_seconds: number
+  clock_skew_seconds: number
+}
+
+export async function getPointsBridgeStatus(): Promise<PointsBridgeStatus> {
+  const { data } = await apiClient.get<PointsBridgeStatus>('/admin/points/status')
+  return data
+}
+
 export async function createPointsLaunch(
   role: 'user' | 'admin',
   request: PointsLaunchRequest,

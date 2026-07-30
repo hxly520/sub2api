@@ -307,8 +307,14 @@ type mockBillingCache struct {
 	mu                  sync.Mutex
 }
 
-func (m *mockBillingCache) GetUserBalance(context.Context, int64) (float64, error)  { return 0, nil }
-func (m *mockBillingCache) SetUserBalance(context.Context, int64, float64) error    { return nil }
+func (m *mockBillingCache) GetUserBalance(context.Context, int64) (float64, error) { return 0, nil }
+func (m *mockBillingCache) SetUserBalance(context.Context, int64, float64) error   { return nil }
+func (m *mockBillingCache) GetUserBalanceGeneration(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+func (m *mockBillingCache) SetUserBalanceIfGeneration(context.Context, int64, float64, int64) (bool, error) {
+	return true, nil
+}
 func (m *mockBillingCache) DeductUserBalance(context.Context, int64, float64) error { return nil }
 func (m *mockBillingCache) InvalidateUserBalance(_ context.Context, userID int64) error {
 	m.invalidateCallCount.Add(1)

@@ -19,6 +19,26 @@ Only server-recorded successful usage is accepted. A browser or push endpoint
 is never a usage fact source. Production reads Sub2API `usage_logs` through the
 dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
+## Production Baseline (2026-07-30)
+
+- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.168-2ad2815e`, OCI revision
+  `2ad2815e075aadf0553be9913518af35d8b0c7b3`; the container is healthy with
+  restart count zero.
+- The points service runs
+  `ghcr.io/hxly520/sub2api-points:0.1.168-2ad2815e` at the same revision and is
+  also healthy with restart count zero. This image was built in the controlled
+  local environment and imported with `docker load`; GHCR does not currently
+  have a verifiable manifest digest for it. Do not describe the local archive
+  manifest digest as a registry digest.
+- Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
+  `points` schema contains 19 tables and two points migrations. `points_app`
+  has an eight-connection limit; the column-restricted, read-only
+  `points_usage_reader` has a four-connection limit.
+- Sub2API has 250 applied public migrations. Private migrations
+  `192_media_balance_hold_reconciliation_index_notx.sql` and
+  `193_points_balance_credit_ledger.sql` are applied; points migrations remain
+  separate in `points.points_schema_migrations`.
+
 ## Runtime Architecture
 
 1. Sub2API creates a short-lived HMAC launch ticket for the current user.
@@ -82,6 +102,15 @@ Both require a session created by `/launch`; the domain root returns 404. The
 user overview includes total/yesterday points, today's reward, and the total of
 settled check-in credits that have not been reversed.
 
+Sub2API's Points tab in System Settings and the administrator route
+`/admin/settings/points` are always visible to authenticated administrators, including while
+`points_system.enabled=false`, so an administrator can inspect bridge status
+and use step-up authentication to launch the policy workspace. The ordinary
+user menu and `/points` route remain hidden unless the enabled switch is on.
+The Sub2API status endpoint returns only non-secret state such as
+enabled/configured/active, public URL, key IDs, TTL, and clock skew; it never
+returns launch or credit key material.
+
 ## Trust Contracts
 
 ### Launch ticket
@@ -113,6 +142,18 @@ grant UUID; reversal retries reuse a deterministic, distinct UUID. A credit
 whose response was lost cannot be marked reversed locally because its remote
 outcome is unknown.
 
+Sub2API protects balance-cache database refill with a per-user Redis generation.
+Invalidation and deductions atomically advance the generation, and an older
+database read may refill the cache only if that generation is unchanged. If a
+credit commits to PostgreSQL but balance-cache synchronization fails, Sub2API
+returns retryable HTTP 503; the outbox retries the original UUID and must not
+mark the grant settled early.
+
+The internal credit route uses a Redis-backed, fail-closed application limit of
+120 requests per minute. Public Nginx configuration must return exact 404 for
+`POST` and `OPTIONS` on `/api/internal/points/credits`; only the points container
+may call it over the Docker network. HMAC is not the sole network boundary.
+
 ### Usage collection
 
 The points service does not accept usage facts over HTTP. Its dedicated
@@ -134,6 +175,9 @@ within that window create signed snapshot deltas;
 the snapshot, account totals, point ledger, revision, and refresh audit are
 committed atomically. A correction that would make an account total negative
 is retained as `needs_review` instead of committing an invalid total.
+An administrator-triggered historical refresh succeeds only if its audit event
+is serialized and written successfully. Audit failure makes the entire request
+fail; the API must not report an unaudited refresh as successful.
 
 ## Configuration
 
@@ -150,7 +194,9 @@ Copy `.env.example` and replace every placeholder. Important details:
 - `POINTS_PUBLIC_ORIGIN` is an origin without a path and must be HTTPS when
   secure cookies are enabled.
 
-Generate 32-byte secrets with a CSPRNG. Never place production secrets in Git.
+Generate 32-byte secrets with a CSPRNG. Production points, bridge, and psql
+variable files are root-owned mode `0600`. Never place production secrets in
+Git, logs, shell history, Compose output, or API responses.
 
 ## Deployment
 
@@ -171,8 +217,9 @@ existing Sub2API Docker network for the read-only database and balance bridge.
 Set `SUB2API_DOCKER_NETWORK` to the exact existing network name. Set
 `POINTS_TRUSTED_PROXY_CIDR` to the exact bridge gateway `/32` observed by the
 points container; forwarded client IP headers are ignored from every other
-source. The Nginx launch location disables access logging so one-time tickets
-are not persisted in query-string logs.
+source. Only the Nginx `/launch` location disables access logging so one-time
+tickets are not persisted in query-string logs. `/app/`, `/admin/`, assets,
+APIs, denials, authorization failures, and rate limits retain access logs.
 
 The process serializes migrations with a PostgreSQL advisory lock and verifies
 `current_schema()` before running them, so a missing schema cannot fall back to

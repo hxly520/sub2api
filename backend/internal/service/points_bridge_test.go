@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +21,16 @@ import (
 
 type pointsBridgeRepositoryStub struct {
 	input PointsBalanceCreditInput
+}
+
+type pointsBalanceCacheStub struct {
+	err   error
+	calls int
+}
+
+func (s *pointsBalanceCacheStub) InvalidateUserBalance(context.Context, int64) error {
+	s.calls++
+	return s.err
 }
 
 func (r *pointsBridgeRepositoryStub) ApplyPointsBalanceCredit(_ context.Context, input PointsBalanceCreditInput) (*PointsBalanceCreditResult, error) {
@@ -86,6 +97,32 @@ func TestPointsBridgeCreateLaunchURLUsesVersionedTicket(t *testing.T) {
 	}
 }
 
+func TestPointsBridgeAllowsAdminSetupWhileUserEntryIsDisabled(t *testing.T) {
+	cfg := testPointsBridgeConfig()
+	cfg.PointsSystem.Enabled = false
+	svc := NewPointsBridgeService(&pointsBridgeRepositoryStub{}, nil, cfg)
+
+	status := svc.Status()
+	if !status.Configured || status.Active || status.Enabled {
+		t.Fatalf("unexpected disabled bridge status: %+v", status)
+	}
+	if !status.LaunchSecretConfigured || !status.CreditSecretConfigured {
+		t.Fatalf("configured secrets were not reflected in status: %+v", status)
+	}
+	if _, err := svc.CreateLaunchURL(42, "admin", "light", "zh-CN"); err != nil {
+		t.Fatalf("admin setup launch should remain available: %v", err)
+	}
+	if _, err := svc.CreateLaunchURL(42, "user", "light", "zh-CN"); err != ErrPointsSystemUnavailable {
+		t.Fatalf("disabled user launch error = %v", err)
+	}
+
+	cfg.PointsSystem.PublicURL = "https://user:password@example.test/points?token=secret"
+	status = svc.Status()
+	if status.Configured || status.PublicURL != "" {
+		t.Fatalf("unsafe public URL must not be exposed in status: %+v", status)
+	}
+}
+
 func TestPointsBridgeVerifyAndApplyCreditBindsKeyAndBody(t *testing.T) {
 	cfg := testPointsBridgeConfig()
 	repo := &pointsBridgeRepositoryStub{}
@@ -118,6 +155,15 @@ func TestPointsBridgeVerifyAndApplyCreditBindsKeyAndBody(t *testing.T) {
 		timestamp, "credit-v2", nonce, signature, body, "request-2")
 	if err != ErrPointsSignatureInvalid {
 		t.Fatalf("wrong key id error = %v", err)
+	}
+
+	cache := &pointsBalanceCacheStub{err: errors.New("redis unavailable")}
+	svc = NewPointsBridgeService(repo, cache, cfg)
+	svc.now = func() time.Time { return fixedNow }
+	_, err = svc.VerifyAndApplyCredit(context.Background(), http.MethodPost, pointsCreditPath,
+		timestamp, keyID, nonce, signature, body, "request-3")
+	if err != ErrPointsCacheSyncPending || cache.calls != 1 {
+		t.Fatalf("cache synchronization error = %v, calls = %d", err, cache.calls)
 	}
 }
 

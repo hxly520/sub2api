@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -271,9 +272,18 @@ func (s *Server) refreshSnapshots(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	detail, _ := json.Marshal(result)
-	_ = s.Store.Audit(r.Context(), p.Session.UserID, "snapshot.refresh", "business_date", request.BusinessDate,
-		r.Header.Get("X-Request-ID"), detail)
+	detail, err := json.Marshal(result)
+	if err != nil {
+		s.fail(w, r, fmt.Errorf("marshal snapshot refresh audit: %w", err))
+		return
+	}
+	auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.Store.Audit(auditCtx, p.Session.UserID, "snapshot.refresh", "business_date", request.BusinessDate,
+		r.Header.Get("X-Request-ID"), detail); err != nil {
+		s.fail(w, r, fmt.Errorf("write snapshot refresh audit: %w", err))
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 

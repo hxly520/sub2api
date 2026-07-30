@@ -95,6 +95,30 @@ func (s *BillingCacheSuite) TestUserBalance() {
 			},
 		},
 		{
+			name: "stale_generation_cannot_refill_invalidated_balance",
+			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
+				userID := int64(101)
+				generation, err := cache.GetUserBalanceGeneration(ctx, userID)
+				require.NoError(s.T(), err)
+				require.Zero(s.T(), generation)
+
+				stored, err := cache.SetUserBalanceIfGeneration(ctx, userID, 50, generation)
+				require.NoError(s.T(), err)
+				require.True(s.T(), stored)
+				require.NoError(s.T(), cache.InvalidateUserBalance(ctx, userID))
+
+				stored, err = cache.SetUserBalanceIfGeneration(ctx, userID, 40, generation)
+				require.NoError(s.T(), err)
+				require.False(s.T(), stored)
+				_, err = cache.GetUserBalance(ctx, userID)
+				require.ErrorIs(s.T(), err, redis.Nil)
+
+				generation, err = cache.GetUserBalanceGeneration(ctx, userID)
+				require.NoError(s.T(), err)
+				require.Equal(s.T(), int64(1), generation)
+			},
+		},
+		{
 			name: "deduct_refreshes_ttl",
 			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
 				userID := int64(103)

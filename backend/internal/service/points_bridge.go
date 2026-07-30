@@ -31,6 +31,7 @@ var (
 	ErrPointsSignatureInvalid  = infraerrors.Unauthorized("POINTS_SIGNATURE_INVALID", "invalid points service signature")
 	ErrPointsCreditConflict    = infraerrors.Conflict("POINTS_CREDIT_CONFLICT", "points transaction id was reused with different data")
 	ErrPointsCreditUserMissing = infraerrors.NotFound("POINTS_CREDIT_USER_NOT_FOUND", "points credit user was not found")
+	ErrPointsCacheSyncPending  = infraerrors.New(http.StatusServiceUnavailable, "POINTS_CACHE_SYNC_PENDING", "balance cache synchronization is pending")
 )
 
 type PointsLaunchClaims struct {
@@ -76,14 +77,32 @@ type PointsBridgeRepository interface {
 	ApplyPointsBalanceCredit(ctx context.Context, input PointsBalanceCreditInput) (*PointsBalanceCreditResult, error)
 }
 
+type pointsBalanceCache interface {
+	InvalidateUserBalance(ctx context.Context, userID int64) error
+}
+
 type PointsBridgeService struct {
 	repo         PointsBridgeRepository
-	billingCache *BillingCacheService
+	billingCache pointsBalanceCache
 	cfg          *config.Config
 	now          func() time.Time
 }
 
-func NewPointsBridgeService(repo PointsBridgeRepository, billingCache *BillingCacheService, cfg *config.Config) *PointsBridgeService {
+type PointsBridgeStatus struct {
+	Enabled                bool
+	Configured             bool
+	Active                 bool
+	PublicURL              string
+	MenuLabel              string
+	LaunchKeyID            string
+	LaunchSecretConfigured bool
+	CreditKeyID            string
+	CreditSecretConfigured bool
+	LaunchTTLSeconds       int
+	ClockSkewSeconds       int
+}
+
+func NewPointsBridgeService(repo PointsBridgeRepository, billingCache pointsBalanceCache, cfg *config.Config) *PointsBridgeService {
 	return &PointsBridgeService{repo: repo, billingCache: billingCache, cfg: cfg, now: time.Now}
 }
 
@@ -91,13 +110,48 @@ func (s *PointsBridgeService) Enabled() bool {
 	return s != nil && s.cfg != nil && s.cfg.PointsSystem.Active()
 }
 
+func (s *PointsBridgeService) Status() PointsBridgeStatus {
+	status := PointsBridgeStatus{MenuLabel: "积分中心"}
+	if s == nil || s.cfg == nil {
+		return status
+	}
+	points := s.cfg.PointsSystem
+	launchKey, launchErr := points.LaunchKey()
+	creditKey, creditErr := points.CreditKey()
+	status.Enabled = points.Enabled
+	status.Configured = points.Configured()
+	status.Active = points.Active()
+	publicURL := strings.TrimSpace(points.PublicURL)
+	if err := config.ValidateAbsoluteHTTPURL(publicURL); err == nil {
+		parsedURL, parseErr := url.Parse(publicURL)
+		if parseErr == nil && parsedURL != nil && parsedURL.User == nil && parsedURL.RawQuery == "" {
+			status.PublicURL = publicURL
+		}
+	}
+	status.MenuLabel = strings.TrimSpace(points.MenuLabel)
+	if status.MenuLabel == "" {
+		status.MenuLabel = "积分中心"
+	}
+	status.LaunchKeyID = strings.TrimSpace(points.LaunchKeyID)
+	status.LaunchSecretConfigured = launchErr == nil && len(launchKey) >= 32
+	status.CreditKeyID = strings.TrimSpace(points.CreditKeyID)
+	status.CreditSecretConfigured = creditErr == nil && len(creditKey) >= 32
+	status.LaunchTTLSeconds = points.LaunchTTLSeconds
+	status.ClockSkewSeconds = points.ClockSkewSeconds
+	return status
+}
+
 func (s *PointsBridgeService) CreateLaunchURL(userID int64, role, theme, language string) (string, error) {
-	if !s.Enabled() || userID <= 0 {
+	if s == nil || s.cfg == nil || userID <= 0 {
 		return "", ErrPointsSystemUnavailable
 	}
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role != "user" && role != "admin" {
 		return "", infraerrors.BadRequest("POINTS_ROLE_INVALID", "invalid points launch role")
+	}
+	if (role == "admin" && !s.cfg.PointsSystem.Configured()) ||
+		(role == "user" && !s.cfg.PointsSystem.Active()) {
+		return "", ErrPointsSystemUnavailable
 	}
 	theme = strings.ToLower(strings.TrimSpace(theme))
 	if theme != "dark" {
@@ -196,6 +250,10 @@ func (s *PointsBridgeService) VerifyAndApplyCredit(
 				zap.String("transaction_id", input.TransactionID.String()),
 				zap.Error(err),
 			)
+			// The balance transaction is already committed. Returning a retryable
+			// error makes the outbox repeat the same idempotent transaction until
+			// Redis invalidation succeeds, instead of serving a stale balance.
+			return nil, ErrPointsCacheSyncPending
 		}
 	}
 	return result, nil

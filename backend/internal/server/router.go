@@ -115,7 +115,7 @@ func registerRoutes(
 ) {
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
-	routes.RegisterPointsInternalRoutes(r, h)
+	routes.RegisterPointsInternalRoutes(r, h, redisClient)
 
 	// API v1
 	v1 := r.Group("/api/v1")

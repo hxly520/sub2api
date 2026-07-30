@@ -121,6 +121,7 @@ func RegisterAdminRoutes(
 		registerAuditLogRoutes(admin, h, stepUpAuth)
 
 		points := admin.Group("/points")
+		points.GET("/status", h.Points.StatusAdmin)
 		points.POST("/launch", gin.HandlerFunc(stepUpAuth), h.Points.LaunchAdmin)
 	}
 }

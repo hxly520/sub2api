@@ -9,12 +9,14 @@ import (
 func TestPointsSystemConfigActiveRequiresVersionedDecodedKeys(t *testing.T) {
 	secret := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 	cfg := PointsSystemConfig{
-		Enabled:      true,
-		PublicURL:    "https://example.test/points",
-		LaunchKeyID:  "launch-v1",
-		LaunchSecret: secret,
-		CreditKeyID:  "credit-v1",
-		CreditSecret: secret,
+		Enabled:          true,
+		PublicURL:        "https://example.test/points",
+		LaunchKeyID:      "launch-v1",
+		LaunchSecret:     secret,
+		CreditKeyID:      "credit-v1",
+		CreditSecret:     secret,
+		LaunchTTLSeconds: 60,
+		ClockSkewSeconds: 60,
 	}
 	if !cfg.Active() {
 		t.Fatal("complete points system configuration should be active")
@@ -34,6 +36,31 @@ func TestPointsSystemConfigActiveRequiresVersionedDecodedKeys(t *testing.T) {
 	cfg.LaunchKeyID = "launch.v1"
 	if cfg.Active() {
 		t.Fatal("ticket delimiter must not be accepted in a key id")
+	}
+}
+
+func TestPointsSystemConfigConfiguredDoesNotEnableUserAccess(t *testing.T) {
+	secret := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	cfg := PointsSystemConfig{
+		Enabled:          false,
+		PublicURL:        "https://example.test/points",
+		LaunchKeyID:      "launch-v1",
+		LaunchSecret:     secret,
+		CreditKeyID:      "credit-v1",
+		CreditSecret:     secret,
+		LaunchTTLSeconds: 60,
+		ClockSkewSeconds: 60,
+	}
+	if !cfg.Configured() {
+		t.Fatal("complete disabled integration should remain available for admin setup")
+	}
+	if cfg.Active() {
+		t.Fatal("disabled integration must not expose the user entry")
+	}
+
+	cfg.PublicURL = "https://user@example.test/points"
+	if cfg.Configured() {
+		t.Fatal("URL credentials must not be accepted")
 	}
 }
 

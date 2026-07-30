@@ -122,6 +122,8 @@ vi.mock("@/stores", () => ({
     showWarning: vi.fn(),
     showInfo: vi.fn(),
     fetchPublicSettings,
+    publicSettingsLoaded: true,
+    cachedPublicSettings: { points_system_enabled: false },
   }),
 }));
 
@@ -250,6 +252,22 @@ vi.mock("vue-i18n", async () => {
 });
 
 const AppLayoutStub = { template: "<div><slot /></div>" };
+const PointsSettingsViewStub = defineComponent({
+  name: "PointsSettingsView",
+  props: {
+    embedded: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  setup(props) {
+    return () =>
+      h("section", {
+        "data-testid": "points-settings-panel",
+        "data-embedded": String(props.embedded),
+      });
+  },
+});
 const ToggleStub = defineComponent({
   props: {
     modelValue: {
@@ -541,6 +559,7 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        PointsSettingsView: PointsSettingsViewStub,
       },
     },
   });
@@ -678,6 +697,24 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("shows the embedded points configuration while the user feature is disabled", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    const pointsTabButton = wrapper
+      .findAll("button")
+      .find((node) => node.text().includes("admin.settings.tabs.points"));
+    expect(pointsTabButton).toBeDefined();
+
+    await pointsTabButton?.trigger("click");
+    await flushPromises();
+
+    const pointsPanel = wrapper.get('[data-testid="points-settings-panel"]');
+    expect(pointsPanel.exists()).toBe(true);
+    expect(pointsPanel.attributes("data-embedded")).toBe("true");
+    expect(wrapper.get('[data-testid="settings-save-actions"]').isVisible()).toBe(false);
   });
 
   it("renders panel rate limit card and saves settings", async () => {

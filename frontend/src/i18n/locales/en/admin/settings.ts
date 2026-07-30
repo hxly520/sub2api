@@ -12,6 +12,7 @@ export default {
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',
+        points: 'Points',
       },
       features: {
         channelMonitor: {

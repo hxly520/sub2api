@@ -34,6 +34,23 @@ func (h *PointsHandler) LaunchAdmin(c *gin.Context) {
 	h.launch(c, "admin")
 }
 
+func (h *PointsHandler) StatusAdmin(c *gin.Context) {
+	status := h.service.Status()
+	response.Success(c, gin.H{
+		"enabled":                  status.Enabled,
+		"configured":               status.Configured,
+		"active":                   status.Active,
+		"public_url":               status.PublicURL,
+		"menu_label":               status.MenuLabel,
+		"launch_key_id":            status.LaunchKeyID,
+		"launch_secret_configured": status.LaunchSecretConfigured,
+		"credit_key_id":            status.CreditKeyID,
+		"credit_secret_configured": status.CreditSecretConfigured,
+		"launch_ttl_seconds":       status.LaunchTTLSeconds,
+		"clock_skew_seconds":       status.ClockSkewSeconds,
+	})
+}
+
 func (h *PointsHandler) launch(c *gin.Context, role string) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok || subject.UserID <= 0 {

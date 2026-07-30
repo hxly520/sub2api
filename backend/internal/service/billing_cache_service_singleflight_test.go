@@ -16,6 +16,8 @@ import (
 
 type billingCacheMissStub struct {
 	setBalanceCalls atomic.Int64
+	generation      atomic.Int64
+	rejectedSets    atomic.Int64
 }
 
 func (s *billingCacheMissStub) GetUserBalance(ctx context.Context, userID int64) (float64, error) {
@@ -27,11 +29,25 @@ func (s *billingCacheMissStub) SetUserBalance(ctx context.Context, userID int64,
 	return nil
 }
 
+func (s *billingCacheMissStub) GetUserBalanceGeneration(context.Context, int64) (int64, error) {
+	return s.generation.Load(), nil
+}
+
+func (s *billingCacheMissStub) SetUserBalanceIfGeneration(_ context.Context, _ int64, _ float64, generation int64) (bool, error) {
+	if s.generation.Load() != generation {
+		s.rejectedSets.Add(1)
+		return false, nil
+	}
+	s.setBalanceCalls.Add(1)
+	return true, nil
+}
+
 func (s *billingCacheMissStub) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	return nil
 }
 
 func (s *billingCacheMissStub) InvalidateUserBalance(ctx context.Context, userID int64) error {
+	s.generation.Add(1)
 	return nil
 }
 
@@ -102,6 +118,24 @@ type balanceLoadUserRepoStub struct {
 	balance float64
 }
 
+type blockingBalanceLoadUserRepoStub struct {
+	mockUserRepo
+	started chan struct{}
+	release chan struct{}
+	balance float64
+	once    sync.Once
+}
+
+func (s *blockingBalanceLoadUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
+	s.once.Do(func() { close(s.started) })
+	select {
+	case <-s.release:
+		return &User{ID: id, Balance: s.balance}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (s *balanceLoadUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
 	s.calls.Add(1)
 	if s.delay > 0 {
@@ -164,4 +198,31 @@ func TestBillingCacheServiceGetUserBalance_Singleflight(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return cache.setBalanceCalls.Load() >= 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestBillingCacheServiceGetUserBalance_DoesNotRefillAfterInvalidation(t *testing.T) {
+	cache := &billingCacheMissStub{}
+	userRepo := &blockingBalanceLoadUserRepoStub{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		balance: 12.34,
+	}
+	svc := NewBillingCacheService(cache, userRepo, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := svc.GetUserBalance(context.Background(), 99)
+		result <- err
+	}()
+
+	<-userRepo.started
+	require.NoError(t, svc.InvalidateUserBalance(context.Background(), 99))
+	close(userRepo.release)
+	require.NoError(t, <-result)
+
+	require.Eventually(t, func() bool {
+		return cache.rejectedSets.Load() == 1
+	}, time.Second, 10*time.Millisecond)
+	require.Zero(t, cache.setBalanceCalls.Load(), "stale balance must not be cached after invalidation")
 }

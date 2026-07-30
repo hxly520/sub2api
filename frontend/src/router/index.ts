@@ -428,11 +428,10 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin/settings/points',
     name: 'AdminPointsSettings',
-    component: () => import('@/views/user/PointsPortalView.vue'),
+    component: () => import('@/views/admin/PointsSettingsView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      requiresPointsSystem: true,
       title: 'Points System',
       titleKey: 'nav.pointsSettings',
     }

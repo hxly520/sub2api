@@ -82,13 +82,14 @@ const (
 
 // cacheWriteTask 缓存写入任务
 type cacheWriteTask struct {
-	kind             cacheWriteKind
-	userID           int64
-	groupID          int64
-	apiKeyID         int64
-	balance          float64
-	amount           float64
-	subscriptionData *subscriptionCacheData
+	kind              cacheWriteKind
+	userID            int64
+	groupID           int64
+	apiKeyID          int64
+	balance           float64
+	balanceGeneration int64
+	amount            float64
+	subscriptionData  *subscriptionCacheData
 }
 
 // apiKeyRateLimitLoader defines the interface for loading rate limit data from DB.
@@ -219,7 +220,7 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 		switch task.kind {
 		case cacheWriteSetBalance:
-			s.setBalanceCache(ctx, task.userID, task.balance)
+			s.setBalanceCache(ctx, task.userID, task.balance, task.balanceGeneration)
 		case cacheWriteSetSubscription:
 			s.setSubscriptionCache(ctx, task.userID, task.groupID, task.subscriptionData)
 		case cacheWriteUpdateSubscriptionUsage:
@@ -325,17 +326,22 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
 		defer cancel()
 
+		generation, generationErr := s.cache.GetUserBalanceGeneration(loadCtx, userID)
 		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
 		if err != nil {
 			return nil, err
 		}
 
-		// 异步建立缓存
-		_ = s.enqueueCacheWrite(cacheWriteTask{
-			kind:    cacheWriteSetBalance,
-			userID:  userID,
-			balance: balance,
-		})
+		// Do not let an older DB read repopulate the cache after a concurrent
+		// balance mutation has advanced the distributed generation.
+		if generationErr == nil {
+			_ = s.enqueueCacheWrite(cacheWriteTask{
+				kind:              cacheWriteSetBalance,
+				userID:            userID,
+				balance:           balance,
+				balanceGeneration: generation,
+			})
+		}
 		return balance, nil
 	})
 	if err != nil {
@@ -358,11 +364,11 @@ func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID i
 }
 
 // setBalanceCache 设置余额缓存
-func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64) {
+func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64, generation int64) {
 	if s.cache == nil {
 		return
 	}
-	if err := s.cache.SetUserBalance(ctx, userID, balance); err != nil {
+	if _, err := s.cache.SetUserBalanceIfGeneration(ctx, userID, balance, generation); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: set balance cache failed for user %d: %v", userID, err)
 	}
 }

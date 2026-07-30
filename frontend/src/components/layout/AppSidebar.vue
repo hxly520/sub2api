@@ -827,9 +827,7 @@ const adminNavItems = computed((): NavItem[] => {
     const filtered = visible.filter(item => !item.hideInSimpleMode)
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
-    if (flagPointsSystem()) {
-      filtered.push({ path: '/admin/settings/points', label: t('nav.pointsSettings'), icon: GiftIcon })
-    }
+    filtered.push({ path: '/admin/settings/points', label: t('nav.pointsSettings'), icon: GiftIcon })
     for (const cm of customMenuItemsForAdmin.value) {
       filtered.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
     }
@@ -837,9 +835,7 @@ const adminNavItems = computed((): NavItem[] => {
   }
 
   visible.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
-  if (flagPointsSystem()) {
-    visible.push({ path: '/admin/settings/points', label: t('nav.pointsSettings'), icon: GiftIcon })
-  }
+  visible.push({ path: '/admin/settings/points', label: t('nav.pointsSettings'), icon: GiftIcon })
   for (const cm of customMenuItemsForAdmin.value) {
     visible.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
   }

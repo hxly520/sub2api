@@ -181,8 +181,25 @@ type PointsSystemConfig struct {
 }
 
 func (c PointsSystemConfig) Active() bool {
-	if !c.Enabled || strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) ||
+	return c.Enabled && c.Configured()
+}
+
+// Configured reports whether the signed bridge can be used by administrators
+// to finish policy setup. User access remains gated by Active.
+func (c PointsSystemConfig) Configured() bool {
+	if strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) ||
 		!validPointsKeyID(c.CreditKeyID) {
+		return false
+	}
+	if err := ValidateAbsoluteHTTPURL(c.PublicURL); err != nil {
+		return false
+	}
+	pointsURL, err := url.Parse(strings.TrimSpace(c.PublicURL))
+	if err != nil || pointsURL == nil || pointsURL.RawQuery != "" || pointsURL.User != nil {
+		return false
+	}
+	if c.LaunchTTLSeconds < 15 || c.LaunchTTLSeconds > 300 ||
+		c.ClockSkewSeconds < 5 || c.ClockSkewSeconds > 300 {
 		return false
 	}
 	launchKey, launchErr := c.LaunchKey()

@@ -34,17 +34,18 @@ Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 
 - Sub2API 一次性容器输出 `Sub2API 0.1.168` 和完整候选 commit；默认 entrypoint 成功降权至 UID/GID 1000；`pg_dump`、`psql`、CA、时区和 resources 可用。
 - 积分镜像成功加载 `Asia/Shanghai`；只读根文件系统、无 capability、专用 healthcheck 均已在正式容器验证。
 
-## 3. 生产 Sub2API 保持不变
+## 3. 生产 Sub2API 手工切换与后续边界
 
-候选镜像只进入服务器镜像缓存，没有替换生产 Sub2API：
+候选载入阶段没有替换生产 Sub2API；维护者随后自行在 `2026-07-30 07:36 CST` 完成手工切换。后续只读复核结果：
 
-- 容器 ID：`99b3457bf857dae994e75cbd4d582008e4c46a5e035cb44249a34ed82e63d4a2`。
-- 运行镜像 ID：`sha256:4736d53edb5a480534dd5d5253edffeaf76da3dca0828bb2b19023556974a36d`。
-- 运行 tag：`gptcodex/sub2api:0.1.164-08fbef836b9c`。
-- 启动时间、restart count `0` 和 healthy 状态在候选载入前后完全一致。
-- Compose 没有改为候选 tag；生产切换仍由维护者手动执行。
+- 容器 ID：`0e037ca9275d5d176020dbef93ad4f0cb2da7f171df3314e7dc46179d288c038`。
+- 运行镜像 ID：`sha256:3629271e24d230e14911ad136403f096716630c3f60196861e4c1b69b6e9845a`。
+- 运行 tag：`ghcr.io/hxly520/sub2api:0.1.168-2ad2815e`，OCI revision `2ad2815e075aadf0553be9913518af35d8b0c7b3`。
+- 启动时间：`2026-07-30 07:36:06 CST`；当前 healthy、restart count `0`。
+- `points_balance_credits` 已随 Sub2API 迁移创建且当前为 0 行。运行容器未注入 `POINTS_SYSTEM_*`，公开设置仍为 `points_system_enabled=false`，因此不会开放用户菜单或接收余额发放。
+- 本轮没有重建、重启或替换该 Sub2API 容器。后续包含管理员 disabled 配置入口、缓存代次和内部端点限流的新镜像仍只由维护者手工切换。
 
-服务器安装的是 Docker Compose v2.27.1 插件。为兼容原有运维命令，`2026-07-30` 已安装 `/usr/local/bin/docker-compose` 兼容入口，源码见 [`deploy/docker-compose-compat.sh`](../deploy/docker-compose-compat.sh)；它只把旧命令转发给 `docker compose`，并兼容 `docker-compose --version`。现有 `/home/api/sub2api-deploy/docker-compose.yml` 未被此次兼容修复修改，SHA256 仍为 `d6c6ee9c4e2b186bc130b7df31c11da4d2b9f7c8d7d06a6e7e5841719c6be301`；安装前后 Sub2API、PostgreSQL 和 Redis 的容器 ID、启动时间及 restart count 完全一致。
+服务器安装的是 Docker Compose v2.27.1 插件，并保留 `/usr/local/bin/docker-compose` 兼容入口。`2026-07-30 08:06 CST` 已先备份原 Compose 到 `backups/docker-compose.before-points-bridge-20260730-080637.yml`（原 SHA256 `d6c6ee9c4e2b186bc130b7df31c11da4d2b9f7c8d7d06a6e7e5841719c6be301`），再只加入 root-only `/home/api/sub2api-points/bridge-secrets.env` 的 `env_file` 引用；新 SHA256 为 `0826fc9b699949eb02aac13b19b7be592c21e420c425116ac97516245314f8de`，权限 `0600 root:root`。`docker compose config -q` 已通过，但没有执行 `up`，运行容器 ID、启动时间、health 和 restart count 均未变化；该配置只会在维护者下一次手工重建时生效，密钥文件保持 `POINTS_SYSTEM_ENABLED=false`。
 
 ## 4. 备份与同库隔离
 
@@ -68,7 +69,7 @@ Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 
 - 部署目录：`/home/api/sub2api-points`。
 - Compose：`/home/api/sub2api-points/compose.yml`。
 - 敏感运行环境：`/home/api/sub2api-points/points.env`，`0600 root:root`。
-- 供未来 Sub2API 手工切换后配置 bridge 的密钥记录：`/home/api/sub2api-points/bridge-secrets.env`，`0600 root:root`；不得复制到 Git、工单或聊天。
+- Sub2API bridge 密钥记录：`/home/api/sub2api-points/bridge-secrets.env`，`0600 root:root`；Compose 已引用该文件，但当前保持 `POINTS_SYSTEM_ENABLED=false`，只在维护者后续手工重建 Sub2API 时加载。密钥不得由 API/UI 回显，也不得复制到 Git、工单、聊天或日志。
 - 容器：`sub2api-points`，容器 ID `adf14ad1806db4c5cec04d54b1ab4ec429e1565b553e40c2d0198cce854e421f`。
 - 镜像 ID：`sha256:b35da824c9dc7c194ca26dc216035b55326e9fc0a47d89dc5939bc7e6bcdc23e`。
 - 网络：`sub2api-deploy_sub2api-network`；主机只绑定 `127.0.0.1:8090`。
@@ -82,18 +83,20 @@ Sub2API 归档使用生产 `v0.1.164` 镜像的 Alpine、运行库、PostgreSQL 
 - 配置通过两次 `nginx -t` 并平滑 reload；现有 Sub2API、工作台和其他域名未重启。
 - 证书：Cloudflare Origin Certificate，SAN 覆盖 `*.52token.org` 和 `52token.org`，有效期至 2041-07-02。
 - `points.52token.org` 已启用 Cloudflare 代理 A/AAAA 记录。公网验证：根路径和 `/healthz` 为 404；无会话 `/app/` 与无效 `/launch` 为 401；安全响应头存在。
-- 整个积分 server 关闭 access log，避免一次性 launch ticket 进入 URL 日志。
+- `2026-07-30 08:07 CST` 完成首轮反代加固：`api.52token.org` 对 `/api/internal/points/credits` 的 `POST/OPTIONS` 均精确返回 `404`，只允许积分容器通过 Docker 网络直连 Sub2API。`09:02 CST` 又将 HTTP 跳转层从全站关闭日志收窄为仅 `/launch` 关闭；HTTPS 同样只对含票据的 `/launch` 关闭 access log，其余拒绝、越权和限流请求均保留日志。现网 API/积分配置 SHA256 分别为 `b0b47cef7d29b3d944be9f49d680d2c9d8251612206d8d80378ea49405a36ac6`、`3cd74472001fa3f650b52d610e1cd66f90f44d2ad812b26e10a4c0cbaedd6595`。
+- 首轮加固前配置保存在 `/home/api/sub2api-deploy/backups/nginx-points-hardening-20260730-080737/`，HTTP 日志收窄前配置保存在 `/home/api/sub2api-deploy/backups/nginx-points-http-log-20260730-090234/`。两次 `nginx -t` 和平滑 reload 均成功；最终 Nginx 为 active、restart count `0`，所有业务容器仍 healthy、restart count `0`，未发生替换或重启。
 - Nginx 只允许 `/launch`、`/app/`、`/admin/`、`/assets/` 和 `/api/v1/`；健康路径不公开。直接知道域名不能建立会话，只有 Sub2API 签发的一次性 HMAC ticket 才能进入。
 
-## 7. 手工切换后的待办
+## 7. 当前验证与待办
 
-当前生产 Sub2API `v0.1.164` 不包含积分菜单、launch ticket 和幂等余额 credit 接口，因此积分服务虽已健康运行，但真实用户尚不能进入，也不会发放余额。维护者手工切换 Sub2API 候选后必须按顺序完成：
+积分服务当前仍为默认 disabled policy，`points_accounts`、快照、签到、余额发件箱和 Sub2API credit 表均无业务记录，不存在误发金额。已使用服务器内现有密钥完成一次无金额变更的管理员链路冒烟：用户 ID `1` 首次 ticket 交换后进入 `/admin/`，重放返回 `401`，策略只读返回 policy 1，CSRF 注销为 `200`，注销后再次访问为 `401`。测试没有创建策略、签到或余额记录。
 
-1. 确认 Sub2API 新迁移（含媒体冻结索引和 `points_balance_credits`）成功，旧私有迁移 checksum 不变。
-2. 从服务器 root-only `bridge-secrets.env` 配置 Sub2API `points_system` 的 public URL、launch/credit key ID 和 secret；先保持 disabled。
-3. 验证用户与管理员各一张真实一次性 ticket：首次交换成功、重放失败、直接访问失败、角色隔离正确。
-4. 用最小金额验证一次 credit 的 HMAC、幂等、余额账本、重试和 reversal；禁止直接改用户余额。
-5. 在管理设置中创建次日生效的完整 policy，再开启积分菜单和签到；初始 disabled policy 不得原地修改。
-6. 继续观察数据库连接、调度零值标记、outbox、容器 restart 和 Nginx 4xx/5xx，再决定是否把 reconcile window 从 1 恢复到 7。
+后续必须按顺序完成：
 
-积分服务回滚只停止 `/home/api/sub2api-points/compose.yml` 中的容器；不得删除 `points` schema、迁移、快照、审计、outbox、角色或首次部署备份。Sub2API 候选回滚继续由原生产镜像和人工维护窗口处理。
+1. 等待包含本轮管理员 disabled 配置入口、余额缓存代次、缓存同步重试和内部端点限流的 Sub2API 镜像完成构建；只上传服务器，由维护者手工替换。
+2. 手工重建后确认 root-only bridge `env_file` 已注入且仍为 disabled；管理员 `/admin/settings/points` 应可检查桥接并进入策略控制台，普通用户 `/points` 必须继续隐藏。
+3. 在管理设置中创建次日生效的完整 policy；初始 disabled policy 不得原地修改。确认比例、刷新分钟、签到模式、最低消费、阶梯和三层金额上限后，再把 bridge 开关改为 true 并由维护者手工重建 Sub2API。
+4. 开启前用明确批准的最小金额验证一次 credit、同 UUID 重试、缓存同步、余额账本和 reversal；不得直接改用户余额。验证后保留审计并使净余额回到原值。
+5. 继续观察数据库连接、调度零值标记、outbox、容器 restart 和 Nginx 4xx/5xx，再决定是否把 reconcile window 从 1 恢复到 7。
+
+积分服务回滚只停止 `/home/api/sub2api-points/compose.yml` 中的容器；不得删除 `points` schema、迁移、快照、审计、outbox、角色或首次部署备份。Sub2API 回滚继续由维护者在人工维护窗口使用已记录的上一稳定镜像处理，自动化不得替换或重启运行容器。
