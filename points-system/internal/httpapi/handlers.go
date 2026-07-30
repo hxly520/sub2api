@@ -56,7 +56,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	pointsEnabled := policyAllowsUserAccess(policy)
 	checkinEnabled := pointsEnabled && policy.CheckinEnabled
-	checkinAvailable := checkinEnabled && dailyLimit > count
+	checkinAttemptAvailable := checkinEnabled && dailyLimit > count
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
@@ -64,10 +64,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
 		"features": map[string]any{
-			"points_enabled":      pointsEnabled,
-			"checkin_enabled":     checkinEnabled,
-			"checkin_daily_limit": dailyLimit,
-			"checkin_available":   checkinAvailable,
+			"points_enabled":            pointsEnabled,
+			"checkin_enabled":           checkinEnabled,
+			"checkin_daily_limit":       dailyLimit,
+			"checkin_attempt_available": checkinAttemptAvailable,
 		},
 	})
 }
@@ -153,7 +153,16 @@ func (s *Server) checkin(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	writeJSON(w, http.StatusCreated, publicCheckinResult{
+		Ordinal: result.Ordinal, RewardMicroUSD: result.RewardMicroUSD,
+		DeliveryStatus: result.DeliveryStatus,
+	})
+}
+
+type publicCheckinResult struct {
+	Ordinal        int    `json:"ordinal"`
+	RewardMicroUSD int64  `json:"reward_microusd"`
+	DeliveryStatus string `json:"delivery_status"`
 }
 
 func (s *Server) balanceGrants(w http.ResponseWriter, r *http.Request) {

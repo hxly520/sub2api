@@ -4,6 +4,16 @@
   const session = { csrf: "" };
   let noticeTimer = 0;
 
+  const embedded = new URLSearchParams(window.location.search).get("ui_mode") === "embedded";
+  document.body.dataset.uiMode = embedded ? "embedded" : "standalone";
+  document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
+  if (embedded && window.parent !== window) {
+    window.parent.postMessage({
+      type: "sub2api:points-ready",
+      role: document.body.classList.contains("admin-shell") ? "admin" : "user"
+    }, "*");
+  }
+
   const errorMessages = {
     unauthorized: "登录状态已失效",
     forbidden: "当前账户无权访问",

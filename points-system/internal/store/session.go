@@ -54,8 +54,8 @@ func sessionTTLForRole(role string, configured time.Duration) time.Duration {
 
 func (s *Store) Session(ctx context.Context, token string, now time.Time) (Session, error) {
 	var session Session
-	err := s.DB.QueryRow(ctx, `UPDATE points_sessions SET last_seen_at=NOW()
-		WHERE token_hash=$1 AND expires_at>$2 RETURNING user_id,role,theme,language,expires_at`,
+	err := s.DB.QueryRow(ctx, `SELECT user_id,role,theme,language,expires_at FROM points_sessions
+		WHERE token_hash=$1 AND expires_at>$2`,
 		security.HashToken(token), now).Scan(&session.UserID, &session.Role, &session.Theme,
 		&session.Language, &session.ExpiresAt)
 	return session, translateNotFound(err)

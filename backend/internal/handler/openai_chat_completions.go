@@ -179,6 +179,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryOpenAIModelCapacitySelection(reqLog, "chat_completions", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if len(failedAccountIDs) == 0 {
 				cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
 				if !cls.ModelNotFound {
@@ -196,6 +200,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if selection == nil || selection.Account == nil {
+			if retryOpenAIModelCapacitySelection(reqLog, "chat_completions", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -203,6 +211,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 			return
 		}
+		retryBudget.markReplaySelectionSucceeded()
 		account := selection.Account
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_chat_completions.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
@@ -300,6 +309,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
 					)
+					if !retryBudget.waitBeforeReplay(c.Request.Context(), reqLog, "chat_completions", account, failoverErr) {
+						failoverClientGone(c)
+						return
+					}
 					continue
 				}
 				if service.IsOpenAIUpstreamFailureForStickyRelease(err) {

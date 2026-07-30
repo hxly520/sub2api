@@ -205,6 +205,7 @@ export default {
 
   pointsPortal: {
     opening: '正在进入积分中心',
+    frameTitle: '积分中心',
     failed: '积分中心暂时未就绪',
     retry: '重试',
     back: '返回',
@@ -216,6 +217,9 @@ export default {
     refresh: '刷新状态',
     openConsole: '打开积分配置',
     opening: '正在打开',
+    consoleTitle: '积分管理控制台',
+    consoleFrameTitle: '积分管理控制台',
+    consoleLoading: '正在加载积分管理控制台',
     retry: '重试',
     loadFailed: '积分系统状态读取失败',
     launchFailed: '积分配置页面暂时无法打开',

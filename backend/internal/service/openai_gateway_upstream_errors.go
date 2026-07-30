@@ -116,9 +116,49 @@ func isOpenAIInstructionsRequiredError(upstreamStatusCode int, upstreamMsg strin
 	return false
 }
 
+// OpenAIModelAtCapacityMessage is the only model-capacity message that is
+// eligible for request replay. Keep this exact: broader substring matching can
+// turn unrelated, potentially billable upstream failures into duplicate calls.
+const OpenAIModelAtCapacityMessage = "Selected model is at capacity. Please try a different model."
+
+const openAIModelAtCapacityReason = GatewayFailureReason("openai_model_at_capacity")
+
+func isOpenAIModelAtCapacityError(upstreamMsg string, upstreamBody []byte) bool {
+	if strings.TrimSpace(upstreamMsg) == OpenAIModelAtCapacityMessage {
+		return true
+	}
+	if len(upstreamBody) == 0 || !gjson.ValidBytes(upstreamBody) {
+		return false
+	}
+	for _, path := range []string{
+		"error.message",
+		"response.error.message",
+		"message",
+	} {
+		if strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String()) == OpenAIModelAtCapacityMessage {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenAIFailedResponseModelAtCapacity(upstreamBody []byte) bool {
+	if len(upstreamBody) == 0 || !gjson.ValidBytes(upstreamBody) {
+		return false
+	}
+	status := strings.TrimSpace(gjson.GetBytes(upstreamBody, "status").String())
+	if status == "" {
+		status = strings.TrimSpace(gjson.GetBytes(upstreamBody, "response.status").String())
+	}
+	return strings.EqualFold(status, "failed") && isOpenAIModelAtCapacityError("", upstreamBody)
+}
+
 func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusServiceUnavailable {
 		return false
+	}
+	if isOpenAIModelAtCapacityError(upstreamMsg, upstreamBody) {
+		return true
 	}
 
 	hasOpenAIServerOverloadedCode := func(payload []byte) bool {
@@ -142,9 +182,6 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 			return false
 		}
 		if strings.Contains(lower, "an error occurred while processing your request") {
-			return true
-		}
-		if strings.Contains(lower, "selected model is at capacity") {
 			return true
 		}
 		return strings.Contains(lower, "you can retry your request") &&
@@ -222,6 +259,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	if isOpenAIModelAtCapacityError(upstreamMsg, upstreamBody) {
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -261,8 +301,18 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.NextAccountAction = NextAccountRetry
 		failoverErr.ClientStatusCode = http.StatusRequestEntityTooLarge
 		failoverErr.ClientMessage = OpenAIRequestBodyTooLargeClientMessage
+	} else if isOpenAIModelAtCapacityError(upstreamMsg, responseBody) {
+		failoverErr.Scope = GatewayFailureScopeRequest
+		failoverErr.Reason = openAIModelAtCapacityReason
+		failoverErr.NextAccountAction = NextAccountRetry
 	}
 	return failoverErr
+}
+
+// IsOpenAIModelAtCapacity reports the exact, explicit pre-generation rejection
+// that is safe for the handler's bounded text-request replay budget.
+func (e *UpstreamFailoverError) IsOpenAIModelAtCapacity() bool {
+	return e != nil && e.Reason == openAIModelAtCapacityReason
 }
 
 // IsOpenAIRequestBodyTooLarge reports whether another account may accept the

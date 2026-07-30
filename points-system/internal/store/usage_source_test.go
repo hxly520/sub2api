@@ -51,6 +51,27 @@ func TestUsageAccessProbeRequiresOnlyGrantedColumns(t *testing.T) {
 	}
 }
 
+func TestUsageHistoryQueriesOnlyCountSuccessfulBalanceSpend(t *testing.T) {
+	for _, query := range []string{sub2SuccessfulUsageBoundsQuery, sub2UsageHistoryPlanQuery} {
+		for _, required := range []string{"FROM usage_logs", "billing_type = 0", "actual_cost > 0"} {
+			if !strings.Contains(query, required) {
+				t.Fatalf("history query is missing %q", required)
+			}
+		}
+	}
+	for _, required := range []string{
+		"created_at >= $1", "created_at < $2", "AT TIME ZONE $3", "TRUNC(",
+		"ROUND(SUM(actual_cost) * 1000000)",
+	} {
+		if !strings.Contains(sub2UsageHistoryPlanQuery, required) {
+			t.Fatalf("history plan query is missing %q", required)
+		}
+	}
+	if strings.Contains(sub2UsageHistoryPlanQuery, "subscription_id") {
+		t.Fatal("history plan must not include subscription consumption")
+	}
+}
+
 func TestBusinessDayWindowUsesShanghaiNaturalDayAcrossUTC(t *testing.T) {
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {

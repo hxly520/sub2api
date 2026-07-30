@@ -164,3 +164,27 @@ func TestSettingService_GetPublicSettings_FallsBackToConfigForWeChatOAuthCapabil
 	require.False(t, settings.WeChatOAuthMPEnabled)
 	require.False(t, settings.WeChatOAuthMobileEnabled)
 }
+
+func TestSettingService_GetFrameSrcOrigins_IncludesConfiguredPointsService(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyHomeContent:                 "https://content.example.test/home",
+			SettingKeyPurchaseSubscriptionURL:     "https://billing.example.test/subscribe",
+			SettingKeyPurchaseSubscriptionEnabled: "true",
+			SettingKeyCustomMenuItems: `[{"id":"canvas","url":"https://canvas.example.test/app"},` +
+				`{"id":"duplicate","url":"https://points.example.test/help"}]`,
+		},
+	}, &config.Config{PointsSystem: config.PointsSystemConfig{
+		Enabled:   false,
+		PublicURL: "https://points.example.test",
+	}})
+
+	origins, err := svc.GetFrameSrcOrigins(context.Background())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		"https://points.example.test",
+		"https://content.example.test",
+		"https://billing.example.test",
+		"https://canvas.example.test",
+	}, origins)
+}

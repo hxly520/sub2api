@@ -91,7 +91,7 @@ access log.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/launch?ticket=...` | Exchange a one-time Sub2API launch ticket |
+| GET | `/launch?ticket=...&ui_mode=embedded` | Exchange a one-time Sub2API launch ticket; the optional mode selects the embedded presentation only |
 | GET | `/api/v1/me` | Account, check-in, snapshot, and CSRF state |
 | GET | `/api/v1/daily-points?days=7|30|90` | User-scoped chronological daily points and successful spend |
 | GET | `/api/v1/ledger` | Read-only point ledger |
@@ -112,6 +112,25 @@ page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
 total/yesterday points, successful yesterday spend, today's and settled
 unreversed check-in credits, a 7/30/90-day points trend, and personal records;
 it contains no policy, manual grant, snapshot, retry, or reversal controls.
+User and administrator routes are role-exact in both directions. An
+administrator session cannot invoke the user account, ledger, check-in, or
+grant APIs, and the shared logout route is the only role-neutral write route.
+Session reads used by pages, assets, and APIs do not update `last_seen_at`, so a
+single page load does not create parallel write locks in the shared database.
+
+Sub2API opens both workspaces inside its authenticated right-hand content area.
+It appends the exact allowlisted `ui_mode=embedded` value to `/launch`; the
+points service preserves that value on the redirect to `/app/` or `/admin/`.
+This mode changes presentation only: it does not select a role, relax ticket or
+session checks, or expose administrator APIs. The embedded user view hides its
+standalone top bar so the Sub2API sidebar and uploaded logo remain authoritative.
+The embedded administrator view likewise removes its duplicate brand and logout
+controls, while retaining a compact horizontal navigation bar for points-only
+administrative functions. Direct standalone access keeps the original layouts.
+The parent waits for a role- and Origin-validated `sub2api:points-ready`
+message from the iframe instead of treating an HTTP error document as a loaded
+workspace. The iframe receives scripts, forms, and same-origin access only; it
+does not receive popup, top-navigation, or clipboard permissions.
 
 Sub2API's Points tab in System Settings and the administrator route
 `/admin/settings/points` are always visible to authenticated administrators, including while
@@ -120,7 +139,8 @@ and use step-up authentication to launch the policy workspace. The ordinary
 user menu and `/points` route remain hidden unless the enabled switch is on.
 The points service independently rejects user launch tickets, user pages,
 user assets, and user APIs when the effective points policy is missing,
-disabled, or incomplete. This closes stale-session and direct-URL paths while
+disabled, incomplete, or is the initial activation policy whose confirmed
+history baseline has not succeeded. This closes stale-session and direct-URL paths while
 leaving the authenticated administrator workspace available for pre-release
 debugging.
 The Sub2API status endpoint returns only non-secret state such as
@@ -195,6 +215,13 @@ An administrator-triggered historical refresh succeeds only if its audit event
 is serialized and written successfully. Audit failure makes the entire request
 fail; the API must not report an unaudited refresh as successful.
 
+The one-time pre-launch history baseline is deliberately separate from this
+rolling reconciliation. It processes one completed natural day per transaction,
+persists a resumable cursor, and pins every covered date to the immutable initial
+policy ratio. A later ordinary refresh of a covered date reuses that pinned ratio
+instead of the disabled policy that predated launch. No browser endpoint can
+start this operation.
+
 ## Configuration
 
 Copy `.env.example` and replace every placeholder. Important details:
@@ -209,6 +236,10 @@ Copy `.env.example` and replace every placeholder. Important details:
   only the grants in `deploy/usage-reader.sql.example`.
 - `POINTS_PUBLIC_ORIGIN` is an origin without a path and must be HTTPS when
   secure cookies are enabled.
+- `POINTS_EMBED_PARENT_ORIGIN` is the one exact Sub2API browser origin permitted
+  by CSP `frame-ancestors`. It is required and rejects paths, queries, fragments,
+  credentials, and wildcard hosts. Do not add `X-Frame-Options` at Nginx because
+  it would conflict with the exact cross-origin embedding policy.
 
 Generate 32-byte secrets with a CSPRNG. Production points, bridge, and psql
 variable files are root-owned mode `0600`. Never place production secrets in
@@ -236,11 +267,22 @@ points container; forwarded client IP headers are ignored from every other
 source. Only the Nginx `/launch` location disables access logging so one-time
 tickets are not persisted in query-string logs. `/app/`, `/admin/`, assets,
 APIs, denials, authorization failures, and rate limits retain access logs.
+The launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
+its browser origin must exactly match `POINTS_EMBED_PARENT_ORIGIN` including any
+non-default port.
+
+The user profile field `checkin_attempt_available` means only that the check-in
+entry is enabled and the configured daily count has not been exhausted. Spend,
+snapshot, tier, and remaining monetary caps are revalidated transactionally on
+submission; the UI must not describe this field as a guaranteed reward.
 
 The process serializes migrations with a PostgreSQL advisory lock and verifies
 `current_schema()` before running them, so a missing schema cannot fall back to
-`public`. The first policy is disabled. Create a complete policy through the
-admin API; its effective date must be tomorrow or later.
+`public`. The first policy is disabled. Ordinary policy changes are created
+through the admin API and become effective tomorrow or later. The dedicated
+history tool has one fail-closed exception for initial launch: while no enabled
+policy exists, it may append an enabled policy for the current natural day with
+check-in off and refresh minute `00:05`. It never updates the original policy.
 
 Serializable write transactions retry PostgreSQL `40001` serialization failures
 and `40P01` deadlocks with context-aware jittered backoff, up to eight total
@@ -250,6 +292,88 @@ the callback can run more than once.
 The Sub2API deployment must configure the matching public URL, launch secret,
 credit secret, launch TTL, and clock-skew tolerance. The read-only usage login
 must be reachable from the points container; no usage producer is deployed.
+
+## Initial history baseline
+
+Keep the Sub2API `points_system.enabled` bridge switch off for this entire
+workflow. Take and checksum a fresh database backup first, then deploy only the
+updated points image, let migration `003_usage_history_backfill.sql` complete,
+and verify the service. This does not require replacing or restarting Sub2API.
+
+The image contains `/usr/local/bin/points-history-backfill`. Run it as a
+one-shot Compose process with the same root-owned environment file. Initial
+activation appends a policy; the ratio below is `10.00 points/U` in internal
+hundredth-point units, and check-in remains disabled:
+
+The one-shot command caps its points write pool at two connections: one for the
+runner lock and one for the per-day transaction. The configured application
+pool must therefore allow at least two connections; the production default of
+eight leaves headroom for the still-running points service.
+
+User launch and existing user sessions remain fail-closed for this special
+initial policy until its matching history job reaches `succeeded`; administrator
+sessions remain available for verification.
+
+```bash
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml \
+  run --rm --no-deps --entrypoint /usr/local/bin/points-history-backfill \
+  points-system activate --actor-user-id ADMIN_USER_ID \
+  --points-per-usd-hundredths 1000
+```
+
+Record the returned `policy.version_no`. The dry run performs one read-only
+range aggregate over successful balance consumption only. `--from auto` uses
+the earliest qualifying `usage_logs` row; `--through` must be a completed day
+before the activation policy's effective date:
+
+```bash
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml \
+  run --rm --no-deps --entrypoint /usr/local/bin/points-history-backfill \
+  points-system plan --from auto --through YYYY-MM-DD \
+  --policy-version POLICY_VERSION
+```
+
+Review the range, unique users, user-days, business days, source rows, spend,
+points, and maximum usage-log ID. Apply only the exact fresh plan by supplying
+its confirmation fingerprint:
+
+```bash
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml \
+  run --rm --no-deps --entrypoint /usr/local/bin/points-history-backfill \
+  points-system apply --from auto --through YYYY-MM-DD \
+  --policy-version POLICY_VERSION --actor-user-id ADMIN_USER_ID \
+  --confirm-fingerprint PLAN_FINGERPRINT
+```
+
+`apply` writes one day at a time. `--max-days N` provides an intentional batch
+stop without marking the job complete. A terminated or failed job retains its
+next date and is continued with the same ID:
+
+```bash
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml \
+  run --rm --no-deps --entrypoint /usr/local/bin/points-history-backfill \
+  points-system status --job-id JOB_ID
+
+docker compose --env-file "$POINTS_ENV_FILE" -f points-system/compose.example.yml \
+  run --rm --no-deps --entrypoint /usr/local/bin/points-history-backfill \
+  points-system resume --job-id JOB_ID --actor-user-id ADMIN_USER_ID
+```
+
+The final day repeats the full read-only source summary and compares it with the
+dry run. It also requires applied calendar days, unique users, user-days,
+business days, source rows, maximum source ID, spend delta, and point delta to
+match exactly. Drift or pre-existing accounting leaves the job `failed`; do not
+enable the bridge. Only after a `succeeded` job, database/account/ledger totals,
+service health, embedded UI, and launch denial while disabled have all been
+verified may the Sub2API bridge be prepared for manual enablement. Check-in stays
+off until a later explicit policy version enables it.
+
+The baseline is one-time for the schema. Re-applying the exact successful plan
+returns the original successful job; a different second plan is rejected. While
+the initial baseline is pending, user access is globally closed and no later
+enabled policy can bypass it. A site with no qualifying historical usage still
+applies one audited empty completed day so the gate can finish without creating
+spend or points.
 
 ## Development
 
@@ -271,4 +395,6 @@ The tagged suite applies the embedded migrations in isolated schemas and
 checks migration idempotency, expired security-state cleanup, concurrent
 daily/user/platform check-in caps, bounded rejection storage, settled
 unreversed check-in totals, unknown credit reversal guards, and rollback of
-snapshot-not-ready idempotency state.
+snapshot-not-ready idempotency state. It also exercises initial same-day policy
+activation, history-plan drift failure and resume, one-time ledger application,
+and pinned-policy reconciliation when `POINTS_TEST_DATABASE_URL` is available.

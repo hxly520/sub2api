@@ -114,6 +114,7 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 	for _, filename := range []string{
 		"migrations/001_init.sql",
 		"migrations/002_balance_grant_outbox.sql",
+		"migrations/003_usage_history_backfill.sql",
 	} {
 		var applied bool
 		if err := fixture.db.QueryRow(ctx,

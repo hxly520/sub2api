@@ -24,6 +24,7 @@ type Config struct {
 	UsageDatabaseURL   string
 	UsageReconcileDays int
 	PublicOrigin       string
+	EmbedParentOrigin  string
 	TrustedProxyCIDR   string
 	Timezone           *time.Location
 	SessionTTL         time.Duration
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 		UsageDatabaseURL:   strings.TrimSpace(os.Getenv("POINTS_USAGE_DATABASE_URL")),
 		UsageReconcileDays: intEnv("POINTS_USAGE_RECONCILE_DAYS", 7),
 		PublicOrigin:       strings.TrimRight(strings.TrimSpace(os.Getenv("POINTS_PUBLIC_ORIGIN")), "/"),
+		EmbedParentOrigin:  strings.TrimSpace(os.Getenv("POINTS_EMBED_PARENT_ORIGIN")),
 		TrustedProxyCIDR:   strings.TrimSpace(os.Getenv("POINTS_TRUSTED_PROXY_CIDR")),
 		Timezone:           location,
 		SessionTTL:         durationEnv("POINTS_SESSION_TTL", 8*time.Hour),
@@ -109,11 +111,18 @@ func (c Config) Validate() error {
 		return errors.New("POINTS_PUBLIC_ORIGIN is required")
 	}
 	u, err := url.Parse(c.PublicOrigin)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.Path != "" {
+	if err != nil || !validHTTPOrigin(c.PublicOrigin, u) {
 		return errors.New("POINTS_PUBLIC_ORIGIN must be an HTTP(S) origin without a path")
 	}
 	if c.CookieSecure && u.Scheme != "https" {
 		return errors.New("secure cookies require an HTTPS POINTS_PUBLIC_ORIGIN")
+	}
+	if c.EmbedParentOrigin == "" {
+		return errors.New("POINTS_EMBED_PARENT_ORIGIN is required")
+	}
+	embedParent, err := url.Parse(c.EmbedParentOrigin)
+	if err != nil || !validHTTPOrigin(c.EmbedParentOrigin, embedParent) {
+		return errors.New("POINTS_EMBED_PARENT_ORIGIN must be one exact HTTP(S) origin without a path or wildcard")
 	}
 	if c.SessionTTL < 5*time.Minute || c.SessionTTL > 24*time.Hour {
 		return errors.New("POINTS_SESSION_TTL must be between 5m and 24h")
@@ -131,6 +140,22 @@ func (c Config) Validate() error {
 		return errors.New("POINTS_WORKER_INTERVAL must be between 1ns and 1m")
 	}
 	return nil
+}
+
+func validHTTPOrigin(raw string, parsed *url.URL) bool {
+	if parsed == nil || strings.TrimSpace(raw) != raw || parsed.Scheme == "" || parsed.Host == "" ||
+		(parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil || parsed.Opaque != "" ||
+		parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		parsed.Hostname() == "" || strings.Contains(parsed.Host, "*") || strings.HasSuffix(parsed.Host, ":") {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 func validDatabaseSchema(value string) bool {

@@ -141,6 +141,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryOpenAIModelCapacitySelection(reqLog, "embeddings", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if len(failedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
 				if !cls.ModelNotFound {
@@ -157,6 +161,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if retryOpenAIModelCapacitySelection(reqLog, "embeddings", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -164,6 +172,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
 			return
 		}
+		retryBudget.markReplaySelectionSucceeded()
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
@@ -237,6 +246,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					zap.Int("switch_count", switchCount),
 					zap.Int("max_switches", maxAccountSwitches),
 				)
+				if !retryBudget.waitBeforeReplay(c.Request.Context(), reqLog, "embeddings", account, failoverErr) {
+					failoverClientGone(c)
+					return
+				}
 				continue
 			}
 			h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)

@@ -71,6 +71,12 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	// Exact model-capacity rejection is request/model scoped. It is eligible
+	// for the handler's bounded replay but must not cool down or disable the
+	// account, including when the upstream reports it with a 5xx status.
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIModelAtCapacityError("", responseBody) {
+		return false
+	}
 
 	if isOpenAIImageRateLimitError(statusCode, responseBody) {
 		if s != nil && s.rateLimitService != nil {
@@ -289,7 +295,8 @@ func openAIAccountRuntimeBlockFromValue(value any) (openAIAccountRuntimeBlock, b
 }
 
 func (s *OpenAIGatewayService) MaybeBlockOpenAIAccountAfterFailoverError(account *Account, failoverErr *UpstreamFailoverError) bool {
-	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
+	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) ||
+		failoverErr.IsOpenAIModelAtCapacity() {
 		return false
 	}
 	// Pool-mode endpoints already schedule their own upstream account pool. A

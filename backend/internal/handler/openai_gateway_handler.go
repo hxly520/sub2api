@@ -471,6 +471,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryOpenAIModelCapacitySelection(reqLog, "responses", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if len(failedAccountIDs) == 0 {
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -492,6 +496,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if retryOpenAIModelCapacitySelection(reqLog, "responses", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -499,6 +507,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 			return
 		}
+		retryBudget.markReplaySelectionSucceeded()
 		if previousResponseID != "" && selection != nil && selection.Account != nil {
 			reqLog.Debug("openai.account_selected_with_previous_response_id", zap.Int64("account_id", selection.Account.ID))
 		}
@@ -621,6 +630,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						failoverSwitchFields = append(failoverSwitchFields, zap.Int64p("proxy_id", account.ProxyID))
 					}
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
+					if !retryBudget.waitBeforeReplay(c.Request.Context(), reqLog, "responses", account, failoverErr) {
+						failoverClientGone(c)
+						return
+					}
 					continue
 				}
 				if service.IsOpenAIUpstreamFailureForStickyRelease(err) {
@@ -1015,6 +1028,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryOpenAIModelCapacitySelection(reqLog, "messages", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if len(failedAccountIDs) == 0 {
 				if err != nil {
 					cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
@@ -1034,6 +1051,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if selection == nil || selection.Account == nil {
+			if retryOpenAIModelCapacitySelection(reqLog, "messages", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -1041,6 +1062,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 			return
 		}
+		retryBudget.markReplaySelectionSucceeded()
 		account := selection.Account
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
@@ -1136,6 +1158,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
 					)
+					if !retryBudget.waitBeforeReplay(c.Request.Context(), reqLog, "messages", account, failoverErr) {
+						failoverClientGone(c)
+						return
+					}
 					continue
 				}
 				if result != nil && result.ClientDisconnect {
@@ -1693,6 +1719,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("switch_count", switchCount),
 			zap.Int("max_switches", maxAccountSwitches),
 		)
+		if !retryBudget.waitBeforeReplay(ctx, reqLog, "responses_websocket", account, failoverErr) {
+			return false
+		}
 		if ctx.Err() != nil {
 			return false
 		}
@@ -1731,6 +1760,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryOpenAIModelCapacitySelection(reqLog, "responses_websocket", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
 			} else {
@@ -1739,6 +1772,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if retryOpenAIModelCapacitySelection(reqLog, "responses_websocket", &retryBudget,
+				failedAccountIDs, lastFailoverErr) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
 			} else {
@@ -1746,6 +1783,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 			return
 		}
+		retryBudget.markReplaySelectionSucceeded()
 
 		account := selection.Account
 		accountMaxConcurrency := account.Concurrency

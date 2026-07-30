@@ -90,6 +90,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 仓库内 `/batch-image` 是Sub2API自带批量生图页，与15731画布工作台不是同一产品。
 - 积分服务已使用 `127.0.0.1:8090`，复用现有 `sub2api` 数据库的独立 `points` schema 和最小权限角色，由 Nginx 精确反代；没有新建 PostgreSQL 容器。Sub2API 菜单必须先生成一次性签名启动票据。积分域名根路径不能作为公开首页，未持有积分会话时 `/app/` 和 `/admin/` 均拒绝访问。
 - 系统设置内的“积分系统”标签和管理员路由 `/admin/settings/points` 不受 `points_system.enabled` 影响，必须始终对已认证管理员可见，用于查看桥接状态并经 step-up 启动积分策略台；普通用户菜单和 `/points` 必须继续受 enabled 开关控制。管理员状态接口只能返回 enabled/configured/active、URL、Key ID、TTL 等非敏感元数据，严禁回传 launch/credit 密钥原值。
+- 仓库后续候选把用户与管理员积分工作区嵌入上述两个 Sub2API 内置入口的右侧内容区，不再把积分域名作为自定义菜单，也不再整页跳离 Sub2API。父页面继续展示 Sub2API 左侧导航、Header 和上传 Logo；积分内页只保留业务内容及管理员横向子导航。当前生产镜像仍以 2.2 节记录的 revision 为准，在新候选实际切换前不得把本条当成已上线状态。
 - Nginx 仅对含一次性 ticket 的 `/launch` 关闭 access log，防止查询串落盘；`/app/`、`/admin/`、静态资源、API 以及所有拒绝、越权和限流请求都必须保留访问日志。`api.52token.org` 对 `/api/internal/points/credits` 的公网 `POST/OPTIONS` 精确返回 `404`，积分容器只通过 Docker 网络直连该接口。
 
 ## 4. 四种图片模式
@@ -144,6 +145,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 同一历史窗口内工作台近6小时日志无warning/error。
 - 当前积分 Nginx 只对 `/launch` 关闭 access log；其他路径必须保留日志。内部 credit 公网拒绝、应用 fail-close 限流和积分容器日志应按同一时间窗关联，但不得记录 HMAC、ticket、cookie 或密钥原值。
 - 排障时应按同一时间窗关联Nginx 499/502/504/524、Sub2API request ID、账号/代理脱敏标识和上游终态；不得把原始prompt、认证头或媒体URL写入工单。
+- `2026-07-30` 只读检查了当前容器 stdout、最近 7 天持久化轮转日志及 29,610 条 `ops_error_logs`，均未捕获 `Selected model is at capacity. Please try a different model.`，因此生产证据不能确认该错误对应的 HTTP 状态码、上游错误码或固定响应结构。兼容逻辑不得猜测状态码，只按精确消息识别 HTTP JSON、HTTP 200 `response.failed` 和 SSE `error`；先换其他账号，无其他候选时允许在同一账号使用剩余预算，总计最多两次重放，并且不得给账号降权、冷却或 runtime block。结构化重试日志应核对 `failure_reason=openai_model_at_capacity`、`retry_attempt`、`retry_max`、`backoff_ms`、账号和路由，不得记录请求正文。
 
 ## 8. 只读盘点清单
 
@@ -194,6 +196,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 4. 生成独立 Base64 32 字节以上的 session、launch、credit 和内部集成密钥。生产 `points.env`、bridge env 和 psql 变量文件必须为 `root:root 0600`；Sub2API 与积分服务只共享对应公约中的同一解码后字节。状态或配置 API 只能返回是否已配置、Key ID 等非敏感元数据，不得回传密钥原值；文档、Compose、shell history 和日志也不能出现真实值。
 5. 运行积分迁移和只读消费查询自检后启动积分容器，再启用 Nginx 精确反代。可信代理 CIDR 必须与实际容器/loopback 网络一致；根路径返回 404。只有 `/launch` 关闭 access log，其余路径必须保留访问证据；此阶段不得修改、替换或重启现有 Sub2API 容器。
 6. 当前生产 Sub2API `v0.1.168-339422728b2c` 已具备管理员 disabled 入口和余额桥接加固。`points_system.enabled` 关闭时，管理员设置导航 `/admin/settings/points` 仍必须可见并允许检查桥接状态、经 step-up 进入策略台；普通用户菜单和 `/points` 必须隐藏，积分服务自身也必须按 disabled policy 拒绝用户 ticket、页面、资源和 API。只有完整验证后才能同时开启两层普通用户入口。
+   新嵌入候选切换前必须先在 root-only `points.env` 增加 `POINTS_EMBED_PARENT_ORIGIN=https://实际Sub2API域名`（精确 Origin、无路径和尾斜杠），并确认 Sub2API CSP `frame-src` 已包含积分 Origin、积分响应 `frame-ancestors` 只包含该父 Origin、没有冲突的 `X-Frame-Options`。缺少任一项时禁止切换。
 7. 验证用户/管理员角色隔离、票据一次性、CSRF、昨日消费快照、两位小数比例、最低昨日消费门槛、并发签到、三层金额上限和余额交易幂等后再打开 enabled。初始与当前业务策略保持 disabled，配置动作不得隐式开放签到。
 8. 首个业务策略默认关闭签到并最早次日生效。管理员明确保存积分比例、刷新分钟、签到模式、最低消费、阶梯和所有金额安全上限后，才允许用户签到。
 9. 余额发放超时后只重试同一交易 UUID；未知 credit 结果禁止直接冲正，必须确认 settled 后再发起关联 debit。确定性 4xx 进入永久失败终态，由管理员检查审计后显式重试；禁止删除幂等账本后重新发放。

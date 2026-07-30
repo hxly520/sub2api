@@ -687,8 +687,9 @@ func safeRawJSONArray(raw string) json.RawMessage {
 	return json.RawMessage("[]")
 }
 
-// GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,
-// purchase_subscription_url, and all custom_menu_items URLs. Used by the router layer for CSP frame-src injection.
+// GetFrameSrcOrigins returns deduplicated http(s) origins used by embedded
+// application pages. The configured points service is included even while its
+// user switch is disabled because administrators still need its policy console.
 func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, error) {
 	settings, err := s.GetPublicSettings(ctx)
 	if err != nil {
@@ -705,6 +706,10 @@ func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, erro
 				origins = append(origins, origin)
 			}
 		}
+	}
+
+	if s.cfg != nil {
+		addOrigin(s.cfg.PointsSystem.PublicURL)
 	}
 
 	// home content URL (when home_content is set to a URL for iframe embedding)

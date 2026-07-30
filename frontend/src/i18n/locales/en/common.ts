@@ -205,6 +205,7 @@ export default {
 
   pointsPortal: {
     opening: 'Opening Points Center',
+    frameTitle: 'Points Center',
     failed: 'Points Center is temporarily unavailable',
     retry: 'Retry',
     back: 'Back',
@@ -216,6 +217,9 @@ export default {
     refresh: 'Refresh status',
     openConsole: 'Open points settings',
     opening: 'Opening',
+    consoleTitle: 'Points administration console',
+    consoleFrameTitle: 'Points administration console',
+    consoleLoading: 'Loading points administration console',
     retry: 'Retry',
     loadFailed: 'Failed to load points system status',
     launchFailed: 'The points settings page is temporarily unavailable',

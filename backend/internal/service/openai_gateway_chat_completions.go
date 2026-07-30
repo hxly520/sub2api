@@ -420,6 +420,10 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 
 	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai chat_completions buffered", requestID)
 	if err != nil {
+		var capacityErr *openAICompatBufferedModelCapacityError
+		if errors.As(err, &capacityErr) && capacityErr.safeToReplay {
+			return nil, s.newOpenAIStreamFailoverError(c, account, false, requestID, capacityErr.payload, capacityErr.message)
+		}
 		return nil, err
 	}
 
@@ -521,6 +525,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
+	semanticOutputObserved := false
 	pendingSSE := make([]string, 0, 4)
 	pendingSSEBytes := 0
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
@@ -560,13 +565,22 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	processDataLine := func(payload string) bool {
 		firstResponseWatch.ObservePayload(payload)
-		if firstTokenMs == nil && openAIStreamPayloadCountsAsFirstResponse(payload) {
-			ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
-			firstTokenMs = &ms
+		payloadBytes := []byte(payload)
+		if !clientOutputStarted && !semanticOutputObserved && isOpenAIModelAtCapacityError("", payloadBytes) {
+			message := extractOpenAISSEErrorMessage(payloadBytes)
+			streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message)
+			return true
+		}
+		if openAIStreamPayloadStartsReplayUnsafeOutput(payload) {
+			semanticOutputObserved = true
+			if firstTokenMs == nil {
+				ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
+				firstTokenMs = &ms
+			}
 		}
 
 		var event apicompat.ResponsesStreamEvent
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		if err := json.Unmarshal(payloadBytes, &event); err != nil {
 			logger.L().Warn("openai chat_completions stream: failed to parse event",
 				zap.Error(err),
 				zap.String("request_id", requestID),
@@ -585,7 +599,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			}
 		}
 		if strings.TrimSpace(event.Type) == "response.failed" {
-			payloadBytes := []byte(payload)
 			message := extractOpenAISSEErrorMessage(payloadBytes)
 			if hit, code, msg := detectOpenAICyberPolicy(payloadBytes); hit {
 				// cyber_policy 致命且不可重试：不 failover。下发标准 error chunk +
@@ -618,7 +631,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 				return true
 			}
-			if openAIStreamFailedEventShouldFailover(payloadBytes, message) {
+			if !semanticOutputObserved && openAIStreamFailedEventShouldFailover(payloadBytes, message) {
 				streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message)
 				return true
 			}

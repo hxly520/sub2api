@@ -408,6 +408,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			dataBytes := []byte(data)
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
+			if !openAIStreamClientOutputStarted(c, clientOutputStarted) && isOpenAIModelAtCapacityError("", dataBytes) {
+				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				sawFailedEvent = true
+				streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
+				return
+			}
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
 			if openAIStreamEventIsTerminalWithType(data, eventTypeRaw) {
 				sawTerminalEvent = true
@@ -1119,12 +1125,16 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	if isOpenAIFailedResponseModelAtCapacity(body) {
+		message := extractOpenAISSEErrorMessage(body)
+		return nil, s.newOpenAIStreamFailoverError(c, account, false, resp.Header.Get("x-request-id"), body, message)
+	}
 
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
 	// may return SSE even when stream=false was requested.
 	if isEventStreamResponse(resp.Header) {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel, account)
 	}
 	// bodyLooksLikeSSE is a line-level heuristic: real SSE framing requires
 	// "data:"/"event:" field names at the very start of a physical line. A
@@ -1140,7 +1150,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// positives on JSON responses that coincidentally contain "data:" or
 	// "event:" in their text content.
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel, account)
 	}
 	if account != nil && account.IsGrok() && isOpenAIResponsesCompactPath(c) {
 		body, err = convertGrokResponseToOpenAICompact(body)
@@ -1152,7 +1162,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
 		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel, account)
 		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
@@ -1213,8 +1223,15 @@ func bodyHasSSEFraming(body []byte) bool {
 	return false
 }
 
-func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string, accounts ...*Account) (*openaiNonStreamingResult, error) {
+	var account *Account
+	if len(accounts) > 0 {
+		account = accounts[0]
+	}
 	bodyText := string(body)
+	if payload, message, ok := extractOpenAIModelAtCapacitySSEFailure(bodyText); ok {
+		return nil, s.newOpenAIStreamFailoverError(c, account, false, resp.Header.Get("x-request-id"), payload, message)
+	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 
 	usage := &OpenAIUsage{}
@@ -1254,6 +1271,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
+			}
+			if isOpenAIModelAtCapacityError(msg, terminalPayload) {
+				return nil, s.newOpenAIStreamFailoverError(c, account, false, resp.Header.Get("x-request-id"), terminalPayload, msg)
 			}
 			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
@@ -1304,6 +1324,28 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 		return terminalType, terminalPayload, true
 	}
 	return "", nil, false
+}
+
+func extractOpenAIModelAtCapacitySSEFailure(body string) ([]byte, string, bool) {
+	var matchedPayload []byte
+	matchedMessage := ""
+	semanticOutputObserved := false
+	forEachOpenAISSEDataPayload(body, func(data []byte) {
+		if matchedPayload != nil {
+			return
+		}
+		if isOpenAIModelAtCapacityError("", data) {
+			if !semanticOutputObserved {
+				matchedPayload = append([]byte(nil), data...)
+				matchedMessage = extractOpenAISSEErrorMessage(data)
+			}
+			return
+		}
+		if openAIStreamPayloadStartsReplayUnsafeOutput(string(data)) {
+			semanticOutputObserved = true
+		}
+	})
+	return matchedPayload, matchedMessage, matchedPayload != nil
 }
 
 func extractOpenAISSEErrorMessage(payload []byte) string {

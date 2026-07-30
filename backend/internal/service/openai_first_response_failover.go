@@ -342,6 +342,14 @@ func openAIStreamPayloadCountsAsFirstResponse(payload string) bool {
 	return openAIResponsesPayloadStartsSemanticOutput(trimmed, eventType)
 }
 
+func openAIStreamPayloadStartsReplayUnsafeOutput(payload string) bool {
+	eventType := strings.TrimSpace(gjson.Get(payload, "type").String())
+	if eventType == "response.failed" || eventType == "error" {
+		return false
+	}
+	return openAIStreamPayloadCountsAsFirstResponse(payload)
+}
+
 func openAIStreamJSONValueHasContent(value gjson.Result) bool {
 	if !value.Exists() || value.Type == gjson.Null {
 		return false

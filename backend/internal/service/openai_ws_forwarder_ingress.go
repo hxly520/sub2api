@@ -906,6 +906,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
+				if !wroteDownstream && isOpenAIModelAtCapacityError(errMsgRaw, upstreamMessage) {
+					lease.MarkBroken()
+					return nil, newOpenAIUpstreamFailoverError(
+						http.StatusBadGateway,
+						lease.HandshakeHeaders(),
+						upstreamMessage,
+						errMsgRaw,
+						false,
+					)
+				}
 				if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
 					lease.MarkBroken()
 					return nil, &UpstreamFailoverError{
@@ -933,6 +943,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageCounter.AddSSEData(upstreamMessage)
 
 			if eventType == "response.failed" {
+				if !wroteDownstream && isOpenAIModelAtCapacityError("", upstreamMessage) {
+					lease.MarkBroken()
+					return nil, newOpenAIUpstreamFailoverError(
+						http.StatusBadGateway,
+						lease.HandshakeHeaders(),
+						upstreamMessage,
+						extractOpenAISSEErrorMessage(upstreamMessage),
+						false,
+					)
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,

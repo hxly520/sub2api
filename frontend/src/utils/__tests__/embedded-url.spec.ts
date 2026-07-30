@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildEmbeddedUrl, detectTheme } from '../embedded-url'
+import {
+  POINTS_FRAME_READY_MESSAGE,
+  buildEmbeddedFrameUrl,
+  buildEmbeddedUrl,
+  detectTheme,
+  isPointsFrameReadyMessage,
+} from '../embedded-url'
 
 describe('embedded-url', () => {
   const originalLocation = window.location
@@ -58,6 +64,26 @@ describe('embedded-url', () => {
 
   it('returns original string for invalid url input', () => {
     expect(buildEmbeddedUrl('not a url', 1, 'token')).toBe('not a url')
+  })
+
+  it('builds a safe iframe URL without dropping launch ticket parameters', () => {
+    const result = buildEmbeddedFrameUrl('/launch?ticket=signed-ticket', 'https://points.example.com')
+
+    const url = new URL(result)
+    expect(url.origin).toBe('https://points.example.com')
+    expect(url.searchParams.get('ticket')).toBe('signed-ticket')
+    expect(url.searchParams.get('ui_mode')).toBe('embedded')
+  })
+
+  it('rejects non-http iframe launch URLs', () => {
+    expect(() => buildEmbeddedFrameUrl('javascript:alert(1)')).toThrow('invalid embedded frame URL')
+  })
+
+  it('accepts only the expected points frame ready role', () => {
+    expect(isPointsFrameReadyMessage({ type: POINTS_FRAME_READY_MESSAGE, role: 'user' }, 'user')).toBe(true)
+    expect(isPointsFrameReadyMessage({ type: POINTS_FRAME_READY_MESSAGE, role: 'admin' }, 'user')).toBe(false)
+    expect(isPointsFrameReadyMessage({ type: 'other', role: 'user' }, 'user')).toBe(false)
+    expect(isPointsFrameReadyMessage(null, 'user')).toBe(false)
   })
 
   it('detects dark mode from document root class', () => {

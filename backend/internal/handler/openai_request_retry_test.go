@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestOpenAIFirstResponseHandlerNeverEnablesTimeoutReplay(t *testing.T) {
@@ -133,4 +137,76 @@ func TestOpenAIRequestRetryBudget_DisabledMediaReplayDoesNotConsumeBudget(t *tes
 	require.Zero(t, budget.used)
 	require.True(t, budget.tryConsumeIfAllowed(true, account, err))
 	require.Equal(t, 1, budget.used)
+}
+
+func TestOpenAIRequestRetryBudget_ModelCapacityUsesBoundedExponentialBackoff(t *testing.T) {
+	budget := openAIRequestRetryBudget{}
+	account := &service.Account{ID: 5, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:        http.StatusServiceUnavailable,
+		Reason:            service.GatewayFailureReason("openai_model_at_capacity"),
+		NextAccountAction: service.NextAccountRetry,
+	}
+
+	require.True(t, budget.tryConsume(account, failoverErr))
+	require.Equal(t, openAIModelCapacityRetryBaseDelay, budget.modelCapacityBackoff())
+	require.True(t, budget.tryConsume(account, failoverErr))
+	require.Equal(t, 2*openAIModelCapacityRetryBaseDelay, budget.modelCapacityBackoff())
+	require.False(t, budget.tryConsume(account, failoverErr))
+	require.Equal(t, openAIMaxAutomaticReplayAttempts, budget.used)
+	require.Equal(t, openAIMaxAutomaticReplayAttempts, budget.modelCapacityRetries)
+}
+
+func TestOpenAIRequestRetryBudget_ModelCapacityBackoffHonorsCancellation(t *testing.T) {
+	budget := openAIRequestRetryBudget{}
+	account := &service.Account{ID: 6, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:        http.StatusBadGateway,
+		Reason:            service.GatewayFailureReason("openai_model_at_capacity"),
+		NextAccountAction: service.NextAccountRetry,
+	}
+	require.True(t, budget.tryConsume(account, failoverErr))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	started := time.Now()
+	require.False(t, budget.waitBeforeReplay(ctx, nil, "responses", account, failoverErr))
+	require.Less(t, time.Since(started), 50*time.Millisecond)
+}
+
+func TestOpenAIRequestRetryBudget_ModelCapacityWritesStructuredRetryLog(t *testing.T) {
+	budget := openAIRequestRetryBudget{}
+	account := &service.Account{ID: 8, Name: "capacity-account", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:        http.StatusTeapot,
+		Reason:            service.GatewayFailureReason("openai_model_at_capacity"),
+		NextAccountAction: service.NextAccountRetry,
+	}
+	require.True(t, budget.tryConsume(account, failoverErr))
+	core, observed := observer.New(zap.WarnLevel)
+	reqLog := zap.New(core)
+
+	require.True(t, budget.waitBeforeReplay(context.Background(), reqLog, "responses", account, failoverErr))
+
+	entries := observed.FilterMessage("openai.model_capacity_retry_scheduled").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	require.EqualValues(t, account.ID, fields["account_id"])
+	require.Equal(t, account.Name, fields["account_name"])
+	require.Equal(t, "responses", fields["route"])
+	require.Equal(t, "openai_model_at_capacity", fields["failure_reason"])
+	require.EqualValues(t, 1, fields["retry_attempt"])
+	require.EqualValues(t, openAIMaxAutomaticReplayAttempts, fields["retry_max"])
+	require.EqualValues(t, openAIModelCapacityRetryBaseDelay.Milliseconds(), fields["backoff_ms"])
+	require.NotContains(t, fields, "request_body")
+	require.NotContains(t, fields, "response_body")
+}
+
+func TestOpenAIRequestRetryBudget_NonExactServiceUnavailableRemainsUnsafe(t *testing.T) {
+	budget := openAIRequestRetryBudget{}
+	account := &service.Account{ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}
+
+	require.False(t, budget.tryConsume(account, failoverErr))
+	require.Zero(t, budget.used)
 }

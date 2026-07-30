@@ -529,6 +529,10 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
 	if err != nil {
+		var capacityErr *openAICompatBufferedModelCapacityError
+		if errors.As(err, &capacityErr) && capacityErr.safeToReplay {
+			return nil, s.newOpenAIStreamFailoverError(c, account, false, requestID, capacityErr.payload, capacityErr.message)
+		}
 		return nil, err
 	}
 
@@ -635,6 +639,28 @@ func isOpenAICompatDoneSentinelLine(line string) bool {
 	return ok && strings.TrimSpace(payload) == "[DONE]"
 }
 
+type openAICompatBufferedModelCapacityError struct {
+	payload      []byte
+	message      string
+	safeToReplay bool
+}
+
+func (e *openAICompatBufferedModelCapacityError) Error() string {
+	return "OpenAI buffered stream reported model capacity"
+}
+
+func newOpenAICompatBufferedModelCapacityError(payload string, semanticOutputObserved bool) error {
+	payloadBytes := []byte(payload)
+	if !isOpenAIModelAtCapacityError("", payloadBytes) {
+		return nil
+	}
+	return &openAICompatBufferedModelCapacityError{
+		payload:      append([]byte(nil), payloadBytes...),
+		message:      extractOpenAISSEErrorMessage(payloadBytes),
+		safeToReplay: !semanticOutputObserved,
+	}
+}
+
 func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	resp *http.Response,
 	logPrefix string,
@@ -710,12 +736,19 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	defer close(done)
 
 	var parser openAICompatSSEFrameParser
+	semanticOutputObserved := false
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
 				if frame, ok := parser.Finish(); ok {
 					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+					if capacityErr := newOpenAICompatBufferedModelCapacityError(payload, semanticOutputObserved); capacityErr != nil {
+						return nil, usage, acc, capacityErr
+					}
+					if openAIStreamPayloadStartsReplayUnsafeOutput(payload) {
+						semanticOutputObserved = true
+					}
 					var event apicompat.ResponsesStreamEvent
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						acc.ProcessEvent(&event)
@@ -754,6 +787,12 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				continue
 			}
 			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+			if capacityErr := newOpenAICompatBufferedModelCapacityError(payload, semanticOutputObserved); capacityErr != nil {
+				return nil, usage, acc, capacityErr
+			}
+			if openAIStreamPayloadStartsReplayUnsafeOutput(payload) {
+				semanticOutputObserved = true
+			}
 
 			var event apicompat.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(payload), &event); err != nil {
@@ -815,6 +854,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
+	semanticOutputObserved := false
 	pendingSSE := make([]string, 0, 4)
 	pendingSSEBytes := 0
 	var streamFailoverErr error
@@ -885,13 +925,22 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	// processDataLine handles a single "data: ..." SSE line from upstream.
 	processDataLine := func(payload string) bool {
 		firstResponseWatch.ObservePayload(payload)
-		if firstTokenMs == nil && openAIStreamPayloadCountsAsFirstResponse(payload) {
-			ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
-			firstTokenMs = &ms
+		payloadBytes := []byte(payload)
+		if !clientOutputStarted && !semanticOutputObserved && isOpenAIModelAtCapacityError("", payloadBytes) {
+			message := extractOpenAISSEErrorMessage(payloadBytes)
+			streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message)
+			return true
+		}
+		if openAIStreamPayloadStartsReplayUnsafeOutput(payload) {
+			semanticOutputObserved = true
+			if firstTokenMs == nil {
+				ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
+				firstTokenMs = &ms
+			}
 		}
 
 		var event apicompat.ResponsesStreamEvent
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		if err := json.Unmarshal(payloadBytes, &event); err != nil {
 			logger.L().Warn("openai messages stream: failed to parse event",
 				zap.Error(err),
 				zap.String("request_id", requestID),
@@ -917,7 +966,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			// cyber_policy 致命不可重试：标记供 handler 事后记录；以 Anthropic SSE error 事件
 			// 回写让客户端感知并停止重试（F4），丢弃后续转换输出。
 			if eventType == "response.failed" || isBareErrorEvent {
-				payloadBytes := []byte(payload)
 				if hit, code, msg := detectOpenAICyberPolicy(payloadBytes); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -944,7 +992,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				// Once Anthropic output has started, switching accounts would splice
 				// two model streams together. Surface a proper Anthropic error event
 				// instead of returning a failover error that the handler cannot retry.
-				if !clientOutputStarted && openAIStreamFailedEventShouldFailover(payloadBytes, message) {
+				if !clientOutputStarted && !semanticOutputObserved && openAIStreamFailedEventShouldFailover(payloadBytes, message) {
 					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message)
 					return true
 				}

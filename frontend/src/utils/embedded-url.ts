@@ -13,6 +13,27 @@ const EMBEDDED_UI_MODE_VALUE = 'embedded'
 const EMBEDDED_SRC_HOST_QUERY_KEY = 'src_host'
 const EMBEDDED_SRC_QUERY_KEY = 'src_url'
 
+export const POINTS_FRAME_READY_MESSAGE = 'sub2api:points-ready'
+
+export function isPointsFrameReadyMessage(
+  data: unknown,
+  expectedRole: 'user' | 'admin',
+): boolean {
+  if (!data || typeof data !== 'object') return false
+  const message = data as { type?: unknown; role?: unknown }
+  return message.type === POINTS_FRAME_READY_MESSAGE && message.role === expectedRole
+}
+
+export function buildEmbeddedFrameUrl(baseUrl: string, baseOrigin?: string): string {
+  const origin = baseOrigin ?? (typeof window !== 'undefined' ? window.location.origin : undefined)
+  const url = origin ? new URL(baseUrl, origin) : new URL(baseUrl)
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new TypeError('invalid embedded frame URL')
+  }
+  url.searchParams.set(EMBEDDED_UI_MODE_QUERY_KEY, EMBEDDED_UI_MODE_VALUE)
+  return url.toString()
+}
+
 export function buildEmbeddedUrl(
   baseUrl: string,
   userId?: number,

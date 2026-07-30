@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PointsSettingsView from '../PointsSettingsView.vue'
+import { POINTS_FRAME_READY_MESSAGE } from '@/utils/embedded-url'
 
 const { getPointsBridgeStatus, createPointsLaunch } = vi.hoisted(() => ({
   getPointsBridgeStatus: vi.fn(),
@@ -45,7 +46,12 @@ function mountView() {
         Icon: { template: '<span />' },
         TotpStepUpDialog: {
           props: ['controller'],
-          template: '<button v-if="controller.visible.value" data-testid="cancel-step-up" @click="controller.onCancel()">cancel</button>',
+          template: `
+            <div v-if="controller.visible.value">
+              <button data-testid="verify-step-up" @click="controller.onVerified()">verify</button>
+              <button data-testid="cancel-step-up" @click="controller.onCancel()">cancel</button>
+            </div>
+          `,
         },
       },
     },
@@ -56,6 +62,7 @@ describe('PointsSettingsView', () => {
   beforeEach(() => {
     getPointsBridgeStatus.mockReset()
     createPointsLaunch.mockReset()
+    document.documentElement.classList.remove('dark')
   })
 
   it('keeps the admin entry usable while user access is disabled', async () => {
@@ -109,5 +116,61 @@ describe('PointsSettingsView', () => {
     await flushPromises()
     expect(wrapper.text()).not.toContain('pointsSettings.launchFailed')
     expect(wrapper.get('[data-testid="open-points-console"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('embeds the verified admin launch beside the bridge status', async () => {
+    getPointsBridgeStatus.mockResolvedValue(status)
+    createPointsLaunch
+      .mockRejectedValueOnce({ status: 403, code: 'STEP_UP_REQUIRED' })
+      .mockResolvedValueOnce({
+        launch_url: 'https://points.example.test/launch?ticket=verified-ticket&scope=admin',
+      })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="verify-step-up"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="verify-step-up"]').trigger('click')
+    await flushPromises()
+
+    expect(createPointsLaunch).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('https://points.example.test')
+    const frame = wrapper.get('[data-testid="points-console-frame"]')
+    const frameURL = new URL(frame.attributes('src'))
+    expect(frameURL.searchParams.get('ticket')).toBe('verified-ticket')
+    expect(frameURL.searchParams.get('scope')).toBe('admin')
+    expect(frameURL.searchParams.get('ui_mode')).toBe('embedded')
+    expect(frame.attributes('sandbox')).toBe('allow-scripts allow-forms allow-same-origin')
+    expect(frame.attributes('allow')).toBeUndefined()
+    expect(frame.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(wrapper.get('[data-testid="points-console-loading"]').exists()).toBe(true)
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: POINTS_FRAME_READY_MESSAGE, role: 'admin' },
+      origin: frameURL.origin,
+      source: frame.element.contentWindow,
+    }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="points-console-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="points-console-error"]').exists()).toBe(false)
+  })
+
+  it('keeps the iframe in place and offers a fresh launch after a frame error', async () => {
+    getPointsBridgeStatus.mockResolvedValue(status)
+    createPointsLaunch.mockResolvedValue({
+      launch_url: 'https://points.example.test/launch?ticket=frame-error',
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="points-console-frame"]').trigger('error')
+
+    expect(wrapper.get('[data-testid="points-console-error"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="retry-points-console"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="points-console-frame"]').exists()).toBe(true)
   })
 })

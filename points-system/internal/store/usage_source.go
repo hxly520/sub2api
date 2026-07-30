@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,6 +32,38 @@ const sub2UsageAccessProbeQuery = `
 	FROM usage_logs
 	LIMIT 0`
 
+const sub2SuccessfulUsageBoundsQuery = `
+	SELECT MIN(created_at),MAX(created_at)
+	FROM usage_logs
+	WHERE billing_type = 0
+		AND actual_cost > 0`
+
+const sub2UsageHistoryPlanQuery = `
+	WITH filtered AS MATERIALIZED (
+		SELECT id,user_id,actual_cost,created_at
+		FROM usage_logs
+		WHERE billing_type = 0
+			AND actual_cost > 0
+			AND created_at >= $1
+			AND created_at < $2
+	), daily AS (
+		SELECT user_id,(created_at AT TIME ZONE $3)::date AS business_date,
+			ROUND(SUM(actual_cost) * 1000000)::bigint AS actual_cost_microusd,
+			COUNT(*)::bigint AS source_rows,
+			MAX(id)::bigint AS source_max_usage_log_id
+		FROM filtered
+		GROUP BY user_id,(created_at AT TIME ZONE $3)::date
+		HAVING ROUND(SUM(actual_cost) * 1000000)::bigint > 0
+	)
+	SELECT COUNT(DISTINCT user_id)::bigint,
+		COUNT(*)::bigint,
+		COUNT(DISTINCT business_date)::bigint,
+		COALESCE(SUM(source_rows),0)::text,
+		COALESCE(SUM(actual_cost_microusd),0)::text,
+		COALESCE(SUM(TRUNC(actual_cost_microusd::numeric * $4::numeric / 1000000)),0)::text,
+		COALESCE(MAX(source_max_usage_log_id),0)::bigint
+	FROM daily`
+
 // UsageAggregate is a server-derived daily balance-spend fact. Monetary values
 // are rounded once, after PostgreSQL sums its DECIMAL(20,10) source values.
 type UsageAggregate struct {
@@ -49,12 +82,29 @@ type UsageDay struct {
 	SourceRows  int64
 }
 
+type SuccessfulUsageBounds struct {
+	Found       bool
+	EarliestUTC time.Time
+	LatestUTC   time.Time
+}
+
+type UsageHistorySummary struct {
+	SourceUsers         int64 `json:"source_users"`
+	SourceUserDays      int64 `json:"source_user_days"`
+	SourceBusinessDays  int64 `json:"source_business_days"`
+	SourceRows          int64 `json:"source_rows"`
+	SpendMicroUSD       int64 `json:"spend_microusd"`
+	PointsHundredths    int64 `json:"points_hundredths"`
+	SourceMaxUsageLogID int64 `json:"source_max_usage_log_id"`
+}
+
 type UsageSource interface {
 	AggregateDay(context.Context, time.Time, time.Time) (UsageDay, error)
 }
 
 type usageQueryer interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 // PostgreSQLUsageSource reads Sub2API's usage_logs through a dedicated pool.
@@ -78,6 +128,54 @@ func (s *PostgreSQLUsageSource) Validate(ctx context.Context) error {
 	}
 	rows.Close()
 	return rows.Err()
+}
+
+func (s *PostgreSQLUsageSource) SuccessfulUsageBounds(ctx context.Context) (SuccessfulUsageBounds, error) {
+	if s == nil || s.db == nil {
+		return SuccessfulUsageBounds{}, fmt.Errorf("usage source is not configured")
+	}
+	var earliest, latest *time.Time
+	if err := s.db.QueryRow(ctx, sub2SuccessfulUsageBoundsQuery).Scan(&earliest, &latest); err != nil {
+		return SuccessfulUsageBounds{}, fmt.Errorf("query Sub2API usage history bounds: %w", err)
+	}
+	if earliest == nil || latest == nil {
+		return SuccessfulUsageBounds{}, nil
+	}
+	return SuccessfulUsageBounds{
+		Found: true, EarliestUTC: earliest.UTC(), LatestUTC: latest.UTC(),
+	}, nil
+}
+
+func (s *PostgreSQLUsageSource) SummarizeHistory(ctx context.Context, start, end time.Time,
+	timezone string, pointsPerUSDHundredths int64) (UsageHistorySummary, error) {
+	if s == nil || s.db == nil || start.IsZero() || !end.After(start) || timezone == "" ||
+		pointsPerUSDHundredths <= 0 {
+		return UsageHistorySummary{}, fmt.Errorf("invalid usage history summary request")
+	}
+	var summary UsageHistorySummary
+	var sourceRows, spend, points string
+	err := s.db.QueryRow(ctx, sub2UsageHistoryPlanQuery, start.UTC(), end.UTC(), timezone,
+		pointsPerUSDHundredths).Scan(&summary.SourceUsers, &summary.SourceUserDays,
+		&summary.SourceBusinessDays, &sourceRows, &spend, &points,
+		&summary.SourceMaxUsageLogID)
+	if err != nil {
+		return UsageHistorySummary{}, fmt.Errorf("summarize Sub2API usage history: %w", err)
+	}
+	for label, item := range map[string]struct {
+		raw    string
+		target *int64
+	}{
+		"source rows": {sourceRows, &summary.SourceRows},
+		"spend":       {spend, &summary.SpendMicroUSD},
+		"points":      {points, &summary.PointsHundredths},
+	} {
+		value, parseErr := strconv.ParseInt(item.raw, 10, 64)
+		if parseErr != nil || value < 0 {
+			return UsageHistorySummary{}, fmt.Errorf("Sub2API usage history %s exceeds supported range", label)
+		}
+		*item.target = value
+	}
+	return summary, nil
 }
 
 func NewReadOnlyUsagePool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {

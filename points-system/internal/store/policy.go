@@ -29,6 +29,19 @@ func (s *Store) CreatePolicyAtomic(ctx context.Context, policy domain.Policy, no
 	}
 
 	err := s.withSerializableTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
+			historyBackfillLock); err != nil {
+			return err
+		}
+		if policy.Enabled {
+			pending, err := initialHistoryBackfillPending(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if pending {
+				return errors.New("an initial usage history backfill is pending; resume it before enabling a new policy")
+			}
+		}
 		policy.ID = 0
 		policy.VersionNo = 0
 		policy.CreatedAt = time.Time{}
@@ -81,6 +94,39 @@ func validatePolicy(policy domain.Policy) error {
 
 func (s *Store) PolicyForDate(ctx context.Context, date time.Time) (domain.Policy, error) {
 	return policyForDate(ctx, s.DB, date)
+}
+
+func (s *Store) PolicyByVersion(ctx context.Context, version int64) (domain.Policy, error) {
+	return policyForVersion(ctx, s.DB, version)
+}
+
+func policyForVersion(ctx context.Context, q queryer, version int64) (domain.Policy, error) {
+	if version <= 0 {
+		return domain.Policy{}, domain.ErrNotFound
+	}
+	var policy domain.Policy
+	err := q.QueryRow(ctx, `
+		SELECT id,version_no,effective_date,enabled,mode,basis,checkin_enabled,
+			checkin_daily_limit,minimum_checkin_spend_microusd,
+			checkin_platform_daily_cap_microusd,checkin_user_daily_cap_microusd,
+			checkin_single_award_cap_microusd,points_per_usd_hundredths,
+			refresh_minute,created_by,created_at
+		FROM points_policy_versions
+		WHERE version_no=$1
+	`, version).Scan(
+		&policy.ID, &policy.VersionNo, &policy.EffectiveDate, &policy.Enabled, &policy.Mode,
+		&policy.Basis, &policy.CheckinEnabled, &policy.CheckinDailyLimit,
+		&policy.MinimumCheckinSpendMicroUSD, &policy.CheckinPlatformDailyCapMicroUSD,
+		&policy.CheckinUserDailyCapMicroUSD, &policy.CheckinSingleAwardCapMicroUSD,
+		&policy.PointsPerUSDHundredths, &policy.RefreshMinute, &policy.CreatedBy, &policy.CreatedAt,
+	)
+	if err != nil {
+		return domain.Policy{}, translateNotFound(err)
+	}
+	if err := loadPolicyTiers(ctx, q, &policy); err != nil {
+		return domain.Policy{}, err
+	}
+	return policy, nil
 }
 
 type queryer interface {

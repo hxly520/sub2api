@@ -21,6 +21,7 @@ const (
 	refreshTriggerScheduled = "scheduled"
 	refreshTriggerReconcile = "reconcile"
 	refreshTriggerManual    = "manual"
+	refreshTriggerBackfill  = "history_backfill"
 
 	snapshotStatusDisabled = "disabled"
 	snapshotStatusReady    = "ready"
@@ -91,7 +92,7 @@ func (s *Store) RefreshMinuteForDate(ctx context.Context, date time.Time) (int, 
 // UsageRefreshEnabledForDate prevents the automatic scheduler from scanning
 // Sub2API usage data before the versioned points policy is active.
 func (s *Store) UsageRefreshEnabledForDate(ctx context.Context, date time.Time) (bool, error) {
-	policy, err := s.PolicyForDate(ctx, s.BusinessDate(date))
+	policy, err := usageAccountingPolicyForDate(ctx, s.DB, s.BusinessDate(date))
 	if errors.Is(err, domain.ErrNotFound) {
 		return false, nil
 	}
@@ -209,14 +210,18 @@ func (s *Store) applyUsageDayTx(ctx context.Context, tx pgx.Tx, runID, trigger s
 		"points-snapshot-refresh:"+dateString(date)); err != nil {
 		return err
 	}
-	policy, err := policyForDate(ctx, tx, date)
+	policy, err := usageAccountingPolicyForDate(ctx, tx, date)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return err
 	}
 	if errors.Is(err, domain.ErrNotFound) {
 		policy = domain.Policy{}
 	}
+	return s.applyUsageDayLockedTx(ctx, tx, runID, trigger, date, usageDay, policy, result)
+}
 
+func (s *Store) applyUsageDayLockedTx(ctx context.Context, tx pgx.Tx, runID, trigger string,
+	date time.Time, usageDay UsageDay, policy domain.Policy, result *DailyRefreshResult) error {
 	existing, err := loadUsageSnapshotsTx(ctx, tx, date)
 	if err != nil {
 		return err
@@ -583,7 +588,8 @@ func checkedAddSigned(left, right int64) (int64, error) {
 
 func validRefreshTrigger(trigger string) bool {
 	switch trigger {
-	case refreshTriggerStartup, refreshTriggerScheduled, refreshTriggerReconcile, refreshTriggerManual:
+	case refreshTriggerStartup, refreshTriggerScheduled, refreshTriggerReconcile, refreshTriggerManual,
+		refreshTriggerBackfill:
 		return true
 	default:
 		return false

@@ -20,7 +20,7 @@
     const count = ui.number(data.checkin?.count);
     const features = data.features || {};
     const limit = ui.number(features.checkin_daily_limit);
-    const available = features.checkin_available === true;
+    const available = features.checkin_attempt_available === true;
 
     ui.byId("checkin-count").textContent = `今日已签到 ${count} 次`;
     button.disabled = !available;
@@ -42,8 +42,10 @@
       button.textContent = "今日已签到";
       return;
     }
-    title.textContent = "今日签到赠送待领取";
-    detail.textContent = limit > 0 ? `今日签到次数 ${count} / ${limit}` : "签到资格已就绪";
+    title.textContent = "今日签到可参与";
+    detail.textContent = limit > 0
+      ? `今日签到次数 ${count} / ${limit}，奖励资格及金额将在提交时按完整规则校验`
+      : "奖励资格及金额将在提交时按完整规则校验";
   }
 
   async function loadProfile() {

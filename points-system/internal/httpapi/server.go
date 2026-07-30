@@ -41,6 +41,8 @@ type contextKey string
 const principalKey contextKey = "points-principal"
 const policyKey contextKey = "points-policy"
 
+const embeddedUIMode = "embedded"
+
 func New(cfg config.Config, pointsStore *store.Store, logger *slog.Logger) (*Server, error) {
 	if pointsStore == nil {
 		return nil, errors.New("HTTP API store is required")
@@ -69,28 +71,28 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("GET /launch", s.launch)
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
-	s.mux.Handle("GET /app/", s.auth(false, false, true, http.HandlerFunc(s.userPage)))
-	s.mux.Handle("GET /admin/", s.auth(true, false, false, http.HandlerFunc(s.adminPage)))
-	s.mux.Handle("GET /assets/app.css", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/app.css", "text/css; charset=utf-8"))))
-	s.mux.Handle("GET /assets/common.js", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/common.js", "text/javascript; charset=utf-8"))))
-	s.mux.Handle("GET /assets/user.js", s.auth(false, false, true, http.HandlerFunc(s.webAsset("web/assets/user.js", "text/javascript; charset=utf-8"))))
-	s.mux.Handle("GET /assets/admin.js", s.auth(true, false, false, http.HandlerFunc(s.webAsset("web/assets/admin.js", "text/javascript; charset=utf-8"))))
+	s.mux.Handle("GET /app/", s.auth("user", false, true, http.HandlerFunc(s.userPage)))
+	s.mux.Handle("GET /admin/", s.auth("admin", false, false, http.HandlerFunc(s.adminPage)))
+	s.mux.Handle("GET /assets/app.css", s.auth("", false, true, http.HandlerFunc(s.webAsset("web/assets/app.css", "text/css; charset=utf-8"))))
+	s.mux.Handle("GET /assets/common.js", s.auth("", false, true, http.HandlerFunc(s.webAsset("web/assets/common.js", "text/javascript; charset=utf-8"))))
+	s.mux.Handle("GET /assets/user.js", s.auth("user", false, true, http.HandlerFunc(s.webAsset("web/assets/user.js", "text/javascript; charset=utf-8"))))
+	s.mux.Handle("GET /assets/admin.js", s.auth("admin", false, false, http.HandlerFunc(s.webAsset("web/assets/admin.js", "text/javascript; charset=utf-8"))))
 
-	s.mux.Handle("GET /api/v1/me", s.auth(false, false, true, http.HandlerFunc(s.me)))
-	s.mux.Handle("GET /api/v1/ledger", s.auth(false, false, true, http.HandlerFunc(s.ledger)))
-	s.mux.Handle("GET /api/v1/daily-points", s.auth(false, false, true, http.HandlerFunc(s.dailyPoints)))
-	s.mux.Handle("POST /api/v1/checkins", s.auth(false, true, true, s.rate("checkin", 6, time.Minute, http.HandlerFunc(s.checkin))))
-	s.mux.Handle("GET /api/v1/balance-grants", s.auth(false, false, true, http.HandlerFunc(s.balanceGrants)))
-	s.mux.Handle("POST /api/v1/logout", s.auth(false, true, false, http.HandlerFunc(s.logout)))
+	s.mux.Handle("GET /api/v1/me", s.auth("user", false, true, http.HandlerFunc(s.me)))
+	s.mux.Handle("GET /api/v1/ledger", s.auth("user", false, true, http.HandlerFunc(s.ledger)))
+	s.mux.Handle("GET /api/v1/daily-points", s.auth("user", false, true, http.HandlerFunc(s.dailyPoints)))
+	s.mux.Handle("POST /api/v1/checkins", s.auth("user", true, true, s.rate("checkin", 6, time.Minute, http.HandlerFunc(s.checkin))))
+	s.mux.Handle("GET /api/v1/balance-grants", s.auth("user", false, true, http.HandlerFunc(s.balanceGrants)))
+	s.mux.Handle("POST /api/v1/logout", s.auth("", true, false, http.HandlerFunc(s.logout)))
 
-	s.mux.Handle("GET /api/v1/admin/me", s.auth(true, false, false, http.HandlerFunc(s.adminMe)))
-	s.mux.Handle("GET /api/v1/admin/policies", s.auth(true, false, false, http.HandlerFunc(s.policies)))
-	s.mux.Handle("POST /api/v1/admin/policies", s.auth(true, true, false, http.HandlerFunc(s.createPolicy)))
-	s.mux.Handle("POST /api/v1/admin/grants", s.auth(true, true, false, http.HandlerFunc(s.manualGrant)))
-	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth(true, false, false, http.HandlerFunc(s.adminBalanceGrants)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth(true, true, false, http.HandlerFunc(s.retryBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth(true, true, false, http.HandlerFunc(s.reverseBalanceGrant)))
-	s.mux.Handle("POST /api/v1/admin/snapshots/refresh", s.auth(true, true, false, http.HandlerFunc(s.refreshSnapshots)))
+	s.mux.Handle("GET /api/v1/admin/me", s.auth("admin", false, false, http.HandlerFunc(s.adminMe)))
+	s.mux.Handle("GET /api/v1/admin/policies", s.auth("admin", false, false, http.HandlerFunc(s.policies)))
+	s.mux.Handle("POST /api/v1/admin/policies", s.auth("admin", true, false, http.HandlerFunc(s.createPolicy)))
+	s.mux.Handle("POST /api/v1/admin/grants", s.auth("admin", true, false, http.HandlerFunc(s.manualGrant)))
+	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth("admin", false, false, http.HandlerFunc(s.adminBalanceGrants)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth("admin", true, false, http.HandlerFunc(s.retryBalanceGrant)))
+	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth("admin", true, false, http.HandlerFunc(s.reverseBalanceGrant)))
+	s.mux.Handle("POST /api/v1/admin/snapshots/refresh", s.auth("admin", true, false, http.HandlerFunc(s.refreshSnapshots)))
 
 }
 
@@ -104,11 +106,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (s *Server) userPage(w http.ResponseWriter, r *http.Request) {
-	if p, ok := principalFrom(r); ok && p.Session.Role == "admin" {
-		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
-		return
-	}
+func (s *Server) userPage(w http.ResponseWriter, _ *http.Request) {
 	s.servePage(w, "web/user.html")
 }
 
@@ -160,7 +158,11 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 	}
 	if claims.Role != "admin" {
 		policy, policyErr := s.currentPolicy(r.Context(), now)
-		if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !policyAllowsUserAccess(policy)) {
+		allowed := false
+		if policyErr == nil {
+			allowed, policyErr = s.userPolicyAllowsAccess(r.Context(), policy)
+		}
+		if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !allowed) {
 			writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
 			return
 		}
@@ -179,14 +181,29 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSessionCookie(w, token, now.Add(s.Config.SessionTTL))
-	destination := "/app/"
-	if claims.Role == "admin" {
-		destination = "/admin/"
-	}
+	destination := workspaceDestination(claims.Role, requestedUIMode(r))
 	http.Redirect(w, r, destination, http.StatusSeeOther)
 }
 
-func (s *Server) auth(admin, csrf, requireEnabled bool, next http.Handler) http.Handler {
+func requestedUIMode(r *http.Request) string {
+	if r != nil && r.URL.Query().Get("ui_mode") == embeddedUIMode {
+		return embeddedUIMode
+	}
+	return ""
+}
+
+func workspaceDestination(role, uiMode string) string {
+	destination := "/app/"
+	if role == "admin" {
+		destination = "/admin/"
+	}
+	if uiMode == embeddedUIMode {
+		return destination + "?ui_mode=" + embeddedUIMode
+	}
+	return destination
+}
+
+func (s *Server) auth(requiredRole string, csrf, requireEnabled bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(s.cookieName())
 		if err != nil || cookie.Value == "" {
@@ -200,14 +217,22 @@ func (s *Server) auth(admin, csrf, requireEnabled bool, next http.Handler) http.
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 			return
 		}
-		if admin && session.Role != "admin" {
+		if requiredRole != "" && session.Role != requiredRole {
+			writeError(w, http.StatusForbidden, "forbidden", "Forbidden")
+			return
+		}
+		if requiredRole == "" && session.Role != "user" && session.Role != "admin" {
 			writeError(w, http.StatusForbidden, "forbidden", "Forbidden")
 			return
 		}
 		ctx := context.WithValue(r.Context(), principalKey, principal{Session: session, Token: cookie.Value})
 		if requireEnabled && session.Role == "user" {
 			policy, policyErr := s.currentPolicy(ctx, now)
-			if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !policyAllowsUserAccess(policy)) {
+			allowed := false
+			if policyErr == nil {
+				allowed, policyErr = s.userPolicyAllowsAccess(ctx, policy)
+			}
+			if errors.Is(policyErr, domain.ErrNotFound) || (policyErr == nil && !allowed) {
 				writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
 				return
 			}
@@ -260,6 +285,16 @@ func (s *Server) currentPolicy(ctx context.Context, now time.Time) (domain.Polic
 
 func policyAllowsUserAccess(policy domain.Policy) bool {
 	return policy.Enabled && policy.ValidateForEnable() == nil
+}
+
+func (s *Server) userPolicyAllowsAccess(ctx context.Context, policy domain.Policy) (bool, error) {
+	if !policyAllowsUserAccess(policy) {
+		return false, nil
+	}
+	if s.Store == nil {
+		return true, nil
+	}
+	return s.Store.UserAccessReadyForPolicy(ctx, policy.VersionNo)
 }
 
 func policyFrom(r *http.Request) (domain.Policy, bool) {
@@ -325,10 +360,13 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		frameAncestor := s.Config.EmbedParentOrigin
+		if frameAncestor == "" {
+			frameAncestor = "'none'"
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+frameAncestor+"; form-action 'self'")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		w.Header().Set("Cache-Control", "no-store")

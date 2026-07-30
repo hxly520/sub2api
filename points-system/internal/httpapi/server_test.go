@@ -39,15 +39,67 @@ func TestClientIPOnlyTrustsConfiguredProxy(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
+	server := &Server{Config: config.Config{EmbedParentOrigin: "https://sub2api.example.test"}}
+	handler := server.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/app/", nil))
+	for _, header := range []string{"Content-Security-Policy", "Referrer-Policy", "X-Content-Type-Options", "Permissions-Policy"} {
+		if recorder.Header().Get(header) == "" {
+			t.Fatalf("security header %s is missing", header)
+		}
+	}
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors https://sub2api.example.test;") ||
+		strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Fatalf("unexpected frame-ancestors policy: %q", csp)
+	}
+	if value := recorder.Header().Get("X-Frame-Options"); value != "" {
+		t.Fatalf("X-Frame-Options conflicts with exact CSP embedding policy: %q", value)
+	}
+}
+
+func TestSecurityHeadersFailClosedWithoutEmbedParent(t *testing.T) {
 	server := &Server{}
 	handler := server.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/app/", nil))
-	for _, header := range []string{"Content-Security-Policy", "Referrer-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy"} {
-		if recorder.Header().Get(header) == "" {
-			t.Fatalf("security header %s is missing", header)
+	if csp := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none';") {
+		t.Fatalf("missing fail-closed frame-ancestors: %q", csp)
+	}
+}
+
+func TestWorkspaceDestinationPreservesOnlyEmbeddedPresentationMode(t *testing.T) {
+	for _, test := range []struct {
+		role, mode, want string
+	}{
+		{role: "user", mode: embeddedUIMode, want: "/app/?ui_mode=embedded"},
+		{role: "admin", mode: embeddedUIMode, want: "/admin/?ui_mode=embedded"},
+		{role: "user", mode: "standalone", want: "/app/"},
+		{role: "admin", mode: "unexpected", want: "/admin/"},
+	} {
+		if got := workspaceDestination(test.role, test.mode); got != test.want {
+			t.Fatalf("workspaceDestination(%q, %q) = %q, want %q", test.role, test.mode, got, test.want)
+		}
+	}
+}
+
+func TestRequestedUIModeAcceptsOnlyExactEmbeddedValue(t *testing.T) {
+	for _, test := range []struct {
+		query, want string
+	}{
+		{query: "ui_mode=embedded", want: embeddedUIMode},
+		{query: "ui_mode=standalone", want: ""},
+		{query: "ui_mode=EMBEDDED", want: ""},
+		{query: "ui_mode=embedded%20", want: ""},
+		{query: "other=embedded", want: ""},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "https://points.example.test/launch?"+test.query, nil)
+		if got := requestedUIMode(request); got != test.want {
+			t.Fatalf("requestedUIMode(%q) = %q, want %q", test.query, got, test.want)
 		}
 	}
 }
@@ -155,6 +207,10 @@ func TestRoleSeparatedWebAssetsAreChineseAndLeastPrivilege(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	commonJS, err := webFS.ReadFile("web/assets/common.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	userContent := string(userHTML) + string(userJS)
 	adminContent := string(adminHTML) + string(adminJS)
 	for _, required := range []string{"lang=\"zh-CN\"", "我的总积分", "昨日积分", "累计签到赠送", "points-chart", "个人积分记录", "签到奖励记录"} {
@@ -185,6 +241,51 @@ func TestRoleSeparatedWebAssetsAreChineseAndLeastPrivilege(t *testing.T) {
 			t.Fatalf("admin web still contains removed field %q", forbidden)
 		}
 	}
+	commonContent := string(commonJS)
+	for _, required := range []string{"sub2api:points-ready", "window.parent.postMessage", "admin-shell"} {
+		if !strings.Contains(commonContent, required) {
+			t.Fatalf("embedded ready handshake is missing %q", required)
+		}
+	}
+}
+
+func TestEmbeddedWebPresentationKeepsRolePagesInsideSub2API(t *testing.T) {
+	userHTML, err := webFS.ReadFile("web/user.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commonJS, err := webFS.ReadFile("web/assets/common.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css, err := webFS.ReadFile("web/assets/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"user": string(userHTML), "admin": string(adminHTML)} {
+		if !strings.Contains(content, `data-ui-mode="standalone"`) {
+			t.Fatalf("%s page is missing the default presentation marker", name)
+		}
+	}
+	for _, required := range []string{`get("ui_mode") === "embedded"`, "document.body.dataset.uiMode"} {
+		if !strings.Contains(string(commonJS), required) {
+			t.Fatalf("common script is missing embedded-mode behavior %q", required)
+		}
+	}
+	for _, required := range []string{
+		`body[data-ui-mode="embedded"] .user-topbar`,
+		`body[data-ui-mode="embedded"] .admin-brand`,
+		`body[data-ui-mode="embedded"] .admin-sidebar-footer`,
+		`body[data-ui-mode="embedded"] .admin-nav`,
+	} {
+		if !strings.Contains(string(css), required) {
+			t.Fatalf("stylesheet is missing embedded layout rule %q", required)
+		}
+	}
 }
 
 func testRoleServer(role string, enabled bool) *Server {
@@ -204,7 +305,8 @@ func testRoleServer(role string, enabled bool) *Server {
 
 func configForWebTest() config.Config {
 	return config.Config{Timezone: time.UTC, PublicOrigin: "https://points.example.test",
-		SessionSecret: []byte("01234567890123456789012345678901")}
+		EmbedParentOrigin: "https://sub2api.example.test",
+		SessionSecret:     []byte("01234567890123456789012345678901")}
 }
 
 func requestWithSession(method, path string) *http.Request {
@@ -234,6 +336,36 @@ func TestUserWebCannotSeeOrCallAdministratorSurface(t *testing.T) {
 	}
 }
 
+func TestAdministratorCannotUseUserFinancialSurface(t *testing.T) {
+	server := testRoleServer("admin", true)
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/app/"},
+		{method: http.MethodGet, path: "/assets/user.js"},
+		{method: http.MethodGet, path: "/api/v1/me"},
+		{method: http.MethodGet, path: "/api/v1/ledger"},
+		{method: http.MethodGet, path: "/api/v1/daily-points"},
+		{method: http.MethodGet, path: "/api/v1/balance-grants"},
+		{method: http.MethodPost, path: "/api/v1/checkins"},
+	} {
+		recorder := httptest.NewRecorder()
+		server.mux.ServeHTTP(recorder, requestWithSession(test.method, test.path))
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("%s %s status = %d, want 403", test.method, test.path, recorder.Code)
+		}
+	}
+
+	for _, path := range []string{"/admin/", "/assets/app.css", "/assets/common.js", "/assets/admin.js"} {
+		recorder := httptest.NewRecorder()
+		server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, path))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("admin GET %s status = %d, want 200", path, recorder.Code)
+		}
+	}
+}
+
 func TestDisabledPolicyRejectsUserButKeepsAdminWorkspace(t *testing.T) {
 	userServer := testRoleServer("user", false)
 	for _, path := range []string{"/app/", "/assets/user.js", "/api/v1/me", "/api/v1/daily-points"} {
@@ -252,8 +384,13 @@ func TestDisabledPolicyRejectsUserButKeepsAdminWorkspace(t *testing.T) {
 	}
 	recorder = httptest.NewRecorder()
 	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin/" {
-		t.Fatalf("admin app redirect: status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("admin app status=%d, want 403", recorder.Code)
+	}
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/?ui_mode=embedded"))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("embedded admin app status=%d, want 403", recorder.Code)
 	}
 }
 
@@ -321,7 +458,12 @@ func TestPublicActivityResponsesHideInternalIdentifiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(ledger) + string(grant)
+	checkin, err := json.Marshal(publicCheckinResult{Ordinal: 1, RewardMicroUSD: 10_000,
+		DeliveryStatus: "settled"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(ledger) + string(grant) + string(checkin)
 	for _, forbidden := range []string{"user_id", "external_event_id", "policy_version", "reference_id",
 		"metadata", "last_error", "reason", "transaction_id", "request_fingerprint"} {
 		if strings.Contains(content, forbidden) {

@@ -653,13 +653,17 @@ func (e *UpstreamFailoverError) Error() string {
 // CanSafelyReplayRequest is deliberately conservative. A timeout, transport
 // failure, 5xx response, or interrupted stream may have reached generation and
 // billing upstream even when no downstream bytes were written. Only explicit
-// rejection statuses are eligible for a tightly bounded automatic failover.
+// rejection statuses and the exact model-capacity rejection are eligible for a
+// tightly bounded automatic failover.
 func (e *UpstreamFailoverError) CanSafelyReplayRequest() bool {
 	if e == nil || e.FirstResponseTimeout || !e.ShouldRetryNextAccount() {
 		return false
 	}
 	if e.IsCredentialFailure() {
 		return e.Scope == GatewayFailureScopeAccount
+	}
+	if e.IsOpenAIModelAtCapacity() {
+		return true
 	}
 	switch e.StatusCode {
 	case http.StatusUnauthorized,
@@ -686,6 +690,9 @@ func (e *UpstreamFailoverError) IsCredentialFailure() bool {
 // and inference failures retain their existing scheduler-health behavior.
 func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 	if e == nil {
+		return false
+	}
+	if e.IsOpenAIModelAtCapacity() {
 		return false
 	}
 	return !e.IsCredentialFailure() || e.Scope == GatewayFailureScopeAccount
