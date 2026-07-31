@@ -27,9 +27,10 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `04a19ca082ee43853573795d1385727bd38f20e9`; the container is healthy with
   restart count zero.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`, OCI revision
-  `04a19ca082ee43853573795d1385727bd38f20e9`, and is also healthy. Updating the
-  points container did not recreate or restart Sub2API.
+  `ghcr.io/hxly520/sub2api-points:0.1.169-f79803bb73d6`, OCI revision
+  `f79803bb73d659e36627d6f716aab065ff4d56a6`, and is also healthy. Updating the
+  points container did not recreate or restart the still-running `04a19ca082ee`
+  Sub2API container.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
@@ -48,18 +49,21 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   daily snapshots, 311 point-ledger rows, no `needs_review` rows, and no
   check-in or balance-grant rows. This production schema must not run another
   history plan or apply.
-- The staged rollout keeps `points_system.enabled=false` and sets
-  `points_system.preview_user_ids: [1]`. After the matching Sub2API candidate is
-  switched, only user ID 1 may see the ordinary user menu, visit `/points`, or
-  obtain a user launch ticket. Administrator access remains available, and the
-  global switch is changed to `true` only after preview acceptance.
+- The staged rollout keeps Sub2API `points_system.enabled=false` with
+  `points_system.preview_user_ids: [1]`, while the deployed points service runs
+  `POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. After the
+  matching Sub2API candidate is switched, only user ID 1 may see the ordinary
+  user menu, visit `/points`, obtain a user launch ticket, or continue using a
+  points user session. Administrator access remains available, and both gates
+  change to all-users mode only after preview acceptance.
 - The cold-gray/electric-blue user and administrator workspaces, uploaded
   Sub2API logo integration, username-only browser identity, deleted-user session
-  invalidation, and minimal username ACL template are deployed from revision
-  `04a19ca082ee`. The immutable GHCR digest is
-  `sha256:4a31fa5efb1542db3a26940f262e544dbb7124ba1d907458d704d8d26311e2c9`.
-  Both production services currently run that revision. The next preview-access
-  candidate still requires an explicit operator switch for Sub2API.
+  invalidation, per-request preview enforcement, and minimal username ACL
+  template are deployed in the points service from revision `f79803bb73d6`.
+  Its immutable GHCR digest is
+  `sha256:d5325808dc2950632f4d4f98ff87a167265d0dbf2a45e9f0b8e446bd51c96876`.
+  The matching Sub2API candidate has been loaded on the server but still
+  requires the operator's explicit switch.
 
 ## Runtime Architecture
 

@@ -6,8 +6,8 @@
 
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
-| Sub2API | `0.1.169-04a19ca082ee`，revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `c37a7a01...`，healthy、restart count `0` | 下一候选增加管理员新标签、用户 1 预览授权和主题同步 | 维护者手工切换；自动化不得替换或重启 |
-| 积分服务 | `0.1.169-04a19ca082ee`，同一 revision，容器 `e92b5ddc...`，healthy、restart count `0` | 当前冷灰/电蓝双工作区已上线；下一积分候选补实时主题消息接收 | 可在备份后独立更新；后续不得重跑历史基线 |
+| Sub2API | `0.1.169-04a19ca082ee`，revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `c37a7a01...`，healthy、restart count `0` | 最终候选 `0.1.169-f79803bb73d6` 已加载，含管理员新标签、用户 1 预览授权、主题同步和显式拒绝优先级 | 维护者手工切换；自动化不得替换或重启 |
+| 积分服务 | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `05f43434...`，healthy、restart count `0` | 双工作区、实时主题和用户 1 逐请求预览门禁已上线 | 可在备份后独立更新；后续不得重跑历史基线 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -18,7 +18,9 @@
 - `1e33e7f7a`：未登录首页、同源上传 Logo、同步生图冻结时限、用户名积分与最小 ACL、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态/断连排空修复的升级前收口点。
 - `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e`：v0.1.169 正式兼容 merge，双亲为私有收口 `1e33e7f7a` 与官方 release `26d894ef4`；保留上述二开并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固，同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。
 - `04a19ca082ee43853573795d1385727bd38f20e9`：最终发布源码；补齐非流式 Gemini SSE 聚合在正式 `finishReason` 后立即完成、不等待 `[DONE]` 或 EOF 的回归边界。
-- 该 revision 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 后由维护者手工切换，两者当前均运行该 revision。registry digest、image ID 与 archive SHA256 分别记录在第 11 节，不得互相替代。
+- `5b27f0b80337c0d33435322a9307d84a9edac110`：管理员积分配置改为隔离新标签，增加 Sub2API 用户 1 预览名单和 iframe 实时主题同步。
+- `f79803bb73d659e36627d6f716aab065ff4d56a6`：最终预览修复；用户级显式拒绝覆盖陈旧公共设置，积分服务在 ticket 交换和每次既有 user session 请求双重执行预览门禁。
+- `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分已独立切换，Sub2API 仍为 `04a19ca082ee` 并由维护者手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
 
 ## 2. 积分激活与历史基线
 
@@ -32,7 +34,7 @@
 
 ## 3. 用户入口与签到状态
 
-- 分阶段调试配置必须保持 `points_system.enabled=false`，并设置 `points_system.preview_user_ids: [1]`。只有用户 ID 1 显示积分菜单、通过 `/points` 路由并获得 user ticket；其他用户的手工路由和 launch 请求必须由服务端拒绝。旧的 `enabled=true` ready 文件不得在预览期加载。
+- 分阶段调试配置必须保持 Sub2API `points_system.enabled=false`、`points_system.preview_user_ids: [1]`，同时保持积分服务 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。只有用户 ID 1 显示积分菜单、通过 `/points` 路由、获得 user ticket 并继续使用积分 user session；其他用户的陈旧公共设置、手工路由、launch 请求和旧积分 cookie 都必须被服务端拒绝。旧的 `enabled=true` ready 文件不得在预览期加载。
 - 完整白名单只保存在服务端配置中，浏览器认证状态只返回当前用户专属的 `points_system_access` 布尔值。切换候选前必须核对 configured/active、积分 Origin、Key ID、TTL、时钟偏差以及用户 1/非白名单用户的正反授权；调试无误后再由维护者显式设置 `enabled=true` 开放全体用户，接口始终不得返回密钥或完整白名单。
 - 签到继续关闭。后续启用必须追加最早次日生效的新策略，完整配置每日次数、仅消费用户、昨日/总积分依据、最低昨日消费、固定/百分比阶梯及单次/用户每日/平台每日金额上限。
 - 用户入口和管理员入口都是 Sub2API 内置页面，不得把 `points.52token.org` 配成普通自定义菜单。用户页嵌在 Sub2API 右侧内容区；管理员从设置页打开新浏览器标签。积分域名根路径保持 404，没有一次性 ticket/session 时 `/app/` 和 `/admin/` 必须拒绝。
@@ -185,3 +187,24 @@ docker compose up -d --no-deps sub2api
 - 同次核对的积分服务为容器 `e92b5ddc872b...`、镜像 `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`、同一 OCI revision，image ID `sha256:568c1af8...`，running、healthy、restart count `0`。PostgreSQL 与 Redis 均保持原容器并 healthy。
 - 当前运行进程仍加载 `POINTS_SYSTEM_ENABLED=false`，尚不具备本轮新增的预览名单代码。`2026-07-31 22:06 CST` 已在不重启、不替换任何容器的前提下，把 `POINTS_SYSTEM_PREVIEW_USER_IDS=1` 原子写入 `/home/api/sub2api-points/bridge-secrets.env`；文件保持 `0600 root:root`，备份位于 `/home/api/sub2api-deploy/backups/points-preview-user1-20260731T220613+0800`，随后 `docker compose config -q` 通过。该配置只在维护者手工切换下一 Sub2API 候选后加载。
 - 下一候选必须保持全局 `enabled=false`，仅向用户 ID 1 返回 `points_system_access=true`；菜单、`/points` 路由和 user launch ticket 三层都使用该服务端决定，其他用户不得通过手工 URL 绕过。管理员配置改为隔离 opener/referrer 的新标签页，原 Sub2API 设置页保留；用户 iframe 实时跟随 Sub2API 明暗主题，并严格校验消息来源，不能再影响官方导航主题。
+
+### 11.7 最终预览候选与积分独立切换
+
+独立复审在首个 `5b27f0b80337` 候选中发现两项预览边界：公共设置加载失败或陈旧全局值可能覆盖当前用户的显式拒绝；从全站收窄时旧积分 user session 只复核 policy、不复核预览名单。当时生产活跃积分 session 为 0，所以没有即时越权，但该候选仍被作废且从未替换任何生产容器。最终提交 `f79803bb73d659e36627d6f716aab065ff4d56a6` 让逐用户布尔值优先，并给积分服务增加必填的 `all|preview` 运行门禁，在 ticket 交换和每一次现有 user session 请求上重复校验；非名单旧 cookie 会被拒绝并清除。
+
+受控本机构建使用 Go `1.26.5`、pnpm `9.15.9`、`CGO_ENABLED=0`、`linux/amd64` 和标准 Docker archive。前端 typecheck、ESLint、全量 Vitest 和 production build 全部通过；积分服务 `go test ./...` 与 `go vet ./...` 通过。三个 GHCR tag 均逐一回读 manifest，revision 和 version 标签分别精确为完整 `f79803bb73d659e36627d6f716aab065ff4d56a6` 与 `0.1.169`。
+
+| 制品 | 标签 | registry digest | image ID | archive SHA256 | bytes |
+| --- | --- | --- | --- | --- | ---: |
+| Sub2API 最终候选 | `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6` | `sha256:efeac9309f33a9ccd204932ed1144955641a78260982c3041842fb89c71caa49` | `sha256:87856a8c2d35bbe1b035b2244e43dabfd385313515cb22c72853d302ee6eef97` | `757340c996aae3696cf6e740f1883e8032d7703b51f2c3c398acb5ec55174703` | 88,132,096 |
+| 积分服务 | `ghcr.io/hxly520/sub2api-points:sha-f79803bb73d6`、`0.1.169-f79803bb73d6` | `sha256:d5325808dc2950632f4d4f98ff87a167265d0dbf2a45e9f0b8e446bd51c96876` | `sha256:297e7779eae338219f94545b534c3887dc1424a2401a0b9ed9a02008d1a53352` | `ac0175ab58d82d1801157fcc45e40330705f6ab64b59e345f8ba9627a3d73763` | 20,711,936 |
+
+服务器归档分别为 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.169-f79803bb73d6-linux-amd64.tar` 与 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-f79803bb73d6-linux-amd64.tar`，均为 `0600 root:root`；服务器 SHA256 与本地一致。Sub2API 只执行 `docker load` 和 label/image ID 检查，没有修改 `/home/api/sub2api-deploy/docker-compose.yml`，也没有对主项目执行 `up`。
+
+积分切换前完整备份位于 `/home/api/sub2api-deploy/backups/points-f79803bb73d6-20260731T232339+0800`，目录 `0700`、文件 `0600`。它包含 `points` custom dump、176 行 catalog、全数据库 schema-only、切换前后 Compose/环境/容器 inspect、数据库断言和 SHA256 清单；dump SHA256 为 `2fee2117562cd6405d53cc054e4ee8e5171a80a05479f2ff22c40db4bda57429`。首次使用错误容器名而提前终止的无 dump 目录已明确改名为 `points-f79803bb73d6-20260731T232205+0800.incomplete`，不得作为恢复点。
+
+积分服务只原子增加 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`，并把 `/home/api/sub2api-points/compose.yml` 镜像改为最终不可变标签；`docker compose config -q` 后仅执行 `docker compose up -d --no-deps --pull never points-system`。新容器 `05f43434fc20...` 为 healthy、restart count `0`、用户 `65532:65532`、只读 rootfs、PID 128、`cap_drop: ALL`、`no-new-privileges`，启动以来 ERROR 日志为 0。切换前后 21 表、3 迁移、29 账户、316 快照、316 修订、311 账本、`needs_review=0`、policy v3、40 天成功历史 job、签到/尝试/发放/冲正均完全一致；最新 startup 对账为 `14` 用户、`19056` 源行、零用户变更、零消费和零积分差量，未重跑历史作业。
+
+真实签名票据验证中，非预览用户 2 在积分端返回 `403`；用户 1 的嵌入工作区、非空用户名、无 `user_id` 浏览器字段、每日积分接口和注销均正常；管理员独立工作区与注销正常，结束后活跃积分 session 为 0。积分本地 health 为 200，公网根和 health 保持 404，无票据 `/app/` 保持 401，Nginx active。Sub2API 容器仍精确为 `c37a7a0149975da70d81481d2d173992628e8bbdd93b79b872c7904462060844`，启动时间 `2026-07-31T13:08:41.194414812Z`，镜像仍为 `0.1.169-04a19ca082ee`，healthy、restart count `0`。
+
+维护者手工切换 Sub2API 时只使用 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，继续加载当前 root-only `bridge-secrets.env` 的 `POINTS_SYSTEM_ENABLED=false` 与 `POINTS_SYSTEM_PREVIEW_USER_IDS=1`，禁止使用旧的 `bridge-secrets.ready.env`。切换后先验收用户 1 菜单、右侧嵌入页与主题同步，再验收非名单菜单/路由/ticket 三层拒绝和管理员新标签；调试通过前不得改为全站 enabled。

@@ -6,14 +6,14 @@
 
 ## 0. 当前生产基线与入口契约
 
-- 截至 `2026-07-31 22:05 CST`，Sub2API 与积分服务均运行 `0.1.169-04a19ca082ee`，OCI revision `04a19ca082ee43853573795d1385727bd38f20e9`；容器分别为 `c37a7a014997...` 与 `e92b5ddc872b...`，均 healthy、restart count `0`。镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
+- 截至 `2026-07-31 23:27 CST`，Sub2API 仍运行 `0.1.169-04a19ca082ee` / revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `c37a7a014997...`；积分服务已独立运行 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `05f43434fc20...`。两者均 healthy、restart count `0`，积分切换前后 Sub2API 的完整容器 ID、启动时间和镜像引用完全不变。镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
 - 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 21 张表、3 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。
 - 生产 `points_app` 已完成 `public.users.username` 单列升级，当前对 Sub2API 用户表的直接读取权限严格限定为 `id/username/deleted_at`；整表 SELECT、其他用户列和写权限均未开放。后续部署不得重跑首次 bootstrap 或扩大该 allowlist。
 - Sub2API 当前共应用 250 条 public 迁移，`192_media_balance_hold_reconciliation_index_notx.sql` 与 `193_points_balance_credit_ledger.sql` 均已进入生产；积分迁移必须继续记录在 `points.points_schema_migrations`，不得混入 Sub2API 迁移表。
 - 系统设置内的“积分系统”标签和管理员入口 `/admin/settings/points` 必须始终对已认证管理员可见，即使 `points_system.enabled=false`，以便检查桥接状态并经 step-up 进入策略台。管理员点击“打开积分配置”时必须同步创建隔离 opener/referrer 的新标签占位页，验证成功后再把一次性管理员 launch URL 导航到该标签；原 Sub2API 设置页保留，底部不得再嵌入管理员 iframe，弹窗被拦截时不得申请票据。配置或状态 API 只能返回是否配置、Key ID、URL、TTL 等非敏感元数据，禁止回传 launch/credit 密钥原值。
 - 用户工作区 `/app/` 与管理员工作区 `/admin/` 必须使用独立中文页面和独立脚本。普通用户不得下载管理员脚本、打开管理员页面或调用 `/api/v1/admin/*`，管理员也不得调用普通用户账户、积分、签到或赠送 API；角色不匹配一律返回 `403`，不能在同一页面用前端显隐混合两类能力。只有用户工作区通过 Sub2API `/points` 右侧内容区 iframe 嵌入，左侧继续使用 Sub2API 导航及其上传 Logo；积分主题类只能附加在右侧内容区，不得改变官方侧栏。`ui_mode=embedded` 只控制展示，不得参与角色或授权判定。父页通过 `sub2api:points-theme` 实时同步明暗主题，子页只在消息 source 为 parent、Origin 精确等于 `POINTS_EMBED_PARENT_ORIGIN` 且值为 `light|dark` 时应用。积分服务的 CSP `frame-ancestors` 只能包含精确父 Origin，禁止通配符及冲突的 `X-Frame-Options`。
 - 当前 policy v3 已启用，比例为 `1 U = 10.00` 积分，刷新时间为 `00:05`，签到关闭。首次全历史基线作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已成功，当前有 29 个积分账户、316 条每日快照、311 条积分账本，`needs_review=0`，签到和余额发放记录均为 0。该生产 schema 的历史基线已经闭环，禁止再次 plan/apply 或创建第二个回算作业。
-- 分阶段调试保持 Sub2API `POINTS_SYSTEM_ENABLED=false`、`POINTS_SYSTEM_PREVIEW_USER_IDS=1`，同时把积分服务设置为 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。仅当前用户 ID 1 的认证响应返回 `points_system_access=true`，并在菜单、`/points` 路由和 Sub2API user launch ticket 三层放行；积分服务还必须在票据交换和每一次既有 user session 请求复核自己的预览门禁，因此从全站收窄时旧 cookie 也立即失效。两份完整名单均不得返回浏览器，非名单用户不能通过陈旧公共设置、手工 URL 或旧积分会话绕过。`2026-07-31 22:06 CST` 已把 Sub2API 预览变量写入 root-only bridge 环境文件；积分服务变量必须在最终候选独立切换前写入 root-only `points.env`。签到保持关闭。调试通过后必须在同一维护变更中显式设置 Sub2API `enabled=true`、积分服务 mode=`all` 并清空积分预览名单，才开放全体用户。
+- 分阶段调试保持 Sub2API `POINTS_SYSTEM_ENABLED=false`、`POINTS_SYSTEM_PREVIEW_USER_IDS=1`，同时把积分服务设置为 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。仅当前用户 ID 1 的认证响应返回 `points_system_access=true`，并在菜单、`/points` 路由和 Sub2API user launch ticket 三层放行；积分服务还必须在票据交换和每一次既有 user session 请求复核自己的预览门禁，因此从全站收窄时旧 cookie 也立即失效。两份完整名单均不得返回浏览器，非名单用户不能通过陈旧公共设置、手工 URL 或旧积分会话绕过。两端 root-only 预览配置均已写入并验证，积分端真实票据验证用户 2 为 `403`、用户 1 与管理员工作区正常且测试会话已清零；Sub2API 用户菜单仍须维护者手工切换最终候选后才生效。签到保持关闭。调试通过后必须在同一维护变更中显式设置 Sub2API `enabled=true`、积分服务 mode=`all` 并清空积分预览名单，才开放全体用户。
 
 ## 1. 积分性质
 
