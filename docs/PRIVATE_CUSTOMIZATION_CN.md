@@ -15,7 +15,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库代码基线：官方 Release `v0.1.168`（release commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.168`。媒体冻结、积分同库、公开首页、管理员积分配置入口和余额缓存并发保护均属于必须保留的二开。只跟随已发布 Release/Tag，不把发布后的官方 `main` 自动并入生产候选。
+- 当前仓库候选基线：官方 Release `v0.1.169`（release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.169`。本轮只合入该已发布 tag，不合入 tag 之后的官方 `main`。媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护和跨协议终态校验均属于必须保留的二开。
 - 截至 `2026-07-31`，生产 Sub2API 仍为 `0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`；积分服务已独立更新为 `0.1.168-28e760bc8c6d`，OCI revision `28e760bc8c6d66414595ef2af213d301a423acf2`。两者均 healthy，积分更新没有重建或重启 Sub2API。生产版本必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
@@ -40,6 +40,8 @@
 | `d6b367f31` | 历史积分激活与容量错误精确重试 | 增加一次性历史回算、启用策略门禁，以及仅针对精确容量拒绝文案的有界文本重试；当前 Sub2API 候选必须保留 |
 | `28e760bc8` | 积分用户明细与签到发放任务收敛 | 管理员全站用户积分明细；删除积分侧手工赠送和快照刷新入口，发放任务只处理签到奖励；当前生产积分 revision |
 | `874255bcd` | 嵌入式积分大屏优化 | 用户大屏、管理员紧凑工作区、中文结算状态和嵌入式布局优化；下一积分候选基线 |
+| `1e33e7f7a` | v0.1.169 升级前二开收口 | 用户名积分展示与最小 ACL、软删除会话失效、双工作区/首页视觉、跨协议终态和客户端断连有限排空；本轮升级必须保留 |
+| 本次 v0.1.169 merge | 合并官方 v0.1.169 | 第二父节点固定为官方 release `26d894ef4`；冲突按官方能力优先并兼容保留私有调度、渠道可见性、媒体和积分行为，精确 commit 以本轮 `main` 历史为准 |
 
 完整提交历史和 tag 是正式合并的前置条件。浅克隆、`blob:none` 或 sparse checkout 只可用于阅读，不得用于正式版本合并和发布。
 
@@ -227,7 +229,16 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.168 合并兼容结论
+### 5.0 v0.1.169 合并兼容结论
+
+- 本轮只合入官方 `v0.1.169` Release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`。冲突仅涉及可用渠道复合分组测试和 OpenAI 账号调度器：复合分组保留官方测试与私有可见模型/隐私边界；调度器采用官方带 context 的代理熔断 fail-open，同时保留私有模型级运行时阻断、sticky/画像选择和单候选降级逻辑。
+- 官方新增 Gemini/xAI 上游路径片段校验、Responses 子路径守卫、代理流熔断事件折叠与无候选 fail-open、容器 `no-new-privileges`、运行时价格资源 fallback、邮件正文处理、订阅配额显示修正及安全审计更新。Compose 中的积分环境变量、非 root 运行、私有迁移和媒体配置均保留。
+- 官方价格资源同步 GPT-5.6 Terra/Luna 并增加 GLM-5.2 fallback。渠道自定义价格仍优先于官方 fallback；价格变化只影响升级后新产生的成功消费及其积分换算，不回写历史消费、快照或积分账本。
+- 合并审查补上两个边界：`PlatformComposite` 的 `SupportedModelsByGroup` 必须包含渠道全部已配置具体平台模型；Gemini Chat/Messages/native 流处理完带 `finishReason` 的 parts 与 usage 后立即完成，不等待上游 EOF。任一下游写失败都显式启动断连排空 guard，默认最多 5 秒后关闭上游 body，避免永久占用账号并发槽。
+- 私有媒体冻结和核销、精确容量拒绝重试、Responses/Chat/Anthropic/Gemini/WS 正式终态、积分同库隔离、用户名展示与软删除会话失效、管理员/用户双工作区、未登录首页和上传 Logo 均未被官方更新覆盖。签到继续关闭，历史积分作业不得重跑。
+- 合并后的后端 unit/default 全量测试、`go vet`、`go build`，积分服务 test/vet/build，前端 ESLint/typecheck/全量 Vitest/production build均已通过；GitHub 镜像工作流仍须在最终 `main` 上重新执行自身测试和冒烟，并记录不可变 digest。
+
+### 5.0.1 v0.1.168 历史合并结论
 
 - 合并提交 `d30c42da` 只合入官方 `v0.1.168` Release tree，不合入 tag 之后的未发布 `main`；其后私有提交 `9f1b6bae`、`e4179147`、`55ac503b`、`d83ea1bb`、`7e598fbb` 分别承载媒体核销、积分、同库部署、跨平台测试稳定性和未登录首页。官方新增 Passkey、模型广场、OpenAI Live、Kimi K3、账号/API Key 声明列更新和多项协议、计费及安全审计修复。
 - 冲突处理以官方结构和行为为主，同时保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留与核销、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。
@@ -236,8 +247,8 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和一般失败终态不自动重放。精确容量拒绝文案是唯一额外例外，按 3.2 节的原文匹配、未输出正文、最多两次及 `100ms/200ms` 退避执行。图片和视频创建继续严格一次提交。
 - Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 都不得把 HTTP 200、EOF 或 framing 哨兵当成成功终态；缺正式终态时按 3.2 节区分“未输出正文进入安全故障切换判断”“已输出正文发送协议显式错误”和“客户端已断开继续 drain usage、禁止重放”。升级合并必须保留三条路径及其测试。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- 仓库与当前生产版本号均为 `0.1.168`。Sub2API 当前仍为 `0.1.168-339422728b2c`；包含容量精确重试、跨协议会话中断修复、历史激活门禁、新未登录首页和同源上传 Logo 的后续候选必须先生成最终 commit，再构建、上传并缓存，且只能由维护者手工切换。积分服务当前为 `0.1.168-28e760bc8c6d`，已包含第三条历史迁移、管理员用户积分明细及仅签到发放任务；下一积分候选在此基础上优化嵌入式双工作区与品牌 Logo，可在备份 `points` schema 后独立更新。policy v3 已启用，比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业已成功，运行中的 Sub2API 用户开关仍关闭。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
-- 截至本轮文档收口时，上述工作仍是未提交工作树：最终 commit、候选 tag、OCI revision 和 registry digest 均尚未生成，也没有推送、构建或切换生产。后续只能用最终推送 commit 和对应镜像工作流输出补写这些值，禁止用 `874255bcd`、旧生产 revision、image ID 或本地 archive SHA256 代替。
+- 仓库候选版本为 `0.1.169`，当前生产版本仍为 `0.1.168-339422728b2c`。候选包含容量精确重试、跨协议会话中断修复、历史激活门禁、新未登录首页和同源上传 Logo；只能先构建、上传并缓存，再由维护者手工切换。积分服务当前生产为 `0.1.168-28e760bc8c6d`；候选与仓库同一最终 commit 构建，在此基础上加入嵌入式双工作区、品牌 Logo、用户名显示和软删除会话失效，可在备份 `points` schema 并完成用户名最小授权后独立更新。policy v3 已启用，比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业已成功，运行中的 Sub2API 用户开关仍关闭。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
+- 本轮候选源码随 v0.1.169 merge 收口；在 GitHub 工作流完成前仍没有新的候选镜像 tag、OCI revision 或 registry digest，也没有切换生产。后续只能用最终推送 commit 和对应镜像工作流输出补写这些值，禁止用 `1e33e7f7a`、旧生产 revision、image ID 或本地 archive SHA256 代替。
 - 后端全量测试、vet、编译，积分服务单元/vet/integration-tag 编译，前端 lint/typecheck/全量测试/生产构建和 Compose 解析已通过。官方纳秒 TTL 测试已在 `d83ea1bb` 改为显式过期快照，Windows 连续 20 次验证通过；真实 PostgreSQL 事务和并发用例必须由 GitHub PostgreSQL 16 CI 最终确认。
 
 ### 5.1 升级前盘点

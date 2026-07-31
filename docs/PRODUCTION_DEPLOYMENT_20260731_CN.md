@@ -6,16 +6,18 @@
 
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
-| Sub2API | `0.1.168-339422728b2c`，revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，容器 `bfd162bb...`，healthy | 官方 `v0.1.168` 加私有兼容提交；跨协议会话终态修复、容量精确重试、新 Vue 首页和积分桥接均在未提交工作树，最终候选 commit 以本轮推送后的 `main` 为准 | 只构建、推送并上传/缓存候选；维护者手工切换，自动化不得替换或重启 |
-| 积分服务 | `0.1.168-28e760bc8c6d`，revision `28e760bc8c6d66414595ef2af213d301a423acf2`，容器 `7b745c53...`，healthy | `874255bcd` 之后的冷灰/电蓝双工作区、上传 Logo、镜像内回退及用户名展示仍在未提交工作树；最终 commit 与 Sub2API 候选相同 | 先备份并执行存量角色 `username` 单列授权，再独立更新积分服务并验证；不得重跑历史基线，且不得改动 Sub2API 容器 |
+| Sub2API | `0.1.168-339422728b2c`，revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，容器 `bfd162bb...`，healthy | 官方 `v0.1.169` 加私有兼容提交，源码 `VERSION=0.1.169`；跨协议终态、容量精确重试、新 Vue 首页、积分桥接和 v0.1.169 官方能力均已进入待发布候选，最终 commit 以本轮推送后的 `main` 为准 | 只构建、推送并上传/缓存候选；维护者手工切换，自动化不得替换或重启 |
+| 积分服务 | `0.1.168-28e760bc8c6d`，revision `28e760bc8c6d66414595ef2af213d301a423acf2`，容器 `7b745c53...`，healthy | `1e33e7f7a` 已收口冷灰/电蓝双工作区、上传 Logo、镜像内回退、用户名展示和软删除会话失效；候选由与 Sub2API 相同的最终 `main` commit 构建 | 先备份并执行存量角色 `username` 单列授权，再独立更新积分服务并验证；不得重跑历史基线，且不得改动 Sub2API 容器 |
 | exact-root 首页 | Nginx 从宿主 `/home/api/sub2api-deploy/public/index.html` 提供旧生产文件 | 必须把 `deploy/public-landing/index.html` 与新版 Vue `/home` 同步为冷灰/电蓝、左文右图的数据化风格；最终状态以提交前静态页测试和文件 diff 为准 | 备份后原子替换并核对 SHA256；不 reload Nginx，不重启 Sub2API |
 
-仓库版本仍为 `backend/cmd/server/VERSION=0.1.168`，上游 merge-base 为官方 Release `v0.1.168` commit `99c8e4bf7564823bafbab369acab6539e734c1bb`。本轮重要私有节点：
+仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
 
 - `d6b367f31d606771c464ada4928a9b5eb622bd68`：历史积分激活和模型容量精确错误重试。
 - `28e760bc8c6d66414595ef2af213d301a423acf2`：管理员用户积分明细、删除积分侧手工赠送/快照刷新入口、发放任务只处理签到奖励。
 - `874255bcd37d4820989eb1e13cdaf84f417996aa`：用户与管理员嵌入式积分工作区视觉及信息层级优化。
-- 本轮未登录首页、同源上传 Logo、同步生图冻结时限、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态修复均在 `874255bcd` 后的工作树中；截至本轮文档收口尚未生成最终 commit、候选 tag、OCI revision 或 registry digest，也没有推送、构建或切换生产。制品标识必须来自最终推送 commit 和镜像工作流，禁止用 `874255bcd`、旧生产 revision、image ID 或本地 archive SHA256 猜测。
+- `1e33e7f7a`：未登录首页、同源上传 Logo、同步生图冻结时限、用户名积分与最小 ACL、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态/断连排空修复的升级前收口点。
+- v0.1.169 merge 兼容保留上述二开，并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固；同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。最终 merge commit 以本轮 `main` 双亲历史为准。
+- 截至候选源码收口尚未生成新的镜像 tag、OCI revision 或 registry digest，也没有切换生产。制品标识必须来自最终推送 commit 和镜像工作流，禁止用 `1e33e7f7a`、旧生产 revision、image ID 或本地 archive SHA256 猜测。
 
 ## 2. 积分激活与历史基线
 
@@ -83,9 +85,9 @@ Selected model is at capacity. Please try a different model.
 - 用户 1 当日窗口内有 26 条 Nginx `502`，均可关联真实上游 `502/503`；另有 5 条 Nginx `499`，表示客户端先关闭连接。5 条中 4 条叠加上游 `524`，另 1 条在上游首响应等待约 `125.766s` 后由客户端取消。
 - 生效 Nginx API 超时为 `1800s`；上述中断发生在数秒至约 125 秒，且 Nginx error log 没有对应代理超时，因此没有证据支持“Nginx 到时主动掐断”。10:47 附近存在客户端关闭后上游继续完成并正常落账的样本，优先归因客户端任务取消、本地网络或 Codex Desktop 连接生命周期。
 - 10:23:00 与 10:24:05 有两条高置信静默候选：响应约 `602` bytes、`output_tokens=0`、账号 7，且没有对应 ops error。生产未保存原始响应体，不能据此绝对证明上游只返回 `[DONE]`；但该表现与旧代码把 Responses 通用 `[DONE]` 哨兵误判为成功终态完全一致。
-- 后续候选把正式成功终态校验扩展到 Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge。Responses 只接受 `response.completed/done`；原生 Chat 要求有效 `finish_reason`，流式还要求 `[DONE]`；Anthropic 转 Chat 要求 `message_stop` 或带 `stop_reason` 的 `message_delta`；Gemini 路径要求 `finishReason`；WS 路径要求正式 Responses 终态。HTTP 200、EOF 和通用 framing 哨兵本身都不是成功证据。
+- 后续候选把正式成功终态校验扩展到 Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge。Responses 只接受 `response.completed/done`；原生 Chat 要求每个 choice 的有效 `finish_reason`，流式还要求 `[DONE]`；Anthropic 转 Chat 要求 `message_stop` 或带 `stop_reason` 的 `message_delta`；Gemini 路径要求 `finishReason` 并在处理完该事件的 parts/usage 后立即完成，不等待 EOF；WS 路径要求正式 Responses 终态。HTTP 200、EOF 和通用 framing 哨兵本身都不是成功证据。
 - 上游 EOF/读取错误、SSE/WebSocket `error` 或缺终态时，未输出语义正文的请求进入既有安全故障切换判断；已经输出部分正文且连接可写时发送对应下游协议的显式错误，禁止合成 `[DONE]`、`finish_reason=stop`、`message_stop` 或其他成功终止事件。正式上游错误仍按既有账号故障分类处理；一般 5xx、读错误和部分输出不因本修复变成可安全重放。
-- 客户端断开后所有协议都停止下游写入并关闭重放窗口，同时继续 drain 上游终态和 usage 供真实计费收口；后续 EOF、容量错误或读取错误不得触发第二次上游请求。Responses 继续写脱敏断开日志，并以不继承取消信号的上下文保存 `response_id` 账号绑定。
+- 客户端断开后所有协议都停止下游写入并关闭重放窗口，同时继续有限 drain 上游终态和 usage 供真实计费收口；后续 EOF、容量错误或读取错误不得触发第二次上游请求。请求 context 取消和明确下游写失败都会触发统一 guard；默认 5 秒，配置的更短正数 `stream_data_interval_timeout` 可收紧但不能延长，超时关闭上游 body，避免永久占用账号/并发槽。Responses 继续写脱敏断开日志，并以不继承取消信号的上下文保存 `response_id` 账号绑定。
 - 本节全部为只读排查和候选代码结论。运行中的 Sub2API 仍是 `0.1.168-339422728b2c`，没有替换或重启；修复要等维护者手工切换最终候选镜像后才生效。
 
 ## 9. 发布与验证
@@ -93,14 +95,14 @@ Selected model is at capacity. Please try a different model.
 本轮已完成的源码验证包括后端 `go test ./...`、`go vet ./...` 和 build；前端 ESLint、typecheck、全量 Vitest 和 production build；积分 `go test ./...`、`go vet ./...` 和 build；已渲染的桌面/移动 Vue 与积分页面无横向溢出且趋势图非空。exact-root 同步完成后仍必须重新运行静态页测试和最终截图检查；镜像工作流还须在最终 `main` commit 上执行自身测试和冒烟，不能用本地通过替代制品证据。
 
 1. 推送最终 `main` 后触发 `.github/workflows/points-image.yml`，`publish_version_tag=true`；记录 tag、完整 revision、registry digest 和 workflow run。
-2. 触发 `.github/workflows/cachecompat-image.yml`，`version=0.1.168`、`publish_latest=false`；记录同样的不可变制品信息。
+2. 触发 `.github/workflows/cachecompat-image.yml`，`version=0.1.169`、`publish_latest=false`；记录同样的不可变制品信息。
 3. 若 GitHub runner 仍在分配前被计费门禁终止，沿用受控本机构建标准 Docker archive 的既有流程；服务器只执行校验和 `docker load`，不编译源码或构建镜像。
 4. Sub2API 候选只上传、导入或缓存到服务器，不执行 `docker compose up`，不修改当前容器。把候选 tag/digest 和人工切换命令交给维护者。
 5. 更新积分前新建并校验数据库备份，记录旧容器、镜像、积分账户/快照/账本和 Sub2API 用户计数。生产 `points_app` 当前尚未具备用户名列权限；不得重跑 `shared-database-bootstrap.sql.example`，应通过 root-only stdin 提供既有 `points_app_role`，单独运行 `points-system/deploy/shared-database-users-username-upgrade.sql.example`。该事务必须只产生 `GRANT SELECT (username)`，不改 PUBLIC ACL；保存脚本输出的执行人、目标角色、事务号和前后断言，授权后复核上述数据计数完全不变。任一预检或断言失败时停止积分更新并保留当前容器。
 6. 完成单列授权后，仅对积分服务执行 `docker compose up -d --no-deps points-system`。更新后核对 21 表/3 迁移、policy v3 和历史 job ID 不变，对比更新前计数与期间正常调度增量，确认无重复历史账本、无异常减少、`needs_review=0`、签到/发放仍为 0；同时检查用户/管理员顶部、管理员用户明细和签到发放用户列只显示用户名，并断言浏览器响应没有无必要的 `user_id`，Sub2API 容器 ID、启动时间和镜像引用完全不变。
 7. exact-root 首页按第 5 节独立原子发布。它不依赖镜像切换，也不需要 Nginx reload，但线上 SHA256 必须与仓库候选一致。
 
-截至本轮文档收口，下一候选的最终 commit、镜像 tag、OCI revision 和 registry digest 尚未生成，GitHub 构建也尚未触发。构建完成后必须把这些值及 workflow run 追加到本节或同日续录，禁止把工作树、旧 registry digest、image ID 或 archive SHA256 互相冒充。
+在 GitHub 构建完成前，下一候选的镜像 tag、OCI revision 和 registry digest 仍为空。推送最终 `main` 后必须把 commit、两个 workflow run、不可变 tag 和 registry digest 追加到本节或同日续录，禁止把源码工作树、旧 registry digest、image ID 或 archive SHA256 互相冒充。
 
 ## 10. 不可破坏约束
 

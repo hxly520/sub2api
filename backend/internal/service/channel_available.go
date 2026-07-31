@@ -96,6 +96,9 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 
 		for _, group := range attachedGroups {
 			groupModels := supportedModelsForPlatform(channelModels, group.Platform)
+			if group.Platform == PlatformComposite {
+				groupModels = append([]SupportedModel(nil), channelModels...)
+			}
 			s.fillGlobalPricingFallback(groupModels)
 			supportedByGroup[group.ID] = groupModels
 		}

@@ -230,7 +230,7 @@ func TestGeminiChatStreamingPartialEOFEmitsExplicitErrorWithoutDone(t *testing.T
 
 	result, err := svc.handleChatCompletionsStreamingResponseFromGemini(
 		context.Background(), c, resp, &Account{ID: 7, Platform: PlatformGemini},
-		"gemini-request", time.Now(), "gemini-test", false, false,
+		"gemini-request", time.Now(), "gemini-test", false, false, nil,
 	)
 
 	require.ErrorIs(t, err, errGeminiStreamMissingTerminal)
@@ -261,7 +261,7 @@ func TestGeminiChatStreamingClientDisconnectStillCollectsTerminalUsage(t *testin
 
 	result, err := svc.handleChatCompletionsStreamingResponseFromGemini(
 		context.Background(), c, resp, &Account{ID: 8, Platform: PlatformGemini},
-		"gemini-request", time.Now(), "gemini-test", false, true,
+		"gemini-request", time.Now(), "gemini-test", false, true, nil,
 	)
 
 	require.NoError(t, err)
@@ -270,6 +270,87 @@ func TestGeminiChatStreamingClientDisconnectStillCollectsTerminalUsage(t *testin
 	require.Equal(t, 9, result.usage.InputTokens)
 	require.Equal(t, 4, result.usage.OutputTokens)
 	require.Empty(t, rec.Body.String())
+}
+
+func TestGeminiChatStreamingReturnsOnFinishReasonWithoutEOF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamReader, upstreamWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = upstreamWriter.Close()
+		_ = upstreamReader.Close()
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: upstreamReader}
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+
+	type outcome struct {
+		result *geminiStreamResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := svc.handleChatCompletionsStreamingResponseFromGemini(
+			context.Background(), c, resp, &Account{ID: 8, Platform: PlatformGemini},
+			"gemini-request", time.Now(), "gemini-test", false, true, nil,
+		)
+		done <- outcome{result: result, err: err}
+	}()
+
+	_, err := io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"text":"complete"}]} ,"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":5}}`+"\n\n")
+	require.NoError(t, err)
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.Equal(t, 11, got.result.usage.InputTokens)
+		require.Equal(t, 5, got.result.usage.OutputTokens)
+		require.Contains(t, rec.Body.String(), "data: [DONE]")
+	case <-time.After(time.Second):
+		t.Fatal("Gemini chat stream waited for EOF after finishReason")
+	}
+}
+
+func TestGeminiChatStreamingWriteFailureStartsBoundedDrain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamReader, upstreamWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = upstreamWriter.Close()
+		_ = upstreamReader.Close()
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Writer = &geminiChatFailingWriter{ResponseWriter: c.Writer, failAfter: 0}
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: upstreamReader}
+	guard := startClientDisconnectDrainGuardWithTimeout(context.Background(), upstreamReader, 20*time.Millisecond)
+	defer guard.Stop()
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+
+	type outcome struct {
+		result *geminiStreamResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := svc.handleChatCompletionsStreamingResponseFromGemini(
+			context.Background(), c, resp, &Account{ID: 8, Platform: PlatformGemini},
+			"gemini-request", time.Now(), "gemini-test", false, false, guard,
+		)
+		done <- outcome{result: result, err: err}
+	}()
+
+	_, err := io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}`+"\n\n")
+	require.NoError(t, err)
+	select {
+	case got := <-done:
+		require.Error(t, got.err)
+		require.NotNil(t, got.result)
+		require.True(t, got.result.clientDisconnected)
+	case <-time.After(time.Second):
+		t.Fatal("Gemini chat stream remained blocked after downstream write failure")
+	}
 }
 
 func TestGeminiForwardAsChatCompletionsMissingFinishReasonDoesNotRetryAfterPartialOutput(t *testing.T) {

@@ -251,7 +251,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	clientDisconnected := false
 	var forwardErr error
 	if clientStream {
-		streamRes, err := s.handleChatCompletionsStreamingResponseFromGemini(ctx, c, resp, account, requestID, startTime, originalModel, account.Type == AccountTypeOAuth, includeUsage)
+		streamRes, err := s.handleChatCompletionsStreamingResponseFromGemini(ctx, c, resp, account, requestID, startTime, originalModel, account.Type == AccountTypeOAuth, includeUsage, drainGuard)
 		if err != nil {
 			if streamRes == nil {
 				return nil, err
@@ -333,9 +333,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 			if clientStream {
 				action = "streamGenerateContent"
 			}
-			fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, action)
-			if clientStream {
-				fullURL += "?alt=sse"
+			fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, action, clientStream)
+			if err != nil {
+				return nil, "", err
 			}
 
 			restGeminiReq := normalizeGeminiRequestForAIStudio(geminiReq)
@@ -400,9 +400,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 				return nil, "", err
 			}
 
-			fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, action)
-			if useUpstreamStream {
-				fullURL += "?alt=sse"
+			fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, action, useUpstreamStream)
+			if err != nil {
+				return nil, "", err
 			}
 
 			restGeminiReq := normalizeGeminiRequestForAIStudio(geminiReq)
@@ -523,6 +523,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	originalModel string,
 	isOAuth bool,
 	includeUsage bool,
+	drainGuard *clientDisconnectDrainGuard,
 ) (*geminiStreamResult, error) {
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -569,13 +570,20 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 		}
 		logger.FromContext(ctx).Info("gemini.chat_completions_client_disconnected", fields...)
 	}
+	markClientDisconnected := func(stage string, err error) {
+		drainGuard.ClientDisconnected()
+		if clientDisconnected {
+			return
+		}
+		clientDisconnected = true
+		logClientDisconnect(stage, err)
+	}
 	startClientOutput := func() {
 		if clientOutputStarted || clientDisconnected {
 			return
 		}
 		if ctx != nil && ctx.Err() != nil {
-			clientDisconnected = true
-			logClientDisconnect("request_context_canceled", ctx.Err())
+			markClientDisconnected("request_context_canceled", ctx.Err())
 			pendingSSE = pendingSSE[:0]
 			return
 		}
@@ -583,8 +591,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 		clientOutputStarted = true
 		for _, sse := range pendingSSE {
 			if _, err := io.WriteString(c.Writer, sse); err != nil {
-				clientDisconnected = true
-				logClientDisconnect("pending_stream_write", err)
+				markClientDisconnected("pending_stream_write", err)
 				break
 			}
 		}
@@ -607,8 +614,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 			return false
 		}
 		if _, err := io.WriteString(c.Writer, sse); err != nil {
-			clientDisconnected = true
-			logClientDisconnect("stream_write", err)
+			markClientDisconnected("stream_write", err)
 		}
 		return false
 	}
@@ -677,6 +683,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 
 	reader := bufio.NewReader(resp.Body)
 	for {
+		terminalObserved := false
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
 			trimmed := strings.TrimRight(line, "\r\n")
@@ -699,6 +706,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 						}
 						if fr := extractGeminiFinishReason(geminiResp); fr != "" {
 							finishReason = fr
+							terminalObserved = true
 						}
 						if u := extractGeminiUsage(rawBytes); u != nil {
 							usage = *u
@@ -815,6 +823,9 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 				}
 			}
 		}
+		if terminalObserved {
+			break
+		}
 
 		if errors.Is(err, io.EOF) {
 			break
@@ -824,8 +835,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 		}
 	}
 	if !clientDisconnected && ctx != nil && ctx.Err() != nil {
-		clientDisconnected = true
-		logClientDisconnect("request_context_canceled", ctx.Err())
+		markClientDisconnected("request_context_canceled", ctx.Err())
 	}
 	if strings.TrimSpace(finishReason) == "" {
 		const message = "Gemini upstream stream ended before finishReason"
@@ -841,8 +851,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 			}
 		}
 		if err := writeChatStreamUpstreamFailure(c, message); err != nil {
-			clientDisconnected = true
-			logClientDisconnect("missing_terminal_error_write", err)
+			markClientDisconnected("missing_terminal_error_write", err)
 		}
 		return streamResult(), errGeminiStreamMissingTerminal
 	}
@@ -895,8 +904,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	startClientOutput()
 	if !clientDisconnected {
 		if _, err := io.WriteString(c.Writer, "data: [DONE]\n\n"); err != nil {
-			clientDisconnected = true
-			logClientDisconnect("done_write", err)
+			markClientDisconnected("done_write", err)
 		} else {
 			flusher.Flush()
 		}

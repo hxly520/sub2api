@@ -582,7 +582,7 @@ func TestGeminiMessagesStreamingMissingFinishReasonEmitsErrorWithoutMessageStop(
 	}
 	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
 
-	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test")
+	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test", nil)
 
 	require.ErrorIs(t, err, errGeminiStreamMissingTerminal)
 	require.NotNil(t, result)
@@ -610,13 +610,50 @@ func TestGeminiMessagesStreamingClientDisconnectStillCollectsTerminalUsage(t *te
 	}
 	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
 
-	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test")
+	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test", nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.clientDisconnected)
 	require.Equal(t, 6, result.usage.InputTokens)
 	require.Equal(t, 3, result.usage.OutputTokens)
+}
+
+func TestGeminiMessagesStreamingReturnsOnFinishReasonWithoutEOF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamReader, upstreamWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = upstreamWriter.Close()
+		_ = upstreamReader.Close()
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: upstreamReader}
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+
+	type outcome struct {
+		result *geminiStreamResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test", nil)
+		done <- outcome{result: result, err: err}
+	}()
+
+	_, err := io.WriteString(upstreamWriter, `data: {"response":{"candidates":[{"content":{"parts":[{"text":"complete"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":4}}}`+"\n\n")
+	require.NoError(t, err)
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.Equal(t, 7, got.result.usage.InputTokens)
+		require.Equal(t, 4, got.result.usage.OutputTokens)
+		require.Contains(t, rec.Body.String(), "event: message_stop")
+	case <-time.After(time.Second):
+		t.Fatal("Gemini Messages stream waited for EOF after finishReason")
+	}
 }
 
 func TestConvertClaudeMessagesToGeminiGenerateContent_AddsThoughtSignatureForToolUse(t *testing.T) {
@@ -1039,7 +1076,7 @@ func TestGeminiMessagesHandleStreamingResponse_ClosesToolBlockBeforeText(t *test
 	c, _ := gin.CreateTestContext(rec)
 
 	svc := &GeminiMessagesCompatService{}
-	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "claude-3-5-sonnet")
+	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "claude-3-5-sonnet", nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -1100,7 +1137,7 @@ func TestGeminiNativeStreamingResponse_KeepaliveDoesNotCountAsFirstToken(t *test
 	c, _ := gin.CreateTestContext(rec)
 
 	svc := &GeminiMessagesCompatService{}
-	result, err := svc.handleNativeStreamingResponse(context.Background(), c, resp, nil, "", time.Now(), false, 5*time.Millisecond)
+	result, err := svc.handleNativeStreamingResponse(context.Background(), c, resp, nil, "", time.Now(), false, 5*time.Millisecond, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.firstTokenMs)
@@ -1131,7 +1168,7 @@ func TestGeminiNativeStreamingResponseMissingFinishReasonEmitsError(t *testing.T
 
 	result, err := svc.handleNativeStreamingResponse(
 		context.Background(), c, resp, &Account{ID: 12, Platform: PlatformGemini},
-		"gemini-native-request", time.Now(), false, 0,
+		"gemini-native-request", time.Now(), false, 0, nil,
 	)
 
 	require.ErrorIs(t, err, errGeminiStreamMissingTerminal)
@@ -1162,7 +1199,7 @@ func TestGeminiNativeStreamingResponseClientDisconnectDrainsTerminalUsage(t *tes
 
 	result, err := svc.handleNativeStreamingResponse(
 		context.Background(), c, resp, &Account{ID: 13, Platform: PlatformGemini},
-		"gemini-native-request", time.Now(), false, 0,
+		"gemini-native-request", time.Now(), false, 0, nil,
 	)
 
 	require.NoError(t, err)
@@ -1170,6 +1207,50 @@ func TestGeminiNativeStreamingResponseClientDisconnectDrainsTerminalUsage(t *tes
 	require.True(t, result.clientDisconnected)
 	require.Equal(t, 8, result.usage.InputTokens)
 	require.Equal(t, 5, result.usage.OutputTokens)
+}
+
+func TestGeminiNativeStreamingResponseReturnsOnFinishReasonWithoutEOF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamReader, upstreamWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = upstreamWriter.Close()
+		_ = upstreamReader.Close()
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:streamGenerateContent", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       upstreamReader,
+	}
+	svc := &GeminiMessagesCompatService{}
+
+	type outcome struct {
+		result *geminiNativeStreamResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := svc.handleNativeStreamingResponse(
+			context.Background(), c, resp, &Account{ID: 14, Platform: PlatformGemini},
+			"gemini-native-request", time.Now(), false, 0, nil,
+		)
+		done <- outcome{result: result, err: err}
+	}()
+
+	_, err := io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"text":"complete"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":6}}`+"\n\n")
+	require.NoError(t, err)
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.Equal(t, 12, got.result.usage.InputTokens)
+		require.Equal(t, 6, got.result.usage.OutputTokens)
+		require.Contains(t, rec.Body.String(), `"finishReason":"STOP"`)
+	case <-time.After(time.Second):
+		t.Fatal("Gemini native stream waited for EOF after finishReason")
+	}
 }
 
 func TestGeminiNativeStreamKeepaliveInterval_UsesImageSpecificSetting(t *testing.T) {

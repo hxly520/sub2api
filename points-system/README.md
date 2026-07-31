@@ -54,10 +54,13 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   root-owned ready file is prepared with `true`, but that value is not hot
   loaded. The ordinary user menu remains hidden until the operator manually
   switches the next Sub2API candidate. Administrator access remains available.
-- The cold-gray/electric-blue user and administrator workspaces plus uploaded
-  Sub2API logo integration are still uncommitted candidate changes. No final
-  commit, candidate tag, OCI revision, or registry digest has been generated
-  for them, and neither production container has been switched to this worktree.
+- The cold-gray/electric-blue user and administrator workspaces, uploaded
+  Sub2API logo integration, username-only browser identity, deleted-user session
+  invalidation, and minimal username ACL template are consolidated in private
+  checkpoint `1e33e7f7a` and carried by the `v0.1.169` source candidate. No new
+  candidate image tag, OCI revision, or registry digest exists until the final
+  `main` workflows finish, and neither production container has been switched
+  to this candidate.
 
 ## Runtime Architecture
 

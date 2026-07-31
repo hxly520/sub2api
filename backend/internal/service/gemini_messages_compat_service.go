@@ -639,9 +639,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			if req.Stream {
 				action = "streamGenerateContent"
 			}
-			fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, action)
-			if req.Stream {
-				fullURL += "?alt=sse"
+			fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, action, req.Stream)
+			if err != nil {
+				return nil, "", err
 			}
 
 			restGeminiReq := normalizeGeminiRequestForAIStudio(geminiReq)
@@ -713,9 +713,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					return nil, "", err
 				}
 
-				fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, action)
-				if useUpstreamStream {
-					fullURL += "?alt=sse"
+				fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, action, useUpstreamStream)
+				if err != nil {
+					return nil, "", err
 				}
 
 				restGeminiReq := normalizeGeminiRequestForAIStudio(geminiReq)
@@ -1066,7 +1066,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	clientDisconnected := false
 	var forwardErr error
 	if req.Stream {
-		streamRes, err := s.handleStreamingResponse(c, resp, startTime, originalModel)
+		streamRes, err := s.handleStreamingResponse(c, resp, startTime, originalModel, drainGuard)
 		if err != nil {
 			if streamRes == nil {
 				return nil, err
@@ -1193,9 +1193,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				return nil, "", err
 			}
 
-			fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, upstreamAction)
-			if useUpstreamStream {
-				fullURL += "?alt=sse"
+			fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, upstreamAction, useUpstreamStream)
+			if err != nil {
+				return nil, "", err
 			}
 
 			upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(body))
@@ -1261,9 +1261,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					return nil, "", err
 				}
 
-				fullURL := fmt.Sprintf("%s/v1beta/models/%s:%s", strings.TrimRight(normalizedBaseURL, "/"), mappedModel, upstreamAction)
-				if useUpstreamStream {
-					fullURL += "?alt=sse"
+				fullURL, err := buildGeminiAIStudioModelActionURL(normalizedBaseURL, mappedModel, upstreamAction, useUpstreamStream)
+				if err != nil {
+					return nil, "", err
 				}
 
 				upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(body))
@@ -1617,6 +1617,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			startTime,
 			isOAuth,
 			s.geminiNativeStreamKeepaliveInterval(isImageGenerationModel(originalModel)),
+			drainGuard,
 		)
 		if err != nil {
 			if streamRes == nil {
@@ -2042,7 +2043,7 @@ func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context,
 	return usage, nil
 }
 
-func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, originalModel string) (*geminiStreamResult, error) {
+func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, originalModel string, drainGuard *clientDisconnectDrainGuard) (*geminiStreamResult, error) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -2059,6 +2060,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 			return
 		}
 		if err := writeSSE(c.Writer, event, data); err != nil {
+			drainGuard.ClientDisconnected()
 			clientDisconnected = true
 			logger.L().Info("gemini messages stream: client disconnected; draining upstream for usage",
 				zap.String("stage", event), zap.Error(err))
@@ -2106,6 +2108,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 	reader := bufio.NewReader(resp.Body)
 	for {
+		terminalObserved := false
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return streamResult(), fmt.Errorf("stream read error: %w", err)
@@ -2137,8 +2140,10 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 		if fr := extractGeminiFinishReason(geminiResp); fr != "" {
 			finishReason = fr
+			terminalObserved = true
 		}
 		if !clientDisconnected && c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+			drainGuard.ClientDisconnected()
 			clientDisconnected = true
 		}
 
@@ -2286,6 +2291,9 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 		if u := extractGeminiUsage(unwrappedBytes); u != nil {
 			usage = *u
+		}
+		if terminalObserved {
+			break
 		}
 
 		// Process the final unterminated line at EOF as well.
@@ -2736,6 +2744,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 	startTime time.Time,
 	isOAuth bool,
 	keepaliveInterval time.Duration,
+	drainGuard *clientDisconnectDrainGuard,
 ) (*geminiNativeStreamResult, error) {
 	if s.cfg != nil && s.cfg.Gateway.GeminiDebugResponseHeaders {
 		logger.LegacyPrintf("service.gemini_messages_compat", "[GeminiAPI] ========== Streaming Response Headers ==========")
@@ -2781,6 +2790,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 		}
 	}
 	markClientDisconnected := func(stage string, err error) {
+		drainGuard.ClientDisconnected()
 		if clientDisconnected {
 			return
 		}
@@ -2842,6 +2852,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 				}
 				return failStream(errGeminiStreamMissingTerminal)
 			}
+			terminalObserved := false
 			line := event.line
 			if len(line) > 0 {
 				trimmed := strings.TrimRight(line, "\r\n")
@@ -2875,6 +2886,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 						}
 						if currentFinishReason := extractGeminiFinishReasonFromJSON(rawBytes); currentFinishReason != "" {
 							finishReason = currentFinishReason
+							terminalObserved = true
 						}
 
 						if firstTokenMs == nil {
@@ -2893,6 +2905,9 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 				} else {
 					writeDownstream("stream_write", line)
 				}
+			}
+			if terminalObserved {
+				return streamResult(), nil
 			}
 
 			if errors.Is(event.err, io.EOF) {
@@ -2943,10 +2958,13 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 	if account == nil {
 		return nil, errors.New("account is nil")
 	}
-	path = strings.TrimSpace(path)
-	if path == "" || !strings.HasPrefix(path, "/") {
+	// path 会被直接拼到上游 base URL 后面，因此按路径护栏逐片段校验，
+	// 见 upstream_path_guard.go。
+	sanitizedPath, ok := sanitizedUpstreamPathSuffix(path)
+	if !ok || sanitizedPath == "" {
 		return nil, errors.New("invalid path")
 	}
+	path = sanitizedPath
 
 	baseURL := account.GetGeminiBaseURL(geminicli.AIStudioBaseURL)
 	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)

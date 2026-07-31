@@ -7,7 +7,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库代码基线：官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）与其后的私有兼容提交；关键功能提交为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8` 和嵌入式积分大屏 `874255bcd`；`backend/cmd/server/VERSION=0.1.168`。
+- 当前仓库候选代码基线：官方 Sub2API Release `v0.1.169`（commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）与其后的私有兼容提交；关键功能节点为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8`、嵌入式积分大屏 `874255bcd` 和升级前安全/终态收口 `1e33e7f7a`；`backend/cmd/server/VERSION=0.1.169`。生产运行版本与源码候选必须按下一条分别判断。
 - 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，运行态 healthy、restart count `0`。后续 Sub2API 镜像仍须先构建上传，再由维护者手工切换，自动化不得替换运行中的 Sub2API。
 - 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.168-28e760bc8c6d`，OCI revision `28e760bc8c6d66414595ef2af213d301a423acf2`，运行态 healthy。积分镜像可在备份 `points` schema 后独立更新，但必须保证 Sub2API 容器 ID、启动时间和镜像引用不变。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。

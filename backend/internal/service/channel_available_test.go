@@ -402,6 +402,32 @@ func TestListAvailable_ReturnsEveryConfiguredPricingModel(t *testing.T) {
 	require.Equal(t, configured, availableModelNames(out[0].SupportedModelsByGroup[7]))
 }
 
+func TestListAvailable_CompositeGroupSnapshotContainsEveryConfiguredPlatform(t *testing.T) {
+	channels := []Channel{{
+		ID:       1,
+		Name:     "composite-channel",
+		Status:   StatusActive,
+		GroupIDs: []int64{9},
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformAnthropic, Models: []string{"claude-sonnet-4-6"}},
+			{Platform: PlatformOpenAI, Models: []string{"gpt-5"}},
+		},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{{
+		ID: 9, Name: "composite", Platform: PlatformComposite,
+	}}}
+
+	out, err := newAvailableChannelService(channels, groupRepo).ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t,
+		[]string{"claude-sonnet-4-6", "gpt-5"},
+		availableModelNames(out[0].SupportedModelsByGroup[9]),
+	)
+	require.Equal(t, PlatformAnthropic, out[0].SupportedModelsByGroup[9][0].Platform)
+	require.Equal(t, PlatformOpenAI, out[0].SupportedModelsByGroup[9][1].Platform)
+}
+
 func TestConfiguredChannelPricingModels_NilAndNoConcreteModels(t *testing.T) {
 	require.Nil(t, configuredChannelPricingModels(nil))
 	require.Nil(t, configuredChannelPricingModels(&Channel{}))
