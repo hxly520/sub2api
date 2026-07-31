@@ -16,11 +16,11 @@
         <span class="brand-mark" aria-hidden="true">管</span>
         <div><strong>积分管理</strong><span>独立管理后台</span></div>
       </div>
-      <nav class="admin-nav" aria-label="后台管理功能">
-        <button class="admin-nav-button active" data-view="overview" type="button">运行总览</button>
-        <button class="admin-nav-button" data-view="users" type="button">用户明细</button>
-        <button class="admin-nav-button" data-view="policies" type="button">策略管理</button>
-        <button class="admin-nav-button" data-view="operations" type="button">签到发放记录</button>
+      <nav class="admin-nav" aria-label="后台管理功能" role="tablist">
+        <button id="tab-overview" class="admin-nav-button active" data-view="overview" type="button" role="tab" aria-controls="view-overview" aria-selected="true" tabindex="0">运行总览</button>
+        <button id="tab-users" class="admin-nav-button" data-view="users" type="button" role="tab" aria-controls="view-users" aria-selected="false" tabindex="-1">用户明细</button>
+        <button id="tab-policies" class="admin-nav-button" data-view="policies" type="button" role="tab" aria-controls="view-policies" aria-selected="false" tabindex="-1">策略管理</button>
+        <button id="tab-operations" class="admin-nav-button" data-view="operations" type="button" role="tab" aria-controls="view-operations" aria-selected="false" tabindex="-1">签到发放记录</button>
       </nav>
       <div class="admin-sidebar-footer">
         <span id="admin-user-id">管理员</span>
@@ -35,12 +35,12 @@
       </header>
       <div id="notice" role="status" aria-live="polite" class="notice hidden"></div>
 
-      <section id="view-overview" class="admin-view">
+      <section id="view-overview" class="admin-view" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
         <div class="admin-metrics">
-          <div><span>当前策略版本</span><strong id="overview-version">-</strong></div>
-          <div><span>积分功能</span><strong id="overview-points">未启用</strong></div>
-          <div><span>签到功能</span><strong id="overview-checkin">未启用</strong></div>
-          <div><span>待处理签到发放</span><strong id="overview-pending">0</strong></div>
+          <div class="admin-metric-version"><span>当前策略版本</span><strong id="overview-version">-</strong></div>
+          <div id="overview-points-card"><span>积分功能</span><strong id="overview-points">未启用</strong></div>
+          <div id="overview-checkin-card"><span>签到功能</span><strong id="overview-checkin">未启用</strong></div>
+          <div id="overview-pending-card"><span>待处理签到发放</span><strong id="overview-pending">0</strong></div>
         </div>
         <section class="overview-band">
           <div class="section-heading"><div><span class="section-kicker">生效策略</span><h2>当前规则摘要</h2></div></div>
@@ -63,7 +63,7 @@
         </section>
       </section>
 
-      <section id="view-users" class="admin-view hidden">
+      <section id="view-users" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-users" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>用户积分明细</h2><p>查看每个积分账户的累计消费积分与上一自然日结算结果。</p></div>
           <button id="refresh-admin-users" class="button secondary compact" type="button">刷新明细</button>
@@ -85,7 +85,7 @@
         </section>
       </section>
 
-      <section id="view-policies" class="admin-view hidden">
+      <section id="view-policies" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-policies" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>策略版本</h2><p>创建后按生效日期执行，历史版本保留。</p></div>
           <button id="toggle-policy-form" class="button primary" type="button">新建策略</button>
@@ -100,7 +100,7 @@
               <label class="toggle-label"><input id="policy-enabled" type="checkbox"><span>开放用户积分功能</span></label>
             </div>
           </div>
-          <div class="form-block">
+          <div id="checkin-settings" class="form-block">
             <div class="form-block-title"><h3>签到资格与赠送上限</h3></div>
             <div class="form-grid">
               <label class="toggle-label"><input id="policy-checkin-enabled" type="checkbox"><span>启用签到赠送</span></label>
@@ -113,7 +113,7 @@
               <label>全平台每日上限（U）<input id="policy-platform-cap" type="number" min="0.01" step="0.01" value="100.00"></label>
             </div>
           </div>
-          <div class="form-block">
+          <div id="checkin-tiers" class="form-block">
             <div class="form-block-title tier-title"><h3>赠送阶梯</h3><button id="add-tier" type="button" class="button secondary compact">添加阶梯</button></div>
             <div id="tiers" class="tiers"></div>
           </div>
@@ -132,7 +132,7 @@
         </section>
       </section>
 
-      <section id="view-operations" class="admin-view hidden">
+      <section id="view-operations" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-operations" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>签到余额发放记录</h2><p>仅显示签到产生的余额发放；失败任务可重试，已到账任务可按审计流程冲正。</p></div>
           <button id="refresh-admin-grants" class="button secondary compact" type="button">刷新记录</button>

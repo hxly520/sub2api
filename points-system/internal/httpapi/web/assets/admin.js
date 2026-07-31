@@ -37,7 +37,10 @@
     state.view = name;
     document.querySelectorAll(".admin-view").forEach((view) => view.classList.add("hidden"));
     document.querySelectorAll(".admin-nav-button").forEach((button) => {
-      button.classList.toggle("active", button.dataset.view === name);
+      const selected = button.dataset.view === name;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
     });
     ui.byId(`view-${name}`).classList.remove("hidden");
     ui.byId("admin-page-title").textContent = viewTitles[name];
@@ -65,9 +68,13 @@
       ? policy.basis === "total" ? "总积分" : "昨日积分"
       : "-";
     ui.byId("overview-tiers").textContent = String(policy?.tiers?.length || 0);
+    ui.byId("overview-points-card").dataset.state = policy?.enabled ? "enabled" : "disabled";
+    ui.byId("overview-checkin-card").dataset.state = policy?.checkin_enabled ? "enabled" : "disabled";
 
     const pendingStatuses = new Set(["pending", "processing", "reversal_pending", "reversal_processing"]);
-    ui.byId("overview-pending").textContent = String(state.grants.filter((grant) => pendingStatuses.has(grant.status)).length);
+    const pendingCount = state.grants.filter((grant) => pendingStatuses.has(grant.status)).length;
+    ui.byId("overview-pending").textContent = String(pendingCount);
+    ui.byId("overview-pending-card").dataset.state = pendingCount > 0 ? "warning" : "neutral";
     const summary = ui.byId("grant-status-summary");
     summary.replaceChildren();
     const groups = [
@@ -83,6 +90,10 @@
       const count = document.createElement("strong");
       name.textContent = label;
       count.textContent = String(state.grants.filter((grant) => statuses.includes(grant.status)).length);
+      item.dataset.state = statuses.includes("settled") ? "enabled"
+        : statuses.some((status) => status.includes("failed")) ? "danger"
+          : statuses.some((status) => status.includes("pending") || status.includes("processing")) ? "warning"
+            : "neutral";
       item.append(name, count);
       summary.append(item);
     });
@@ -320,7 +331,8 @@
     const consumerOnly = ui.byId("policy-consumer-only").checked;
     const basis = ui.byId("policy-basis");
     if (consumerOnly) basis.value = "yesterday";
-    basis.disabled = consumerOnly;
+    const checkinEnabled = ui.byId("policy-enabled").checked && ui.byId("policy-checkin-enabled").checked;
+    basis.disabled = !checkinEnabled || consumerOnly;
   }
 
   function syncCheckinControls() {
@@ -329,9 +341,34 @@
     checkinToggle.disabled = !pointsEnabled;
     if (!pointsEnabled) checkinToggle.checked = false;
     const checkinEnabled = pointsEnabled && checkinToggle.checked;
-    ["policy-checkin-limit", "policy-single-cap", "policy-user-cap", "policy-platform-cap"].forEach((id) => {
-      ui.byId(id).required = checkinEnabled;
+    ["policy-consumer-only", "policy-checkin-limit", "policy-minimum-spend", "policy-single-cap", "policy-user-cap", "policy-platform-cap"].forEach((id) => {
+      const control = ui.byId(id);
+      control.disabled = !checkinEnabled;
+      if (id !== "policy-consumer-only" && id !== "policy-minimum-spend") control.required = checkinEnabled;
     });
+    ui.byId("add-tier").disabled = !checkinEnabled;
+    ui.byId("checkin-settings").classList.toggle("is-locked", !checkinEnabled);
+    ui.byId("checkin-tiers").classList.toggle("is-locked", !checkinEnabled);
+    document.querySelectorAll(".tier-row").forEach((row) => {
+      row.querySelectorAll("input, select, button").forEach((control) => { control.disabled = !checkinEnabled; });
+      if (checkinEnabled) syncTierMode(row);
+    });
+    syncConsumerOnly();
+  }
+
+  function moveAdminTab(event) {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(event.key)) return;
+    const buttons = [...document.querySelectorAll(".admin-nav-button")];
+    const current = buttons.indexOf(event.currentTarget);
+    let next = current;
+    if (event.key === "ArrowLeft") next = (current - 1 + buttons.length) % buttons.length;
+    if (event.key === "ArrowRight") next = (current + 1) % buttons.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = buttons.length - 1;
+    event.preventDefault();
+    setView(buttons[next].dataset.view);
+    buttons[next].focus();
   }
 
   async function refreshAll() {
@@ -343,6 +380,7 @@
   function bindEvents() {
     document.querySelectorAll(".admin-nav-button").forEach((button) => {
       button.addEventListener("click", () => setView(button.dataset.view));
+      button.addEventListener("keydown", moveAdminTab);
     });
     ui.byId("logout").addEventListener("click", () => ui.logout().catch((error) => ui.notice(error.message, true)));
     ui.byId("refresh-admin").addEventListener("click", async (event) => {
@@ -462,6 +500,8 @@
       app.remove();
       access.textContent = error.message;
       access.classList.add("error");
+    } finally {
+      ui.notifyReady();
     }
   }
 

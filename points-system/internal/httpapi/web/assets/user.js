@@ -21,22 +21,27 @@
     const features = data.features || {};
     const limit = ui.number(features.checkin_daily_limit);
     const available = features.checkin_available === true;
+    const band = document.querySelector(".checkin-band");
 
     ui.byId("checkin-count").textContent = `今日已签到 ${count} 次`;
     button.disabled = !available;
     button.textContent = available ? "立即签到" : "暂不可签到";
+    band.dataset.status = available ? "ready" : "off";
 
     if (features.points_enabled !== true) {
+      band.dataset.status = "off";
       title.textContent = "积分功能暂未开放";
       detail.textContent = "请等待功能完成调试并开放";
       return;
     }
     if (features.checkin_enabled !== true) {
+      band.dataset.status = "off";
       title.textContent = "签到赠送暂未开启";
       detail.textContent = "今日积分数据仍可正常查看";
       return;
     }
     if (limit > 0 && count >= limit) {
+      band.dataset.status = "complete";
       title.textContent = "今日签到已完成";
       detail.textContent = `今日签到次数 ${count} / ${limit}`;
       button.textContent = "今日已签到";
@@ -63,7 +68,6 @@
 
     const snapshot = data.yesterday_snapshot;
     ui.byId("yesterday-points").textContent = ui.points(snapshot?.awarded_points_hundredths);
-    ui.byId("yesterday-spend").textContent = ui.money(snapshot?.actual_cost_microusd);
     ui.byId("snapshot-date").textContent = snapshot ? `${ui.date(snapshot.business_date)} 结算` : "暂无结算";
     syncCheckin(data);
     return data;
@@ -213,10 +217,9 @@
 
   function updateChartSummary(rows) {
     const totalPoints = rows.reduce((sum, item) => sum + ui.number(item.awarded_points_hundredths), 0);
-    const totalSpend = rows.reduce((sum, item) => sum + ui.number(item.actual_cost_microusd), 0);
     const activeDays = rows.filter((item) => ui.number(item.actual_cost_microusd) > 0 || ui.number(item.awarded_points_hundredths) > 0).length;
     ui.byId("period-points").textContent = ui.points(totalPoints);
-    ui.byId("period-spend").textContent = ui.money(totalSpend);
+    ui.byId("average-points").textContent = ui.points(rows.length === 0 ? 0 : Math.round(totalPoints / rows.length));
     ui.byId("active-days").textContent = String(activeDays);
   }
 
@@ -245,7 +248,7 @@
     drawChart();
 
     const tooltip = ui.byId("chart-tooltip");
-    tooltip.textContent = `${ui.date(item.business_date)} · ${ui.points(item.awarded_points_hundredths)} 积分 · 消费 ${ui.money(item.actual_cost_microusd)}`;
+    tooltip.textContent = `${ui.date(item.business_date)} · ${ui.points(item.awarded_points_hundredths)} 积分`;
     tooltip.classList.remove("hidden");
     const x = geometry.xAt(index);
     const y = geometry.yAt(ui.number(item.awarded_points_hundredths) / 100);
@@ -260,11 +263,17 @@
   }
 
   async function refreshDashboard() {
-    const data = await loadProfile();
-    if (!data) return;
-    const results = await Promise.allSettled([loadDailyPoints(), loadLedger(), loadGrants()]);
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed) throw failed.reason;
+    const page = document.querySelector(".dashboard-page");
+    page.setAttribute("aria-busy", "true");
+    try {
+      const data = await loadProfile();
+      if (!data) return;
+      const results = await Promise.allSettled([loadDailyPoints(), loadLedger(), loadGrants()]);
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed) throw failed.reason;
+    } finally {
+      page.setAttribute("aria-busy", "false");
+    }
   }
 
   function bindEvents() {
@@ -310,5 +319,7 @@
   }
 
   bindEvents();
-  refreshDashboard().catch((error) => ui.notice(error.message, true));
+  refreshDashboard()
+    .catch((error) => ui.notice(error.message, true))
+    .finally(ui.notifyReady);
 })();

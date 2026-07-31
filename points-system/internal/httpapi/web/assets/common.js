@@ -7,7 +7,11 @@
   const embedded = new URLSearchParams(window.location.search).get("ui_mode") === "embedded";
   document.body.dataset.uiMode = embedded ? "embedded" : "standalone";
   document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
-  if (embedded && window.parent !== window) {
+  let readySent = false;
+
+  function notifyReady() {
+    if (readySent || !embedded || window.parent === window) return;
+    readySent = true;
     window.parent.postMessage({
       type: "sub2api:points-ready",
       role: document.body.classList.contains("admin-shell") ? "admin" : "user"
@@ -228,6 +232,7 @@
     kindText,
     logout,
     money,
+    notifyReady,
     notice,
     number,
     plain,

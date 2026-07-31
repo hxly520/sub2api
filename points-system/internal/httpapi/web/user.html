@@ -18,34 +18,31 @@
     </div>
     <div class="topbar-actions">
       <span id="user-id" class="identity-chip">个人账户</span>
-      <button id="refresh-dashboard" class="button secondary compact" type="button">刷新</button>
       <button id="logout" class="button ghost compact" type="button">退出</button>
     </div>
   </header>
 
-  <main class="dashboard-page">
+  <main class="dashboard-page" aria-busy="true">
     <div id="notice" role="status" aria-live="polite" class="notice hidden"></div>
+
+    <header class="dashboard-heading">
+      <div>
+        <span class="section-kicker">积分账户</span>
+        <h1>我的积分</h1>
+      </div>
+      <button id="refresh-dashboard" class="button secondary compact" type="button">刷新数据</button>
+    </header>
 
     <section class="scoreboard" aria-label="积分概览">
       <div class="score-primary">
         <span class="metric-label">我的总积分</span>
         <strong id="total-points" class="score-value">0.00</strong>
-        <span class="metric-foot">当前可用累计积分</span>
+        <span class="metric-foot">累计成功消费积分</span>
       </div>
       <div class="score-metric points-accent">
         <span class="metric-label">昨日积分</span>
         <strong id="yesterday-points">0.00</strong>
         <span id="snapshot-date" class="metric-foot">暂无结算</span>
-      </div>
-      <div class="score-metric spend-accent">
-        <span class="metric-label">昨日消费</span>
-        <strong id="yesterday-spend">0.00 U</strong>
-        <span class="metric-foot">已成功结算消费</span>
-      </div>
-      <div class="score-metric today-accent">
-        <span class="metric-label">今日签到赠送</span>
-        <strong id="today-rewards">0.00 U</strong>
-        <span id="checkin-count" class="metric-foot">今日已签到 0 次</span>
       </div>
       <div class="score-metric reward-accent">
         <span class="metric-label">累计签到赠送</span>
@@ -60,7 +57,14 @@
         <h1 id="checkin-title">今日签到状态</h1>
         <p id="checkin-detail">签到状态加载中</p>
       </div>
-      <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
+      <div class="checkin-actions">
+        <div class="checkin-today">
+          <span>今日已赠送</span>
+          <strong id="today-rewards">0.00 U</strong>
+          <small id="checkin-count">今日已签到 0 次</small>
+        </div>
+        <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
+      </div>
     </section>
 
     <section class="chart-panel" aria-labelledby="chart-title">
@@ -82,7 +86,7 @@
       </div>
       <div class="chart-summary">
         <div><span>区间积分</span><strong id="period-points">0.00</strong></div>
-        <div><span>区间消费</span><strong id="period-spend">0.00 U</strong></div>
+        <div><span>日均积分</span><strong id="average-points">0.00</strong></div>
         <div><span>有记录天数</span><strong id="active-days">0</strong></div>
       </div>
     </section>
