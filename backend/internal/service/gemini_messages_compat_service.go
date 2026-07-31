@@ -2479,6 +2479,9 @@ func collectGeminiSSE(body io.Reader, isOAuth bool) (map[string]any, *ClaudeUsag
 								}
 							}
 						}
+						if finishReason != "" {
+							return finalize()
+						}
 					}
 				}
 			}

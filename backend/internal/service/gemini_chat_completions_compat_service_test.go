@@ -214,6 +214,48 @@ func TestCollectGeminiSSERequiresFinishReasonEvenWithDone(t *testing.T) {
 	require.NotNil(t, usage)
 }
 
+func TestCollectGeminiSSEReturnsOnFinishReasonWithoutEOF(t *testing.T) {
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = writer.Close()
+		_ = reader.Close()
+	})
+
+	type outcome struct {
+		result map[string]any
+		usage  *ClaudeUsage
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, usage, err := collectGeminiSSE(reader, false)
+		done <- outcome{result: result, usage: usage, err: err}
+	}()
+
+	_, err := io.WriteString(writer, strings.Join([]string{
+		`data: {"candidates":[{"content":{"parts":[{"text":"hello "}]}}]}`,
+		"",
+		`data: {"candidates":[{"content":{"parts":[{"text":"world"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":13,"candidatesTokenCount":6}}`,
+		"",
+	}, "\n"))
+	require.NoError(t, err)
+
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.NotNil(t, got.usage)
+		require.Equal(t, 13, got.usage.InputTokens)
+		require.Equal(t, 6, got.usage.OutputTokens)
+		require.Equal(t, "STOP", extractGeminiFinishReason(got.result))
+		parts := extractGeminiParts(got.result)
+		require.NotEmpty(t, parts)
+		require.Equal(t, "hello world", parts[0]["text"])
+	case <-time.After(time.Second):
+		t.Fatal("collectGeminiSSE waited for [DONE] or EOF after finishReason")
+	}
+}
+
 func TestGeminiChatStreamingPartialEOFEmitsExplicitErrorWithoutDone(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
