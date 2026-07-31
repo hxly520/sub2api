@@ -127,6 +127,10 @@ textarea:focus-visible {
   white-space: nowrap !important;
 }
 
+#chart-data.sr-only {
+  display: block !important;
+}
+
 .icon {
   display: inline-block;
   width: 16px;
