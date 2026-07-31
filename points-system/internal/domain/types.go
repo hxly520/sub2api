@@ -179,4 +179,5 @@ type LedgerEntry struct {
 	ReferenceID           string         `json:"reference_id,omitempty"`
 	Metadata              map[string]any `json:"metadata,omitempty"`
 	CreatedAt             time.Time      `json:"created_at"`
+	AwardedAt             time.Time      `json:"awarded_at"`
 }

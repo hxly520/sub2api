@@ -13,6 +13,7 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata && addgroup -S points && adduser -S -G points points
 COPY --from=build /out/points-server /usr/local/bin/points-server
 COPY --from=build /out/points-history-backfill /usr/local/bin/points-history-backfill
+COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/sub2api-points/THIRD_PARTY_NOTICES.md
 USER points:points
 EXPOSE 8090
 ENTRYPOINT ["/usr/local/bin/points-server"]

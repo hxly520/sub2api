@@ -16,7 +16,7 @@ import (
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
 	now := time.Now()
-	username, err := s.username(r.Context(), p.Session.UserID)
+	loginEmail, err := s.loginEmail(r.Context(), p.Session.UserID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -68,7 +68,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"username": publicUsername(username), "role": p.Session.Role, "theme": p.Session.Theme,
+		"login_email": publicLoginEmail(loginEmail), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
 		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret), "account": publicAccountFrom(account),
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
@@ -100,12 +100,12 @@ func publicAccountFrom(account domain.Account) publicAccount {
 	}
 }
 
-func publicUsername(username string) string {
-	username = strings.TrimSpace(username)
-	if username == "" {
-		return "未设置用户名"
+func publicLoginEmail(loginEmail string) string {
+	loginEmail = strings.TrimSpace(loginEmail)
+	if loginEmail == "" {
+		return "未设置登录邮箱"
 	}
-	return username
+	return loginEmail
 }
 
 func publicSnapshot(snapshot store.Snapshot) map[string]any {
@@ -121,7 +121,7 @@ func publicSnapshot(snapshot store.Snapshot) map[string]any {
 
 func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
-	username, err := s.username(r.Context(), p.Session.UserID)
+	loginEmail, err := s.loginEmail(r.Context(), p.Session.UserID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -136,7 +136,7 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"username": publicUsername(username), "role": p.Session.Role, "theme": p.Session.Theme,
+		"login_email": publicLoginEmail(loginEmail), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
 		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret),
 		"features": map[string]any{
@@ -148,10 +148,19 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
-	entries, err := s.Store.Ledger(r.Context(), p.Session.UserID, queryLimit(r))
+	beforeID, err := s.decodeLedgerPageCursor(r.URL.Query().Get("cursor"), p.Session.UserID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid pagination cursor")
+		return
+	}
+	entries, err := s.Store.LedgerPage(r.Context(), p.Session.UserID, userRecordPageSize+1, beforeID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	hasNext := len(entries) > userRecordPageSize
+	if hasNext {
+		entries = entries[:userRecordPageSize]
 	}
 	items := make([]publicLedgerEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -159,9 +168,18 @@ func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 			Kind: entry.Kind, DeltaPointsHundredths: entry.DeltaPointsHundredths,
 			TotalAfterHundredths: entry.TotalAfterHundredths,
 			BusinessDate:         entry.BusinessDate, CreatedAt: entry.CreatedAt,
+			AwardedAt: entry.AwardedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, items)
+	nextCursor := ""
+	if hasNext {
+		nextCursor, err = s.encodeLedgerPageCursor(p.Session.UserID, entries[len(entries)-1].ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, publicCursorPage[publicLedgerEntry]{Items: items, NextCursor: nextCursor})
 }
 
 type publicLedgerEntry struct {
@@ -170,6 +188,7 @@ type publicLedgerEntry struct {
 	TotalAfterHundredths  int64      `json:"total_after_hundredths"`
 	BusinessDate          *time.Time `json:"business_date,omitempty"`
 	CreatedAt             time.Time  `json:"created_at"`
+	AwardedAt             time.Time  `json:"awarded_at"`
 }
 
 func (s *Server) dailyPoints(w http.ResponseWriter, r *http.Request) {

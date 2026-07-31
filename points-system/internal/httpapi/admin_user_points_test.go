@@ -24,7 +24,7 @@ func TestQueryOffsetUsesBoundedDefault(t *testing.T) {
 func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 	date := time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
 	body, err := json.Marshal(publicAdminUserPoints{
-		Username:                  "alice",
+		LoginEmail:                "alice@example.com",
 		TotalPointsHundredths:     12_345,
 		YesterdayPointsHundredths: 125,
 		TotalSpendMicroUSD:        12_345_000,
@@ -37,7 +37,7 @@ func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 	}
 	content := string(body)
 	for _, required := range []string{
-		`"username":"alice"`, `"total_points_hundredths"`, `"yesterday_points_hundredths"`,
+		`"login_email":"alice@example.com"`, `"total_points_hundredths"`, `"yesterday_points_hundredths"`,
 		`"total_spend_microusd"`, `"yesterday_spend_microusd"`,
 		`"snapshot_business_date"`, `"snapshot_status"`,
 	} {
@@ -46,7 +46,7 @@ func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"user_id", "email", "balance", "policy_version", "source_fingerprint", "source_max_usage_log_id",
+		"user_id", "username", "balance", "policy_version", "source_fingerprint", "source_max_usage_log_id",
 		"external_event_id", "request_fingerprint", "metadata",
 	} {
 		if strings.Contains(content, forbidden) {
@@ -55,9 +55,9 @@ func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 	}
 }
 
-func TestAdminBalanceGrantResponseUsesUsernameWithoutInternalUserID(t *testing.T) {
+func TestAdminBalanceGrantResponseUsesLoginEmailWithoutInternalUserID(t *testing.T) {
 	body, err := json.Marshal(publicAdminBalanceGrant{
-		ID: "00000000-0000-4000-8000-000000000001", Username: "alice",
+		ID: "00000000-0000-4000-8000-000000000001", LoginEmail: "alice@example.com",
 		AmountMicroUSD: 100_000, Kind: "checkin", Status: "settled", Attempts: 1,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	})
@@ -65,7 +65,7 @@ func TestAdminBalanceGrantResponseUsesUsernameWithoutInternalUserID(t *testing.T
 		t.Fatal(err)
 	}
 	content := string(body)
-	for _, required := range []string{`"id"`, `"username":"alice"`, `"amount_microusd"`, `"status"`, `"attempts"`} {
+	for _, required := range []string{`"id"`, `"login_email":"alice@example.com"`, `"amount_microusd"`, `"status"`, `"attempts"`} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("administrator balance grant response is missing %s: %s", required, content)
 		}
@@ -77,7 +77,7 @@ func TestAdminBalanceGrantResponseUsesUsernameWithoutInternalUserID(t *testing.T
 	}
 }
 
-func TestBrowserIdentitySurfacesUseUsernameOnly(t *testing.T) {
+func TestBrowserIdentitySurfacesUseLoginEmailOnly(t *testing.T) {
 	paths := []string{
 		"web/user.html", "web/admin.html", "web/assets/user.js", "web/assets/admin.js",
 	}
@@ -90,12 +90,12 @@ func TestBrowserIdentitySurfacesUseUsernameOnly(t *testing.T) {
 		content.Write(body)
 	}
 	combined := content.String()
-	for _, required := range []string{"username", "用户名"} {
+	for _, required := range []string{"login_email", "login-email", "admin-login-email", "登录邮箱"} {
 		if !strings.Contains(combined, required) {
 			t.Fatalf("browser identity surfaces are missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"user_id", "user-id", "admin-user-id", "用户 ID", "用户ID"} {
+	for _, forbidden := range []string{"username", "用户名", "user_id", "user-id", "admin-user-id", "用户 ID", "用户ID"} {
 		if strings.Contains(combined, forbidden) {
 			t.Fatalf("browser identity surfaces still expose %q", forbidden)
 		}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/hxly520/sub2api/points-system/internal/domain"
 )
@@ -22,12 +23,33 @@ func (s *Store) Account(ctx context.Context, userID int64) (domain.Account, erro
 }
 
 func (s *Store) Ledger(ctx context.Context, userID int64, limit int) ([]domain.LedgerEntry, error) {
+	return s.LedgerPage(ctx, userID, limit, nil)
+}
+
+func (s *Store) LedgerPage(ctx context.Context, userID int64, limit int, beforeID *int64) ([]domain.LedgerEntry, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := s.DB.Query(ctx, `SELECT id,user_id,kind,delta_points_hundredths,total_after_hundredths,
-		source,external_event_id,policy_version,business_date,reference_id,metadata,created_at
-		FROM points_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT $2`, userID, limit)
+	query := `SELECT ledger.id,ledger.user_id,ledger.kind,
+		ledger.delta_points_hundredths,ledger.total_after_hundredths,ledger.source,
+		ledger.external_event_id,ledger.policy_version,ledger.business_date,
+		ledger.reference_id,ledger.metadata,ledger.created_at,schedule_policy.refresh_minute
+		FROM points_ledger ledger
+		LEFT JOIN LATERAL (
+			SELECT policy.refresh_minute
+			FROM points_policy_versions policy
+			WHERE policy.effective_date <= ledger.business_date + 1
+			ORDER BY policy.effective_date DESC,policy.version_no DESC
+			LIMIT 1
+		) schedule_policy ON ledger.business_date IS NOT NULL
+		WHERE ledger.user_id=$1`
+	args := []any{userID, limit}
+	if beforeID != nil {
+		query += ` AND ledger.id<$3`
+		args = append(args, *beforeID)
+	}
+	query += ` ORDER BY ledger.id DESC LIMIT $2`
+	rows, err := s.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -36,13 +58,29 @@ func (s *Store) Ledger(ctx context.Context, userID int64, limit int) ([]domain.L
 	for rows.Next() {
 		var entry domain.LedgerEntry
 		var metadata []byte
+		var refreshMinute *int
 		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Kind, &entry.DeltaPointsHundredths,
 			&entry.TotalAfterHundredths, &entry.Source, &entry.ExternalEventID, &entry.PolicyVersion,
-			&entry.BusinessDate, &entry.ReferenceID, &metadata, &entry.CreatedAt); err != nil {
+			&entry.BusinessDate, &entry.ReferenceID, &metadata, &entry.CreatedAt, &refreshMinute); err != nil {
 			return nil, err
 		}
+		entry.AwardedAt = ledgerAwardedAt(entry.Kind, entry.BusinessDate, refreshMinute,
+			entry.CreatedAt, s.Location)
 		_ = json.Unmarshal(metadata, &entry.Metadata)
 		result = append(result, entry)
 	}
 	return result, rows.Err()
+}
+
+func ledgerAwardedAt(kind string, businessDate *time.Time, refreshMinute *int,
+	createdAt time.Time, location *time.Location) time.Time {
+	if kind != "usage_points" || businessDate == nil || refreshMinute == nil ||
+		*refreshMinute < 0 || *refreshMinute >= 24*60 {
+		return createdAt
+	}
+	if location == nil {
+		location = time.UTC
+	}
+	year, month, day := businessDate.Date()
+	return time.Date(year, month, day+1, 0, *refreshMinute, 0, 0, location)
 }

@@ -23,15 +23,15 @@ import (
 var webFS embed.FS
 
 type Server struct {
-	Config         config.Config
-	Store          *store.Store
-	Logger         *slog.Logger
-	limits         *security.RateLimiter
-	mux            *http.ServeMux
-	trustedProxy   *net.IPNet
-	sessionLookup  func(context.Context, string, time.Time) (store.Session, error)
-	policyLookup   func(context.Context, time.Time) (domain.Policy, error)
-	usernameLookup func(context.Context, int64) (string, error)
+	Config           config.Config
+	Store            *store.Store
+	Logger           *slog.Logger
+	limits           *security.RateLimiter
+	mux              *http.ServeMux
+	trustedProxy     *net.IPNet
+	sessionLookup    func(context.Context, string, time.Time) (store.Session, error)
+	policyLookup     func(context.Context, time.Time) (domain.Policy, error)
+	loginEmailLookup func(context.Context, int64) (string, error)
 }
 
 type principal struct {
@@ -83,6 +83,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /assets/user.js", s.auth("user", false, true, http.HandlerFunc(s.webAsset("web/assets/user.js", "text/javascript; charset=utf-8"))))
 	s.mux.Handle("GET /assets/admin.js", s.auth("admin", false, false, http.HandlerFunc(s.webAsset("web/assets/admin.js", "text/javascript; charset=utf-8"))))
 	s.mux.Handle("GET /assets/logo.svg", s.auth("", false, false, http.HandlerFunc(s.webAsset("web/assets/logo.svg", "image/svg+xml"))))
+	s.mux.Handle("GET /assets/lucide-sprite.svg", s.auth("", false, true, http.HandlerFunc(s.webAsset("web/assets/lucide-sprite.svg", "image/svg+xml"))))
 
 	s.mux.Handle("GET /api/v1/me", s.auth("user", false, true, http.HandlerFunc(s.me)))
 	s.mux.Handle("GET /api/v1/ledger", s.auth("user", false, true, http.HandlerFunc(s.ledger)))
@@ -308,14 +309,14 @@ func (s *Server) currentPolicy(ctx context.Context, now time.Time) (domain.Polic
 	return s.Store.PolicyForDate(ctx, date)
 }
 
-func (s *Server) username(ctx context.Context, userID int64) (string, error) {
-	if s.usernameLookup != nil {
-		return s.usernameLookup(ctx, userID)
+func (s *Server) loginEmail(ctx context.Context, userID int64) (string, error) {
+	if s.loginEmailLookup != nil {
+		return s.loginEmailLookup(ctx, userID)
 	}
 	if s.Store == nil {
 		return "", domain.ErrNotFound
 	}
-	return s.Store.Username(ctx, userID)
+	return s.Store.LoginEmail(ctx, userID)
 }
 
 func policyAllowsUserAccess(policy domain.Policy) bool {

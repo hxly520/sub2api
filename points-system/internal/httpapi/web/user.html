@@ -18,8 +18,11 @@
       </div>
     </div>
     <div class="topbar-actions">
-      <span id="username" class="identity-chip">用户名</span>
-      <button id="logout" class="button ghost compact" type="button">退出</button>
+      <span id="login-email" class="identity-chip">登录邮箱</span>
+      <button id="logout" class="button ghost compact" type="button">
+        <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#log-out"></use></svg>
+        <span data-button-label>退出</span>
+      </button>
     </div>
   </header>
 
@@ -31,52 +34,61 @@
         <span class="section-kicker">积分账户</span>
         <h1>我的积分</h1>
       </div>
-      <button id="refresh-dashboard" class="button secondary compact" type="button">刷新数据</button>
+      <button id="refresh-dashboard" class="button secondary compact" type="button">
+        <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg>
+        <span data-button-label>刷新数据</span>
+      </button>
     </header>
 
     <section class="scoreboard" aria-label="积分概览">
       <div class="score-primary">
-        <span class="metric-label">我的总积分</span>
+        <span class="metric-label"><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#coins"></use></svg></span>我的总积分</span>
         <strong id="total-points" class="score-value">0.00</strong>
         <span class="metric-foot">累计成功消费积分</span>
       </div>
       <div class="score-metric points-accent">
-        <span class="metric-label">昨日积分</span>
+        <span class="metric-label"><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#calendar-days"></use></svg></span>昨日积分</span>
         <strong id="yesterday-points">0.00</strong>
         <span id="snapshot-date" class="metric-foot">暂无结算</span>
       </div>
       <div class="score-metric reward-accent">
-        <span class="metric-label">累计签到赠送</span>
+        <span class="metric-label"><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#gift"></use></svg></span>累计签到赠送</span>
         <strong id="total-checkin-rewards">0.00 U</strong>
         <span class="metric-foot">已到账且未冲正</span>
       </div>
-      <section class="score-metric today-accent checkin-band" aria-labelledby="checkin-title">
+      <section class="score-metric today-accent checkin-band" aria-label="今日签到">
         <div class="metric-action-row">
-          <span class="metric-label">今日签到</span>
-          <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
+          <span class="metric-label"><span class="metric-icon"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#circle-check-big"></use></svg></span>今日签到</span>
+          <button id="checkin" class="button primary checkin-button" type="button" disabled>
+            <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#circle-check-big"></use></svg>
+            <span data-button-label>立即签到</span>
+          </button>
         </div>
         <strong id="today-rewards">0.00 U</strong>
-        <span id="checkin-title" class="checkin-state">今日签到状态</span>
         <small id="checkin-count" class="metric-foot">今日已签到 0 次</small>
-        <p id="checkin-detail" class="checkin-detail">签到状态加载中</p>
       </section>
     </section>
 
     <section class="chart-panel" aria-labelledby="chart-title">
       <div class="section-heading chart-heading">
-        <div>
+        <div class="section-title-lockup">
+          <span class="panel-icon" aria-hidden="true"><svg class="icon"><use href="/assets/lucide-sprite.svg#chart-no-axes-combined"></use></svg></span>
+          <div>
           <span class="section-kicker">每日趋势</span>
           <h2 id="chart-title">消费积分曲线</h2>
+          </div>
         </div>
         <div class="period-control" role="group" aria-label="趋势时间范围">
-          <button class="period-button" type="button" data-days="7">近 7 日</button>
-          <button class="period-button active" type="button" data-days="30">近 30 日</button>
-          <button class="period-button" type="button" data-days="90">近 90 日</button>
+          <button class="period-button" type="button" data-days="7" aria-pressed="false">近 7 日</button>
+          <button class="period-button active" type="button" data-days="30" aria-pressed="true">近 30 日</button>
+          <button class="period-button" type="button" data-days="90" aria-pressed="false">近 90 日</button>
         </div>
       </div>
       <div class="chart-stage">
-        <canvas id="points-chart" role="img" aria-label="每日消费积分折线图"></canvas>
-        <div id="chart-tooltip" class="chart-tooltip hidden" role="status"></div>
+        <p id="chart-keyboard-help" class="sr-only">聚焦图表后，使用左右方向键逐日查看积分，按 Home 或 End 跳到首日或末日。</p>
+        <canvas id="points-chart" role="img" tabindex="0" aria-label="每日消费积分折线图" aria-describedby="chart-keyboard-help"></canvas>
+        <div id="chart-tooltip" class="chart-tooltip hidden" aria-hidden="true"></div>
+        <p id="chart-live" class="sr-only" aria-live="polite"></p>
         <div id="chart-empty" class="empty-state hidden">暂无每日积分记录</div>
       </div>
       <div class="chart-summary">
@@ -84,33 +96,50 @@
         <div><span>日均积分</span><strong id="average-points">0.00</strong></div>
         <div><span>有记录天数</span><strong id="active-days">0</strong></div>
       </div>
+      <table id="chart-data" class="sr-only">
+        <caption>每日消费积分明细</caption>
+        <thead><tr><th scope="col">业务日期</th><th scope="col">消费积分</th></tr></thead>
+        <tbody id="chart-data-body"></tbody>
+      </table>
     </section>
 
     <section class="records-grid" aria-label="个人积分与赠送记录">
       <section class="table-panel">
         <div class="section-heading">
-          <div><span class="section-kicker">积分明细</span><h2>个人积分记录</h2></div>
-          <button id="refresh-ledger" class="button secondary compact" type="button">刷新</button>
+          <div class="section-title-lockup"><span class="panel-icon" aria-hidden="true"><svg class="icon"><use href="/assets/lucide-sprite.svg#history"></use></svg></span><div><span class="section-kicker">积分明细</span><h2>个人积分记录</h2></div></div>
+          <button id="refresh-ledger" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新</span></button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>时间</th><th>类型</th><th>积分变动</th><th>变动后积分</th><th>业务日期</th></tr></thead>
+            <caption class="sr-only">个人积分记录</caption>
+            <thead><tr><th scope="col">发放时间</th><th scope="col">类型</th><th scope="col">积分变动</th><th scope="col">变动后积分</th><th scope="col">业务日期</th></tr></thead>
             <tbody id="ledger-body"></tbody>
           </table>
         </div>
+        <nav class="table-pagination user-record-pagination" aria-label="个人积分记录分页">
+          <button id="ledger-prev" class="pagination-button" type="button" aria-label="上一页" title="上一页" disabled><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-left"></use></svg></button>
+          <span id="ledger-page" class="pagination-status" aria-live="polite">第 1 页</span>
+          <button id="ledger-next" class="pagination-button" type="button" aria-label="下一页" title="下一页" disabled><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-right"></use></svg></button>
+        </nav>
       </section>
 
       <section class="table-panel">
         <div class="section-heading">
-          <div><span class="section-kicker">赠送明细</span><h2>签到奖励记录</h2></div>
-          <button id="refresh-grants" class="button secondary compact" type="button">刷新</button>
+          <div class="section-title-lockup"><span class="panel-icon" aria-hidden="true"><svg class="icon"><use href="/assets/lucide-sprite.svg#wallet-cards"></use></svg></span><div><span class="section-kicker">赠送明细</span><h2>签到奖励记录</h2></div></div>
+          <button id="refresh-grants" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新</span></button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>时间</th><th>赠送金额</th><th>类型</th><th>状态</th></tr></thead>
+            <caption class="sr-only">签到奖励记录</caption>
+            <thead><tr><th scope="col">时间</th><th scope="col">赠送金额</th><th scope="col">类型</th><th scope="col">状态</th></tr></thead>
             <tbody id="grants-body"></tbody>
           </table>
         </div>
+        <nav class="table-pagination user-record-pagination" aria-label="签到奖励记录分页">
+          <button id="grants-prev" class="pagination-button" type="button" aria-label="上一页" title="上一页" disabled><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-left"></use></svg></button>
+          <span id="grants-page" class="pagination-status" aria-live="polite">第 1 页</span>
+          <button id="grants-next" class="pagination-button" type="button" aria-label="下一页" title="下一页" disabled><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-right"></use></svg></button>
+        </nav>
       </section>
     </section>
   </main>

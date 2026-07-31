@@ -7,8 +7,11 @@
     grants: [],
     grantSummary: {},
     users: [],
-    usersPage: { limit: 50, offset: 0, total: 0 },
+    usersPage: { limit: 50, offset: 0, total: 0, loading: false },
+    grantsPage: { cursor: "", nextCursor: "", backPages: [], forwardPages: [], loading: false },
+    requestSequence: { policies: 0, users: 0, grants: 0 },
     reverseID: "",
+    reverseReturnFocus: null,
     view: "overview"
   };
   const viewTitles = {
@@ -102,7 +105,9 @@
   }
 
   async function loadPolicies() {
+    const requestSequence = ++state.requestSequence.policies;
     const rows = await ui.api("/api/v1/admin/policies?limit=50");
+    if (requestSequence !== state.requestSequence.policies) return;
     state.policies = Array.isArray(rows) ? rows : [];
     ui.renderRows("policies-body", state.policies, [
       (policy) => `v${policy.version_no}`,
@@ -119,51 +124,73 @@
     renderOverview();
   }
 
-  async function loadAdminUsers() {
+  function syncAdminUsersPager() {
     const page = state.usersPage;
-    const data = await ui.api(`/api/v1/admin/users/points?limit=${page.limit}&offset=${page.offset}`);
-    state.users = Array.isArray(data?.items) ? data.items : [];
-    page.total = Math.max(0, ui.number(data?.total));
-    page.limit = Math.max(1, ui.number(data?.limit) || page.limit);
-    page.offset = Math.max(0, ui.number(data?.offset));
-    ui.renderRows("admin-users-body", state.users, [
-      (user) => user.username || "未设置用户名",
-      (user) => ui.points(user.total_points_hundredths),
-      (user) => ui.points(user.yesterday_points_hundredths),
-      (user) => ui.money(user.total_spend_microusd),
-      (user) => ui.money(user.yesterday_spend_microusd),
-      (user) => ui.date(user.snapshot_business_date),
-      (user) => ui.statusChip(user.snapshot_status)
-    ], "暂无用户积分账户");
-
-    const first = page.total === 0 ? 0 : page.offset + 1;
-    const last = Math.min(page.total, page.offset + state.users.length);
-    ui.byId("admin-users-page-summary").textContent = page.total === 0
-      ? "共 0 位用户"
-      : `第 ${first}-${last} 位，共 ${page.total} 位用户`;
-    ui.byId("admin-users-prev").disabled = page.offset === 0;
-    ui.byId("admin-users-next").disabled = page.offset + state.users.length >= page.total;
+    ui.byId("admin-users-prev").disabled = page.loading || page.offset === 0;
+    ui.byId("admin-users-next").disabled = page.loading || page.offset + state.users.length >= page.total;
   }
 
-  function actionButton(label, className, handler) {
+  async function loadAdminUsers({ offset = state.usersPage.offset } = {}) {
+    const page = state.usersPage;
+    const requestSequence = ++state.requestSequence.users;
+    const requestedLimit = page.limit;
+    const requestedOffset = Math.max(0, ui.number(offset));
+    page.loading = true;
+    syncAdminUsersPager();
+    try {
+      const data = await ui.api(`/api/v1/admin/users/points?limit=${requestedLimit}&offset=${requestedOffset}`);
+      if (requestSequence !== state.requestSequence.users) return;
+      state.users = Array.isArray(data?.items) ? data.items : [];
+      page.total = Math.max(0, ui.number(data?.total));
+      page.limit = Math.max(1, ui.number(data?.limit) || page.limit);
+      page.offset = Math.max(0, ui.number(data?.offset ?? requestedOffset));
+      ui.renderRows("admin-users-body", state.users, [
+        (user) => user.login_email || "未设置登录邮箱",
+        (user) => ui.points(user.total_points_hundredths),
+        (user) => ui.points(user.yesterday_points_hundredths),
+        (user) => ui.money(user.total_spend_microusd),
+        (user) => ui.money(user.yesterday_spend_microusd),
+        (user) => ui.date(user.snapshot_business_date),
+        (user) => ui.statusChip(user.snapshot_status)
+      ], "暂无用户积分账户");
+
+      const first = page.total === 0 ? 0 : page.offset + 1;
+      const last = Math.min(page.total, page.offset + state.users.length);
+      ui.byId("admin-users-page-summary").textContent = page.total === 0
+        ? "共 0 位用户"
+        : `第 ${first}-${last} 位，共 ${page.total} 位用户`;
+    } finally {
+      if (requestSequence === state.requestSequence.users) {
+        page.loading = false;
+        syncAdminUsersPager();
+      }
+    }
+  }
+
+  function actionButton(label, className, iconName, handler) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `button ${className} table-action`;
-    button.textContent = label;
+    const text = document.createElement("span");
+    text.dataset.buttonLabel = "";
+    text.textContent = label;
+    button.append(ui.icon(iconName), text);
     button.addEventListener("click", handler);
     return button;
   }
 
-  async function loadAdminGrants() {
-    const [rows, summary] = await Promise.all([
-      ui.api("/api/v1/admin/balance-grants?limit=100"),
-      ui.api("/api/v1/admin/balance-grants/summary")
-    ]);
-    state.grants = Array.isArray(rows) ? rows : [];
-    state.grantSummary = summary?.counts && typeof summary.counts === "object" ? summary.counts : {};
+  function syncAdminGrantsPager() {
+    const page = state.grantsPage;
+    ui.byId("admin-grants-page").textContent = `第 ${page.backPages.length + 1} 页`;
+    ui.byId("admin-grants-prev").disabled = page.loading || page.backPages.length === 0;
+    ui.byId("admin-grants-next").disabled = page.loading ||
+      (page.forwardPages.length === 0 && !page.nextCursor);
+  }
+
+  function renderAdminGrants() {
     ui.renderRows("admin-grants-body", state.grants, [
       (grant) => ui.dateTime(grant.created_at),
-      (grant) => grant.username || "未设置用户名",
+      (grant) => grant.login_email || "未设置登录邮箱",
       (grant) => ui.money(grant.amount_microusd),
       (grant) => ui.kindText(grant.kind),
       (grant) => ui.statusChip(grant.status),
@@ -172,38 +199,124 @@
       (grant, cell) => {
         cell.className = "actions";
         const retryable = ["failed", "permanently_failed", "reversal_permanently_failed"].includes(grant.status);
-        if (retryable) cell.append(actionButton("重试", "secondary", () => retryGrant(grant.id)));
+        if (retryable) cell.append(actionButton("重试", "secondary", "refresh-cw", (event) => retryGrant(grant.id, event.currentTarget)));
         const reversible = grant.status === "settled" || (grant.status === "pending" && grant.attempts === 0);
-        if (reversible) cell.append(actionButton("冲正", "danger", () => openReverseDialog(grant.id)));
+        if (reversible) cell.append(actionButton("冲正", "danger", "rotate-ccw", (event) => openReverseDialog(grant.id, event.currentTarget)));
         if (!retryable && !reversible) cell.textContent = "-";
       }
     ], "暂无赠送任务");
     renderOverview();
   }
 
-  async function retryGrant(id) {
+  function adminGrantPageSnapshot() {
+    return {
+      cursor: state.grantsPage.cursor,
+      items: state.grants,
+      nextCursor: state.grantsPage.nextCursor
+    };
+  }
+
+  function applyAdminGrantPage(snapshot) {
+    state.grantsPage.cursor = snapshot.cursor;
+    state.grantsPage.nextCursor = snapshot.nextCursor;
+    state.grants = snapshot.items;
+    renderAdminGrants();
+    syncAdminGrantsPager();
+  }
+
+  async function loadAdminGrants({ cursor = state.grantsPage.cursor, navigation = "replace" } = {}) {
+    const page = state.grantsPage;
+    const requestSequence = ++state.requestSequence.grants;
+    page.loading = true;
+    syncAdminGrantsPager();
     try {
-      await ui.api(`/api/v1/admin/balance-grants/${encodeURIComponent(id)}/retry`, { method: "POST" });
-      ui.notice("重试任务已加入队列");
-      await loadAdminGrants();
-    } catch (error) {
-      ui.notice(error.message, true);
+      const [data, summary] = await Promise.all([
+        ui.api(`/api/v1/admin/balance-grants?cursor=${encodeURIComponent(cursor)}`),
+        ui.api("/api/v1/admin/balance-grants/summary")
+      ]);
+      if (requestSequence !== state.requestSequence.grants) return;
+      const previous = adminGrantPageSnapshot();
+      if (navigation === "next") {
+        page.backPages.push(previous);
+        page.forwardPages = [];
+      } else if (navigation === "reset") {
+        page.backPages = [];
+        page.forwardPages = [];
+      } else {
+        page.forwardPages = [];
+      }
+      state.grantSummary = summary?.counts && typeof summary.counts === "object" ? summary.counts : {};
+      applyAdminGrantPage({
+        cursor,
+        items: Array.isArray(data?.items) ? data.items : [],
+        nextCursor: typeof data?.next_cursor === "string" ? data.next_cursor : ""
+      });
+    } finally {
+      if (requestSequence === state.requestSequence.grants) {
+        page.loading = false;
+        syncAdminGrantsPager();
+      }
     }
   }
 
-  function openReverseDialog(id) {
+  function previousAdminGrantPage() {
+    const page = state.grantsPage;
+    const target = page.backPages.pop();
+    if (!target) return;
+    page.forwardPages.push(adminGrantPageSnapshot());
+    applyAdminGrantPage(target);
+  }
+
+  async function nextAdminGrantPage() {
+    const page = state.grantsPage;
+    if (page.loading) return;
+    if (page.forwardPages.length > 0) {
+      const target = page.forwardPages.pop();
+      page.backPages.push(adminGrantPageSnapshot());
+      applyAdminGrantPage(target);
+      return;
+    }
+    if (!page.nextCursor) return;
+    await loadAdminGrants({ cursor: page.nextCursor, navigation: "next" });
+  }
+
+  async function retryGrant(id, button) {
+    ui.setButtonBusy(button, true, "重试中");
+    try {
+      await ui.api(`/api/v1/admin/balance-grants/${encodeURIComponent(id)}/retry`, { method: "POST" });
+      ui.notice("重试任务已加入队列");
+      await loadAdminGrants({ cursor: "", navigation: "reset" });
+    } catch (error) {
+      ui.notice(error.message, true);
+    } finally {
+      if (button.isConnected) ui.setButtonBusy(button, false);
+    }
+  }
+
+  function openReverseDialog(id, trigger) {
     state.reverseID = id;
+    state.reverseReturnFocus = trigger || document.activeElement;
     ui.byId("reverse-reason").value = "";
     const dialog = ui.byId("reverse-dialog");
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
+    requestAnimationFrame(() => ui.byId("reverse-reason").focus());
+  }
+
+  function finishReverseDialog() {
+    state.reverseID = "";
+    const target = state.reverseReturnFocus;
+    state.reverseReturnFocus = null;
+    if (target?.isConnected) requestAnimationFrame(() => target.focus());
   }
 
   function closeReverseDialog() {
-    state.reverseID = "";
     const dialog = ui.byId("reverse-dialog");
     if (typeof dialog.close === "function") dialog.close();
-    else dialog.removeAttribute("open");
+    else {
+      dialog.removeAttribute("open");
+      finishReverseDialog();
+    }
   }
 
   function tierField(labelText, name, type, value = "", step = "0.01", mode = "") {
@@ -259,7 +372,7 @@
     remove.className = "button danger remove-tier";
     remove.title = "删除阶梯";
     remove.setAttribute("aria-label", "删除阶梯");
-    remove.textContent = "×";
+    remove.append(ui.icon("trash-2"));
     remove.addEventListener("click", () => row.remove());
     row.append(remove);
     ui.byId("tiers").append(row);
@@ -333,12 +446,20 @@
     return value;
   }
 
+  function setControlDescription(control, descriptionID) {
+    if (descriptionID) control.setAttribute("aria-describedby", descriptionID);
+    else control.removeAttribute("aria-describedby");
+  }
+
   function syncConsumerOnly() {
     const consumerOnly = ui.byId("policy-consumer-only").checked;
     const basis = ui.byId("policy-basis");
     if (consumerOnly) basis.value = "yesterday";
     const checkinEnabled = ui.byId("policy-enabled").checked && ui.byId("policy-checkin-enabled").checked;
     basis.disabled = !checkinEnabled || consumerOnly;
+    const basisLocked = checkinEnabled && consumerOnly;
+    ui.byId("basis-lock-reason").classList.toggle("hidden", !basisLocked);
+    setControlDescription(basis, !checkinEnabled ? "checkin-lock-reason" : basisLocked ? "basis-lock-reason" : "");
   }
 
   function syncCheckinControls() {
@@ -347,16 +468,39 @@
     checkinToggle.disabled = !pointsEnabled;
     if (!pointsEnabled) checkinToggle.checked = false;
     const checkinEnabled = pointsEnabled && checkinToggle.checked;
+    const lockReason = ui.byId("checkin-lock-reason");
+    lockReason.textContent = pointsEnabled
+      ? "启用签到赠送后，可配置签到资格、赠送上限和奖励阶梯。"
+      : "请先开放用户积分功能，再启用签到赠送。";
+    lockReason.classList.toggle("hidden", checkinEnabled);
+    setControlDescription(checkinToggle, checkinEnabled ? "" : "checkin-lock-reason");
     ["policy-consumer-only", "policy-checkin-limit", "policy-minimum-spend", "policy-single-cap", "policy-user-cap", "policy-platform-cap"].forEach((id) => {
       const control = ui.byId(id);
       control.disabled = !checkinEnabled;
+      setControlDescription(control, checkinEnabled ? "" : "checkin-lock-reason");
       if (id !== "policy-consumer-only" && id !== "policy-minimum-spend") control.required = checkinEnabled;
     });
-    ui.byId("add-tier").disabled = !checkinEnabled;
-    ui.byId("checkin-settings").classList.toggle("is-locked", !checkinEnabled);
-    ui.byId("checkin-tiers").classList.toggle("is-locked", !checkinEnabled);
+    const addTier = ui.byId("add-tier");
+    addTier.disabled = !checkinEnabled;
+    setControlDescription(addTier, checkinEnabled ? "" : "checkin-lock-reason");
+    const settings = ui.byId("checkin-settings");
+    const tiers = ui.byId("checkin-tiers");
+    settings.classList.toggle("is-locked", !checkinEnabled);
+    tiers.classList.toggle("is-locked", !checkinEnabled);
+    if (checkinEnabled) {
+      settings.removeAttribute("aria-describedby");
+      tiers.removeAttribute("aria-describedby");
+      tiers.removeAttribute("aria-disabled");
+    } else {
+      settings.setAttribute("aria-describedby", "checkin-lock-reason");
+      tiers.setAttribute("aria-describedby", "checkin-lock-reason");
+      tiers.setAttribute("aria-disabled", "true");
+    }
     document.querySelectorAll(".tier-row").forEach((row) => {
-      row.querySelectorAll("input, select, button").forEach((control) => { control.disabled = !checkinEnabled; });
+      row.querySelectorAll("input, select, button").forEach((control) => {
+        control.disabled = !checkinEnabled;
+        setControlDescription(control, checkinEnabled ? "" : "checkin-lock-reason");
+      });
       if (checkinEnabled) syncTierMode(row);
     });
     syncConsumerOnly();
@@ -390,26 +534,55 @@
     });
     ui.byId("logout").addEventListener("click", () => ui.logout().catch((error) => ui.notice(error.message, true)));
     ui.byId("refresh-admin").addEventListener("click", async (event) => {
-      ui.setButtonBusy(event.currentTarget, true, "刷新中");
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "刷新中");
       try {
         await refreshAll();
         ui.notice("后台数据已刷新");
       } catch (error) {
         ui.notice(error.message, true);
       } finally {
-        ui.setButtonBusy(event.currentTarget, false);
+        ui.setButtonBusy(button, false);
       }
     });
-    ui.byId("refresh-admin-grants").addEventListener("click", () => loadAdminGrants().catch((error) => ui.notice(error.message, true)));
-    ui.byId("refresh-admin-users").addEventListener("click", () => loadAdminUsers().catch((error) => ui.notice(error.message, true)));
+    ui.byId("refresh-admin-grants").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "刷新中");
+      try {
+        await loadAdminGrants();
+      } catch (error) {
+        ui.notice(error.message, true);
+      } finally {
+        ui.setButtonBusy(button, false);
+      }
+    });
+    ui.byId("admin-grants-prev").addEventListener("click", () => {
+      if (state.grantsPage.loading) return;
+      previousAdminGrantPage();
+    });
+    ui.byId("admin-grants-next").addEventListener("click", () => {
+      nextAdminGrantPage().catch((error) => ui.notice(error.message, true));
+    });
+    ui.byId("refresh-admin-users").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "刷新中");
+      try {
+        await loadAdminUsers();
+      } catch (error) {
+        ui.notice(error.message, true);
+      } finally {
+        ui.setButtonBusy(button, false);
+      }
+    });
     ui.byId("admin-users-prev").addEventListener("click", () => {
-      state.usersPage.offset = Math.max(0, state.usersPage.offset - state.usersPage.limit);
-      loadAdminUsers().catch((error) => ui.notice(error.message, true));
+      if (state.usersPage.loading) return;
+      const offset = Math.max(0, state.usersPage.offset - state.usersPage.limit);
+      loadAdminUsers({ offset }).catch((error) => ui.notice(error.message, true));
     });
     ui.byId("admin-users-next").addEventListener("click", () => {
-      if (state.usersPage.offset + state.usersPage.limit >= state.usersPage.total) return;
-      state.usersPage.offset += state.usersPage.limit;
-      loadAdminUsers().catch((error) => ui.notice(error.message, true));
+      if (state.usersPage.loading || state.usersPage.offset + state.usersPage.limit >= state.usersPage.total) return;
+      const offset = state.usersPage.offset + state.usersPage.limit;
+      loadAdminUsers({ offset }).catch((error) => ui.notice(error.message, true));
     });
     ui.byId("toggle-policy-form").addEventListener("click", () => ui.byId("policy-form").classList.toggle("hidden"));
     ui.byId("cancel-policy").addEventListener("click", () => ui.byId("policy-form").classList.add("hidden"));
@@ -455,6 +628,7 @@
     });
 
     ui.byId("cancel-reverse").addEventListener("click", closeReverseDialog);
+    ui.byId("reverse-dialog").addEventListener("close", finishReverseDialog);
     ui.byId("reverse-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const reason = ui.byId("reverse-reason").value.trim();
@@ -471,7 +645,7 @@
         });
         closeReverseDialog();
         ui.notice("冲正任务已加入队列");
-        await loadAdminGrants();
+        await loadAdminGrants({ cursor: "", navigation: "reset" });
       } catch (error) {
         ui.notice(error.message, true);
       } finally {
@@ -491,7 +665,7 @@
         return;
       }
       ui.setSession(data);
-      ui.byId("admin-username").textContent = data.username || "未设置用户名";
+      ui.byId("admin-login-email").textContent = data.login_email || "未设置登录邮箱";
       access.remove();
       app.hidden = false;
       bindEvents();

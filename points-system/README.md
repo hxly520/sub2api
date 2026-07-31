@@ -21,49 +21,55 @@ Only server-recorded successful usage is accepted. A browser or push endpoint
 is never a usage fact source. Production reads Sub2API `usage_logs` through the
 dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
-## Production Baseline (2026-07-31)
+## Production Baseline (2026-08-01)
 
-- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-04a19ca082ee`, OCI revision
-  `04a19ca082ee43853573795d1385727bd38f20e9`; the container is healthy with
-  restart count zero.
+- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`, OCI revision
+  `f79803bb73d659e36627d6f716aab065ff4d56a6`, container prefix
+  `63d320fbf6ca`; the container is healthy with restart count zero. It was
+  switched manually by the operator and remains outside automated replacement.
 - The points service runs
   `ghcr.io/hxly520/sub2api-points:0.1.169-f79803bb73d6`, OCI revision
   `f79803bb73d659e36627d6f716aab065ff4d56a6`, and is also healthy. Updating the
-  points container did not recreate or restart the still-running `04a19ca082ee`
-  Sub2API container.
+  points container did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
-- The running production `points_app` role has the audited column-level
-  `SELECT (username)` grant on `public.users`, in addition to the existing
-  `id` and `deleted_at` grants. It still has no table-wide user-table access,
-  no other user columns, and no write permission.
+- The running production `points_app` role is still at the audited legacy
+  `SELECT (username)` allowlist from the previous release, in addition to the
+  existing `id` and `deleted_at` grants. This is a historical compatibility
+  state, not the new display contract. Stage A grants `email` while retaining
+  `username`; stage B removes `username` only after the login-email image has
+  passed production checks. The role must retain no table-wide user-table
+  access, no other user columns, and no write permission throughout.
 - Sub2API has 250 applied public migrations. Private migrations
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
 - Policy version 3 is enabled at `10.00 points/U`, refreshes at `00:05`, and
   keeps check-in disabled. Historical job
-  `5174eef7-5f0a-4a17-b4f1-f50840940f64` succeeded with 29 point accounts, 316
-  daily snapshots, 311 point-ledger rows, no `needs_review` rows, and no
-  check-in or balance-grant rows. This production schema must not run another
-  history plan or apply.
+  `5174eef7-5f0a-4a17-b4f1-f50840940f64` remains the only successful baseline.
+  The `2026-08-01 00:05 CST` scheduled run settled business date `2026-07-31`
+  for 12 users and completed successfully; production then had 29 point
+  accounts, 328 daily snapshots/revisions, 322 point-ledger rows, no
+  `needs_review` rows, and no check-in or balance-grant rows. This production
+  schema must not run another history plan or apply.
 - The staged rollout keeps Sub2API `points_system.enabled=false` with
   `points_system.preview_user_ids: [1]`, while the deployed points service runs
-  `POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. After the
-  matching Sub2API candidate is switched, only user ID 1 may see the ordinary
+  `POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. With the
+  matching Sub2API revision now running, only user ID 1 may see the ordinary
   user menu, visit `/points`, obtain a user launch ticket, or continue using a
   points user session. Administrator access remains available, and both gates
   change to all-users mode only after preview acceptance.
-- The cold-gray/electric-blue user and administrator workspaces, uploaded
-  Sub2API logo integration, username-only browser identity, deleted-user session
-  invalidation, per-request preview enforcement, and minimal username ACL
-  template are deployed in the points service from revision `f79803bb73d6`.
+- The uploaded Sub2API logo integration, deleted-user session invalidation,
+  and per-request preview enforcement are deployed from revision `f79803bb73d6`.
+  Its legacy blue workspace and username projection are superseded by the
+  Sub2API-matched light/dark palette, login-email browser identity, compact
+  cards, and paginated records in the next points-only candidate.
   Its immutable GHCR digest is
   `sha256:d5325808dc2950632f4d4f98ff87a167265d0dbf2a45e9f0b8e446bd51c96876`.
-  The matching Sub2API candidate has been loaded on the server but still
-  requires the operator's explicit switch.
+  Sub2API already runs the matching revision; only the new points-only
+  candidate remains pending independent deployment.
 
 ## Runtime Architecture
 
@@ -124,11 +130,11 @@ access log.
 | POST | `/api/v1/admin/balance-grants/{id}/reverse` | Audit and reverse/cancel a check-in reward delivery |
 | GET | `/healthz` | Database-backed health check |
 
-Every user-facing identity is a Sub2API username: the user and administrator
-headers, the administrator user-points directory, and the user column in
-check-in balance-grant delivery records. Numeric Sub2API user IDs remain
-server-side keys for joins, financial records, audit attribution, and
-idempotency only. Browser APIs must return `username` where an identity is
+Every user-facing identity is the Sub2API login email: the user and
+administrator headers, the administrator user-points directory, and the user
+column in check-in balance-grant delivery records. Numeric Sub2API user IDs
+remain server-side keys for joins, financial records, audit attribution, and
+idempotency only. Browser APIs must return `login_email` where an identity is
 needed and must not return an otherwise unnecessary `user_id`.
 
 The built-in user and administrator workspaces are separate Chinese pages at
@@ -138,14 +144,32 @@ page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
 total/yesterday points, today's and settled
 unreversed check-in credits, a 7/30/90-day points trend, and personal records;
 it contains no policy, manual grant, snapshot, retry, or reversal controls.
-Its deployed visual system uses a cold-gray canvas, ink navigation,
-electric-blue four-metric summary, a wide trend chart, and separate personal
-ledger and check-in reward tables. The administrator page uses the same visual
-language in a denser operations layout; sharing visual tokens does not merge
-pages, scripts, roles, or API permissions.
+Its four summary cards use a compact equal-height layout without redundant
+disabled-check-in copy. The check-in action uses an internal responsive grid,
+not absolute positioning, so labels, values, and longer status text cannot
+overlap. The personal ledger and check-in reward history have
+independent previous/next controls and render ten rows per page. Their APIs use
+user-bound signed keyset cursors (`id` for ledger rows and `(created_at,id)` for
+check-in grants), so records inserted between page requests do not duplicate or
+hide older rows. The visual tokens match
+Sub2API's light `gray-50/white` surfaces and dark
+`dark-950/dark-800/dark-700` surfaces, with the same teal primary scale. Table
+rows, hover states, pagination, status chips, and chart colors must all remain
+readable in both themes. The administrator page uses the same visual language
+in a denser operations layout; sharing visual tokens does not merge pages,
+scripts, roles, or API permissions.
+Its check-in grant history uses an administrator-bound signed keyset cursor and
+independent previous/next controls; it is not truncated to the latest 100 rows.
 User and administrator routes are role-exact in both directions. An
 administrator session cannot invoke the user account, ledger, check-in, or
 grant APIs, and the shared logout route is the only role-neutral write route.
+Dashboard refresh controls retain a stable button reference across asynchronous
+work so they always leave the busy state. Every browser API request has a
+20-second client timeout that is cleared on completion and returns a localized,
+retryable timeout message. Check-in keeps one idempotency key
+while a network outcome is uncertain, stays locked until an authoritative
+profile read confirms the result, and then renders the confirmed availability
+or completed state; a retry must never create a second reward.
 Session reads used by pages, assets, and APIs do not update `last_seen_at`, so a
 single page load does not create parallel write locks in the shared database.
 
@@ -155,10 +179,12 @@ also has no manual snapshot-refresh control. Daily snapshots are internal,
 idempotent accounting records produced automatically at the configured refresh
 time, while the one-time full historical baseline is executed only by the
 audited `points-history-backfill` operations workflow below. The administrator
-user directory reads only `users.id`, `users.username`, and `users.deleted_at`
-from Sub2API, then exposes usernames, points, and successful-spend totals plus
+user directory reads only `users.id`, `users.email`, and `users.deleted_at`
+from Sub2API, then exposes login emails, points, and successful-spend totals plus
 the prior natural day's settlement state. Zero-spend users remain visible with
-zero totals. The delivery workspace uses the same username projection for
+zero totals. Page controls stay locked while a request is active and commit the
+requested offset only after a successful response, preserving the prior page
+after a failure. The delivery workspace uses the same login-email projection for
 check-in reward records only; legacy manual-grant rows remain in the database
 for audit but are not listed or mutable through the points HTTP API.
 
@@ -170,7 +196,10 @@ checks, or expose administrator APIs. The embedded user view hides its
 standalone top bar so the Sub2API sidebar, current light/dark theme, and uploaded
 logo remain authoritative. Later parent theme changes use the
 `sub2api:points-theme` message; the child applies only `light` or `dark` when
-both `event.source` and the exact configured parent Origin match.
+both `event.source` and the exact configured parent Origin match. Once received,
+the parent theme remains authoritative across later profile refreshes, and a
+theme change redraws the canvas trend immediately instead of retaining stale
+light or dark chart colors.
 
 The administrator route `/admin/settings/points` remains in Sub2API for bridge
 status and launch controls, but the policy workspace is not appended as a
@@ -286,6 +315,16 @@ if its audit event is serialized and written successfully. Audit failure makes
 the entire operation fail. There is no browser endpoint or administrator UI
 control for refreshing snapshots.
 
+The personal ledger's displayed **issued at** (`awarded_at`) value is a business timestamp,
+not an alias for the immutable row's insertion time. For consumption rows with
+`kind=usage_points` and a non-null `business_date`, it is the start of the next
+`Asia/Shanghai` natural day plus the `refresh_minute` from the policy effective
+on that award day. It deliberately does not reuse the consumption-day or
+ledger-bound policy at a schedule transition; the current default therefore
+displays `00:05` on the day after `business_date`. Non-consumption, legacy, or
+rows without an award-day policy fall back to `created_at`. This display projection must not
+rewrite `points_ledger.created_at` or any historical ledger row.
+
 The one-time pre-launch history baseline is deliberately separate from this
 rolling reconciliation. It processes one completed natural day per transaction,
 persists a resumable cursor, and pins every covered date to the immutable initial
@@ -345,22 +384,38 @@ from `deploy/usage-reader.sql.example`. Both templates require fresh role names,
 run in a transaction, and fail instead of changing shared PUBLIC ACLs. Supply
 their psql variables through a root-only stdin file rather than process arguments.
 The bootstrap installs `btree_gist` and creates only the isolated points schema
-and role; its Sub2API user-table allowlist is exactly `id`, `username`, and
+and role; its Sub2API user-table allowlist is exactly `id`, `email`, and
 `deleted_at`. Embedded migrations then run inside that schema.
 
-For an existing deployment created before the username UI, do not rerun the
-bootstrap. First take and verify a database backup, record the pre-change points
-account/snapshot/ledger and Sub2API user counts, and load the existing role name
-as the `points_app_role` psql variable from a root-only stdin file. Then run
-`deploy/shared-database-users-username-upgrade.sql.example` as the PostgreSQL
-bootstrap superuser and retain its non-secret before/after audit output. The
-script runs in one transaction, validates the role/table/column and existing
-least-privilege shape, grants only `SELECT (username)` on `public.users`, makes
-no PUBLIC ACL change, and asserts the direct column grant before commit. After
-the grant, repeat the counts and verify there was no data change before updating
-the points container. The production role recorded above completed this step on
-2026-07-31; future deployments must preserve the resulting narrow ACL and must
-not rerun the bootstrap.
+For an existing deployment created before the login-email UI, do not rerun the
+bootstrap or the already executed username upgrade. First take and verify a
+database backup, record the pre-change points account/snapshot/ledger and
+Sub2API user counts, and load the existing role name as the `points_app_role`
+psql variable from a root-only stdin file. Run stage A
+`deploy/shared-database-users-email-upgrade.sql.example` as the PostgreSQL
+bootstrap superuser. It atomically grants `SELECT (email)` while retaining the
+legacy `SELECT (username)`, and asserts the exact transitional
+`id/email/username/deleted_at` allowlist. Update only the points container and
+verify login-email identities, exact role isolation, preview user 1, non-preview
+denial, and unchanged accounting counts. Only then run stage B
+`deploy/shared-database-users-email-finalize.sql.example`, which atomically
+revokes `username` and asserts the final `id/email/deleted_at` allowlist.
+
+To roll back after stage B, first run
+`deploy/shared-database-users-email-rollback-prepare.sql.example`; it restores
+`username` without removing `email`, so either image remains usable. Switch to
+the old image and complete its username checks before running
+`deploy/shared-database-users-email-rollback-finalize.sql.example` to remove
+`email` and restore the exact legacy `id/username/deleted_at` state. Every stage
+retains non-secret before/after audit output, rejects table-wide/extra-column/
+write/PUBLIC access, and rolls back atomically on failure. The historical
+username upgrade and its 2026-07-31 audit remain immutable evidence.
+
+Both the regular CI workflow and the points-image workflow run
+`deploy/ci/shared-database-users-email-acl-test.sh` against an isolated
+PostgreSQL 16 service. The test exercises stage A, stage B, both rollback
+stages, rejection of an expanded source ACL, exact column grants, and an
+injected pre-commit failure that must leave the legacy ACL unchanged.
 
 The Compose template publishes the service on loopback only and joins the
 existing Sub2API Docker network for the read-only database and balance bridge.

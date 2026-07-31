@@ -93,10 +93,17 @@ jobs:
             psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U points_test -d points_test)
 
           printf '%s\n' \
+            'CREATE TABLE public.users (' \
+            '  id BIGINT PRIMARY KEY, email TEXT, username TEXT NOT NULL,' \
+            '  deleted_at TIMESTAMPTZ, balance BIGINT NOT NULL DEFAULT 0,' \
+            '  password_hash TEXT' \
+            ');' \
             'CREATE TABLE public.usage_logs (' \
             '  id BIGINT PRIMARY KEY, user_id BIGINT NOT NULL, billing_type INTEGER NOT NULL,' \
             '  actual_cost NUMERIC(20,10) NOT NULL, created_at TIMESTAMPTZ NOT NULL' \
             ');' | "${psql[@]}"
+
+          bash points-system/deploy/ci/shared-database-users-email-acl-test.sh
 
           {
             cat <<'PSQL_VARS'

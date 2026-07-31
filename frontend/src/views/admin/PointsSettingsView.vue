@@ -34,8 +34,15 @@
         </div>
       </div>
 
-      <div v-if="loading && !status" class="flex items-center justify-center py-16" role="status">
-        <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+      <div v-if="loading && !status" class="points-workspace-skeleton animate-pulse space-y-4 motion-reduce:animate-none" role="status">
+        <span class="sr-only">{{ t('common.loading') }}</span>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div v-for="index in 3" :key="index" class="card flex min-h-24 items-center gap-3 px-4 py-3">
+            <div class="h-10 w-10 rounded-lg bg-gray-200 dark:bg-dark-700" />
+            <div class="flex-1 space-y-2"><div class="h-3 w-20 rounded bg-gray-200 dark:bg-dark-700" /><div class="h-4 w-28 rounded bg-gray-300 dark:bg-dark-600" /></div>
+          </div>
+        </div>
+        <div class="card h-40 p-6"><div class="h-5 w-32 rounded bg-gray-300 dark:bg-dark-600" /><div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2"><div v-for="index in 4" :key="index" class="h-10 rounded bg-gray-100 dark:bg-dark-700" /></div></div>
       </div>
 
       <div
@@ -143,7 +150,7 @@ const overviewItems = computed(() => {
       value: status.value.configured ? t('pointsSettings.ready') : t('pointsSettings.missing'),
       icon: 'server' as const,
       iconClass: status.value.configured
-        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300'
+        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
         : 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300',
     },
     {
@@ -152,7 +159,7 @@ const overviewItems = computed(() => {
       value: enabledState(status.value.active),
       icon: 'user' as const,
       iconClass: status.value.active
-        ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
+        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
         : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-300',
     },
     {
@@ -161,7 +168,7 @@ const overviewItems = computed(() => {
       value: status.value.configured ? t('pointsSettings.available') : t('pointsSettings.unavailable'),
       icon: 'gift' as const,
       iconClass: status.value.configured
-        ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300'
+        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
         : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-300',
     },
   ]

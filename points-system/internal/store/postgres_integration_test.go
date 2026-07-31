@@ -137,6 +137,131 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 	}
 }
 
+func TestPostgresLedgerAwardedAtUsesBusinessDateWhenCreatedAtMatches(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx := context.Background()
+	userID := int64(9201)
+	createdAt := fixture.now.UTC()
+	firstBusinessDate := fixture.store.BusinessDate(fixture.now).AddDate(0, 0, -2)
+	secondBusinessDate := firstBusinessDate.AddDate(0, 0, 1)
+
+	var policyVersion int64
+	if err := fixture.db.QueryRow(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,refresh_minute,created_by
+	) VALUES($1,FALSE,5,$2) RETURNING version_no`,
+		firstBusinessDate.Format("2006-01-02"), userID).Scan(&policyVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,refresh_minute,created_by
+	) VALUES($1,FALSE,65,$2)`,
+		secondBusinessDate.AddDate(0, 0, 1).Format("2006-01-02"), userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_accounts(user_id) VALUES($1)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	for index, businessDate := range []time.Time{firstBusinessDate, secondBusinessDate} {
+		if _, err := fixture.db.Exec(ctx, `INSERT INTO points_ledger(
+			user_id,kind,delta_points_hundredths,total_after_hundredths,source,
+			external_event_id,request_fingerprint,policy_version,business_date,created_at
+		) VALUES($1,'usage_points',100,$2,'usage_snapshot',$3,$4,$5,$6,$7)`,
+			userID, int64((index+1)*100), fmt.Sprintf("same-created-at-%d", index),
+			strings.Repeat(string(rune('a'+index)), 64), policyVersion,
+			businessDate.Format("2006-01-02"), createdAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := fixture.store.Ledger(ctx, userID, 10)
+	if err != nil {
+		t.Fatalf("list ledger: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("ledger entries = %d, want 2", len(entries))
+	}
+	for _, entry := range entries {
+		if !entry.CreatedAt.Equal(createdAt) || entry.BusinessDate == nil {
+			t.Fatalf("unexpected ledger timestamps: %+v", entry)
+		}
+		year, month, day := entry.BusinessDate.Date()
+		refreshMinute := 5
+		if entry.BusinessDate.Format("2006-01-02") == secondBusinessDate.Format("2006-01-02") {
+			refreshMinute = 65
+		}
+		expected := time.Date(year, month, day+1, 0, refreshMinute, 0, 0, fixture.location)
+		if !entry.AwardedAt.Equal(expected) {
+			t.Fatalf("business date %s awarded_at = %s, want %s",
+				entry.BusinessDate.Format("2006-01-02"), entry.AwardedAt, expected)
+		}
+	}
+	if entries[0].AwardedAt.Equal(entries[1].AwardedAt) {
+		t.Fatalf("different business dates shared awarded_at %s", entries[0].AwardedAt)
+	}
+	firstPage, err := fixture.store.LedgerPage(ctx, userID, 1, nil)
+	if err != nil || len(firstPage) != 1 {
+		t.Fatalf("first ledger page = %+v, err=%v", firstPage, err)
+	}
+	beforeID := firstPage[0].ID
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_ledger(
+		user_id,kind,delta_points_hundredths,total_after_hundredths,source,
+		external_event_id,request_fingerprint,policy_version,business_date,created_at
+	) VALUES($1,'usage_points',100,300,'usage_snapshot',$2,$3,$4,$5,$6)`,
+		userID, "inserted-between-pages", strings.Repeat("c", 64), policyVersion,
+		secondBusinessDate.Format("2006-01-02"), createdAt); err != nil {
+		t.Fatal(err)
+	}
+	secondPage, err := fixture.store.LedgerPage(ctx, userID, 1, &beforeID)
+	if err != nil || len(secondPage) != 1 {
+		t.Fatalf("second ledger page = %+v, err=%v", secondPage, err)
+	}
+	if secondPage[0].ID >= beforeID {
+		t.Fatalf("ledger cursor returned duplicate or newly inserted row: before=%d got=%d",
+			beforeID, secondPage[0].ID)
+	}
+}
+
+func TestPostgresCheckinGrantCursorStaysStableAcrossInsert(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx := context.Background()
+	const userID int64 = 9202
+	createdAt := fixture.now.UTC().Truncate(time.Microsecond)
+
+	var policyVersion int64
+	if err := fixture.db.QueryRow(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,created_by
+	) VALUES($1,FALSE,$2) RETURNING version_no`,
+		fixture.store.BusinessDate(fixture.now).Format("2006-01-02"), userID).Scan(&policyVersion); err != nil {
+		t.Fatal(err)
+	}
+	insertGrant := func(id, eventID, fingerprint string) {
+		t.Helper()
+		if _, err := fixture.db.Exec(ctx, `INSERT INTO points_balance_grants(
+			id,user_id,amount_microusd,kind,status,external_event_id,
+			request_fingerprint,policy_version,created_at,updated_at
+		) VALUES($1,$2,10000,'checkin','settled',$3,$4,$5,$6,$6)`,
+			id, userID, eventID, fingerprint, policyVersion, createdAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstID := "00000000-0000-0000-0000-000000000001"
+	secondID := "00000000-0000-0000-0000-000000000002"
+	insertGrant(firstID, "grant-cursor-first", strings.Repeat("d", 64))
+	insertGrant(secondID, "grant-cursor-second", strings.Repeat("e", 64))
+
+	firstPage, err := fixture.store.ListCheckinBalanceGrantsPage(ctx, userID, 1, nil)
+	if err != nil || len(firstPage) != 1 || firstPage[0].ID != secondID {
+		t.Fatalf("first grant page = %+v, err=%v", firstPage, err)
+	}
+	cursor := &pointsstore.BalanceGrantPageCursor{CreatedAt: firstPage[0].CreatedAt, ID: firstPage[0].ID}
+	insertGrant("00000000-0000-0000-0000-000000000003", "grant-cursor-inserted", strings.Repeat("f", 64))
+
+	secondPage, err := fixture.store.ListCheckinBalanceGrantsPage(ctx, userID, 1, cursor)
+	if err != nil || len(secondPage) != 1 || secondPage[0].ID != firstID {
+		t.Fatalf("second grant page = %+v, err=%v", secondPage, err)
+	}
+}
+
 func TestPostgresDisabledPolicyMarksSnapshotReadyWithoutUsageScan(t *testing.T) {
 	fixture := newPostgresFixture(t)
 	ctx := context.Background()

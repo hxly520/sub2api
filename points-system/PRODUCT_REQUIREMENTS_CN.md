@@ -6,14 +6,14 @@
 
 ## 0. 当前生产基线与入口契约
 
-- 截至 `2026-07-31 23:27 CST`，Sub2API 仍运行 `0.1.169-04a19ca082ee` / revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `c37a7a014997...`；积分服务已独立运行 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `05f43434fc20...`。两者均 healthy、restart count `0`，积分切换前后 Sub2API 的完整容器 ID、启动时间和镜像引用完全不变。镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
+- 截至 `2026-08-01 01:04 CST`，Sub2API 已由维护者手工切换为 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`；积分服务运行同 revision，容器 `05f43434fc20...`。两者均 healthy、restart count `0`。后续积分服务可按本文边界独立更新，但自动化不得替换或重启 Sub2API；镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
 - 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 21 张表、3 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。
-- 生产 `points_app` 已完成 `public.users.username` 单列升级，当前对 Sub2API 用户表的直接读取权限严格限定为 `id/username/deleted_at`；整表 SELECT、其他用户列和写权限均未开放。后续部署不得重跑首次 bootstrap 或扩大该 allowlist。
+- 当前生产 `points_app` 仍保留上一版本已审计的 `id/username/deleted_at` 历史 allowlist；它是既有运行态事实，不是新的展示契约。存量升级必须使用可回滚的两阶段 ACL：切换前执行阶段 A `shared-database-users-email-upgrade.sql.example`，只增加 `SELECT (email)` 并暂时保留 `username`，形成精确的 `id/email/username/deleted_at` 兼容 allowlist；新积分镜像完成登录邮箱、角色隔离和用户 1 预览验收后，才执行阶段 B `shared-database-users-email-finalize.sql.example` 撤销 `username`，收敛为 `id/email/deleted_at`。回滚时先执行 `shared-database-users-email-rollback-prepare.sql.example` 恢复双读兼容态，切回旧镜像并验收后再执行 `shared-database-users-email-rollback-finalize.sql.example` 撤销 `email`。四个事务均不得重跑首次 bootstrap、改写历史 username 模板、授予整表 SELECT 或修改 PUBLIC ACL。
 - Sub2API 当前共应用 250 条 public 迁移，`192_media_balance_hold_reconciliation_index_notx.sql` 与 `193_points_balance_credit_ledger.sql` 均已进入生产；积分迁移必须继续记录在 `points.points_schema_migrations`，不得混入 Sub2API 迁移表。
 - 系统设置内的“积分系统”标签和管理员入口 `/admin/settings/points` 必须始终对已认证管理员可见，即使 `points_system.enabled=false`，以便检查桥接状态并经 step-up 进入策略台。管理员点击“打开积分配置”时必须同步创建隔离 opener/referrer 的新标签占位页，验证成功后再把一次性管理员 launch URL 导航到该标签；原 Sub2API 设置页保留，底部不得再嵌入管理员 iframe，弹窗被拦截时不得申请票据。配置或状态 API 只能返回是否配置、Key ID、URL、TTL 等非敏感元数据，禁止回传 launch/credit 密钥原值。
 - 用户工作区 `/app/` 与管理员工作区 `/admin/` 必须使用独立中文页面和独立脚本。普通用户不得下载管理员脚本、打开管理员页面或调用 `/api/v1/admin/*`，管理员也不得调用普通用户账户、积分、签到或赠送 API；角色不匹配一律返回 `403`，不能在同一页面用前端显隐混合两类能力。只有用户工作区通过 Sub2API `/points` 右侧内容区 iframe 嵌入，左侧继续使用 Sub2API 导航及其上传 Logo；积分主题类只能附加在右侧内容区，不得改变官方侧栏。`ui_mode=embedded` 只控制展示，不得参与角色或授权判定。父页通过 `sub2api:points-theme` 实时同步明暗主题，子页只在消息 source 为 parent、Origin 精确等于 `POINTS_EMBED_PARENT_ORIGIN` 且值为 `light|dark` 时应用。积分服务的 CSP `frame-ancestors` 只能包含精确父 Origin，禁止通配符及冲突的 `X-Frame-Options`。
-- 当前 policy v3 已启用，比例为 `1 U = 10.00` 积分，刷新时间为 `00:05`，签到关闭。首次全历史基线作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已成功，当前有 29 个积分账户、316 条每日快照、311 条积分账本，`needs_review=0`，签到和余额发放记录均为 0。该生产 schema 的历史基线已经闭环，禁止再次 plan/apply 或创建第二个回算作业。
-- 分阶段调试保持 Sub2API `POINTS_SYSTEM_ENABLED=false`、`POINTS_SYSTEM_PREVIEW_USER_IDS=1`，同时把积分服务设置为 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。仅当前用户 ID 1 的认证响应返回 `points_system_access=true`，并在菜单、`/points` 路由和 Sub2API user launch ticket 三层放行；积分服务还必须在票据交换和每一次既有 user session 请求复核自己的预览门禁，因此从全站收窄时旧 cookie 也立即失效。两份完整名单均不得返回浏览器，非名单用户不能通过陈旧公共设置、手工 URL 或旧积分会话绕过。两端 root-only 预览配置均已写入并验证，积分端真实票据验证用户 2 为 `403`、用户 1 与管理员工作区正常且测试会话已清零；Sub2API 用户菜单仍须维护者手工切换最终候选后才生效。签到保持关闭。调试通过后必须在同一维护变更中显式设置 Sub2API `enabled=true`、积分服务 mode=`all` 并清空积分预览名单，才开放全体用户。
+- 当前 policy v3 已启用，比例为 `1 U = 10.00` 积分，刷新时间为 `00:05`，签到关闭。首次全历史基线作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已成功且仍是唯一基线；`2026-08-01 00:05 CST` 调度已成功结算业务日期 `2026-07-31` 的 12 名消费用户。只读复核时共有 29 个积分账户、328 条每日快照/修订、322 条积分账本，`needs_review=0`，签到和余额发放记录均为 0。该生产 schema 的历史基线已经闭环，禁止再次 plan/apply 或创建第二个回算作业。
+- 分阶段调试保持 Sub2API `POINTS_SYSTEM_ENABLED=false`、`POINTS_SYSTEM_PREVIEW_USER_IDS=1`，同时把积分服务设置为 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。仅当前用户 ID 1 的认证响应返回 `points_system_access=true`，并在菜单、`/points` 路由和 Sub2API user launch ticket 三层放行；积分服务还必须在票据交换和每一次既有 user session 请求复核自己的预览门禁，因此从全站收窄时旧 cookie 也立即失效。两份完整名单均不得返回浏览器，非名单用户不能通过陈旧公共设置、手工 URL 或旧积分会话绕过。两端 root-only 预览配置均已写入，Sub2API 匹配版本已经人工上线；此前真实票据验证用户 2 为 `403`、用户 1 与管理员工作区正常且测试会话已清零。签到保持关闭。调试通过后必须在同一维护变更中显式设置 Sub2API `enabled=true`、积分服务 mode=`all` 并清空积分预览名单，才开放全体用户。
 
 ## 1. 积分性质
 
@@ -43,6 +43,7 @@
 - 历史基线在整个 schema 生命周期内只能成功创建一次；相同确认计划重复 apply 必须返回原成功作业，不同计划必须拒绝。生产运维不得把“返回原作业”当作允许重跑的入口。初次基线完成前，普通用户访问全局 fail-close，且管理员不得创建另一个 enabled 策略绕过原激活版本。没有历史消费的新站也必须通过一个零金额、零积分的审计基线完成门禁，不能永久卡在 pending。
 - `apply` 最后一天必须重新执行全范围只读汇总，并把实际完成天数、唯一用户数、用户日、业务日、源行数、最大 usage log ID、消费差量和积分差量逐项与 dry-run 计划核对。源数据漂移、已有重叠记账或任一指标不一致时作业只能进入 `failed`，不得标记成功或开放用户入口；创建、恢复、失败和完成均要保留管理员审计。
 - 迟到消费按原消费自然日和当日比例版本差量补算。历史 `usage_logs` 删除或更正造成汇总下降时也自动双向修订累计消费和累计积分，并追加快照修订、积分账本及刷新审计；任何修订都不得令账户累计值为负，否则标记 `needs_review` 且不应用该差量。
+- 个人消费积分账本的“发放时间”字段为 `awarded_at`，它是业务展示时间，不直接等同于不可变记录的 `created_at`。对 `kind=usage_points` 且 `business_date` 非空的消费记录，显示时间固定为 `business_date + 1` 发放自然日零点加该发放日实际生效策略的 `refresh_minute`，按 `Asia/Shanghai` 解释；策略切换日不得错误沿用消费日或账本绑定策略的刷新时间，当前默认即次日 `00:05`。非消费、旧版或找不到发放日策略的记录回退显示 `created_at`，且任何展示换算都不得改写历史账本行。
 
 ## 3. 签到资格
 
@@ -64,8 +65,12 @@
 - 用户页面只显示实际获得金额，不显示管理员配置的随机区间。
 - 用户页面除总积分和昨日积分外，还要突出显示累计签到赠送金额，并保留今日签到所得与最近发放记录。累计赠送金额只统计已经成功发放且未冲正的签到余额，待发放、永久失败和已冲正记录不得计入。
 - 用户页面使用简洁的大屏中文看板，展示总积分、昨日积分、今日及累计签到赠送，并提供 7/30/90 日消费积分曲线、个人积分记录和签到奖励记录；曲线固定覆盖今天之前的连续完整自然日，缺失快照补零且日均按完整天数计算，不能退化为最近 N 条消费记录。页面不得出现策略、阶梯、手工赠送、快照刷新、冲正或其他管理员控件。
-- 管理员页面提供独立的用户积分明细列表，以 Sub2API 未删除用户为基准分页展示用户名、总消费积分、昨日消费积分、累计成功消费金额、昨日成功消费金额及昨日结算状态；从 Sub2API 用户表只允许读取 `id`、`username` 和 `deleted_at` 三列，零消费用户必须补零显示，普通用户 API 和页面不得取得该全站列表。
-- 积分系统不提供手工余额赠送功能，管理员如需直接调整余额必须使用 Sub2API 原有余额管理能力。积分系统的发放任务页面只查询签到随机余额发放记录，不得混入历史手工赠送记录；失败重试和审计冲正也必须先确认任务类型为 `checkin`。管理员概览的状态汇总必须由服务端对全部 `checkin` 任务聚合，不得只统计页面最新 100 条，`reversal_permanently_failed` 必须进入失败计数。
+- 四张积分/签到概览卡必须使用紧凑等高布局，不用无效说明文字撑高卡片；今日签到按钮必须使用卡片内部自适应网格，不得依赖绝对定位，也不得在桌面或移动端覆盖标签、金额或次数。个人积分记录和签到奖励记录分别独立分页，默认每页 `10` 条，使用绑定用户的签名稳定游标，前后翻页不得互相改变页码、插入新记录不得造成重复或遗漏，也不得一次把全部历史记录渲染到页面。
+- 积分子页的浅色与深色变量必须分别复用 Sub2API 的浅色中性层级、`dark-950/dark-800/dark-700` 层级和 teal 主色。表格的 `thead/tbody/tr/td`、悬停行、分页按钮及状态标签不得使用固定白底覆盖深色主题；父页通过校验后的主题消息切换后，该主题在后续资料刷新中继续优先，并立即重绘 Canvas 曲线。
+- 所有积分浏览器 API 必须使用有限客户端超时，当前统一为 `20` 秒；超时后显示中文可重试提示，并在成功、失败或超时后清理计时器。刷新按钮在成功或失败后都必须退出“刷新中”并可再次操作。签到请求结果不确定时必须复用原幂等键并锁定按钮，只有重新读取权威个人状态后才能恢复或显示“今日已签到”，禁止因超时、重复点击或刷新异常重复发放余额。
+- 用户页和管理员页顶部身份、管理员用户积分明细首列以及签到余额发放任务用户列统一显示 Sub2API 登录邮箱；浏览器 API 使用 `login_email` 字段，数值用户 ID 只保留在服务端关联、财务审计和幂等处理中，不得返回无必要的 `user_id`。
+- 管理员页面提供独立的用户积分明细列表，以 Sub2API 未删除用户为基准分页展示登录邮箱、总消费积分、昨日消费积分、累计成功消费金额、昨日成功消费金额及昨日结算状态；翻页请求期间必须锁定前后页按钮，只有请求成功后才能提交 offset，失败时保留原页数据和页码。从 Sub2API 用户表只允许读取 `id`、`email` 和 `deleted_at` 三列，零消费用户必须补零显示，普通用户 API 和页面不得取得该全站列表。
+- 积分系统不提供手工余额赠送功能，管理员如需直接调整余额必须使用 Sub2API 原有余额管理能力。积分系统的发放任务页面只查询签到随机余额发放记录，不得混入历史手工赠送记录；失败重试和审计冲正也必须先确认任务类型为 `checkin`。发放记录使用管理员会话绑定的签名稳定游标分页，不得只返回最新 100 条；管理员概览的状态汇总必须由服务端对全部 `checkin` 任务聚合，`reversal_permanently_failed` 必须进入失败计数。
 
 ## 5. 余额与安全
 

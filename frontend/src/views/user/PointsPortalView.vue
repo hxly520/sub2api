@@ -19,15 +19,40 @@
 
         <div
           v-if="launching || frameLoading"
-          class="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-dark-950"
+          class="absolute inset-0 overflow-y-auto bg-gray-50 dark:bg-dark-950"
           role="status"
+          aria-live="polite"
           data-testid="points-portal-loading"
         >
-          <div class="flex flex-col items-center gap-4 px-6 text-center">
-            <div class="h-9 w-9 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-            <p class="text-sm font-medium text-gray-600 dark:text-dark-300">
-              {{ t('pointsPortal.opening') }}
-            </p>
+          <span class="sr-only">{{ t('pointsPortal.opening') }}</span>
+          <div class="points-workspace-skeleton mx-auto w-full max-w-[1480px] animate-pulse space-y-3 p-3 motion-reduce:animate-none md:p-4">
+            <div class="flex h-12 items-center justify-between">
+              <div class="space-y-2">
+                <div class="h-2.5 w-16 rounded bg-gray-200 dark:bg-dark-700" />
+                <div class="h-5 w-28 rounded bg-gray-300 dark:bg-dark-600" />
+              </div>
+              <div class="h-9 w-24 rounded-md border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800" />
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div v-for="index in 4" :key="index" class="h-[124px] rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-800">
+                <div class="h-5 w-24 rounded bg-gray-200 dark:bg-dark-700" />
+                <div class="mt-4 h-7 w-36 rounded bg-gray-300 dark:bg-dark-600" />
+                <div class="mt-3 h-3 w-28 rounded bg-gray-200 dark:bg-dark-700" />
+              </div>
+            </div>
+            <div class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800">
+              <div class="flex h-[70px] items-center justify-between border-b border-gray-200 px-5 dark:border-dark-700">
+                <div class="space-y-2"><div class="h-2.5 w-16 rounded bg-gray-200 dark:bg-dark-700" /><div class="h-4 w-32 rounded bg-gray-300 dark:bg-dark-600" /></div>
+                <div class="h-9 w-56 rounded-md bg-gray-200 dark:bg-dark-700" />
+              </div>
+              <div class="h-64 p-5 md:h-80"><div class="h-full rounded-md bg-gray-100 dark:bg-dark-900" /></div>
+              <div class="grid grid-cols-3 divide-x divide-gray-200 border-t border-gray-200 dark:divide-dark-700 dark:border-dark-700">
+                <div v-for="index in 3" :key="index" class="h-16 p-4"><div class="h-3 w-16 rounded bg-gray-200 dark:bg-dark-700" /><div class="mt-2 h-4 w-24 rounded bg-gray-300 dark:bg-dark-600" /></div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <div v-for="index in 2" :key="index" class="h-48 rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800" />
+            </div>
           </div>
         </div>
 

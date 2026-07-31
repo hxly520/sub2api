@@ -8,7 +8,7 @@ import (
 )
 
 type publicAdminUserPoints struct {
-	Username                  string     `json:"username"`
+	LoginEmail                string     `json:"login_email"`
 	TotalPointsHundredths     int64      `json:"total_points_hundredths"`
 	YesterdayPointsHundredths int64      `json:"yesterday_points_hundredths"`
 	TotalSpendMicroUSD        int64      `json:"total_spend_microusd"`
@@ -41,7 +41,7 @@ func (s *Server) adminUserPoints(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range page.Items {
 		response.Items = append(response.Items, publicAdminUserPoints{
-			Username:                  publicUsername(item.Username),
+			LoginEmail:                publicLoginEmail(item.LoginEmail),
 			TotalPointsHundredths:     item.TotalPointsHundredths,
 			YesterdayPointsHundredths: item.YesterdayPointsHundredths,
 			TotalSpendMicroUSD:        item.TotalSpendMicroUSD,
@@ -63,10 +63,20 @@ func queryOffset(r *http.Request) int {
 
 func (s *Server) checkinBalanceGrants(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
-	items, err := s.Store.ListCheckinBalanceGrants(r.Context(), p.Session.UserID, queryLimit(r))
+	cursor, err := s.decodeGrantPageCursor(r.URL.Query().Get("cursor"), p.Session.UserID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid pagination cursor")
+		return
+	}
+	items, err := s.Store.ListCheckinBalanceGrantsPage(r.Context(), p.Session.UserID,
+		userRecordPageSize+1, cursor)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	hasNext := len(items) > userRecordPageSize
+	if hasNext {
+		items = items[:userRecordPageSize]
 	}
 	result := make([]publicBalanceGrant, 0, len(items))
 	for _, item := range items {
@@ -75,30 +85,58 @@ func (s *Server) checkinBalanceGrants(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, result)
+	nextCursor := ""
+	if hasNext {
+		last := items[len(items)-1]
+		nextCursor, err = s.encodeGrantPageCursor(p.Session.UserID, last.CreatedAt, last.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, publicCursorPage[publicBalanceGrant]{Items: result, NextCursor: nextCursor})
 }
 
 func (s *Server) adminCheckinBalanceGrants(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListAdminCheckinBalanceGrants(r.Context(), queryLimit(r))
+	p, _ := principalFrom(r)
+	cursor, err := s.decodeAdminGrantPageCursor(r.URL.Query().Get("cursor"), p.Session.UserID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid pagination cursor")
+		return
+	}
+	items, err := s.Store.ListAdminCheckinBalanceGrantsPage(r.Context(), adminGrantPageSize+1, cursor)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	hasNext := len(items) > adminGrantPageSize
+	if hasNext {
+		items = items[:adminGrantPageSize]
 	}
 	result := make([]publicAdminBalanceGrant, 0, len(items))
 	for _, item := range items {
 		grant := item.Grant
 		result = append(result, publicAdminBalanceGrant{
-			ID: grant.ID, Username: publicUsername(item.Username), AmountMicroUSD: grant.AmountMicroUSD,
+			ID: grant.ID, LoginEmail: publicLoginEmail(item.LoginEmail), AmountMicroUSD: grant.AmountMicroUSD,
 			Kind: grant.Kind, Status: grant.Status, Attempts: grant.Attempts, LastError: grant.LastError,
 			CreatedAt: grant.CreatedAt, UpdatedAt: grant.UpdatedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, result)
+	nextCursor := ""
+	if hasNext {
+		last := items[len(items)-1].Grant
+		nextCursor, err = s.encodeAdminGrantPageCursor(p.Session.UserID, last.CreatedAt, last.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, publicCursorPage[publicAdminBalanceGrant]{Items: result, NextCursor: nextCursor})
 }
 
 type publicAdminBalanceGrant struct {
 	ID             string    `json:"id"`
-	Username       string    `json:"username"`
+	LoginEmail     string    `json:"login_email"`
 	AmountMicroUSD int64     `json:"amount_microusd"`
 	Kind           string    `json:"kind"`
 	Status         string    `json:"status"`

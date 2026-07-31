@@ -18,21 +18,21 @@
         <div><strong>积分管理</strong><span>独立管理后台</span></div>
       </div>
       <nav class="admin-nav" aria-label="后台管理功能" role="tablist">
-        <button id="tab-overview" class="admin-nav-button active" data-view="overview" type="button" role="tab" aria-controls="view-overview" aria-selected="true" tabindex="0">运行总览</button>
-        <button id="tab-users" class="admin-nav-button" data-view="users" type="button" role="tab" aria-controls="view-users" aria-selected="false" tabindex="-1">用户明细</button>
-        <button id="tab-policies" class="admin-nav-button" data-view="policies" type="button" role="tab" aria-controls="view-policies" aria-selected="false" tabindex="-1">策略管理</button>
-        <button id="tab-operations" class="admin-nav-button" data-view="operations" type="button" role="tab" aria-controls="view-operations" aria-selected="false" tabindex="-1">签到发放记录</button>
+        <button id="tab-overview" class="admin-nav-button active" data-view="overview" type="button" role="tab" aria-controls="view-overview" aria-selected="true" tabindex="0"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#activity"></use></svg><span>运行总览</span></button>
+        <button id="tab-users" class="admin-nav-button" data-view="users" type="button" role="tab" aria-controls="view-users" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#users"></use></svg><span>用户明细</span></button>
+        <button id="tab-policies" class="admin-nav-button" data-view="policies" type="button" role="tab" aria-controls="view-policies" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#settings-2"></use></svg><span>策略管理</span></button>
+        <button id="tab-operations" class="admin-nav-button" data-view="operations" type="button" role="tab" aria-controls="view-operations" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#clipboard-list"></use></svg><span>签到发放记录</span></button>
       </nav>
       <div class="admin-sidebar-footer">
-        <span id="admin-username">管理员</span>
-        <button id="logout" class="button ghost sidebar-logout" type="button">退出后台</button>
+        <span id="admin-login-email">管理员邮箱</span>
+        <button id="logout" class="button ghost sidebar-logout" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#log-out"></use></svg><span data-button-label>退出后台</span></button>
       </div>
     </aside>
 
     <main class="admin-main">
       <header class="admin-topbar">
         <div><span class="section-kicker">积分控制台</span><h1 id="admin-page-title">运行总览</h1></div>
-        <button id="refresh-admin" class="button secondary compact" type="button">刷新数据</button>
+        <button id="refresh-admin" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新数据</span></button>
       </header>
       <div id="notice" role="status" aria-live="polite" class="notice hidden"></div>
 
@@ -67,20 +67,21 @@
       <section id="view-users" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-users" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>用户积分明细</h2><p>查看每个积分账户的累计消费积分与上一自然日结算结果。</p></div>
-          <button id="refresh-admin-users" class="button secondary compact" type="button">刷新明细</button>
+          <button id="refresh-admin-users" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新明细</span></button>
         </div>
         <section class="table-panel admin-table-panel">
           <div class="table-wrap">
             <table class="users-points-table">
-              <thead><tr><th>用户名</th><th>总消费积分</th><th>昨日消费积分</th><th>累计消费金额</th><th>昨日消费金额</th><th>结算日期</th><th>结算状态</th></tr></thead>
+              <caption class="sr-only">全站用户积分明细</caption>
+              <thead><tr><th scope="col">登录邮箱</th><th scope="col">总消费积分</th><th scope="col">昨日消费积分</th><th scope="col">累计消费金额</th><th scope="col">昨日消费金额</th><th scope="col">结算日期</th><th scope="col">结算状态</th></tr></thead>
               <tbody id="admin-users-body"></tbody>
             </table>
           </div>
-          <div class="table-pagination" aria-label="用户积分分页">
+          <div class="table-pagination admin-table-pagination" aria-label="用户积分分页">
             <span id="admin-users-page-summary">共 0 位用户</span>
             <div>
-              <button id="admin-users-prev" class="button secondary compact" type="button">上一页</button>
-              <button id="admin-users-next" class="button secondary compact" type="button">下一页</button>
+              <button id="admin-users-prev" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-left"></use></svg><span>上一页</span></button>
+              <button id="admin-users-next" class="button secondary compact" type="button"><span>下一页</span><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-right"></use></svg></button>
             </div>
           </div>
         </section>
@@ -89,20 +90,26 @@
       <section id="view-policies" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-policies" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>策略版本</h2><p>创建后按生效日期执行，历史版本保留。</p></div>
-          <button id="toggle-policy-form" class="button primary" type="button">新建策略</button>
+          <button id="toggle-policy-form" class="button primary" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>新建策略</span></button>
         </div>
         <form id="policy-form" class="policy-editor hidden">
-          <div class="form-block">
-            <div class="form-block-title"><h3>积分与刷新</h3></div>
+          <fieldset class="form-block">
+            <legend class="sr-only">积分与刷新</legend>
+            <div class="form-block-title"><h3 aria-hidden="true">积分与刷新</h3></div>
             <div class="form-grid">
               <label>生效日期<input id="policy-date" type="date" required></label>
               <label>每 1 U 积分<input id="policy-points-rate" type="number" min="0.01" step="0.01" value="10.00" required></label>
               <label>每日刷新时间<input id="policy-refresh-time" type="time" value="00:05" required></label>
               <label class="toggle-label"><input id="policy-enabled" type="checkbox"><span>开放用户积分功能</span></label>
             </div>
-          </div>
-          <div id="checkin-settings" class="form-block">
-            <div class="form-block-title"><h3>签到资格与赠送上限</h3></div>
+          </fieldset>
+          <fieldset id="checkin-settings" class="form-block">
+            <legend class="sr-only">签到资格与赠送上限</legend>
+            <div class="form-block-title"><h3 aria-hidden="true">签到资格与赠送上限</h3></div>
+            <div class="form-state-messages">
+              <p id="checkin-lock-reason" class="form-lock-reason" role="status" aria-live="polite">请先开放用户积分功能，再启用签到赠送。</p>
+              <p id="basis-lock-reason" class="form-lock-reason hidden" role="status">仅限昨日消费用户开启时，签到阶梯依据固定为昨日积分。</p>
+            </div>
             <div class="form-grid">
               <label class="toggle-label"><input id="policy-checkin-enabled" type="checkbox"><span>启用签到赠送</span></label>
               <label class="toggle-label"><input id="policy-consumer-only" type="checkbox"><span>仅限昨日消费用户</span></label>
@@ -113,20 +120,22 @@
               <label>单用户每日上限（U）<input id="policy-user-cap" type="number" min="0.01" step="0.01" value="1.00"></label>
               <label>全平台每日上限（U）<input id="policy-platform-cap" type="number" min="0.01" step="0.01" value="100.00"></label>
             </div>
-          </div>
-          <div id="checkin-tiers" class="form-block">
-            <div class="form-block-title tier-title"><h3>赠送阶梯</h3><button id="add-tier" type="button" class="button secondary compact">添加阶梯</button></div>
+          </fieldset>
+          <fieldset id="checkin-tiers" class="form-block">
+            <legend class="sr-only">赠送阶梯</legend>
+            <div class="form-block-title tier-title"><h3 aria-hidden="true">赠送阶梯</h3><button id="add-tier" type="button" class="button secondary compact"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>添加阶梯</span></button></div>
             <div id="tiers" class="tiers"></div>
-          </div>
+          </fieldset>
           <div class="form-actions">
             <button id="cancel-policy" type="button" class="button secondary">取消</button>
-            <button class="button primary" type="submit">创建策略版本</button>
+            <button class="button primary" type="submit"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>创建策略版本</span></button>
           </div>
         </form>
         <section class="table-panel admin-table-panel">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>版本</th><th>生效日期</th><th>积分</th><th>签到</th><th>人群</th><th>阶梯依据</th><th>积分 / U</th><th>刷新</th><th>最低消费</th><th>阶梯</th></tr></thead>
+              <caption class="sr-only">积分策略版本</caption>
+              <thead><tr><th scope="col">版本</th><th scope="col">生效日期</th><th scope="col">积分</th><th scope="col">签到</th><th scope="col">人群</th><th scope="col">阶梯依据</th><th scope="col">积分 / U</th><th scope="col">刷新</th><th scope="col">最低消费</th><th scope="col">阶梯</th></tr></thead>
               <tbody id="policies-body"></tbody>
             </table>
           </div>
@@ -136,28 +145,36 @@
       <section id="view-operations" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-operations" tabindex="0">
         <div class="admin-section-toolbar">
           <div><h2>签到余额发放记录</h2><p>仅显示签到产生的余额发放；失败任务可重试，已到账任务可按审计流程冲正。</p></div>
-          <button id="refresh-admin-grants" class="button secondary compact" type="button">刷新记录</button>
+          <button id="refresh-admin-grants" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新记录</span></button>
         </div>
         <section class="table-panel admin-table-panel">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>创建时间</th><th>用户</th><th>金额</th><th>类型</th><th>状态</th><th>尝试次数</th><th>错误</th><th>操作</th></tr></thead>
+              <caption class="sr-only">签到余额发放记录</caption>
+              <thead><tr><th scope="col">创建时间</th><th scope="col">用户</th><th scope="col">金额</th><th scope="col">类型</th><th scope="col">状态</th><th scope="col">尝试次数</th><th scope="col">错误</th><th scope="col">操作</th></tr></thead>
               <tbody id="admin-grants-body"></tbody>
             </table>
           </div>
+          <nav class="admin-table-pagination admin-grants-pagination" aria-label="签到发放记录分页">
+            <span id="admin-grants-page" class="pagination-status" aria-live="polite">第 1 页</span>
+            <div>
+              <button id="admin-grants-prev" class="button secondary compact" type="button" aria-label="上一页" title="上一页" disabled><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-left"></use></svg><span>上一页</span></button>
+              <button id="admin-grants-next" class="button secondary compact" type="button" aria-label="下一页" title="下一页" disabled><span>下一页</span><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#chevron-right"></use></svg></button>
+            </div>
+          </nav>
         </section>
       </section>
     </main>
   </div>
 
-  <dialog id="reverse-dialog" class="action-dialog">
+  <dialog id="reverse-dialog" class="action-dialog" aria-labelledby="reverse-dialog-title" aria-describedby="reverse-dialog-description">
     <form id="reverse-form" method="dialog">
-      <h2>冲正余额赠送</h2>
-      <p>将创建关联扣回任务并保留审计记录。</p>
+      <h2 id="reverse-dialog-title">冲正余额赠送</h2>
+      <p id="reverse-dialog-description">将创建关联扣回任务并保留审计记录。</p>
       <label>冲正原因<textarea id="reverse-reason" maxlength="500" rows="4" required></textarea></label>
       <div class="form-actions">
         <button id="cancel-reverse" class="button secondary" type="button">取消</button>
-        <button class="button danger" type="submit">确认冲正</button>
+        <button class="button danger" type="submit"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#rotate-ccw"></use></svg><span data-button-label>确认冲正</span></button>
       </div>
     </form>
   </dialog>

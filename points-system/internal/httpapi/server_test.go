@@ -147,6 +147,14 @@ func TestPointsPagesUseUploadedSub2APILogoAndLocalFallback(t *testing.T) {
 		!strings.Contains(recorder.Body.String(), "Sub2API") {
 		t.Fatalf("local logo fallback failed: status=%d type=%q", recorder.Code, recorder.Header().Get("Content-Type"))
 	}
+
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/assets/lucide-sprite.svg"))
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "image/svg+xml" ||
+		!strings.Contains(recorder.Body.String(), `id="refresh-cw"`) ||
+		!strings.Contains(recorder.Body.String(), "@license lucide-static v1.28.0 - ISC") {
+		t.Fatalf("lucide sprite failed: status=%d type=%q", recorder.Code, recorder.Header().Get("Content-Type"))
+	}
 }
 
 func TestPolicyRequestDefaultsAndLocksConsumerBasis(t *testing.T) {
@@ -332,8 +340,8 @@ func testRoleServer(role string, enabled bool) *Server {
 			return store.Session{UserID: 7, Role: role, Theme: "light", Language: "zh-CN",
 				ExpiresAt: time.Now().Add(time.Hour)}, nil
 		},
-		policyLookup:   func(context.Context, time.Time) (domain.Policy, error) { return policy, nil },
-		usernameLookup: func(context.Context, int64) (string, error) { return "测试用户", nil },
+		policyLookup:     func(context.Context, time.Time) (domain.Policy, error) { return policy, nil },
+		loginEmailLookup: func(context.Context, int64) (string, error) { return "tester@example.com", nil },
 	}
 	server.routes()
 	return server
@@ -575,8 +583,9 @@ func TestDailyPointResponseContainsNoIdentityOrPolicyInternals(t *testing.T) {
 }
 
 func TestPublicActivityResponsesHideInternalIdentifiers(t *testing.T) {
+	awardedAt := time.Date(2026, 7, 31, 0, 5, 0, 0, time.UTC)
 	ledger, err := json.Marshal(publicLedgerEntry{Kind: "usage_points", DeltaPointsHundredths: 100,
-		TotalAfterHundredths: 200, CreatedAt: time.Now()})
+		TotalAfterHundredths: 200, CreatedAt: time.Now(), AwardedAt: awardedAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,6 +600,9 @@ func TestPublicActivityResponsesHideInternalIdentifiers(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(ledger) + string(grant) + string(checkin)
+	if !strings.Contains(string(ledger), `"awarded_at":"2026-07-31T00:05:00Z"`) {
+		t.Fatalf("public ledger response omitted awarded_at: %s", ledger)
+	}
 	for _, forbidden := range []string{"user_id", "external_event_id", "policy_version", "reference_id",
 		"metadata", "last_error", "reason", "transaction_id", "request_fingerprint"} {
 		if strings.Contains(content, forbidden) {
@@ -614,18 +626,18 @@ func TestPublicAccountAndAdminProfileHideNumericUserID(t *testing.T) {
 	server := testRoleServer("admin", true)
 	recorder := httptest.NewRecorder()
 	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/api/v1/admin/me"))
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"username":"测试用户"`) ||
-		strings.Contains(recorder.Body.String(), "user_id") {
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"login_email":"tester@example.com"`) ||
+		strings.Contains(recorder.Body.String(), `"username"`) || strings.Contains(recorder.Body.String(), "user_id") {
 		t.Fatalf("administrator profile identity response: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestPublicUsernameNeverFallsBackToNumericIdentity(t *testing.T) {
-	if got := publicUsername("  alice  "); got != "alice" {
-		t.Fatalf("trimmed username = %q, want alice", got)
+func TestPublicLoginEmailNeverFallsBackToNumericIdentity(t *testing.T) {
+	if got := publicLoginEmail("  alice@example.com  "); got != "alice@example.com" {
+		t.Fatalf("trimmed login email = %q, want alice@example.com", got)
 	}
-	if got := publicUsername("  "); got != "未设置用户名" {
-		t.Fatalf("empty username fallback = %q", got)
+	if got := publicLoginEmail("  "); got != "未设置登录邮箱" {
+		t.Fatalf("empty login email fallback = %q", got)
 	}
 }
 

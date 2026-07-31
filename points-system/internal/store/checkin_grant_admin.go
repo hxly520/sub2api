@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hxly520/sub2api/points-system/internal/domain"
@@ -10,12 +12,34 @@ import (
 // ListCheckinBalanceGrants returns one user's check-in grants while excluding
 // the retired manual grant type.
 func (s *Store) ListCheckinBalanceGrants(ctx context.Context, userID int64, limit int) ([]BalanceGrant, error) {
+	return s.ListCheckinBalanceGrantsPage(ctx, userID, limit, nil)
+}
+
+type BalanceGrantPageCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+func (s *Store) ListCheckinBalanceGrantsPage(ctx context.Context, userID int64, limit int,
+	cursor *BalanceGrantPageCursor) ([]BalanceGrant, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	query := balanceGrantSelect + ` FROM points_balance_grants
-		WHERE kind='checkin' AND user_id=$1 ORDER BY created_at DESC LIMIT $2`
-	rows, err := s.DB.Query(ctx, query, userID, limit)
+		WHERE kind='checkin' AND user_id=$1`
+	args := []any{userID, limit}
+	if cursor != nil {
+		id, err := uuid.Parse(cursor.ID)
+		if err != nil || cursor.CreatedAt.IsZero() {
+			return nil, errors.New("invalid balance grant page cursor")
+		}
+		query += ` AND (created_at,id)<($3,$4)`
+		args = append(args, cursor.CreatedAt, id)
+		query += ` ORDER BY created_at DESC,id DESC LIMIT $2`
+	} else {
+		query += ` ORDER BY created_at DESC,id DESC LIMIT $2`
+	}
+	rows, err := s.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -32,24 +56,39 @@ func (s *Store) ListCheckinBalanceGrants(ctx context.Context, userID int64, limi
 }
 
 type AdminCheckinBalanceGrant struct {
-	Grant    BalanceGrant
-	Username string
+	Grant      BalanceGrant
+	LoginEmail string
 }
 
-// ListAdminCheckinBalanceGrants joins the public username for display while
+// ListAdminCheckinBalanceGrants joins the login email for display while
 // retaining the numeric account key only inside the accounting projection.
 func (s *Store) ListAdminCheckinBalanceGrants(ctx context.Context, limit int) ([]AdminCheckinBalanceGrant, error) {
+	return s.ListAdminCheckinBalanceGrantsPage(ctx, limit, nil)
+}
+
+func (s *Store) ListAdminCheckinBalanceGrantsPage(ctx context.Context, limit int,
+	cursor *BalanceGrantPageCursor) ([]AdminCheckinBalanceGrant, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := s.DB.Query(ctx, `SELECT grant_row.id,grant_row.user_id,grant_row.amount_microusd,
+	query := `SELECT grant_row.id,grant_row.user_id,grant_row.amount_microusd,
 		grant_row.kind,grant_row.status,grant_row.external_event_id,grant_row.policy_version,
 		grant_row.attempts,grant_row.next_attempt_at,COALESCE(grant_row.last_error,''),
-		grant_row.reason,grant_row.created_at,grant_row.updated_at,COALESCE(site_user.username,'')
+		grant_row.reason,grant_row.created_at,grant_row.updated_at,COALESCE(site_user.email,'')
 		FROM points_balance_grants grant_row
 		LEFT JOIN users site_user ON site_user.id=grant_row.user_id
-		WHERE grant_row.kind='checkin'
-		ORDER BY grant_row.created_at DESC LIMIT $1`, limit)
+		WHERE grant_row.kind='checkin'`
+	args := []any{limit}
+	if cursor != nil {
+		id, err := uuid.Parse(cursor.ID)
+		if err != nil || cursor.CreatedAt.IsZero() {
+			return nil, errors.New("invalid administrator balance grant page cursor")
+		}
+		query += ` AND (grant_row.created_at,grant_row.id)<($2,$3)`
+		args = append(args, cursor.CreatedAt, id)
+	}
+	query += ` ORDER BY grant_row.created_at DESC,grant_row.id DESC LIMIT $1`
+	rows, err := s.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +96,7 @@ func (s *Store) ListAdminCheckinBalanceGrants(ctx context.Context, limit int) ([
 	result := make([]AdminCheckinBalanceGrant, 0, limit)
 	for rows.Next() {
 		var item AdminCheckinBalanceGrant
-		targets := append(balanceGrantScanTargets(&item.Grant), &item.Username)
+		targets := append(balanceGrantScanTargets(&item.Grant), &item.LoginEmail)
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}

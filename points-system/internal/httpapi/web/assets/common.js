@@ -2,6 +2,7 @@
 
 (() => {
   const session = { csrf: "" };
+  const requestTimeoutMs = 20_000;
   let noticeTimer = 0;
 
   const embedded = new URLSearchParams(window.location.search).get("ui_mode") === "embedded";
@@ -9,13 +10,24 @@
   document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
   const parentOrigin = document.querySelector('meta[name="sub2api-parent-origin"]')?.content || "";
   let readySent = false;
+  let embeddedTheme = "";
+
+  function applyTheme(theme) {
+    if (theme !== "light" && theme !== "dark") return;
+    const changed = document.documentElement.dataset.theme !== theme;
+    document.documentElement.dataset.theme = theme;
+    if (changed) {
+      window.dispatchEvent(new CustomEvent("points:themechange", { detail: { theme } }));
+    }
+  }
 
   function applyEmbeddedTheme(event) {
     if (!embedded || window.parent === window || !parentOrigin) return;
     if (event.source !== window.parent || event.origin !== parentOrigin) return;
     if (event.data?.type !== "sub2api:points-theme") return;
     if (event.data.theme !== "light" && event.data.theme !== "dark") return;
-    document.documentElement.dataset.theme = event.data.theme;
+    embeddedTheme = event.data.theme;
+    applyTheme(embeddedTheme);
   }
 
   window.addEventListener("message", applyEmbeddedTheme);
@@ -44,7 +56,9 @@
     origin_mismatch: "请求来源校验失败",
     csrf_invalid: "页面凭证已失效，请重新进入",
     rate_limited: "操作过于频繁，请稍后再试",
+    request_timeout: "请求超时，请检查网络后重试",
     invalid_request: "提交内容不完整或格式不正确",
+    invalid_cursor: "分页状态已失效，请刷新后重试",
     invalid_effective_date: "策略生效日期不正确",
     invalid_business_date: "业务日期必须早于今天",
     idempotency_required: "请求标识生成失败，请重试",
@@ -85,6 +99,16 @@
 
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function icon(name, extraClass = "") {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    node.setAttribute("class", `icon ${extraClass}`.trim());
+    node.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `/assets/lucide-sprite.svg#${name}`);
+    node.append(use);
+    return node;
   }
 
   function number(value) {
@@ -166,25 +190,53 @@
 
   function setSession(data) {
     session.csrf = data?.csrf_token || "";
-    document.documentElement.dataset.theme = data?.theme === "dark" ? "dark" : "light";
+    const sessionTheme = data?.theme === "dark" ? "dark" : "light";
+    applyTheme(embedded && embeddedTheme ? embeddedTheme : sessionTheme);
     document.documentElement.lang = "zh-CN";
   }
 
   async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
     const method = String(options.method || "GET").toUpperCase();
+    const controller = new AbortController();
+    const externalSignal = options.signal;
+    let timedOut = false;
+    const abortFromExternal = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) abortFromExternal();
+    else externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, requestTimeoutMs);
     if (options.body) headers.set("Content-Type", "application/json");
     if (method !== "GET" && method !== "HEAD") headers.set("X-CSRF-Token", session.csrf);
-    const response = await fetch(path, { ...options, method, headers, credentials: "same-origin" });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.error) {
-      const code = body.error?.code || "";
-      const error = new Error(errorMessages[code] || `请求未完成（${response.status}）`);
-      error.code = code;
-      error.status = response.status;
-      throw error;
+    try {
+      const response = await fetch(path, {
+        ...options,
+        method,
+        headers,
+        credentials: "same-origin",
+        signal: controller.signal
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.error) {
+        const code = body.error?.code || "";
+        const error = new Error(errorMessages[code] || `请求未完成（${response.status}）`);
+        error.code = code;
+        error.status = response.status;
+        throw error;
+      }
+      return body.data;
+    } catch (error) {
+      if (!timedOut || error?.name !== "AbortError") throw error;
+      const timeoutError = new Error(errorMessages.request_timeout);
+      timeoutError.code = "request_timeout";
+      timeoutError.status = 0;
+      throw timeoutError;
+    } finally {
+      window.clearTimeout(timeout);
+      externalSignal?.removeEventListener("abort", abortFromExternal);
     }
-    return body.data;
   }
 
   function notice(message, isError = false) {
@@ -193,6 +245,8 @@
     window.clearTimeout(noticeTimer);
     node.textContent = message;
     node.classList.toggle("error", isError);
+    node.setAttribute("role", isError ? "alert" : "status");
+    node.setAttribute("aria-live", isError ? "assertive" : "polite");
     node.classList.remove("hidden");
     noticeTimer = window.setTimeout(() => node.classList.add("hidden"), isError ? 8000 : 5000);
   }
@@ -225,19 +279,33 @@
     });
   }
 
+  function setButtonLabel(button, text) {
+    if (!button) return;
+    const label = button.querySelector("[data-button-label]");
+    if (label) label.textContent = text;
+    else button.textContent = text;
+  }
+
+  function buttonLabel(button) {
+    const label = button?.querySelector("[data-button-label]");
+    return label ? label.textContent : button?.textContent || "";
+  }
+
   function setButtonBusy(button, busy, busyText = "处理中") {
     if (!button) return;
     if (busy) {
-      button.dataset.label = button.textContent;
-      button.textContent = busyText;
+      button.dataset.label = buttonLabel(button);
+      setButtonLabel(button, busyText);
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
+      button.classList.add("is-busy");
       return;
     }
-    if (button.dataset.label) button.textContent = button.dataset.label;
+    if (button.dataset.label) setButtonLabel(button, button.dataset.label);
     delete button.dataset.label;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    button.classList.remove("is-busy");
   }
 
   async function logout() {
@@ -250,6 +318,7 @@
     byId,
     date,
     dateTime,
+    icon,
     idempotencyKey,
     kindText,
     logout,
@@ -261,6 +330,7 @@
     points,
     renderRows,
     setButtonBusy,
+    setButtonLabel,
     setSession,
     shortDate,
     statusChip,

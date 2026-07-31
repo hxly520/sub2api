@@ -1,0 +1,197 @@
+\set ON_ERROR_STOP on
+
+-- Existing shared-database deployments only: stage B of the login-email ACL
+-- transition. Run this only after the new points image has passed login-email,
+-- role-isolation, and user-preview production checks. It removes the legacy
+-- username column and leaves exactly id/email/deleted_at readable.
+
+BEGIN;
+
+SELECT pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+        pg_catalog.current_database() || ':points-users-email-transition-v2',
+        0
+    )
+);
+
+SELECT pg_catalog.set_config('points.target_role', :'points_app_role', true);
+
+SELECT pg_catalog.current_database() AS database_name,
+       session_user AS executed_by,
+       pg_catalog.current_setting('points.target_role') AS target_role,
+       pg_catalog.pg_current_xact_id()::text AS transaction_id,
+       clock_timestamp() AS observed_at,
+       pg_catalog.has_column_privilege(
+           pg_catalog.current_setting('points.target_role'), 'public.users', 'email', 'SELECT'
+       ) AS email_select_before,
+       pg_catalog.has_column_privilege(
+           pg_catalog.current_setting('points.target_role'), 'public.users', 'username', 'SELECT'
+       ) AS username_select_before;
+
+DO $transition$
+DECLARE
+    target_role_name text := pg_catalog.current_setting('points.target_role');
+    target_role_oid oid;
+    target_table_oid oid;
+    expected_email boolean;
+    expected_username boolean;
+    expected_columns text[];
+    required_column text;
+    phase integer;
+BEGIN
+    FOR phase IN 0..1 LOOP
+        expected_email := true;
+        expected_username := phase = 0;
+        expected_columns := ARRAY['id', 'deleted_at', 'email'];
+        IF expected_username THEN
+            expected_columns := pg_catalog.array_append(expected_columns, 'username');
+        END IF;
+
+        SELECT oid
+          INTO target_role_oid
+          FROM pg_catalog.pg_roles
+         WHERE rolname = target_role_name;
+        IF target_role_oid IS NULL THEN
+            RAISE EXCEPTION 'target points application role does not exist';
+        END IF;
+        IF EXISTS (
+            SELECT 1
+              FROM pg_catalog.pg_roles
+             WHERE oid = target_role_oid
+               AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR
+                    rolbypassrls OR NOT rolcanlogin OR rolinherit)
+        ) OR EXISTS (
+            SELECT 1 FROM pg_catalog.pg_auth_members WHERE member = target_role_oid
+        ) THEN
+            RAISE EXCEPTION 'target role does not match the restricted points application role';
+        END IF;
+        IF pg_catalog.has_database_privilege(target_role_name, pg_catalog.current_database(), 'CREATE') OR
+           pg_catalog.has_schema_privilege(target_role_name, 'public', 'CREATE') OR
+           NOT pg_catalog.has_schema_privilege(target_role_name, 'public', 'USAGE') THEN
+            RAISE EXCEPTION 'target role has unexpected database or public schema privileges';
+        END IF;
+
+        SELECT relation.oid
+          INTO target_table_oid
+          FROM pg_catalog.pg_class relation
+          JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'public'
+           AND relation.relname = 'users'
+           AND relation.relkind IN ('r', 'p');
+        IF target_table_oid IS NULL THEN
+            RAISE EXCEPTION 'required table public.users does not exist';
+        END IF;
+        IF EXISTS (
+            SELECT required.name
+              FROM (VALUES ('id'), ('email'), ('username'), ('deleted_at')) AS required(name)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM pg_catalog.pg_attribute attribute
+                  WHERE attribute.attrelid = target_table_oid
+                    AND attribute.attname = required.name
+                    AND attribute.attnum > 0
+                    AND NOT attribute.attisdropped
+             )
+        ) THEN
+            RAISE EXCEPTION 'public.users is missing an expected identity column';
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_catalog.pg_class relation
+              CROSS JOIN LATERAL pg_catalog.aclexplode(relation.relacl) privilege
+             WHERE relation.oid = target_table_oid AND privilege.grantee = 0
+        ) OR EXISTS (
+            SELECT 1
+              FROM pg_catalog.pg_attribute attribute
+              CROSS JOIN LATERAL pg_catalog.aclexplode(attribute.attacl) privilege
+             WHERE attribute.attrelid = target_table_oid
+               AND attribute.attnum > 0
+               AND NOT attribute.attisdropped
+               AND privilege.grantee = 0
+        ) THEN
+            RAISE EXCEPTION 'PUBLIC has privileges on public.users';
+        END IF;
+
+        IF pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'SELECT') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'INSERT') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'UPDATE') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'DELETE') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'TRUNCATE') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'REFERENCES') OR
+           pg_catalog.has_table_privilege(target_role_name, target_table_oid, 'TRIGGER') OR
+           pg_catalog.has_any_column_privilege(target_role_name, target_table_oid, 'INSERT') OR
+           pg_catalog.has_any_column_privilege(target_role_name, target_table_oid, 'UPDATE') OR
+           pg_catalog.has_any_column_privilege(target_role_name, target_table_oid, 'REFERENCES') OR EXISTS (
+               SELECT 1
+                 FROM pg_catalog.pg_class relation
+                 CROSS JOIN LATERAL pg_catalog.aclexplode(relation.relacl) privilege
+                WHERE relation.oid = target_table_oid
+                  AND privilege.grantee = target_role_oid
+           ) THEN
+            RAISE EXCEPTION 'target role has table-wide, write, or reference access on public.users';
+        END IF;
+
+        FOREACH required_column IN ARRAY expected_columns LOOP
+            IF NOT pg_catalog.has_column_privilege(
+                target_role_name, target_table_oid, required_column, 'SELECT'
+            ) OR NOT EXISTS (
+                SELECT 1
+                  FROM pg_catalog.pg_attribute attribute
+                  CROSS JOIN LATERAL pg_catalog.aclexplode(attribute.attacl) privilege
+                 WHERE attribute.attrelid = target_table_oid
+                   AND attribute.attname = required_column
+                   AND privilege.grantee = target_role_oid
+                   AND privilege.privilege_type = 'SELECT'
+                   AND NOT privilege.is_grantable
+            ) THEN
+                RAISE EXCEPTION 'required direct SELECT grant is missing for column %', required_column;
+            END IF;
+        END LOOP;
+
+        IF pg_catalog.has_column_privilege(target_role_name, target_table_oid, 'email', 'SELECT')
+               IS DISTINCT FROM expected_email OR
+           pg_catalog.has_column_privilege(target_role_name, target_table_oid, 'username', 'SELECT')
+               IS DISTINCT FROM expected_username OR EXISTS (
+            SELECT 1
+              FROM pg_catalog.pg_attribute attribute
+             WHERE attribute.attrelid = target_table_oid
+               AND attribute.attnum > 0
+               AND NOT attribute.attisdropped
+               AND NOT (attribute.attname = ANY(expected_columns))
+               AND pg_catalog.has_column_privilege(
+                   target_role_name, target_table_oid, attribute.attnum, 'SELECT'
+               )
+        ) OR EXISTS (
+            SELECT 1
+              FROM pg_catalog.pg_attribute attribute
+              CROSS JOIN LATERAL pg_catalog.aclexplode(attribute.attacl) privilege
+             WHERE attribute.attrelid = target_table_oid
+               AND privilege.grantee = target_role_oid
+               AND (privilege.privilege_type <> 'SELECT' OR privilege.is_grantable OR
+                    NOT (attribute.attname = ANY(expected_columns)))
+        ) THEN
+            RAISE EXCEPTION 'target role does not match the exact expected public.users column allowlist';
+        END IF;
+
+        IF phase = 0 THEN
+            EXECUTE pg_catalog.format(
+                'REVOKE SELECT (username) ON TABLE public.users FROM %I', target_role_name
+            );
+        END IF;
+    END LOOP;
+END
+$transition$;
+
+SELECT pg_catalog.current_database() AS database_name,
+       session_user AS executed_by,
+       pg_catalog.current_setting('points.target_role') AS target_role,
+       pg_catalog.pg_current_xact_id()::text AS transaction_id,
+       clock_timestamp() AS observed_at,
+       pg_catalog.has_column_privilege(
+           pg_catalog.current_setting('points.target_role'), 'public.users', 'email', 'SELECT'
+       ) AS email_select_after,
+       pg_catalog.has_column_privilege(
+           pg_catalog.current_setting('points.target_role'), 'public.users', 'username', 'SELECT'
+       ) AS username_select_after;
+
+COMMIT;

@@ -2,8 +2,29 @@
 
 (() => {
   const ui = window.PointsUI;
-  const chartState = { rows: [], days: 30, geometry: null, hoverIndex: -1 };
+  const chartState = { rows: [], days: 30, geometry: null, hoverIndex: -1, requestSequence: 0 };
+  const recordPageSize = 10;
+  const recordPages = {
+    ledger: createRecordPage("/api/v1/ledger"),
+    grants: createRecordPage("/api/v1/balance-grants")
+  };
   let profile = null;
+  let checkinInFlight = false;
+  let checkinNeedsConfirmation = false;
+  let pendingCheckinKey = "";
+
+  function createRecordPage(endpoint) {
+    return {
+      endpoint,
+      cursor: "",
+      items: [],
+      nextCursor: "",
+      backCursors: [],
+      forwardCursors: [],
+      loading: false,
+      requestSequence: 0
+    };
+  }
 
   function signedPoints(value) {
     const amount = ui.number(value);
@@ -15,8 +36,6 @@
 
   function syncCheckin(data) {
     const button = ui.byId("checkin");
-    const title = ui.byId("checkin-title");
-    const detail = ui.byId("checkin-detail");
     const count = ui.number(data.checkin?.count);
     const features = data.features || {};
     const limit = ui.number(features.checkin_daily_limit);
@@ -24,44 +43,47 @@
     const band = document.querySelector(".checkin-band");
 
     ui.byId("checkin-count").textContent = `今日已签到 ${count} 次`;
+    if (checkinInFlight) {
+      button.disabled = true;
+      ui.setButtonLabel(button, "签到中");
+      band.dataset.status = "off";
+      return;
+    }
+    if (checkinNeedsConfirmation) {
+      button.disabled = true;
+      ui.setButtonLabel(button, "状态待确认");
+      band.dataset.status = "off";
+      return;
+    }
     button.disabled = !available;
-    button.textContent = available ? "立即签到" : "暂不可签到";
+    ui.setButtonLabel(button, available ? "立即签到" : "暂不可签到");
     band.dataset.status = available ? "ready" : "off";
 
     if (features.points_enabled !== true) {
       band.dataset.status = "off";
-      title.textContent = "积分功能暂未开放";
-      detail.textContent = "请等待功能完成调试并开放";
       return;
     }
     if (features.checkin_enabled !== true) {
       band.dataset.status = "off";
-      title.textContent = "签到赠送暂未开启";
-      detail.textContent = "今日积分数据仍可正常查看";
       return;
     }
     if (limit > 0 && count >= limit) {
       band.dataset.status = "complete";
-      title.textContent = "今日签到已完成";
-      detail.textContent = `今日签到次数 ${count} / ${limit}`;
-      button.textContent = "今日已签到";
+      ui.setButtonLabel(button, "今日已签到");
       return;
     }
-    title.textContent = "今日签到可参与";
-    detail.textContent = limit > 0
-      ? `今日签到次数 ${count} / ${limit}，奖励资格及金额将在提交时按完整规则校验`
-      : "奖励资格及金额将在提交时按完整规则校验";
   }
 
-  async function loadProfile() {
+  async function loadProfile({ confirmCheckin = false } = {}) {
     const data = await ui.api("/api/v1/me");
     if (!data || data.role !== "user") {
       window.location.replace("/admin/");
       return null;
     }
     profile = data;
+    if (confirmCheckin) checkinNeedsConfirmation = false;
     ui.setSession(data);
-    ui.byId("username").textContent = data.username || "未设置用户名";
+    ui.byId("login-email").textContent = data.login_email || "未设置登录邮箱";
     ui.byId("total-points").textContent = ui.points(data.account?.total_points_hundredths);
     ui.byId("today-rewards").textContent = ui.money(data.checkin?.awarded_microusd);
     ui.byId("total-checkin-rewards").textContent = ui.money(data.account?.settled_checkin_reward_microusd);
@@ -73,25 +95,108 @@
     return data;
   }
 
-  async function loadLedger() {
-    const rows = await ui.api("/api/v1/ledger?limit=100");
-    ui.renderRows("ledger-body", rows, [
-      (item) => ui.dateTime(item.created_at),
-      (item) => ui.kindText(item.kind),
-      (item) => signedPoints(item.delta_points_hundredths),
-      (item) => ui.points(item.total_after_hundredths),
-      (item) => ui.date(item.business_date)
-    ], "暂无积分变动记录");
+  function syncRecordPager(name) {
+    const page = recordPages[name];
+    ui.byId(`${name}-page`).textContent = `第 ${page.backCursors.length + 1} 页`;
+    ui.byId(`${name}-prev`).disabled = page.loading || page.backCursors.length === 0;
+    ui.byId(`${name}-next`).disabled = page.loading ||
+      (page.forwardCursors.length === 0 && !page.nextCursor);
   }
 
-  async function loadGrants() {
-    const rows = await ui.api("/api/v1/balance-grants?limit=100");
-    ui.renderRows("grants-body", rows, [
+  function recordPageSnapshot(page) {
+    return { cursor: page.cursor, items: page.items, nextCursor: page.nextCursor };
+  }
+
+  function renderRecordRows(name, items) {
+    if (name === "ledger") {
+      ui.renderRows("ledger-body", items, [
+        (item) => ui.dateTime(item.awarded_at),
+        (item) => ui.kindText(item.kind),
+        (item) => signedPoints(item.delta_points_hundredths),
+        (item) => ui.points(item.total_after_hundredths),
+        (item) => ui.date(item.business_date)
+      ], "暂无积分变动记录");
+      return;
+    }
+    ui.renderRows("grants-body", items, [
       (item) => ui.dateTime(item.created_at),
       (item) => ui.money(item.amount_microusd),
       (item) => ui.kindText(item.kind),
       (item) => ui.statusChip(item.status)
     ], "暂无签到赠送记录");
+  }
+
+  function applyRecordPage(name, snapshot) {
+    const page = recordPages[name];
+    page.cursor = snapshot.cursor;
+    page.items = snapshot.items;
+    page.nextCursor = snapshot.nextCursor;
+    renderRecordRows(name, page.items);
+    syncRecordPager(name);
+  }
+
+  async function loadRecordPage(name, { cursor = recordPages[name].cursor, navigation = "replace" } = {}) {
+    const page = recordPages[name];
+    const requestSequence = ++page.requestSequence;
+    page.loading = true;
+    syncRecordPager(name);
+    try {
+      const data = await ui.api(`${page.endpoint}?limit=${recordPageSize}&cursor=${encodeURIComponent(cursor)}`);
+      if (requestSequence !== page.requestSequence) return;
+      const previous = recordPageSnapshot(page);
+      if (navigation === "next") {
+        page.backCursors.push(previous);
+        page.forwardCursors = [];
+      } else if (navigation === "reset") {
+        page.backCursors = [];
+        page.forwardCursors = [];
+      } else {
+        page.forwardCursors = [];
+      }
+      applyRecordPage(name, {
+        cursor,
+        items: Array.isArray(data?.items) ? data.items : [],
+        nextCursor: typeof data?.next_cursor === "string" ? data.next_cursor : ""
+      });
+    } finally {
+      if (requestSequence === page.requestSequence) {
+        page.loading = false;
+        syncRecordPager(name);
+      }
+    }
+  }
+
+  function restoreRecordPage(name, direction) {
+    const page = recordPages[name];
+    const source = direction === "prev" ? page.backCursors : page.forwardCursors;
+    const target = source.pop();
+    if (!target) return false;
+    const destination = direction === "prev" ? page.forwardCursors : page.backCursors;
+    destination.push(recordPageSnapshot(page));
+    applyRecordPage(name, target);
+    return true;
+  }
+
+  function previousRecordPage(name) {
+    restoreRecordPage(name, "prev");
+  }
+
+  async function nextRecordPage(name) {
+    const page = recordPages[name];
+    if (page.forwardCursors.length > 0) {
+      restoreRecordPage(name, "next");
+      return;
+    }
+    if (!page.nextCursor) return;
+    await loadRecordPage(name, { cursor: page.nextCursor, navigation: "next" });
+  }
+
+  function loadLedger(options) {
+    return loadRecordPage("ledger", options);
+  }
+
+  function loadGrants(options) {
+    return loadRecordPage("grants", options);
   }
 
   function chartColors() {
@@ -221,32 +326,42 @@
     ui.byId("period-points").textContent = ui.points(totalPoints);
     ui.byId("average-points").textContent = ui.points(Math.round(totalPoints / chartState.days));
     ui.byId("active-days").textContent = String(activeDays);
+    ui.renderRows("chart-data-body", rows, [
+      (item) => ui.date(item.business_date),
+      (item) => ui.points(item.awarded_points_hundredths)
+    ], "暂无每日积分记录");
   }
 
   async function loadDailyPoints(days = chartState.days) {
-    const rows = await ui.api(`/api/v1/daily-points?days=${encodeURIComponent(days)}`);
-    chartState.days = days;
-    chartState.rows = Array.isArray(rows) ? rows : [];
-    chartState.hoverIndex = -1;
-    document.querySelectorAll(".period-button").forEach((button) => {
-      button.classList.toggle("active", Number(button.dataset.days) === days);
-    });
-    updateChartSummary(chartState.rows);
-    drawChart();
+    const requestSequence = ++chartState.requestSequence;
+    const panel = document.querySelector(".chart-panel");
+    panel.setAttribute("aria-busy", "true");
+    try {
+      const rows = await ui.api(`/api/v1/daily-points?days=${encodeURIComponent(days)}`);
+      if (requestSequence !== chartState.requestSequence) return;
+      chartState.days = days;
+      chartState.rows = Array.isArray(rows) ? rows : [];
+      chartState.hoverIndex = -1;
+      document.querySelectorAll(".period-button").forEach((button) => {
+        const active = Number(button.dataset.days) === days;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      updateChartSummary(chartState.rows);
+      drawChart();
+    } finally {
+      if (requestSequence === chartState.requestSequence) panel.setAttribute("aria-busy", "false");
+    }
   }
 
-  function showChartTooltip(event) {
-    const geometry = chartState.geometry;
-    if (!geometry || chartState.rows.length === 0) return;
-    const canvas = ui.byId("points-chart");
-    const bounds = canvas.getBoundingClientRect();
-    const localX = event.clientX - bounds.left;
-    const ratio = Math.max(0, Math.min(1, (localX - geometry.padding.left) / geometry.plotWidth));
-    const index = chartState.rows.length === 1 ? 0 : Math.round(ratio * (chartState.rows.length - 1));
+  function showChartPoint(index, announce = false) {
+    if (!chartState.geometry || chartState.rows.length === 0) return;
+    index = Math.max(0, Math.min(chartState.rows.length - 1, index));
     const item = chartState.rows[index];
     chartState.hoverIndex = index;
     drawChart();
 
+    const geometry = chartState.geometry;
     const tooltip = ui.byId("chart-tooltip");
     tooltip.textContent = `${ui.date(item.business_date)} · ${ui.points(item.awarded_points_hundredths)} 积分`;
     tooltip.classList.remove("hidden");
@@ -254,6 +369,17 @@
     const y = geometry.yAt(ui.number(item.awarded_points_hundredths) / 100);
     tooltip.style.left = `${Math.max(8, Math.min(geometry.width - tooltip.offsetWidth - 8, x - tooltip.offsetWidth / 2))}px`;
     tooltip.style.top = `${Math.max(8, y - tooltip.offsetHeight - 14)}px`;
+    if (announce) ui.byId("chart-live").textContent = tooltip.textContent;
+  }
+
+  function showChartTooltip(event) {
+    const geometry = chartState.geometry;
+    if (!geometry || chartState.rows.length === 0) return;
+    const bounds = ui.byId("points-chart").getBoundingClientRect();
+    const localX = event.clientX - bounds.left;
+    const ratio = Math.max(0, Math.min(1, (localX - geometry.padding.left) / geometry.plotWidth));
+    const index = chartState.rows.length === 1 ? 0 : Math.round(ratio * (chartState.rows.length - 1));
+    showChartPoint(index);
   }
 
   function hideChartTooltip() {
@@ -262,11 +388,37 @@
     drawChart();
   }
 
+  function moveChartPoint(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || chartState.rows.length === 0) return;
+    event.preventDefault();
+    let index = chartState.hoverIndex;
+    if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = chartState.rows.length - 1;
+    else if (index < 0) index = event.key === "ArrowLeft" ? chartState.rows.length - 1 : 0;
+    else index += event.key === "ArrowLeft" ? -1 : 1;
+    showChartPoint(index, true);
+  }
+
+  function movePeriod(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const buttons = [...document.querySelectorAll(".period-button")];
+    const current = buttons.indexOf(event.currentTarget);
+    let next = current;
+    if (event.key === "ArrowLeft") next = (current - 1 + buttons.length) % buttons.length;
+    if (event.key === "ArrowRight") next = (current + 1) % buttons.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = buttons.length - 1;
+    event.preventDefault();
+    buttons[next].focus();
+    loadDailyPoints(Number(buttons[next].dataset.days)).catch((error) => ui.notice(error.message, true));
+  }
+
   async function refreshDashboard() {
     const page = document.querySelector(".dashboard-page");
+    const confirmCheckin = checkinNeedsConfirmation && !checkinInFlight;
     page.setAttribute("aria-busy", "true");
     try {
-      const data = await loadProfile();
+      const data = await loadProfile({ confirmCheckin });
       if (!data) return;
       const results = await Promise.allSettled([loadDailyPoints(), loadLedger(), loadGrants()]);
       const failed = results.find((result) => result.status === "rejected");
@@ -277,43 +429,107 @@
   }
 
   function bindEvents() {
+    window.addEventListener("points:themechange", drawChart);
     ui.byId("logout").addEventListener("click", () => ui.logout().catch((error) => ui.notice(error.message, true)));
     ui.byId("refresh-dashboard").addEventListener("click", async (event) => {
-      ui.setButtonBusy(event.currentTarget, true, "刷新中");
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "刷新中");
       try {
         await refreshDashboard();
         ui.notice("数据已刷新");
       } catch (error) {
         ui.notice(error.message, true);
       } finally {
-        ui.setButtonBusy(event.currentTarget, false);
+        ui.setButtonBusy(button, false);
       }
     });
-    ui.byId("refresh-ledger").addEventListener("click", () => loadLedger().catch((error) => ui.notice(error.message, true)));
-    ui.byId("refresh-grants").addEventListener("click", () => loadGrants().catch((error) => ui.notice(error.message, true)));
-    ui.byId("checkin").addEventListener("click", async (event) => {
+    ui.byId("refresh-ledger").addEventListener("click", async (event) => {
       const button = event.currentTarget;
-      ui.setButtonBusy(button, true, "签到中");
+      ui.setButtonBusy(button, true, "刷新中");
       try {
-        const result = await ui.api("/api/v1/checkins", {
-          method: "POST",
-          headers: { "Idempotency-Key": ui.idempotencyKey() }
-        });
-        ui.notice(`签到成功，赠送 ${ui.money(result.reward_microusd)}，${ui.statusText(result.delivery_status)}`);
-        await Promise.all([loadProfile(), loadGrants()]);
+        await loadLedger();
       } catch (error) {
         ui.notice(error.message, true);
       } finally {
         ui.setButtonBusy(button, false);
-        if (profile) syncCheckin(profile);
+      }
+    });
+    ui.byId("refresh-grants").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "刷新中");
+      try {
+        await loadGrants();
+      } catch (error) {
+        ui.notice(error.message, true);
+      } finally {
+        ui.setButtonBusy(button, false);
+      }
+    });
+    ui.byId("ledger-prev").addEventListener("click", () => {
+      previousRecordPage("ledger");
+    });
+    ui.byId("ledger-next").addEventListener("click", () => {
+      nextRecordPage("ledger").catch((error) => ui.notice(error.message, true));
+    });
+    ui.byId("grants-prev").addEventListener("click", () => {
+      previousRecordPage("grants");
+    });
+    ui.byId("grants-next").addEventListener("click", () => {
+      nextRecordPage("grants").catch((error) => ui.notice(error.message, true));
+    });
+    ui.byId("checkin").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      let refreshedProfile = null;
+      let responseReceived = false;
+      checkinInFlight = true;
+      ui.setButtonBusy(button, true, "签到中");
+      try {
+        if (!pendingCheckinKey) pendingCheckinKey = ui.idempotencyKey();
+        const result = await ui.api("/api/v1/checkins", {
+          method: "POST",
+          headers: { "Idempotency-Key": pendingCheckinKey }
+        });
+        responseReceived = true;
+        pendingCheckinKey = "";
+        checkinNeedsConfirmation = true;
+        ui.notice(`签到成功，赠送 ${ui.money(result.reward_microusd)}，${ui.statusText(result.delivery_status)}`);
+        refreshedProfile = await loadProfile({ confirmCheckin: true });
+        await loadGrants({ cursor: "", navigation: "reset" });
+      } catch (error) {
+        if (!responseReceived) {
+          checkinNeedsConfirmation = true;
+          const status = Number(error?.status);
+          const definitiveFailure = Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
+          if (definitiveFailure) pendingCheckinKey = "";
+        }
+        ui.notice(error.message, true);
+        if (!refreshedProfile) {
+          try {
+            refreshedProfile = await loadProfile({ confirmCheckin: true });
+          } catch {
+            // Keep the action locked until a later dashboard refresh confirms state.
+          }
+        }
+      } finally {
+        checkinInFlight = false;
+        ui.setButtonBusy(button, false);
+        syncCheckin(refreshedProfile || profile || {});
       }
     });
     document.querySelectorAll(".period-button").forEach((button) => {
       button.addEventListener("click", () => loadDailyPoints(Number(button.dataset.days)).catch((error) => ui.notice(error.message, true)));
+      button.addEventListener("keydown", movePeriod);
     });
     const canvas = ui.byId("points-chart");
     canvas.addEventListener("pointermove", showChartTooltip);
-    canvas.addEventListener("pointerleave", hideChartTooltip);
+    canvas.addEventListener("pointerleave", () => {
+      if (document.activeElement !== canvas) hideChartTooltip();
+    });
+    canvas.addEventListener("keydown", moveChartPoint);
+    canvas.addEventListener("focus", () => {
+      if (chartState.rows.length > 0 && chartState.hoverIndex < 0) showChartPoint(chartState.rows.length - 1, true);
+    });
+    canvas.addEventListener("blur", hideChartTooltip);
     if (typeof ResizeObserver === "function") new ResizeObserver(drawChart).observe(canvas);
     else window.addEventListener("resize", drawChart);
   }
