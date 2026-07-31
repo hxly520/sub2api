@@ -545,7 +545,7 @@ export default {
         siteLogo: 'Site Logo',
         uploadImage: 'Upload Image',
         remove: 'Remove',
-        logoHint: 'PNG, JPG, or SVG. Max 300KB. Recommended: 80x80px square image.',
+        logoHint: 'PNG, JPG, WebP, or GIF. Max 300KB. Recommended: 80x80px square image.',
         logoSizeError: 'Image size exceeds 300KB limit ({size}KB)',
         logoTypeError: 'Please select an image file',
         logoReadError: 'Failed to read the image file',

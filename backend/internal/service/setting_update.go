@@ -99,6 +99,14 @@ func (s *SettingService) refreshCachedSettingsAfterWrite(ctx context.Context, se
 }
 
 func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, settings *SystemSettings) (map[string]string, error) {
+	parsedSiteLogo, err := ParseSiteLogoDataURI(settings.SiteLogo)
+	if err != nil {
+		return nil, infraerrors.BadRequest("INVALID_SITE_LOGO", err.Error())
+	}
+	settings.SiteLogo = ""
+	if parsedSiteLogo != nil {
+		settings.SiteLogo = parsedSiteLogo.DataURI
+	}
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
 		return nil, err
 	}

@@ -90,6 +90,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/admin/policies", s.auth("admin", false, false, http.HandlerFunc(s.policies)))
 	s.mux.Handle("POST /api/v1/admin/policies", s.auth("admin", true, false, http.HandlerFunc(s.createPolicy)))
 	s.mux.Handle("GET /api/v1/admin/balance-grants", s.auth("admin", false, false, http.HandlerFunc(s.adminCheckinBalanceGrants)))
+	s.mux.Handle("GET /api/v1/admin/balance-grants/summary", s.auth("admin", false, false, http.HandlerFunc(s.adminCheckinBalanceGrantSummary)))
 	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth("admin", true, false, http.HandlerFunc(s.retryCheckinBalanceGrant)))
 	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth("admin", true, false, http.HandlerFunc(s.reverseCheckinBalanceGrant)))
 

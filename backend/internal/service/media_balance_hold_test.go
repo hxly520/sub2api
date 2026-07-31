@@ -2,9 +2,23 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestMediaBalanceHoldCommandExpirySeconds(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, int64((24*time.Hour)/time.Second), (&MediaBalanceHoldCommand{}).ExpirySeconds())
+	require.Equal(t, int64((30*time.Minute)/time.Second), (&MediaBalanceHoldCommand{
+		ExpiresAfter: SynchronousMediaBalanceHoldTTL,
+	}).ExpirySeconds())
+	require.Equal(t, int64(2), (&MediaBalanceHoldCommand{ExpiresAfter: 1500 * time.Millisecond}).ExpirySeconds())
+	require.Equal(t, int64((24*time.Hour)/time.Second), (&MediaBalanceHoldCommand{
+		ExpiresAfter: 48 * time.Hour,
+	}).ExpirySeconds())
+}
 
 func TestMediaGenerationPricingSnapshotEstimatedCost(t *testing.T) {
 	tests := []struct {

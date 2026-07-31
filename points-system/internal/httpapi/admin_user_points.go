@@ -87,6 +87,15 @@ func (s *Server) adminCheckinBalanceGrants(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, items)
 }
 
+func (s *Server) adminCheckinBalanceGrantSummary(w http.ResponseWriter, r *http.Request) {
+	counts, err := s.Store.SummarizeCheckinBalanceGrants(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"counts": counts})
+}
+
 func (s *Server) retryCheckinBalanceGrant(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
 	id := r.PathValue("id")

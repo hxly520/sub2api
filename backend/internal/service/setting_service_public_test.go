@@ -14,6 +14,16 @@ type settingPublicRepoStub struct {
 	values map[string]string
 }
 
+func TestSettingServiceGetPublicSettingsFiltersInvalidSiteLogo(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+		SettingKeySiteLogo: "data:image/png;base64,bm90IGFuIGltYWdl",
+	}}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, settings.SiteLogo)
+}
+
 func (s *settingPublicRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
 	panic("unexpected Get call")
 }

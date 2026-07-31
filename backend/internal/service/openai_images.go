@@ -756,7 +756,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err != nil {
 		return nil, err
 	}
-	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, parsed.Stream)
+	// Image creation is non-idempotent. Once the handler crosses the dispatch
+	// boundary, drain the upstream response even if the client disconnects so
+	// billing can capture a delivered image or release a definitive failure.
+	// This also keeps API-key accounts consistent with the OAuth image path.
+	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	defer releaseUpstreamCtx()
 
 	token, _, err := s.GetAccessToken(upstreamCtx, account)

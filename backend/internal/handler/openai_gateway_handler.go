@@ -565,6 +565,29 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
+			if result != nil && result.ClientDisconnect {
+				accountFailure := !service.IsOpenAIStreamIncompleteAfterClientDisconnect(err)
+				if accountFailure {
+					var failoverErr *service.UpstreamFailoverError
+					if errors.As(err, &failoverErr) {
+						h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
+						h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
+						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
+					} else {
+						if service.IsOpenAIUpstreamFailureForStickyRelease(err) {
+							h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
+						}
+						h.gatewayService.MaybeBlockOpenAIAccountAfterForwardError(account, err)
+						h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+					}
+				}
+				reqLog.Info("openai.responses_client_disconnected_after_upstream_error",
+					zap.Int64("account_id", account.ID),
+					zap.Bool("account_failure", accountFailure),
+					zap.Error(err),
+				)
+				return
+			}
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),

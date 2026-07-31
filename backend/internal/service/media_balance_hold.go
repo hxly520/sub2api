@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -17,6 +18,11 @@ import (
 const mediaBalanceHoldRequestPrefix = "media_balance_hold:"
 
 const mediaBalanceAmountScale = 1e8
+
+const (
+	defaultMediaBalanceHoldTTL     = 24 * time.Hour
+	SynchronousMediaBalanceHoldTTL = 30 * time.Minute
+)
 
 var (
 	ErrMediaBalanceHoldUnavailable = infraerrors.New(http.StatusServiceUnavailable, "MEDIA_BALANCE_HOLD_UNAVAILABLE", "media balance hold service is unavailable")
@@ -36,6 +42,7 @@ type MediaBalanceHoldCommand struct {
 	RequestFingerprint string
 	RequestPayloadHash string
 	HoldAmount         float64
+	ExpiresAfter       time.Duration
 }
 
 func (c *MediaBalanceHoldCommand) Normalize() {
@@ -50,11 +57,26 @@ func (c *MediaBalanceHoldCommand) Normalize() {
 	} else {
 		c.HoldAmount = normalizeMediaBalanceAmount(c.HoldAmount)
 	}
+	if c.ExpiresAfter <= 0 || c.ExpiresAfter > defaultMediaBalanceHoldTTL {
+		c.ExpiresAfter = defaultMediaBalanceHoldTTL
+	}
 	if c.RequestFingerprint == "" {
 		raw := fmt.Sprintf("%d|%d|%s|%0.10f|%s", c.UserID, c.APIKeyID, c.RequestID, c.HoldAmount, c.RequestPayloadHash)
 		sum := sha256.Sum256([]byte(raw))
 		c.RequestFingerprint = hex.EncodeToString(sum[:])
 	}
+}
+
+func (c *MediaBalanceHoldCommand) ExpirySeconds() int64 {
+	if c == nil {
+		return int64(defaultMediaBalanceHoldTTL / time.Second)
+	}
+	c.Normalize()
+	seconds := int64(math.Ceil(c.ExpiresAfter.Seconds()))
+	if seconds <= 0 {
+		return int64(defaultMediaBalanceHoldTTL / time.Second)
+	}
+	return seconds
 }
 
 type MediaBalanceHoldResult struct {

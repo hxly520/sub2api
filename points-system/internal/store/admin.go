@@ -45,31 +45,55 @@ func (s *Store) Snapshot(ctx context.Context, userID int64, businessDate time.Ti
 	return snapshot, translateNotFound(err)
 }
 
-func (s *Store) DailyPoints(ctx context.Context, userID int64, limit int) ([]DailyPoint, error) {
-	if limit <= 0 || limit > 90 {
-		limit = 30
+func (s *Store) DailyPoints(ctx context.Context, userID int64, days int) ([]DailyPoint, error) {
+	if days <= 0 || days > 90 {
+		days = 30
 	}
+	windowEnd := s.BusinessDate(time.Now())
+	windowStart := windowEnd.AddDate(0, 0, -days)
 	rows, err := s.DB.Query(ctx, `SELECT business_date,actual_cost_microusd,
 		awarded_points_hundredths,status
-		FROM (
-			SELECT business_date,actual_cost_microusd,awarded_points_hundredths,status
-			FROM points_daily_snapshots WHERE user_id=$1
-			ORDER BY business_date DESC LIMIT $2
-		) recent ORDER BY business_date`, userID, limit)
+		FROM points_daily_snapshots
+		WHERE user_id=$1 AND business_date >= $2 AND business_date < $3
+		ORDER BY business_date`, userID, dateString(windowStart), dateString(windowEnd))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make([]DailyPoint, 0, limit)
+	items := make([]DailyPoint, 0, days)
 	for rows.Next() {
 		var item DailyPoint
 		if err := rows.Scan(&item.BusinessDate, &item.ActualCostMicroUSD,
 			&item.AwardedPointsHundredths, &item.Status); err != nil {
 			return nil, err
 		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return completeDailyPointsWindow(items, windowStart, days), nil
+}
+
+func completeDailyPointsWindow(items []DailyPoint, windowStart time.Time, days int) []DailyPoint {
+	if days <= 0 {
+		return []DailyPoint{}
+	}
+	byDate := make(map[string]DailyPoint, len(items))
+	for _, item := range items {
+		byDate[dateString(item.BusinessDate)] = item
+	}
+	result := make([]DailyPoint, 0, days)
+	for offset := 0; offset < days; offset++ {
+		businessDate := windowStart.AddDate(0, 0, offset)
+		item, ok := byDate[dateString(businessDate)]
+		if !ok {
+			item = DailyPoint{Status: snapshotStatusEmpty}
+		}
+		item.BusinessDate = businessDate
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	return result
 }
 
 func (s *Store) Audit(ctx context.Context, actorID int64, action, targetType, targetID, requestID string, detail []byte) error {

@@ -826,7 +826,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
 					fmt.Errorf("read upstream websocket event: %w", readErr),
-					wroteDownstream,
+					wroteDownstream || clientDisconnected,
 				)
 			}
 			if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
@@ -855,7 +855,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					turnPreviousResponseID != "" &&
 					!turnHasFunctionCallOutput &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
-					!wroteDownstream
+					!wroteDownstream &&
+					!clientDisconnected
 				if recoverablePrevNotFound {
 					// 可恢复场景使用非 error 关键字日志，避免被 LegacyPrintf 误判为 ERROR 级别。
 					logOpenAIWSModeInfo(
@@ -906,7 +907,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
-				if !wroteDownstream && isOpenAIModelAtCapacityError(errMsgRaw, upstreamMessage) {
+				if !wroteDownstream && !clientDisconnected && isOpenAIModelAtCapacityError(errMsgRaw, upstreamMessage) {
 					lease.MarkBroken()
 					return nil, newOpenAIUpstreamFailoverError(
 						http.StatusBadGateway,
@@ -916,7 +917,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
-				if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
+				if !wroteDownstream && !clientDisconnected && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
 					lease.MarkBroken()
 					return nil, &UpstreamFailoverError{
 						StatusCode:      http.StatusTooManyRequests,
@@ -943,7 +944,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageCounter.AddSSEData(upstreamMessage)
 
 			if eventType == "response.failed" {
-				if !wroteDownstream && isOpenAIModelAtCapacityError("", upstreamMessage) {
+				if !wroteDownstream && !clientDisconnected && isOpenAIModelAtCapacityError("", upstreamMessage) {
 					lease.MarkBroken()
 					return nil, newOpenAIUpstreamFailoverError(
 						http.StatusBadGateway,
@@ -1040,6 +1041,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ResponseHeaders:       lease.HandshakeHeaders(),
 					Duration:              time.Since(turnStart),
 					FirstTokenMs:          firstTokenMs,
+					ClientDisconnect:      clientDisconnected,
 				}
 				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 					result.wsReplayInput = replayInput

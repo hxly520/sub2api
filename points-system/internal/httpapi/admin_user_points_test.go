@@ -64,6 +64,15 @@ func TestUserCannotCallAdminUserPointsEndpoint(t *testing.T) {
 	}
 }
 
+func TestUserCannotCallAdminBalanceGrantSummaryEndpoint(t *testing.T) {
+	server := testRoleServer("user", true)
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/api/v1/admin/balance-grants/summary"))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("user GET admin balance grant summary status = %d, want 403", recorder.Code)
+	}
+}
+
 func TestAdminWebRemovesManualGrantAndManualSnapshotRefresh(t *testing.T) {
 	adminHTML, err := webFS.ReadFile("web/admin.html")
 	if err != nil {
@@ -77,6 +86,7 @@ func TestAdminWebRemovesManualGrantAndManualSnapshotRefresh(t *testing.T) {
 	for _, required := range []string{
 		"用户积分明细", "admin-users-body", "/api/v1/admin/users/points",
 		"签到余额发放记录", "每日自动结算", "这里不是积分功能开关",
+		"/api/v1/admin/balance-grants/summary", "reversal_permanently_failed",
 	} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("administrator web is missing %q", required)

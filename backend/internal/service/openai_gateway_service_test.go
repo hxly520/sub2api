@@ -370,6 +370,72 @@ func TestOpenAIGatewayService_BindHTTPResponseAccount(t *testing.T) {
 	require.Equal(t, account.ID, got)
 }
 
+func TestOpenAIGatewayService_BindHTTPResponseAccountSurvivesCanceledRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	groupID := int64(4202)
+	c.Set("api_key", &APIKey{ID: 502, GroupID: &groupID})
+
+	cache := &canceledContextProbeGatewayCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 37002, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	svc.bindHTTPResponseAccount(ctx, c, account, "resp_http_canceled")
+
+	require.NoError(t, cache.setContextErr)
+	require.Equal(t, account.ID, cache.accountID)
+}
+
+func TestOpenAIGatewayService_BindHTTPResponseAccountSurvivesConcurrentCancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	groupID := int64(4203)
+	c.Set("api_key", &APIKey{ID: 503, GroupID: &groupID})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cache := &canceledContextProbeGatewayCache{beforeSet: cancel}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 37003, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	svc.bindHTTPResponseAccount(ctx, c, account, "resp_http_concurrent_cancel")
+
+	require.NoError(t, cache.setContextErr)
+	require.Equal(t, account.ID, cache.accountID)
+}
+
+type canceledContextProbeGatewayCache struct {
+	setContextErr error
+	accountID     int64
+	beforeSet     func()
+}
+
+func (c *canceledContextProbeGatewayCache) GetSessionAccountID(context.Context, int64, string) (int64, error) {
+	return 0, nil
+}
+
+func (c *canceledContextProbeGatewayCache) SetSessionAccountID(ctx context.Context, _ int64, _ string, accountID int64, _ time.Duration) error {
+	if c.beforeSet != nil {
+		c.beforeSet()
+	}
+	c.setContextErr = ctx.Err()
+	c.accountID = accountID
+	return c.setContextErr
+}
+
+func (c *canceledContextProbeGatewayCache) RefreshSessionTTL(context.Context, int64, string, time.Duration) error {
+	return nil
+}
+
+func (c *canceledContextProbeGatewayCache) DeleteSessionAccountID(context.Context, int64, string) error {
+	return nil
+}
+
 func TestOpenAIGatewayService_GenerateExplicitSessionHash_SkipsContentFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{}
@@ -1936,6 +2002,7 @@ func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
 	if result == nil || result.usage == nil {
 		t.Fatalf("expected usage result")
 	}
+	require.True(t, result.clientDisconnected)
 	if result.usage.InputTokens != 3 || result.usage.OutputTokens != 5 || result.usage.CacheReadInputTokens != 1 {
 		t.Fatalf("unexpected usage: %+v", *result.usage)
 	}
@@ -2056,6 +2123,50 @@ func TestOpenAIStreamingPassthroughSemanticOutputMissingTerminalReturnsIncomplet
 	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
 	require.True(t, c.Writer.Written())
 	require.Contains(t, rec.Body.String(), "hello")
+}
+
+func TestOpenAIStreamingMissingTerminalAfterClientDisconnectReturnsIncompleteResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Writer = &failingGinWriter{ResponseWriter: c.Writer, failAfter: 0}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")),
+		Header:     http.Header{"X-Request-Id": []string{"rid-native-client-gone"}},
+	}
+
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
+	require.NotNil(t, result)
+	require.True(t, result.clientDisconnected)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "a disconnected client must not trigger a replay")
+}
+
+func TestOpenAIStreamingPassthroughMissingTerminalAfterClientDisconnectReturnsIncompleteResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Writer = &failingGinWriter{ResponseWriter: c.Writer, failAfter: 0}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")),
+		Header:     http.Header{"X-Request-Id": []string{"rid-passthrough-client-gone"}},
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
+	require.NotNil(t, result)
+	require.True(t, result.clientDisconnected)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "a disconnected client must not trigger a replay")
 }
 
 func TestOpenAIStreamingPassthroughPostOutputDisconnectQuarantinesSharedProxy(t *testing.T) {
@@ -3276,7 +3387,7 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "output.0.revised_prompt").String())
 }
 
-func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
+func TestHandleSSEToJSON_DoneWithoutTerminalReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3292,12 +3403,35 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
-	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 0, usage.InputTokens)
-	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
-	require.Contains(t, rec.Body.String(), `data: {"type":"response.in_progress"`)
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
+}
+
+func TestHandlePassthroughSSEToJSON_DoneWithoutTerminalReturnsFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+	body := []byte("data: [DONE]\n\n")
+
+	result, err := svc.handlePassthroughSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
 }
 
 func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {

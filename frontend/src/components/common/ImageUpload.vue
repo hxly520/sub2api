@@ -96,7 +96,8 @@ const emit = defineEmits<{
 
 const error = ref('')
 
-const acceptTypes = computed(() => props.mode === 'svg' ? '.svg' : 'image/*')
+const rasterImageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const acceptTypes = computed(() => props.mode === 'svg' ? '.svg' : rasterImageTypes.join(','))
 
 const sanitizedValue = computed(() =>
   props.mode === 'svg' ? sanitizeSvg(props.modelValue ?? '') : ''
@@ -127,8 +128,8 @@ function handleUpload(event: Event) {
     }
     reader.readAsText(file)
   } else {
-    if (!file.type.startsWith('image/')) {
-      error.value = 'Please select an image file'
+    if (!rasterImageTypes.includes(file.type.toLowerCase())) {
+      error.value = 'Please select a PNG, JPG, WebP, or GIF image'
       input.value = ''
       return
     }

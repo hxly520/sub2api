@@ -219,7 +219,7 @@
     const totalPoints = rows.reduce((sum, item) => sum + ui.number(item.awarded_points_hundredths), 0);
     const activeDays = rows.filter((item) => ui.number(item.actual_cost_microusd) > 0 || ui.number(item.awarded_points_hundredths) > 0).length;
     ui.byId("period-points").textContent = ui.points(totalPoints);
-    ui.byId("average-points").textContent = ui.points(rows.length === 0 ? 0 : Math.round(totalPoints / rows.length));
+    ui.byId("average-points").textContent = ui.points(Math.round(totalPoints / chartState.days));
     ui.byId("active-days").textContent = String(activeDays);
   }
 

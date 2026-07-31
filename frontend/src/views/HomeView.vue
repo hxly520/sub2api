@@ -23,19 +23,19 @@
   >
     <header
       data-testid="home-header"
-      class="sticky top-0 z-50 border-b border-gray-200/80 bg-white/95 dark:border-dark-800 dark:bg-dark-950/95"
+      class="sticky top-0 z-50 border-b border-gray-200/80 bg-white/90 backdrop-blur-md dark:border-dark-800 dark:bg-dark-950/90"
     >
       <nav
         class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
         :aria-label="t('home.nav.primary')"
       >
-        <a href="#top" class="flex min-w-0 items-center gap-3" @click="closeMobileNav">
+        <a href="#top" class="flex min-w-0 items-center gap-2.5" @click="closeMobileNav">
           <img
             :src="siteLogo || '/logo.svg'"
             :alt="siteName"
-            class="h-9 w-9 flex-none rounded-md object-contain"
+            class="h-9 w-9 flex-none rounded-md border border-gray-200 bg-white object-contain p-0.5 dark:border-dark-700 dark:bg-dark-900"
           />
-          <span class="max-w-40 truncate text-sm font-semibold sm:max-w-56 sm:text-base">
+          <span class="max-w-32 truncate text-sm font-semibold text-gray-900 sm:max-w-56 sm:text-base dark:text-white">
             {{ siteName }}
           </span>
         </a>
@@ -48,7 +48,7 @@
             v-for="item in sectionNavItems"
             :key="item.href"
             :href="item.href"
-            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
           >
             {{ item.label }}
           </a>
@@ -57,7 +57,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white"
           >
             {{ t('home.nav.docs') }}
           </a>
@@ -69,7 +69,7 @@
           </div>
           <button
             type="button"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             :aria-label="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
@@ -81,7 +81,7 @@
           <template v-if="isAuthenticated">
             <router-link
               :to="dashboardPath"
-              class="inline-flex h-9 items-center justify-center rounded-md bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 sm:px-4"
+              class="inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-400 sm:px-4"
             >
               {{ t('home.dashboard') }}
             </router-link>
@@ -90,7 +90,7 @@
             <router-link
               to="/login"
               data-testid="home-login-link"
-              class="hidden h-9 items-center justify-center rounded-md px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-200 dark:hover:bg-dark-800 dark:hover:text-white md:inline-flex"
+              class="hidden h-9 items-center justify-center rounded-md px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-200 dark:hover:bg-dark-800 dark:hover:text-white md:inline-flex"
             >
               {{ t('home.login') }}
             </router-link>
@@ -98,7 +98,7 @@
               v-if="registrationEnabled"
               to="/register"
               data-testid="home-register-link"
-              class="inline-flex h-9 items-center justify-center rounded-md bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 sm:px-4"
+              class="inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:bg-blue-500 dark:text-white dark:hover:bg-blue-400 sm:px-4"
             >
               {{ t('home.register') }}
             </router-link>
@@ -107,7 +107,7 @@
           <button
             type="button"
             data-testid="home-mobile-menu-button"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white lg:hidden"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white lg:hidden"
             :aria-expanded="mobileNavOpen"
             :aria-label="t('home.nav.toggle')"
             @click="mobileNavOpen = !mobileNavOpen"
@@ -161,38 +161,40 @@
       <section
         id="top"
         data-testid="home-hero"
-        class="home-hero relative isolate flex min-h-[calc(100svh-12rem)] items-center overflow-hidden border-b border-gray-200 bg-gray-50 sm:min-h-[calc(100svh-8rem)] dark:border-dark-800 dark:bg-dark-950"
+        class="home-hero relative isolate flex min-h-[calc(100svh-9rem)] items-center overflow-hidden border-b border-gray-200 bg-[#f7f9fc] sm:min-h-[calc(100svh-10rem)] dark:border-dark-800 dark:bg-dark-950"
         aria-labelledby="home-title"
       >
-        <div class="home-grid pointer-events-none absolute inset-0 -z-20" aria-hidden="true"></div>
         <div class="home-scene pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-          <span class="home-scene-line home-scene-line-left"></span>
-          <span class="home-scene-line home-scene-line-right"></span>
+          <span class="home-scene-frame"></span>
+          <span class="home-scene-line home-scene-line-one"></span>
+          <span class="home-scene-line home-scene-line-two"></span>
           <span class="home-scene-marker home-scene-marker-one"></span>
           <span class="home-scene-marker home-scene-marker-two"></span>
           <span class="home-scene-marker home-scene-marker-three"></span>
+          <span class="home-scene-marker home-scene-marker-four"></span>
         </div>
 
-        <div class="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+        <div class="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
           <div class="mx-auto max-w-4xl text-center">
-            <img
-              :src="siteLogo || '/logo.svg'"
-              :alt="siteName"
-              class="mx-auto h-16 w-16 rounded-lg object-contain shadow-sm ring-1 ring-gray-200 dark:ring-dark-700 sm:h-20 sm:w-20"
-            />
-            <p
-              class="mt-6 inline-flex items-center gap-2 rounded-md border border-primary-200 bg-white px-3 py-1.5 text-xs font-semibold text-primary-800 shadow-sm dark:border-primary-800 dark:bg-dark-900 dark:text-primary-200"
-            >
-              <span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true"></span>
+            <div class="home-logo-frame mx-auto flex h-20 w-20 items-center justify-center rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900 sm:h-24 sm:w-24">
+              <img
+                :src="siteLogo || '/logo.svg'"
+                :alt="siteName"
+                class="h-14 w-14 rounded-md object-contain sm:h-[4.25rem] sm:w-[4.25rem]"
+              />
+            </div>
+            <p class="mt-6 flex items-center justify-center gap-3 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              <span class="h-px w-8 bg-blue-500" aria-hidden="true"></span>
               {{ t('home.hero.eyebrow') }}
+              <span class="h-px w-8 bg-blue-500" aria-hidden="true"></span>
             </p>
             <h1
               id="home-title"
-              class="mt-5 break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl lg:text-6xl dark:text-white"
+              class="mx-auto mt-5 max-w-4xl break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl lg:text-6xl dark:text-white"
             >
               {{ siteName }}
             </h1>
-            <p class="mx-auto mt-5 max-w-3xl text-lg font-medium leading-8 text-gray-700 dark:text-dark-200">
+            <p class="mx-auto mt-5 max-w-3xl text-lg font-semibold leading-8 text-gray-700 dark:text-dark-100">
               {{ siteSubtitle }}
             </p>
             <p class="mx-auto mt-3 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base dark:text-dark-300">
@@ -203,14 +205,14 @@
               <router-link
                 :to="primaryEntryPath"
                 data-testid="home-primary-entry"
-                class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50 dark:bg-primary-500 dark:text-dark-950 dark:hover:bg-primary-400"
+                class="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:bg-blue-500 dark:hover:bg-blue-400"
               >
                 {{ primaryEntryLabel }}
                 <Icon name="arrowRight" size="sm" class="ml-2" />
               </router-link>
               <a
                 href="#overview"
-                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-900 dark:text-white dark:hover:border-dark-500 dark:hover:bg-dark-800"
+                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:border-blue-300 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-dark-600 dark:bg-dark-900 dark:text-white dark:hover:border-blue-500 dark:hover:text-blue-300"
               >
                 {{ t('home.hero.secondaryAction') }}
               </a>
@@ -218,14 +220,14 @@
 
             <ul class="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-medium text-gray-600 dark:text-dark-300">
               <li v-for="item in heroAssurances" :key="item" class="inline-flex items-center gap-1.5">
-                <Icon name="checkCircle" size="xs" class="text-emerald-600 dark:text-emerald-400" />
+                <Icon name="checkCircle" size="xs" class="text-blue-600 dark:text-blue-400" />
                 {{ item }}
               </li>
             </ul>
           </div>
 
           <div
-            class="home-service-flow mx-auto mt-10 hidden max-w-5xl grid-cols-4 border-y border-gray-200 bg-white/80 sm:grid dark:border-dark-700 dark:bg-dark-900/80"
+            class="home-service-flow mx-auto mt-9 hidden max-w-5xl grid-cols-4 border-y border-gray-200 bg-white/70 md:grid dark:border-dark-700 dark:bg-dark-900/70"
             aria-hidden="true"
           >
             <div
@@ -245,6 +247,14 @@
               <span v-if="index < serviceFlowItems.length - 1" class="home-flow-pulse"></span>
             </div>
           </div>
+
+          <a
+            href="#overview"
+            :aria-label="t('home.hero.secondaryAction')"
+            class="mx-auto mt-5 flex h-9 w-9 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-500 dark:hover:bg-dark-900 dark:hover:text-blue-300"
+          >
+            <Icon name="arrowDown" size="sm" />
+          </a>
         </div>
       </section>
 
@@ -256,7 +266,8 @@
       >
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="max-w-3xl">
-            <p class="text-xs font-semibold text-primary-700 dark:text-primary-300">
+            <p class="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              <span class="h-px w-6 bg-blue-500" aria-hidden="true"></span>
               {{ t('home.overview.eyebrow') }}
             </p>
             <h2 id="overview-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
@@ -267,11 +278,11 @@
             </p>
           </div>
 
-          <div class="mt-10 grid border-y border-gray-200 sm:grid-cols-2 lg:grid-cols-4 dark:border-dark-800">
+          <div class="home-overview-grid mt-10 grid border-y border-gray-200 sm:grid-cols-2 lg:grid-cols-4 dark:border-dark-800">
             <article
               v-for="item in overviewItems"
               :key="item.title"
-              class="border-b border-gray-200 px-1 py-7 sm:px-6 lg:border-b-0 lg:border-r lg:last:border-r-0 dark:border-dark-800"
+              class="home-overview-item px-1 py-7 sm:px-6"
             >
               <span :class="['inline-flex h-10 w-10 items-center justify-center rounded-md', item.iconClass]">
                 <Icon :name="item.icon" size="md" />
@@ -285,11 +296,11 @@
             <p class="text-xs font-semibold text-gray-500 dark:text-dark-400">
               {{ t('home.overview.catalogLabel') }}
             </p>
-            <div class="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 sm:grid-cols-3 lg:grid-cols-5 dark:border-dark-700 dark:bg-dark-700">
+            <div class="home-capability-grid mt-4 flex flex-wrap gap-px border-y border-gray-200 bg-gray-200 dark:border-dark-700 dark:bg-dark-700">
               <div
                 v-for="item in capabilityItems"
                 :key="item.label"
-                class="flex min-h-20 items-center gap-3 bg-gray-50 px-4 py-4 dark:bg-dark-900"
+                class="home-capability-item flex min-h-20 items-center gap-3 px-4 py-4"
               >
                 <Icon :name="item.icon" size="sm" :class="item.iconClass" />
                 <span class="text-sm font-semibold text-gray-800 dark:text-dark-100">{{ item.label }}</span>
@@ -302,39 +313,42 @@
       <section
         id="reliability"
         data-testid="home-reliability"
-        class="scroll-mt-20 border-b border-emerald-950 bg-[#0b2925] py-16 text-white sm:py-20"
+        class="scroll-mt-20 border-b border-gray-900 bg-[#111318] py-16 text-white sm:py-20"
         aria-labelledby="reliability-title"
       >
         <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:px-8">
           <div>
-            <p class="text-xs font-semibold text-emerald-300">{{ t('home.reliability.eyebrow') }}</p>
+            <p class="flex items-center gap-2 text-xs font-semibold text-blue-300">
+              <span class="h-px w-6 bg-blue-400" aria-hidden="true"></span>
+              {{ t('home.reliability.eyebrow') }}
+            </p>
             <h2 id="reliability-title" class="mt-3 text-3xl font-bold leading-tight sm:text-4xl">
               {{ t('home.reliability.title') }}
             </h2>
-            <p class="mt-4 max-w-xl text-base leading-7 text-emerald-50/80">
+            <p class="mt-4 max-w-xl text-base leading-7 text-gray-300">
               {{ t('home.reliability.description') }}
             </p>
             <a
               href="#guide"
-              class="mt-7 inline-flex min-h-10 items-center rounded-md border border-emerald-200/40 px-4 text-sm font-semibold text-white transition-colors hover:border-emerald-100 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/60"
+              class="mt-7 inline-flex min-h-10 items-center rounded-md border border-gray-600 px-4 text-sm font-semibold text-white transition-colors hover:border-blue-400 hover:text-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
             >
               {{ t('home.reliability.action') }}
               <Icon name="arrowRight" size="sm" class="ml-2" />
             </a>
           </div>
 
-          <div class="border-t border-white/15">
+          <div class="border-t border-gray-700">
             <article
               v-for="item in reliabilityItems"
               :key="item.title"
-              class="grid gap-3 border-b border-white/15 py-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-5"
+              class="grid gap-3 border-b border-gray-700 py-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-5"
             >
-              <span class="inline-flex h-10 w-10 items-center justify-center rounded-md bg-white/10 text-emerald-200">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-blue-400/30 bg-blue-500/10 text-blue-300">
                 <Icon :name="item.icon" size="md" />
               </span>
               <div>
                 <h3 class="text-base font-semibold">{{ item.title }}</h3>
-                <p class="mt-2 text-sm leading-6 text-emerald-50/75">{{ item.description }}</p>
+                <p class="mt-2 text-sm leading-6 text-gray-400">{{ item.description }}</p>
               </div>
             </article>
           </div>
@@ -344,12 +358,12 @@
       <section
         id="guide"
         data-testid="home-guide"
-        class="scroll-mt-20 border-b border-gray-200 bg-gray-50 py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-900"
+        class="scroll-mt-20 border-b border-gray-200 bg-[#f7f9fc] py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-900"
         aria-labelledby="guide-title"
       >
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="mx-auto max-w-3xl text-center">
-            <p class="text-xs font-semibold text-amber-700 dark:text-amber-300">{{ t('home.guide.eyebrow') }}</p>
+            <p class="text-xs font-semibold text-blue-700 dark:text-blue-300">{{ t('home.guide.eyebrow') }}</p>
             <h2 id="guide-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
               {{ t('home.guide.title') }}
             </h2>
@@ -362,7 +376,7 @@
               :key="item.title"
               class="relative border-t border-gray-300 pt-7 md:border-l md:border-t-0 md:px-8 md:pt-0 first:md:border-l-0 dark:border-dark-600"
             >
-              <span class="inline-flex h-8 min-w-8 items-center justify-center rounded-md bg-amber-100 px-2 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+              <span class="inline-flex h-8 min-w-8 items-center justify-center rounded-md bg-blue-100 px-2 text-xs font-bold text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
                 {{ String(index + 1).padStart(2, '0') }}
               </span>
               <h3 class="mt-5 text-lg font-semibold text-gray-950 dark:text-white">{{ item.title }}</h3>
@@ -376,7 +390,7 @@
               :href="docUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex min-h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-950 dark:text-white dark:hover:bg-dark-800"
+              class="inline-flex min-h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition-colors hover:border-blue-300 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-dark-600 dark:bg-dark-950 dark:text-white dark:hover:border-blue-500 dark:hover:text-blue-300"
             >
               <Icon name="book" size="sm" class="mr-2" />
               {{ t('home.guide.docsAction') }}
@@ -393,7 +407,10 @@
       >
         <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:px-8">
           <div>
-            <p class="text-xs font-semibold text-blue-700 dark:text-blue-300">{{ t('home.faq.eyebrow') }}</p>
+            <p class="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              <span class="h-px w-6 bg-blue-500" aria-hidden="true"></span>
+              {{ t('home.faq.eyebrow') }}
+            </p>
             <h2 id="faq-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
               {{ t('home.faq.title') }}
             </h2>
@@ -407,7 +424,7 @@
               class="home-faq-item border-b border-gray-200 dark:border-dark-700"
             >
               <summary
-                class="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left text-sm font-semibold text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-white sm:text-base"
+                class="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left text-sm font-semibold text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-white sm:text-base"
               >
                 <span>{{ item.question }}</span>
                 <Icon name="chevronDown" size="sm" class="faq-chevron flex-none text-gray-400 transition-transform" />
@@ -420,17 +437,17 @@
         </div>
       </section>
 
-      <section class="bg-primary-800 py-14 text-white dark:bg-primary-900" aria-labelledby="home-cta-title">
+      <section class="bg-blue-600 py-14 text-white dark:bg-blue-700" aria-labelledby="home-cta-title">
         <div class="mx-auto flex max-w-7xl flex-col gap-7 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div class="max-w-3xl">
-            <p class="text-xs font-semibold text-primary-100">{{ t('home.cta.eyebrow') }}</p>
+            <p class="text-xs font-semibold text-blue-100">{{ t('home.cta.eyebrow') }}</p>
             <h2 id="home-cta-title" class="mt-2 text-3xl font-bold leading-tight">{{ t('home.cta.title') }}</h2>
-            <p class="mt-3 text-sm leading-6 text-primary-50/85 sm:text-base">{{ t('home.cta.description') }}</p>
+            <p class="mt-3 text-sm leading-6 text-blue-50/90 sm:text-base">{{ t('home.cta.description') }}</p>
           </div>
           <div class="flex flex-col gap-3 sm:flex-row lg:flex-none">
             <router-link
               :to="primaryEntryPath"
-              class="inline-flex min-h-11 items-center justify-center rounded-md bg-white px-5 text-sm font-semibold text-primary-900 transition-colors hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              class="inline-flex min-h-11 items-center justify-center rounded-md bg-white px-5 text-sm font-semibold text-blue-800 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
               {{ primaryEntryLabel }}
               <Icon name="arrowRight" size="sm" class="ml-2" />
@@ -573,10 +590,10 @@ const heroAssurances = computed(() => [
 ])
 
 const serviceFlowItems = computed(() => [
-  { icon: 'key' as const, label: t('home.flow.access'), iconClass: 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200' },
+  { icon: 'key' as const, label: t('home.flow.access'), iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200' },
   { icon: 'sync' as const, label: t('home.flow.routing'), iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200' },
-  { icon: 'server' as const, label: t('home.flow.service'), iconClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-200' },
-  { icon: 'chart' as const, label: t('home.flow.records'), iconClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/35 dark:text-amber-200' },
+  { icon: 'server' as const, label: t('home.flow.service'), iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200' },
+  { icon: 'chart' as const, label: t('home.flow.records'), iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200' },
 ])
 
 const overviewItems = computed<HomeContentItem[]>(() => [
@@ -584,34 +601,34 @@ const overviewItems = computed<HomeContentItem[]>(() => [
     icon: 'key',
     title: t('home.overview.items.access.title'),
     description: t('home.overview.items.access.description'),
-    iconClass: 'bg-primary-50 text-primary-700 dark:bg-primary-900/35 dark:text-primary-200',
+    iconClass: 'bg-gray-100 text-blue-600 dark:bg-dark-800 dark:text-blue-300',
   },
   {
     icon: 'sync',
     title: t('home.overview.items.routing.title'),
     description: t('home.overview.items.routing.description'),
-    iconClass: 'bg-blue-50 text-blue-700 dark:bg-blue-900/35 dark:text-blue-200',
+    iconClass: 'bg-gray-100 text-blue-600 dark:bg-dark-800 dark:text-blue-300',
   },
   {
     icon: 'chart',
     title: t('home.overview.items.usage.title'),
     description: t('home.overview.items.usage.description'),
-    iconClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/35 dark:text-amber-200',
+    iconClass: 'bg-gray-100 text-blue-600 dark:bg-dark-800 dark:text-blue-300',
   },
   {
     icon: 'shield',
     title: t('home.overview.items.control.title'),
     description: t('home.overview.items.control.description'),
-    iconClass: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200',
+    iconClass: 'bg-gray-100 text-blue-600 dark:bg-dark-800 dark:text-blue-300',
   },
 ])
 
 const capabilityItems = computed(() => [
-  { icon: 'chat' as const, label: t('home.overview.catalog.conversation'), iconClass: 'text-primary-600 dark:text-primary-300' },
+  { icon: 'chat' as const, label: t('home.overview.catalog.conversation'), iconClass: 'text-blue-600 dark:text-blue-300' },
   { icon: 'terminal' as const, label: t('home.overview.catalog.code'), iconClass: 'text-blue-600 dark:text-blue-300' },
-  { icon: 'sparkles' as const, label: t('home.overview.catalog.image'), iconClass: 'text-amber-600 dark:text-amber-300' },
-  { icon: 'play' as const, label: t('home.overview.catalog.video'), iconClass: 'text-rose-600 dark:text-rose-300' },
-  { icon: 'search' as const, label: t('home.overview.catalog.tools'), iconClass: 'text-emerald-600 dark:text-emerald-300' },
+  { icon: 'sparkles' as const, label: t('home.overview.catalog.image'), iconClass: 'text-blue-600 dark:text-blue-300' },
+  { icon: 'play' as const, label: t('home.overview.catalog.video'), iconClass: 'text-blue-600 dark:text-blue-300' },
+  { icon: 'search' as const, label: t('home.overview.catalog.tools'), iconClass: 'text-blue-600 dark:text-blue-300' },
 ])
 
 const reliabilityItems = computed<HomeContentItem[]>(() => [
@@ -697,44 +714,36 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.home-grid {
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px);
-  background-position: center;
-  background-size: 48px 48px;
-}
-
-.dark .home-grid {
-  background-image:
-    linear-gradient(rgba(71, 85, 105, 0.22) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(71, 85, 105, 0.22) 1px, transparent 1px);
+.home-scene-frame {
+  position: absolute;
+  inset: 8% 6%;
+  border-right: 1px solid rgba(148, 163, 184, 0.22);
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
 }
 
 .home-scene-line {
   position: absolute;
-  top: 12%;
-  bottom: 12%;
-  width: 1px;
-  background: rgba(13, 148, 136, 0.2);
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.2);
 }
 
-.home-scene-line-left {
-  left: 12%;
+.home-scene-line-one {
+  top: 22%;
 }
 
-.home-scene-line-right {
-  right: 12%;
+.home-scene-line-two {
+  bottom: 18%;
 }
 
 .home-scene-marker {
   position: absolute;
   width: 7px;
   height: 7px;
-  border: 1px solid rgba(13, 148, 136, 0.55);
-  border-radius: 9999px;
-  background: #f8fafc;
-  box-shadow: 0 0 0 5px rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.58);
+  border-radius: 2px;
+  background: #f7f9fc;
 }
 
 .dark .home-scene-marker {
@@ -742,31 +751,53 @@ onMounted(() => {
 }
 
 .home-scene-marker-one {
-  top: 22%;
-  left: calc(12% - 3px);
+  top: calc(22% - 3px);
+  left: calc(6% - 3px);
 }
 
 .home-scene-marker-two {
-  top: 62%;
-  right: calc(12% - 3px);
+  top: calc(22% - 3px);
+  right: calc(6% - 3px);
 }
 
 .home-scene-marker-three {
-  right: calc(12% - 3px);
-  bottom: 14%;
+  bottom: calc(18% - 3px);
+  left: calc(6% - 3px);
 }
 
-.home-flow-item:not(:nth-child(2n)) {
-  border-right: 1px solid rgb(229 231 235);
+.home-scene-marker-four {
+  right: calc(6% - 3px);
+  bottom: calc(18% - 3px);
 }
 
-.home-flow-item:nth-child(-n + 2) {
+.home-logo-frame {
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.08),
+    0 0 0 8px rgba(255, 255, 255, 0.52);
+}
+
+.dark .home-logo-frame {
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.24),
+    0 0 0 8px rgba(15, 23, 42, 0.58);
+}
+
+.home-overview-item:not(:last-child) {
   border-bottom: 1px solid rgb(229 231 235);
 }
 
-.dark .home-flow-item:not(:nth-child(2n)),
-.dark .home-flow-item:nth-child(-n + 2) {
+.dark .home-overview-item:not(:last-child) {
   border-color: rgb(51 65 85);
+}
+
+.home-capability-item {
+  min-width: 0;
+  flex: 1 1 10rem;
+  background: rgb(249 250 251);
+}
+
+.dark .home-capability-item {
+  background: rgb(15 23 42);
 }
 
 .home-flow-pulse {
@@ -799,29 +830,43 @@ onMounted(() => {
 }
 
 .safe-home-content :deep(a) {
-  color: #0f766e;
+  color: #2563eb;
   text-decoration: underline;
 }
 
 .safe-home-content :deep(pre) {
   overflow-x: auto;
-  border: 1px solid #dfe6eb;
+  border: 1px solid #dbe2ea;
   border-radius: 8px;
   padding: 1rem;
-  background: #f7f9fb;
+  background: #f7f9fc;
 }
 
 @media (min-width: 640px) {
-  .home-flow-item {
+  .home-overview-item {
+    border-bottom: 0;
+  }
+
+  .home-overview-item:nth-child(-n + 2) {
+    border-bottom: 1px solid rgb(229 231 235);
+  }
+
+  .home-overview-item:nth-child(odd) {
     border-right: 1px solid rgb(229 231 235);
-    border-bottom: 0 !important;
   }
 
-  .home-flow-item:last-child {
-    border-right: 0;
+  .dark .home-overview-item:nth-child(-n + 2),
+  .dark .home-overview-item:nth-child(odd) {
+    border-color: rgb(51 65 85);
+  }
+}
+
+@media (min-width: 768px) {
+  .home-flow-item:not(:last-child) {
+    border-right: 1px solid rgb(229 231 235);
   }
 
-  .dark .home-flow-item {
+  .dark .home-flow-item:not(:last-child) {
     border-color: rgb(51 65 85);
   }
 
@@ -833,8 +878,25 @@ onMounted(() => {
     display: block;
     width: 36px;
     height: 2px;
-    background: #0d9488;
+    background: #2563eb;
     animation: home-signal 2.8s ease-in-out infinite;
+  }
+}
+
+@media (min-width: 1024px) {
+  .home-overview-item,
+  .home-overview-item:nth-child(-n + 2),
+  .home-overview-item:nth-child(odd) {
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .home-overview-item:not(:last-child) {
+    border-right: 1px solid rgb(229 231 235);
+  }
+
+  .dark .home-overview-item:not(:last-child) {
+    border-color: rgb(51 65 85);
   }
 }
 

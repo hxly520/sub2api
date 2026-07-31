@@ -22,19 +22,21 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 	for _, required := range []string{
 		`aria-busy="true"`, `id="total-points"`, `id="yesterday-points"`,
 		`id="total-checkin-rewards"`, `id="today-rewards"`, `id="average-points"`,
-		`.finally(ui.notifyReady)`,
+		`Math.round(totalPoints / chartState.days)`, `.finally(ui.notifyReady)`,
 	} {
 		if !strings.Contains(userContent, required) {
 			t.Fatalf("user dashboard is missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{`id="yesterday-spend"`, `id="period-spend"`, "/api/v1/admin/"} {
+	for _, forbidden := range []string{
+		`id="yesterday-spend"`, `id="period-spend"`, `totalPoints / rows.length`, "/api/v1/admin/",
+	} {
 		if strings.Contains(userContent, forbidden) {
 			t.Fatalf("user dashboard exposes out-of-scope content %q", forbidden)
 		}
 	}
 	commonContent := string(commonJS)
-	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,"} {
+	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,", `"needs_review"].includes(value)`} {
 		if !strings.Contains(commonContent, required) {
 			t.Fatalf("shared embedded UI is missing delayed ready behavior %q", required)
 		}

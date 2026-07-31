@@ -269,6 +269,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					service.HashUsageRequestPayload(body),
 					holdAmount,
 				)
+				mediaHold.ExpiresAfter = service.SynchronousMediaBalanceHoldTTL
 				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
 					status, code, message, retryAfter := billingErrorDetails(err)
 					if retryAfter > 0 {
@@ -290,8 +291,19 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if !acquired {
 		return
 	}
+	releaseAccountSlot := func() {
+		if accountReleaseFunc != nil {
+			accountReleaseFunc()
+			accountReleaseFunc = nil
+		}
+	}
+	defer releaseAccountSlot()
 
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+	if failoverClientGone(c) {
+		reqLog.Info("openai.images.forward_aborted_client_disconnected_before_dispatch")
+		return
+	}
 	if err := markMediaBalanceHoldDispatched(h, mediaHold); err != nil {
 		reqLog.Warn("openai.images.mark_balance_dispatched_failed", zap.Error(err))
 		h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Image billing reservation is unavailable")
@@ -303,11 +315,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	forwardStart := time.Now()
 	writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 	result, err := func() (*service.OpenAIForwardResult, error) {
-		defer func() {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
-			}
-		}()
+		defer releaseAccountSlot()
 		return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
 	}()
 	forwardDurationMs := time.Since(forwardStart).Milliseconds()

@@ -3,6 +3,8 @@
 Independent points and check-in service for the Sub2API secondary deployment.
 The business contract is recorded in `PRODUCT_REQUIREMENTS_CN.md`; that file is
 the source of truth for future compatibility work.
+The current sanitized production handoff is recorded in
+`../docs/PRODUCTION_DEPLOYMENT_20260731_CN.md`.
 
 ## Scope
 
@@ -19,32 +21,33 @@ Only server-recorded successful usage is accepted. A browser or push endpoint
 is never a usage fact source. Production reads Sub2API `usage_logs` through the
 dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
-## Production Baseline (2026-07-30)
+## Production Baseline (2026-07-31)
 
 - Sub2API runs `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`, OCI revision
   `339422728b2ceb87b4a81bb08229d370c4ca589d`; the container is healthy with
   restart count zero.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.168-c0fe91506bca`, OCI revision
-  `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`, and is also healthy with restart
-  count zero. Its GHCR registry digest is
-  `sha256:8a9b7f51ce454450fc797aeeb7bfea008351cdba354327ae6cf40d3ddbdb4148`.
-  The production host imported the locally verified Docker archive because it
-  has no private-package registry login; the archive SHA256 is
-  `d8bed76bd257e4ecb3e72dddb5e26c11147274738a3e7e316e2015c85568ef7d`.
+  `ghcr.io/hxly520/sub2api-points:0.1.168-28e760bc8c6d`, OCI revision
+  `28e760bc8c6d66414595ef2af213d301a423acf2`, and is also healthy. Updating the
+  points container did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
-  `points` schema contains 19 tables and two points migrations. `points_app`
+  `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
 - Sub2API has 250 applied public migrations. Private migrations
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
-- Sub2API public setting `points_system_enabled` and policy version 1 both
-  remain disabled. The ordinary user menu is hidden, a user launch ticket is
-  rejected with `403 points_disabled`, and the administrator-only launch,
-  Chinese workspace, read-only policy check, CSRF logout, and post-logout 401
-  flow have been verified without changing any financial table.
+- Policy version 3 is enabled at `10.00 points/U`, refreshes at `00:05`, and
+  keeps check-in disabled. Historical job
+  `5174eef7-5f0a-4a17-b4f1-f50840940f64` succeeded with 29 point accounts, 316
+  daily snapshots, 311 point-ledger rows, no `needs_review` rows, and no
+  check-in or balance-grant rows. This production schema must not run another
+  history plan or apply.
+- The running Sub2API process still has `POINTS_SYSTEM_ENABLED=false`; its
+  root-owned ready file is prepared with `true`, but that value is not hot
+  loaded. The ordinary user menu remains hidden until the operator manually
+  switches the next Sub2API candidate. Administrator access remains available.
 
 ## Runtime Architecture
 
@@ -93,13 +96,14 @@ access log.
 | --- | --- | --- |
 | GET | `/launch?ticket=...&ui_mode=embedded` | Exchange a one-time Sub2API launch ticket; the optional mode selects the embedded presentation only |
 | GET | `/api/v1/me` | Account, check-in, snapshot, and CSRF state |
-| GET | `/api/v1/daily-points?days=7|30|90` | User-scoped chronological daily points and successful spend |
+| GET | `/api/v1/daily-points?days=7|30|90` | Complete prior natural-day window, zero-filled and chronological |
 | GET | `/api/v1/ledger` | Read-only point ledger |
 | POST | `/api/v1/checkins` | Check in; requires `Idempotency-Key` |
 | GET | `/api/v1/balance-grants` | Current user's balance reward delivery history |
 | GET | `/api/v1/admin/users/points` | Paginated per-user total and previous-day consumption points |
 | GET/POST | `/api/v1/admin/policies` | List or append policy versions |
 | GET | `/api/v1/admin/balance-grants` | Inspect check-in reward deliveries only |
+| GET | `/api/v1/admin/balance-grants/summary` | Full status counts for all check-in reward deliveries |
 | POST | `/api/v1/admin/balance-grants/{id}/retry` | Retry a failed check-in reward delivery |
 | POST | `/api/v1/admin/balance-grants/{id}/reverse` | Audit and reverse/cancel a check-in reward delivery |
 | GET | `/healthz` | Database-backed health check |
@@ -108,7 +112,7 @@ The built-in user and administrator workspaces are separate Chinese pages at
 `/app/` and `/admin/`, with separate scripts. Both require a session created by
 `/launch`; the domain root returns 404. A user session cannot fetch the admin
 page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
-total/yesterday points, successful yesterday spend, today's and settled
+total/yesterday points, today's and settled
 unreversed check-in credits, a 7/30/90-day points trend, and personal records;
 it contains no policy, manual grant, snapshot, retry, or reversal controls.
 User and administrator routes are role-exact in both directions. An
@@ -223,9 +227,10 @@ within that window create signed snapshot deltas;
 the snapshot, account totals, point ledger, revision, and refresh audit are
 committed atomically. A correction that would make an account total negative
 is retained as `needs_review` instead of committing an invalid total.
-An administrator-triggered historical refresh succeeds only if its audit event
-is serialized and written successfully. Audit failure makes the entire request
-fail; the API must not report an unaudited refresh as successful.
+Every operations-triggered reconciliation or history application succeeds only
+if its audit event is serialized and written successfully. Audit failure makes
+the entire operation fail. There is no browser endpoint or administrator UI
+control for refreshing snapshots.
 
 The one-time pre-launch history baseline is deliberately separate from this
 rolling reconciliation. It processes one completed natural day per transaction,
@@ -308,6 +313,12 @@ credit secret, launch TTL, and clock-skew tolerance. The read-only usage login
 must be reachable from the points container; no usage producer is deployed.
 
 ## Initial history baseline
+
+The current production `points` schema already completed this one-time workflow
+as job `5174eef7-5f0a-4a17-b4f1-f50840940f64`. Do not run `activate`, `plan`,
+`apply`, or `resume` against that schema during an image update. The commands
+below are retained only for a new empty schema or disaster-recovery validation
+whose existing job state has first been audited.
 
 Keep the Sub2API `points_system.enabled` bridge switch off for this entire
 workflow. Take and checksum a fresh database backup first, then deploy only the

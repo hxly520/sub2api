@@ -221,6 +221,7 @@ func TestOpenAIStreamingPassthroughClientDisconnectStillDrainsTerminalUsage(t *t
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	require.True(t, result.clientDisconnected)
 	require.Equal(t, firstOutput, recorder.Body.String())
 	require.Equal(t, []int{len(firstOutput)}, writer.flushBodyLengths)
 	require.Equal(t, 1, writer.failedWrites)

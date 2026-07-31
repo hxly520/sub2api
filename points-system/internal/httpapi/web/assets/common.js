@@ -51,6 +51,9 @@
     complete: "已完成",
     completed: "已完成",
     success: "成功",
+    empty: "无消费",
+    needs_review: "待复核",
+    disabled: "未启用",
     missing: "未生成",
     rejected: "未通过"
   };
@@ -123,7 +126,7 @@
 
   function statusClass(value) {
     if (["settled", "ready", "complete", "completed", "success"].includes(value)) return "success";
-    if (["pending", "processing", "reversal_pending", "reversal_processing"].includes(value)) return "warning";
+    if (["pending", "processing", "reversal_pending", "reversal_processing", "needs_review"].includes(value)) return "warning";
     if (["failed", "permanently_failed", "reversal_permanently_failed", "rejected"].includes(value)) return "danger";
     if (value === "reversed") return "neutral";
     return "neutral";

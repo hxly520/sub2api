@@ -5,9 +5,11 @@ package handler
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -18,6 +20,47 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+type openAIResponsesMissingTerminalUpstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+	body       string
+}
+
+func (u *openAIResponsesMissingTerminalUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	body := u.body
+	if body == "" {
+		body = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"X-Request-Id": []string{"rid-client-gone-missing-terminal"},
+		},
+		Body: io.NopCloser(bytes.NewBufferString(body)),
+	}, nil
+}
+
+func (u *openAIResponsesMissingTerminalUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
+type openAIResponsesFailingWriter struct {
+	gin.ResponseWriter
+	attempts int
+}
+
+func (w *openAIResponsesFailingWriter) Write(_ []byte) (int, error) {
+	w.attempts++
+	return 0, errors.New("client disconnected")
+}
 
 // openAIResponsesFailoverCancelUpstream 固定返回 HTTP 429，可在首次上游调用时
 // 触发回调（用于模拟“上游在途期间客户端断开”）。
@@ -197,4 +240,45 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+}
+
+func TestOpenAIGatewayHandlerResponses_ClientDisconnectMissingTerminalDoesNotAppendFallbackOrReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesMissingTerminalUpstream{}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	c, _ := newOpenAIResponsesFailoverTestContext(t, nil)
+	body := []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	writer := &openAIResponsesFailingWriter{ResponseWriter: c.Writer}
+	c.Writer = writer
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "a disconnected client must not start another upstream attempt")
+	require.Equal(t, 1, writer.attempts, "handler must not append a fallback event after the client write failed")
+}
+
+func TestOpenAIGatewayHandlerResponses_ClientDisconnectUpstreamFailureDoesNotReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesMissingTerminalUpstream{body: strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"partial"}`,
+		"",
+		`data: {"type":"response.failed","response":{"status":"failed","error":{"message":"upstream failed"},"usage":{"input_tokens":2,"output_tokens":1}}}`,
+		"",
+	}, "\n")}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	c, _ := newOpenAIResponsesFailoverTestContext(t, nil)
+	body := []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	writer := &openAIResponsesFailingWriter{ResponseWriter: c.Writer}
+	c.Writer = writer
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "a disconnected client must not replay a real upstream failure")
+	require.Equal(t, 1, writer.attempts, "handler must not append another event after the client write failed")
 }

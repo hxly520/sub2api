@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -145,4 +146,89 @@ func TestSettingHandler_GetPublicSettings_ExposesQQGroupURL(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
 	require.Equal(t, "https://qm.qq.com/cgi-bin/qm/qr?k=public", resp.Data.QQGroupURL)
+}
+
+func TestSettingHandler_GetPublicSettings_FiltersInvalidSiteLogo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("not an image")),
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+
+	h.GetPublicSettings(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Data struct {
+			SiteLogo string `json:"site_logo"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Empty(t, resp.Data.SiteLogo)
+}
+
+func TestSettingHandler_GetPublicLogo_ServesUploadedImage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	want := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	}
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString(want),
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/logo", nil)
+
+	h.GetPublicLogo(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "image/png", recorder.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=60, stale-while-revalidate=300", recorder.Header().Get("Cache-Control"))
+	require.Equal(t, "nosniff", recorder.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, want, recorder.Body.Bytes())
+}
+
+func TestSettingHandler_GetPublicLogo_FallsBackForMismatchedContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("not an image")),
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/logo", nil)
+
+	h.GetPublicLogo(c)
+
+	require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
+	require.Equal(t, "/logo.svg", recorder.Header().Get("Location"))
+}
+
+func TestSettingHandler_GetPublicLogo_FallsBackForUnsafeValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySiteLogo: "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte("<svg/>")),
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/logo", nil)
+
+	h.GetPublicLogo(c)
+
+	require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
+	require.Equal(t, "/logo.svg", recorder.Header().Get("Location"))
 }

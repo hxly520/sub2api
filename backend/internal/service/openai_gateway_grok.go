@@ -177,6 +177,8 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 
 	var usage *OpenAIUsage
 	var firstTokenMs *int
+	clientDisconnected := false
+	var streamErr error
 	responseID := ""
 	if reqStream {
 		if hasGrokResponsesClientToolMapping(clientToolMapping) {
@@ -187,11 +189,13 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
 		}
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
-		if err != nil {
+		if err != nil && (streamResult == nil || !streamResult.clientDisconnected) {
 			return nil, err
 		}
+		streamErr = err
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
+		clientDisconnected = streamResult.clientDisconnected
 		responseID = strings.TrimSpace(streamResult.responseID)
 	} else {
 		nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
@@ -207,18 +211,19 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	}
 	reasoningEffort := extractOpenAIReasoningEffortFromBody(patchedBody, originalModel)
 	return &OpenAIForwardResult{
-		RequestID:       firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
-		ResponseID:      responseID,
-		Usage:           *usage,
-		Model:           originalModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		Stream:          reqStream,
-		OpenAIWSMode:    false,
-		ResponseHeaders: resp.Header.Clone(),
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
-	}, nil
+		RequestID:        firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
+		ResponseID:       responseID,
+		Usage:            *usage,
+		Model:            originalModel,
+		UpstreamModel:    upstreamModel,
+		ReasoningEffort:  reasoningEffort,
+		Stream:           reqStream,
+		OpenAIWSMode:     false,
+		ResponseHeaders:  resp.Header.Clone(),
+		Duration:         time.Since(startTime),
+		FirstTokenMs:     firstTokenMs,
+		ClientDisconnect: clientDisconnected,
+	}, streamErr
 }
 
 func isGrokInvalidEncryptedContentResponse(statusCode int, body []byte) bool {

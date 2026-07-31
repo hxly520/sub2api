@@ -113,6 +113,27 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 	})
 }
 
+// GetPublicLogo exposes the uploaded site logo as an image so script-free
+// public pages can use the same branding as the authenticated application.
+// GET /api/v1/settings/logo
+func (h *SettingHandler) GetPublicLogo(c *gin.Context) {
+	settings, err := h.settingService.GetPublicSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	logo, parseErr := service.ParseSiteLogoDataURI(settings.SiteLogo)
+	if parseErr != nil || logo == nil {
+		c.Redirect(http.StatusTemporaryRedirect, "/logo.svg")
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, logo.MediaType, logo.Body)
+}
+
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.
 // GET /api/v1/settings/email-unsubscribe?token=...
 func (h *SettingHandler) UnsubscribeNotificationEmail(c *gin.Context) {

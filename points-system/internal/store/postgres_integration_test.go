@@ -430,6 +430,15 @@ func TestPostgresAccountCountsOnlySettledUnreversedCheckinRewards(t *testing.T) 
 	if account.SettledCheckinRewardMicroUSD != 100_000 {
 		t.Fatalf("settled check-in rewards = %d, want 100000", account.SettledCheckinRewardMicroUSD)
 	}
+	summary, err := fixture.store.SummarizeCheckinBalanceGrants(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for status, expected := range map[string]int64{"settled": 1, "pending": 1, "reversed": 1} {
+		if summary[status] != expected {
+			t.Fatalf("check-in grant summary[%q] = %d, want %d", status, summary[status], expected)
+		}
+	}
 }
 
 func TestPostgresSnapshotNotReadyDoesNotConsumeCheckinIdempotency(t *testing.T) {
@@ -681,9 +690,15 @@ func TestPostgresDailyPointsAreUserScopedAndChronological(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 || items[0].AwardedPointsHundredths != 100 ||
-		items[1].AwardedPointsHundredths != 200 || !items[0].BusinessDate.Before(items[1].BusinessDate) {
+	if len(items) != 30 || items[28].AwardedPointsHundredths != 100 ||
+		items[29].AwardedPointsHundredths != 200 || !items[0].BusinessDate.Before(items[29].BusinessDate) {
 		t.Fatalf("unexpected user-scoped daily points: %+v", items)
+	}
+	for index := 0; index < 28; index++ {
+		if items[index].ActualCostMicroUSD != 0 || items[index].AwardedPointsHundredths != 0 ||
+			items[index].Status != "empty" {
+			t.Fatalf("daily points gap %d was not zero-filled: %+v", index, items[index])
+		}
 	}
 }
 

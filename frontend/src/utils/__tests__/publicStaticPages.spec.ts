@@ -72,10 +72,16 @@ describe('public landing page entry contract', () => {
     }
   })
 
-  it('keeps search indexing disabled and requires no external assets', () => {
+  it('keeps search indexing disabled and uses only the same-origin uploaded logo', () => {
     const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]')
     expect(robots?.content).toBe('noindex, nofollow, noarchive')
-    expect(document.querySelector('link[rel="stylesheet"], img, video, audio')).toBeNull()
+    expect(document.querySelector('link[rel="stylesheet"], video, audio')).toBeNull()
+
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'))
+    expect(images).toHaveLength(3)
+    expect(images.every((image) => image.getAttribute('src') === '/api/v1/settings/logo')).toBe(
+      true,
+    )
   })
 })
 

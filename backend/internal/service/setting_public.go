@@ -302,6 +302,10 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	if loginAgreementUpdatedAt == "" {
 		loginAgreementUpdatedAt = defaultLoginAgreementDate
 	}
+	siteLogo := ""
+	if parsedSiteLogo, parseErr := ParseSiteLogoDataURI(settings[SettingKeySiteLogo]); parseErr == nil && parsedSiteLogo != nil {
+		siteLogo = parsedSiteLogo.DataURI
+	}
 
 	var balanceLowNotifyThreshold float64
 	if v, err := strconv.ParseFloat(settings[SettingKeyBalanceLowNotifyThreshold], 64); err == nil && v >= 0 {
@@ -326,7 +330,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
 		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
 		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
+		SiteLogo:                         siteLogo,
 		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "API Service Management Console"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],

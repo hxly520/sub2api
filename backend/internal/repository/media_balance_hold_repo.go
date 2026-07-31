@@ -37,10 +37,10 @@ func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *s
 	var holdID int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO media_balance_holds (request_id, api_key_id, user_id, request_fingerprint, hold_amount, status, expires_at)
-		VALUES ($1, $2, $3, $4, $5, 'reserved', NOW() + INTERVAL '24 hours')
+		VALUES ($1, $2, $3, $4, $5, 'reserved', NOW() + ($6 * INTERVAL '1 second'))
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id
-	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount).Scan(&holdID)
+	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount, cmd.ExpirySeconds()).Scan(&holdID)
 	if errors.Is(err, sql.ErrNoRows) {
 		var existingUserID int64
 		var fingerprint, status string
@@ -109,12 +109,12 @@ func (r *usageBillingRepository) MarkMediaBalanceDispatched(ctx context.Context,
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE media_balance_holds
 		SET status = 'dispatched',
-			expires_at = GREATEST(expires_at, NOW() + INTERVAL '24 hours'),
+			expires_at = GREATEST(expires_at, NOW() + ($6 * INTERVAL '1 second')),
 			updated_at = NOW()
 		WHERE request_id = $1 AND api_key_id = $2 AND user_id = $3
 			AND request_fingerprint = $4 AND hold_amount = $5
 			AND status IN ('reserved', 'dispatched')
-	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount)
+	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount, cmd.ExpirySeconds())
 	if err != nil {
 		return nil, err
 	}
@@ -183,11 +183,11 @@ func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context,
 		UPDATE media_balance_holds
 		SET status = 'capture_pending',
 			capture_amount = $2,
-			expires_at = GREATEST(expires_at, NOW() + INTERVAL '24 hours'),
+			expires_at = GREATEST(expires_at, NOW() + ($4 * INTERVAL '1 second')),
 			updated_at = NOW()
 		WHERE request_id = $1 AND api_key_id = $3
 		  AND status IN ('reserved', 'dispatched', 'capture_pending')
-	`, cmd.RequestID, actualCost, cmd.APIKeyID)
+	`, cmd.RequestID, actualCost, cmd.APIKeyID, cmd.ExpirySeconds())
 	if err != nil {
 		return nil, err
 	}

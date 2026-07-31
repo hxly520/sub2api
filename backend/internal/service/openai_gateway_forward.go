@@ -961,16 +961,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Handle normal response
 		var usage *OpenAIUsage
 		var firstTokenMs *int
+		clientDisconnected := false
+		var streamErr error
 		responseID := ""
 		imageCount := 0
 		var imageOutputSizes []string
 		if reqStream {
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
-			if err != nil {
+			if err != nil && (streamResult == nil || !streamResult.clientDisconnected) {
 				return nil, err
 			}
+			streamErr = err
 			usage = streamResult.usage
 			firstTokenMs = streamResult.firstTokenMs
+			clientDisconnected = streamResult.clientDisconnected
 			responseID = strings.TrimSpace(streamResult.responseID)
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes
@@ -984,11 +988,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			imageCount = nonStreamResult.imageCount
 			imageOutputSizes = nonStreamResult.imageOutputSizes
 		}
-		s.bindHTTPResponseAccount(ctx, c, account, responseID)
+		if streamErr == nil {
+			s.bindHTTPResponseAccount(ctx, c, account, responseID)
+		}
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
 		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
-		if account.Type == AccountTypeOAuth && !account.IsShadow() {
+		if streamErr == nil && account.Type == AccountTypeOAuth && !account.IsShadow() {
 			if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 				s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 			}
@@ -999,18 +1005,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 
 		forwardResult := &OpenAIForwardResult{
-			RequestID:       resp.Header.Get("x-request-id"),
-			ResponseID:      responseID,
-			Usage:           *usage,
-			Model:           originalModel,
-			BillingModel:    billingModel,
-			UpstreamModel:   upstreamModel,
-			ServiceTier:     serviceTier,
-			ReasoningEffort: reasoningEffort,
-			Stream:          reqStream,
-			OpenAIWSMode:    false,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
+			RequestID:        resp.Header.Get("x-request-id"),
+			ResponseID:       responseID,
+			Usage:            *usage,
+			Model:            originalModel,
+			BillingModel:     billingModel,
+			UpstreamModel:    upstreamModel,
+			ServiceTier:      serviceTier,
+			ReasoningEffort:  reasoningEffort,
+			Stream:           reqStream,
+			OpenAIWSMode:     false,
+			Duration:         time.Since(startTime),
+			FirstTokenMs:     firstTokenMs,
+			ClientDisconnect: clientDisconnected,
 		}
 		if imageCount > 0 {
 			forwardResult.ImageCount = imageCount
@@ -1019,7 +1026,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			forwardResult.ImageOutputSizes = imageOutputSizes
 			forwardResult.BillingModel = imageBillingModel
 		}
-		return forwardResult, nil
+		return forwardResult, streamErr
 	}
 }
 

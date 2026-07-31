@@ -2,13 +2,14 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-`2026-07-30` 本机构建镜像、服务器导入、Sub2API 手工切换、积分同库部署和公网边界的实际结果见 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md)。后续排障必须以本文件的当前运行基线为准，不得把部署前快照当成现状。
+当前生产事实见 [2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md)。[2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留首次部署证据；后续排障不得把其中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库代码基线：官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）与其后的私有兼容提交；关键功能提交为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b` 和公开首页 `7e598fbb`，发布文档与部署加固继续位于这些提交之后；`backend/cmd/server/VERSION=0.1.168`。
+- 当前仓库代码基线：官方 Sub2API Release `v0.1.168`（commit `99c8e4bf7564823bafbab369acab6539e734c1bb`）与其后的私有兼容提交；关键功能提交为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8` 和嵌入式积分大屏 `874255bcd`；`backend/cmd/server/VERSION=0.1.168`。
 - 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，运行态 healthy、restart count `0`。后续 Sub2API 镜像仍须先构建上传，再由维护者手工切换，自动化不得替换运行中的 Sub2API。
+- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.168-28e760bc8c6d`，OCI revision `28e760bc8c6d66414595ef2af213d301a423acf2`，运行态 healthy。积分镜像可在备份 `points` schema 后独立更新，但必须保证 Sub2API 容器 ID、启动时间和镜像引用不变。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
@@ -45,7 +46,7 @@
 - 审计记录为 `audit_logs.id=3339`，request ID `hold-reconcile-20260729`。操作前回滚快照位于 `/home/api/sub2api-deploy/backups/media-hold-reconcile-before-20260729-195009.jsonl`，SHA256 为 `57770ff7ca39ba929a66efd8dce7c180babf887768dc0d39852055dd3b327fdd`。
 - 私有提交 `9f1b6bae` 增加明确失败即时退款、未知终态保留冻结、成功费用按报价封顶及全站到期冻结后台核销；该功能已包含在当前生产 `v0.1.168-339422728b2c` 基线中，升级后仍须持续检查后台核销审计和异常冻结聚合。
 
-### 2.2 2026-07-30 当前运行基线
+### 2.2 2026-07-30 历史运行基线
 
 - Sub2API：`ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，image ID `sha256:a8abdd92bb9f59082d9bbecbdf4812b8f1a441aed4f189bc674104f07074625b`；容器 healthy，restart count `0`。
 - 积分服务：`ghcr.io/hxly520/sub2api-points:0.1.168-c0fe91506bca`，OCI revision `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`，image ID `sha256:a6a899da83a5e82eccb9bd8c2473b72c274d32d6c78e8d50774654f21dfd166b`；容器 healthy，restart count `0`。registry digest 为 `sha256:8a9b7f51ce454450fc797aeeb7bfea008351cdba354327ae6cf40d3ddbdb4148`；服务器通过 SHA256 为 `d8bed76bd257e4ecb3e72dddb5e26c11147274738a3e7e316e2015c85568ef7d` 的本机构建归档执行 `docker load`，没有在生产机编译或构建。
@@ -54,6 +55,22 @@
 - 首次积分部署前备份位于 `/home/api/sub2api-deploy/backups/sub2api-before-points-20260730-033634.dump`，SHA256 为 `b48e6a8d8bcb2d50f12e301da16ece87174f94edf535702aa12e575cbed3c293`。积分服务的启动、建 schema 和 Nginx 平滑 reload 均未停止 Sub2API 业务。
 - Sub2API 加固镜像已由维护者切换上线；积分中文双工作区镜像也已独立切换，过程中 Sub2API 容器 ID、启动时间和镜像引用完全未变。积分切换前备份位于 `/home/api/sub2api-deploy/backups/points-ui-c0fe91506bca-20260730-190702/`，其中 `points-schema.dump` SHA256 为 `b9b0e477267b6710a8a3df8cb311f5f5707c9f1779cf265a47623e2ce98b53dd`。
 - exact-root 公开首页由 Nginx 读取宿主 `/home/api/sub2api-deploy/public/index.html`，不属于 Sub2API 镜像层。`2026-07-30 16:19 CST` 已原子更新为仓库新版，宿主与 Nginx 响应 SHA256 均为 `86eb43d94050780fd9dc81da6e189c469f709bffa11c63eed195cdc065d229e5`；旧文件备份为同目录 `index.html.bak-20260730081909`，未重启 Nginx 或 Sub2API。
+
+### 2.3 2026-07-31 当前运行基线
+
+- Sub2API 容器仍为 `bfd162bb...`，镜像与 OCI revision 仍为 `0.1.168-339422728b2c` / `339422728b2ceb87b4a81bb08229d370c4ca589d`，healthy；本轮积分迁移、回算和测试 schema 清理均未替换或重启它。
+- 积分容器为 `7b745c53...`，运行 `0.1.168-28e760bc8c6d` / `28e760bc8c6d66414595ef2af213d301a423acf2`，healthy。当前 `points` schema 共 21 张表、3 条迁移。
+- policy v3 已启用，比例 `10.00:1`，刷新 `00:05`，签到关闭。全历史作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已成功；共有 29 个积分账户、316 条每日快照、311 条积分账本，`needs_review=0`，签到与余额发放记录均为 0。用户 ID 1 的核对值为总积分 `7514.94`、昨日积分 `938.07`。
+- 上述历史作业是当前 schema 的一次性基线，后续积分镜像更新不得重新执行 `activate`、`plan`、`apply` 或 `resume`。日常积分只由 `00:05` 调度和滚动差量对账维护。
+- 运行中的 Sub2API 加载文件仍为 `POINTS_SYSTEM_ENABLED=false`；`bridge-secrets.ready.env` 已准备为 `true`，但不会热加载。普通用户入口要等维护者手工切换下一 Sub2API 候选后才开放；签到仍由 policy 独立保持关闭。
+- 4 个遗留 `points_shared_*` 测试 schema 已清理。清理前备份位于 `/home/api/sub2api-deploy/backups/points-test-schema-cleanup-20260731-090001`，dump SHA256 为 `ecfc41fb6d3fbd332b3b0b86f9f8707257a81d4c266d9c6a7d6290c9ce661c29`，catalog 659 行；清理后测试 schema 为 0，正式 `points` 计数未变化。
+
+### 2.4 2026-07-31 同步生图冻结核销与参数验证
+
+- 发现 10 条超过 30 分钟、无成功 usage/任务证据的同步图片 `dispatched` 冻结，共 `1.02 U`；用户 1 为 `0.20 U`，用户 160 为 `0.82 U`。root-only 操作前备份位于 `/home/api/sub2api-deploy/backups/media-hold-no-output-refund-20260731-092046`，custom dump SHA256 为 `77c60a5611000d4c3ae945f0ce71f85e99005393e1416a843a1ae5c98a9706b7`。
+- 固定 ID、总额、用户数和成功证据断言均通过后，在单一事务中把 10 条全部退款并标为 `released`；审计为 `audit_logs.id=3814`、request ID `hold-refund-no-output-20260731`。完成后 active hold、active 金额和非零冻结用户均为 0，Sub2API 未重启或替换。
+- 使用工作台精确自动质量参数的主分组请求在 99 秒后成功生成 1 图，hold `408` 已 `captured` `0.10 U`，usage `219522` 只记一次；生成后 active hold 和非零冻结用户仍为 0。参考图 SHA256 为 `bc8a8bcabcbdc33429d035e9be90d61bef539fbc03811b8bc53f575a93f5b6c6`。
+- 后续候选把同步 `/v1/images/generations` 未知终态冻结窗口从通用 24 小时缩短为 30 分钟；明确失败仍即时退款，异步图片/视频仍使用 24 小时。当前运行镜像要到维护者手工切换候选后才具备 30 分钟规则。
 
 ## 3. 域名和进程边界
 
@@ -90,7 +107,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 仓库内 `/batch-image` 是Sub2API自带批量生图页，与15731画布工作台不是同一产品。
 - 积分服务已使用 `127.0.0.1:8090`，复用现有 `sub2api` 数据库的独立 `points` schema 和最小权限角色，由 Nginx 精确反代；没有新建 PostgreSQL 容器。Sub2API 菜单必须先生成一次性签名启动票据。积分域名根路径不能作为公开首页，未持有积分会话时 `/app/` 和 `/admin/` 均拒绝访问。
 - 系统设置内的“积分系统”标签和管理员路由 `/admin/settings/points` 不受 `points_system.enabled` 影响，必须始终对已认证管理员可见，用于查看桥接状态并经 step-up 启动积分策略台；普通用户菜单和 `/points` 必须继续受 enabled 开关控制。管理员状态接口只能返回 enabled/configured/active、URL、Key ID、TTL 等非敏感元数据，严禁回传 launch/credit 密钥原值。
-- 仓库后续候选把用户与管理员积分工作区嵌入上述两个 Sub2API 内置入口的右侧内容区，不再把积分域名作为自定义菜单，也不再整页跳离 Sub2API。父页面继续展示 Sub2API 左侧导航、Header 和上传 Logo；积分内页只保留业务内容及管理员横向子导航。当前生产镜像仍以 2.2 节记录的 revision 为准，在新候选实际切换前不得把本条当成已上线状态。
+- 仓库后续候选把用户与管理员积分工作区嵌入上述两个 Sub2API 内置入口的右侧内容区，不再把积分域名作为自定义菜单，也不再整页跳离 Sub2API。父页面继续展示 Sub2API 左侧导航、Header 和上传 Logo；积分内页只保留业务内容及管理员横向子导航。当前生产镜像仍以 2.3 节记录的 revision 为准，在新候选实际切换前不得把本条当成已上线状态。
 - Nginx 仅对含一次性 ticket 的 `/launch` 关闭 access log，防止查询串落盘；`/app/`、`/admin/`、静态资源、API 以及所有拒绝、越权和限流请求都必须保留访问日志。`api.52token.org` 对 `/api/internal/points/credits` 的公网 `POST/OPTIONS` 精确返回 `404`，积分容器只通过 Docker 网络直连该接口。
 
 ## 4. 四种图片模式
@@ -110,7 +127,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 历史私有提交 `08fbef836` 的 239 个 SQL 文件与当时数据库 checksum 全部一致，无缺失、无不匹配；数据库另保留4个历史迁移记录：`020_widen_accounts_type.sql`、`021_add_accounts_strip_reasoning_effort.sql`、`159_openai_first_response_settings.sql`、`160_media_generation_tasks.sql`。
 - 私有迁移 `173_media_generation_tasks.sql` 至 `179_media_balance_hold_dispatch_state.sql` 已进入生产，禁止改名、删除或修改内容。
 - 私有迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 已进入生产并提供全站到期冻结扫描索引；继续按 `_notx` 语义执行，禁止修改 checksum。
-- 私有迁移 `193_points_balance_credit_ledger.sql` 已进入生产，为积分服务向 Sub2API 幂等发放余额。积分服务自己的 2 条迁移位于同一数据库的独立 `points` schema，共创建 19 张表，并记录在 `points_schema_migrations`；不得写入或混入 Sub2API `public.schema_migrations`。
+- 私有迁移 `193_points_balance_credit_ledger.sql` 已进入生产，为积分服务向 Sub2API 幂等发放余额。积分服务自己的 3 条迁移位于同一数据库的独立 `points` schema，共创建 21 张表，并记录在 `points_schema_migrations`；不得写入或混入 Sub2API `public.schema_migrations`。第三条迁移保存一次性历史作业及逐日游标，当前生产作业已成功且不得重跑。
 - PostgreSQL实际 `max_connections=100`；当前应用连接池配置为 `max_open=256`、`max_idle=128`，存在连接上限不匹配。
 - 升级前必须备份数据库并记录备份校验、恢复命令和保存位置。积分首次部署备份及 SHA256 已记录在 2.2 节；这不替代后续版本升级的独立新备份，也不代表已建立定时备份或完成隔离恢复演练。
 
@@ -146,6 +163,8 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 当前积分 Nginx 只对 `/launch` 关闭 access log；其他路径必须保留日志。内部 credit 公网拒绝、应用 fail-close 限流和积分容器日志应按同一时间窗关联，但不得记录 HMAC、ticket、cookie 或密钥原值。
 - 排障时应按同一时间窗关联Nginx 499/502/504/524、Sub2API request ID、账号/代理脱敏标识和上游终态；不得把原始prompt、认证头或媒体URL写入工单。
 - `2026-07-30` 只读检查了当前容器 stdout、最近 7 天持久化轮转日志及 29,610 条 `ops_error_logs`，均未捕获 `Selected model is at capacity. Please try a different model.`，因此生产证据不能确认该错误对应的 HTTP 状态码、上游错误码或固定响应结构。兼容逻辑不得猜测状态码，只按精确消息识别 HTTP JSON、HTTP 200 `response.failed` 和 SSE `error`；先换其他账号，无其他候选时允许在同一账号使用剩余预算，总计最多两次重放，并且不得给账号降权、冷却或 runtime block。结构化重试日志应核对 `failure_reason=openai_model_at_capacity`、`retry_attempt`、`retry_max`、`backoff_ms`、账号和路由，不得记录请求正文。
+- `2026-07-31` 对用户 1 的中断窗口做了只读关联：当日 26 条 Nginx `502` 均能关联真实上游 `502/503`；5 条 `499` 表示客户端先关闭连接，其中 4 条同时出现上游 `524`，另 1 条上游首响应等待约 `125.766s` 后由客户端取消。Nginx API 代理超时为 `1800s`，相关请求仅数秒至约 125 秒，Nginx error log 没有对应 proxy timeout，故不能归因 Nginx 主动截断。10:47 附近另有客户端断开后上游仍完成并落账的样本，此类优先检查 Codex Desktop、本地网络或任务取消。
+- Responses 流一旦已经发送响应头，后续失败的 HTTP 状态仍会保留 `200`；客户端已断开时也没有通道再收到错误事件。因此排障不能把 `200` 或“没有错误码”直接当成上游成功。应检查是否收到 `response.completed/done/failed/incomplete/cancelled` 正式终态、是否只有 `[DONE]`、usage/output token 是否异常为零，以及 `openai.responses_client_disconnected` 的 `request_id`、`client_request_id`、`user_id`、`api_key_id`、`group_id`、`account_id`、`model`、`upstream_request_id` 和 `stage`。旧版本对“仅 `[DONE]`”会错误成功并静默 EOF；候选版本已改为缺终态时安全换号或向仍连接的客户端补 `response.failed`。
 
 ## 8. 只读盘点清单
 
@@ -169,12 +188,12 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
 3. 解决协议、调度、四种图片模式、媒体计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 中的完整门禁。
 4. 通过 CI 或受控本机构建环境构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和 commit；发布摘要必须记录 manifest digest、image ID 和传输归档 SHA256。
-5. 上传/拉取新镜像但不立即替换运行容器；先记录旧镜像和数据库备份点。
+5. Sub2API 新镜像只上传、导入或缓存，不立即替换运行容器；积分镜像可在 `points` schema 备份和旧镜像记录完成后独立更新。
 6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额。
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` GitHub Actions 因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；最终改由受控本机生成标准 Docker archive，服务器只执行 `docker load`。Sub2API 后续由维护者切换为 `v0.1.168-339422728b2c`；积分服务独立切换为 `v0.1.168-c0fe91506bca`。两者当前均 healthy、restart count `0`，且积分切换没有重建 Sub2API。积分当前 GHCR registry digest 与本地 archive SHA256 已分别记录，禁止互相冒充。精确镜像、归档、容器、数据库和 Nginx 状态以本章开头链接的生产记录及 2.2 节为准。
+`2026-07-30` GitHub Actions 因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；当日改由受控本机生成标准 Docker archive，服务器只执行 `docker load`。Sub2API 后续由维护者切换为 `v0.1.168-339422728b2c`；积分服务在 `2026-07-31` 独立更新为 `v0.1.168-28e760bc8c6d`。两者当前均 healthy，且积分更新没有重建 Sub2API。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充。当前精确状态以本章开头链接的 `2026-07-31` 记录及 2.3 节为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
@@ -188,23 +207,24 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ### 9.2 独立积分系统发布与安全边界
 
-积分系统已经完成镜像导入、同库隔离、Nginx 接入和中文双工作区发布；Sub2API 当前为 `v0.1.168-339422728b2c`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
+积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细和一次性历史回算；积分当前为 `v0.1.168-28e760bc8c6d`，Sub2API 当前为 `v0.1.168-339422728b2c`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
 
 1. 优先由 GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。CI runner 受计费门禁时可使用受控本机构建和标准 archive，但仍须把镜像推送 GHCR 并分别记录 registry digest、archive SHA256 和服务器加载后的 image ID。
+   第 2-4 步只适用于空白新环境或经审计的灾难恢复。当前生产角色、schema 和密钥均已存在，普通积分镜像更新不得重跑 bootstrap 或重新生成密钥。
 2. 先对现有 `sub2api` 数据库执行一致性备份并记录 SHA256/恢复命令；由 PostgreSQL bootstrap superuser 使用全新的角色名，在同一数据库创建独立 `points` schema 和 `points_app` 最小权限角色，写池默认最多 8 条连接。角色或 schema 已存在时脚本必须停止并转人工 ACL 审计，不得覆盖。不得创建第二个 PostgreSQL 容器。
 3. 由同一 bootstrap superuser 为 `POINTS_USAGE_DATABASE_URL` 创建全新的只读账号，只授予 Sub2API `usage_logs` 所需列的 `SELECT`，并强制只读事务和最多 4 条连接；不得复用 Sub2API 写账号或自动修改共享 PUBLIC ACL。
 4. 生成独立 Base64 32 字节以上的 session、launch、credit 和内部集成密钥。生产 `points.env`、bridge env 和 psql 变量文件必须为 `root:root 0600`；Sub2API 与积分服务只共享对应公约中的同一解码后字节。状态或配置 API 只能返回是否已配置、Key ID 等非敏感元数据，不得回传密钥原值；文档、Compose、shell history 和日志也不能出现真实值。
 5. 运行积分迁移和只读消费查询自检后启动积分容器，再启用 Nginx 精确反代。可信代理 CIDR 必须与实际容器/loopback 网络一致；根路径返回 404。只有 `/launch` 关闭 access log，其余路径必须保留访问证据；此阶段不得修改、替换或重启现有 Sub2API 容器。
-6. 当前生产 Sub2API `v0.1.168-339422728b2c` 已具备管理员 disabled 入口和余额桥接加固。`points_system.enabled` 关闭时，管理员设置导航 `/admin/settings/points` 仍必须可见并允许检查桥接状态、经 step-up 进入策略台；普通用户菜单和 `/points` 必须隐藏，积分服务自身也必须按 disabled policy 拒绝用户 ticket、页面、资源和 API。只有完整验证后才能同时开启两层普通用户入口。
+6. 当前生产 Sub2API `v0.1.168-339422728b2c` 已具备管理员 disabled 入口和余额桥接加固。运行进程仍加载 `points_system.enabled=false`，管理员设置导航 `/admin/settings/points` 必须可见并允许检查桥接状态、经 step-up 进入策略台；普通用户菜单和 `/points` 暂时隐藏。policy v3 已启用并通过历史门禁，后续维护者手工切换 Sub2API 候选加载 ready 配置后才开放普通用户入口。
    新嵌入候选切换前必须先在 root-only `points.env` 增加 `POINTS_EMBED_PARENT_ORIGIN=https://实际Sub2API域名`（精确 Origin、无路径和尾斜杠），并确认 Sub2API CSP `frame-src` 已包含积分 Origin、积分响应 `frame-ancestors` 只包含该父 Origin、没有冲突的 `X-Frame-Options`。缺少任一项时禁止切换。
-7. 验证用户/管理员角色隔离、票据一次性、CSRF、昨日消费快照、两位小数比例、最低昨日消费门槛、并发签到、三层金额上限和余额交易幂等后再打开 enabled。初始与当前业务策略保持 disabled，配置动作不得隐式开放签到。
-8. 首个业务策略默认关闭签到并最早次日生效。管理员明确保存积分比例、刷新分钟、签到模式、最低消费、阶梯和所有金额安全上限后，才允许用户签到。
+7. 验证用户/管理员角色隔离、票据一次性、CSRF、昨日消费快照、两位小数比例、最低昨日消费门槛、并发签到、三层金额上限和余额交易幂等后再开放用户 bridge。policy enabled 不等于签到 enabled，任何配置或镜像切换都不得隐式开启签到。
+8. 当前 policy v3 固定为比例 `10.00:1`、刷新 `00:05`、签到关闭。以后启用签到必须追加最早次日生效的新策略，并由管理员明确保存签到模式、最低消费、阶梯和所有金额安全上限。
 9. 余额发放超时后只重试同一交易 UUID；未知 credit 结果禁止直接冲正，必须确认 settled 后再发起关联 debit。确定性 4xx 进入永久失败终态，由管理员检查审计后显式重试；禁止删除幂等账本后重新发放。
 10. Sub2API 余额缓存必须使用 Redis 用户代次保护数据库回源：失效和扣减原子推进代次，旧读取只能在代次未变化时回填。credit 已在数据库提交但余额缓存同步失败时必须返回可重试 `503`，积分发件箱继续使用原 UUID，禁止把该交易提前标为 settled。
 11. `/api/internal/points/credits` 必须在应用层使用 Redis fail-close 限流，默认每分钟 120 次；限流存储异常时拒绝请求。公网 Nginx 对该精确路径的 `POST/OPTIONS` 返回 `404`，不能依赖 HMAC 作为唯一网络边界。
-12. 管理员手工刷新历史快照时，刷新结果与管理员审计是同一成功条件；审计序列化或写入失败必须让请求失败，禁止返回“刷新成功”后留下无审计变更。
+12. 积分系统不提供手工余额赠送或手工快照刷新 API/页面。管理员用户明细是只读聚合；发放任务只查询和操作 `checkin` 类型记录。历史基线只能在空白新 schema 首次激活时由专用运维命令执行，当前生产成功作业不得重跑。
 13. 回滚入口时先关闭 Sub2API points 开关，不删除 `points` schema、快照、签到、事务发件箱或 Sub2API `points_balance_credits`。积分容器可独立停止，不能为此停止或回滚 Sub2API。
-14. 同一发布记录必须包含 Sub2API/积分/工作台提交与镜像 tag/digest、数据库备份、两张迁移表、Nginx 配置版本和 Cloudflare Worker 版本。
+14. 同一发布记录必须包含 Sub2API/积分/工作台提交与镜像 tag/digest、数据库备份、Sub2API 与积分迁移表、Nginx 配置版本和 Cloudflare Worker 版本。
 
 首次发布的命令记录必须能按以下模板复现，实际执行时把占位符替换为只读盘点结果。数据库密码通过权限为 `0600` 的 psql 变量文件拼接到标准输入，不能出现在命令参数、Git 或 shell history；积分运行环境文件同样必须为 `0600`：
 
@@ -238,7 +258,17 @@ test "$healthy" = true
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:POINTS_HOST_PORT/)" = 404
 ```
 
-首启环境固定 `POINTS_USAGE_RECONCILE_DAYS=1`。自动调度在策略未启用时不访问 `usage_logs`，只幂等写入零值成功就绪标记；仍须在启动前只读记录昨日行数、表/索引大小、活动连接、长事务、磁盘余量，并在低峰审阅聚合查询 `EXPLAIN`。只有确认资源余量后才可把回算窗口恢复为默认 7 天。`pg_restore --list` 只证明归档目录可读，不等于可恢复性验证；完整 `pg_restore --clean --if-exists --create` 必须在服务器外或隔离演练实例执行，禁止直接在生产库试恢复。
+新环境首启固定 `POINTS_USAGE_RECONCILE_DAYS=1`。自动调度在策略未启用时不访问 `usage_logs`，只幂等写入零值成功就绪标记；仍须在启动前只读记录昨日行数、表/索引大小、活动连接、长事务、磁盘余量，并在低峰审阅聚合查询 `EXPLAIN`。只有确认资源余量后才可把回算窗口恢复为默认 7 天。当前生产已完成历史基线，普通镜像更新只运行嵌入迁移和日常调度，禁止重跑历史命令。`pg_restore --list` 只证明归档目录可读，不等于可恢复性验证；完整 `pg_restore --clean --if-exists --create` 必须在服务器外或隔离演练实例执行，禁止直接在生产库试恢复。
+
+### 9.3 exact-root 公开首页发布
+
+未登录 Vue `/home` 随 Sub2API 候选镜像发布，但域名根路径 `/` 与 `/index.html` 由宿主 `/home/api/sub2api-deploy/public/index.html` 提供，二者必须分别处理：
+
+1. 先运行前端静态页面契约测试，确认页面无脚本、无表单、无外域资源，且不出现具体国外模型或商业中转宣传名称。
+2. 记录仓库 `deploy/public-landing/index.html` 的 SHA256，在宿主同目录备份当前文件。
+3. 以同目录临时文件写入并执行原子 rename，保留原属主和权限；不 reload Nginx，不重启 Sub2API。
+4. 分别核对仓库文件、宿主文件、`https://52token.org/` 与 `/index.html` 响应体 SHA256。任一不一致立即恢复备份。
+5. 新页面通过同源 `GET /api/v1/settings/logo` 使用后台上传 Logo；该接口只在后续 Sub2API 候选手工切换后可用，切换前静态页必须能回退 `/logo.svg`。
 
 ## 10. 回滚边界
 

@@ -2,6 +2,8 @@
 
 本文记录 `2026-07-30 CST` 的实际部署事实，用于后续排障、官方版本兼容合并和人工切换。文档不保存密码、数据库连接串、HMAC secret、会话密钥或证书私钥。
 
+> 本文是历史记录。`2026-07-31` 的积分历史回算、当前积分镜像和下一候选边界见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，不得再把本页的 `c0fe91506bca`、disabled policy 或 19 表/2 迁移当作当前生产状态。
+
 ## 1. 代码与构建边界
 
 - 私有候选提交：`2ad2815e075aadf0553be9913518af35d8b0c7b3`。
@@ -54,7 +56,7 @@ Sub2API 候选的 `-version` 输出为 `0.1.168`、完整 revision `339422728...
 
 ### 2.2 中文双工作区与关闭态二次校验发布
 
-仓库 `main` 于 `2026-07-30` 更新到 `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`。积分用户端与管理员端改为独立中文 HTML/JS：用户端只显示总积分、昨日积分、昨日消费、今日/累计签到赠送、7/30/90 日曲线和个人记录；管理员端提供策略、手工赠送、快照与任务管理。普通用户不能下载管理员脚本或调用管理员 API。积分服务还在用户 ticket、页面、静态资源和 API 四层校验当前生效 policy，disabled 状态下旧会话和手工 URL 也不能开放用户功能。
+仓库 `main` 于 `2026-07-30` 更新到 `c0fe91506bca60dfcc96b6d868b48b30d2ca86f0`。积分用户端与管理员端改为独立中文 HTML/JS：用户端只显示总积分、昨日积分、昨日消费、今日/累计签到赠送、7/30/90 日曲线和个人记录；管理员端当日仍有后来退役的手工赠送和快照入口。`2026-07-31` 的 `28e760bc8` 已删除这两个入口，当前管理员端只保留策略、全站用户积分明细和签到发放任务，不能按本段恢复旧控件。普通用户不能下载管理员脚本或调用管理员 API。积分服务还在用户 ticket、页面、静态资源和 API 四层校验当前生效 policy，disabled 状态下旧会话和手工 URL 也不能开放用户功能。
 
 | 制品 | 不可变 tag | registry digest | image ID | archive SHA256 | bytes |
 | --- | --- | --- | --- | --- | ---: |
@@ -119,11 +121,11 @@ Sub2API 候选的 `-version` 输出为 `0.1.168`、完整 revision `339422728...
 - 首轮加固前配置保存在 `/home/api/sub2api-deploy/backups/nginx-points-hardening-20260730-080737/`，HTTP 日志收窄前配置保存在 `/home/api/sub2api-deploy/backups/nginx-points-http-log-20260730-090234/`。两次 `nginx -t` 和平滑 reload 均成功；最终 Nginx 为 active、restart count `0`，所有业务容器仍 healthy、restart count `0`，未发生替换或重启。
 - Nginx 只允许 `/launch`、`/app/`、`/admin/`、`/assets/` 和 `/api/v1/`；健康路径不公开。直接知道域名不能建立会话，只有 Sub2API 签发的一次性 HMAC ticket 才能进入。
 
-## 7. 当前验证与待办
+## 7. 当日验证与待办（已由 2026-07-31 记录取代）
 
-积分服务当前仍为默认 disabled policy，签到关闭，公开设置 `points_system_enabled=false`。已完成新版本管理员只读冒烟：管理员 ticket 交换 `303`、中文管理页和管理员脚本 `200`、身份为 admin、policy 1 只读且 disabled、CSRF 注销 `200`、注销后 `401`；用户 ticket 在交换阶段返回 `403 points_disabled`。冒烟前后 policy/account/ledger/checkin/grant 计数完全一致，没有创建策略、签到、积分账本或余额任务。
+积分服务在该日仍为默认 disabled policy，签到关闭，公开设置 `points_system_enabled=false`。当日已完成管理员只读冒烟：管理员 ticket 交换 `303`、中文管理页和管理员脚本 `200`、身份为 admin、policy 1 只读且 disabled、CSRF 注销 `200`、注销后 `401`；用户 ticket 在交换阶段返回 `403 points_disabled`。冒烟前后 policy/account/ledger/checkin/grant 计数完全一致，没有创建策略、签到、积分账本或余额任务。当前 policy v3、历史基线与用户入口状态只以 `2026-07-31` 记录为准。
 
-后续必须按顺序完成：
+以下是当日待办，现已被 `2026-07-31` 的历史回算和发布边界取代，不得直接照此执行：
 
 1. 继续保持 Sub2API bridge 与 policy 1 双重 disabled；管理员可调试，普通用户入口、ticket、页面、资源和 API 均不得开放。
 2. 管理员后续创建的完整 policy 必须最早次日生效；初始 disabled policy 不得原地修改。确认比例、刷新分钟、签到模式、最低消费、阶梯和三层金额上限后，先完成安全验收。

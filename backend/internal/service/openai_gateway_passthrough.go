@@ -262,16 +262,20 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	var usage *OpenAIUsage
 	var firstTokenMs *int
+	clientDisconnected := false
+	var streamErr error
 	responseID := ""
 	imageCount := 0
 	var imageOutputSizes []string
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
-		if err != nil {
+		if err != nil && (result == nil || !result.clientDisconnected) {
 			return nil, err
 		}
+		streamErr = err
 		usage = result.usage
 		firstTokenMs = result.firstTokenMs
+		clientDisconnected = result.clientDisconnected
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
@@ -285,10 +289,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
 	}
-	s.bindHTTPResponseAccount(ctx, c, account, responseID)
+	if streamErr == nil {
+		s.bindHTTPResponseAccount(ctx, c, account, responseID)
+	}
 
 	// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
-	if !account.IsShadow() {
+	if streamErr == nil && !account.IsShadow() {
 		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 		}
@@ -299,17 +305,18 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	forwardResult := &OpenAIForwardResult{
-		RequestID:       resp.Header.Get("x-request-id"),
-		ResponseID:      responseID,
-		Usage:           *usage,
-		Model:           reqModel,
-		UpstreamModel:   upstreamPassthroughModel,
-		ServiceTier:     serviceTier,
-		ReasoningEffort: reasoningEffort,
-		Stream:          reqStream,
-		OpenAIWSMode:    false,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
+		RequestID:        resp.Header.Get("x-request-id"),
+		ResponseID:       responseID,
+		Usage:            *usage,
+		Model:            reqModel,
+		UpstreamModel:    upstreamPassthroughModel,
+		ServiceTier:      serviceTier,
+		ReasoningEffort:  reasoningEffort,
+		Stream:           reqStream,
+		OpenAIWSMode:     false,
+		Duration:         time.Since(startTime),
+		FirstTokenMs:     firstTokenMs,
+		ClientDisconnect: clientDisconnected,
 	}
 	if imageCount > 0 {
 		forwardResult.ImageCount = imageCount
@@ -318,7 +325,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageOutputSizes = imageOutputSizes
 		forwardResult.BillingModel = imageBillingModel
 	}
-	return forwardResult, nil
+	return forwardResult, streamErr
 }
 
 func logOpenAIPassthroughInstructionsRejected(
@@ -773,11 +780,12 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 }
 
 type openaiStreamingResultPassthrough struct {
-	usage            *OpenAIUsage
-	firstTokenMs     *int
-	responseID       string
-	imageCount       int
-	imageOutputSizes []string
+	usage              *OpenAIUsage
+	firstTokenMs       *int
+	responseID         string
+	clientDisconnected bool
+	imageCount         int
+	imageOutputSizes   []string
 }
 
 type openaiNonStreamingResultPassthrough struct {
@@ -1058,7 +1066,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	firstTokenMs := openAIFirstTokenAccepted(c)
 	responseID := ""
 	clientDisconnected := false
-	sawDone := false
 	sawTerminalEvent := false
 	sawFailedEvent := false
 	failedMessage := ""
@@ -1081,7 +1088,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		for _, pending := range pendingLines {
 			if _, err := fmt.Fprintln(w, pending); err != nil {
 				clientDisconnected = true
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+				logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "passthrough_buffered_write")
 				return false
 			}
 		}
@@ -1104,11 +1111,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
 	resultWithUsage := func() *openaiStreamingResultPassthrough {
 		return &openaiStreamingResultPassthrough{
-			usage:            usage,
-			firstTokenMs:     firstTokenMs,
-			responseID:       responseID,
-			imageCount:       imageCounter.Count(),
-			imageOutputSizes: imageCounter.Sizes(),
+			usage:              usage,
+			firstTokenMs:       firstTokenMs,
+			responseID:         responseID,
+			clientDisconnected: clientDisconnected,
+			imageCount:         imageCounter.Count(),
+			imageOutputSizes:   imageCounter.Sizes(),
 		}
 	}
 
@@ -1195,9 +1203,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
-			if trimmedData == "[DONE]" {
-				sawDone = true
-			}
 			if openAIStreamEventIsTerminal(trimmedData) {
 				sawTerminalEvent = true
 			}
@@ -1240,7 +1245,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				clientDisconnected = true
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+				logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "passthrough_stream_write")
 			} else {
 				clientOutputStarted = true
 				flushPending = true
@@ -1250,8 +1255,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 		}
 	}
+	if !clientDisconnected && ctx != nil && ctx.Err() != nil {
+		clientDisconnected = true
+		logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "request_context_canceled")
+	}
 	if err := documentScanner.Err(); err != nil {
-		if (sawDone || sawTerminalEvent) && !sawFailedEvent {
+		if sawTerminalEvent && !sawFailedEvent {
 			s.clearOpenAIProxyStreamDisconnect(account)
 			return resultWithUsage(), nil
 		}
@@ -1288,12 +1297,15 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
-	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {
+	if !sawTerminalEvent && clientDisconnected {
+		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
+	}
+	if !sawTerminalEvent {
 		logger.FromContext(ctx).With(
 			zap.String("component", "service.openai_gateway"),
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_request_id", upstreamRequestID),
-		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
+		).Info("OpenAI passthrough 上游流在未收到终止事件时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			return resultWithUsage(),
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
@@ -1301,7 +1313,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
-	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
+	if sawTerminalEvent && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)
 	}
 
@@ -1418,6 +1430,14 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		body = restoredBody
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
+		if !terminalOK {
+			message := "OpenAI passthrough non-streaming SSE ended before a terminal event"
+			if !openAISSEBodyHasReplayUnsafeOutput(bodyText) {
+				return nil, s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), nil, message)
+			}
+			s.recordOpenAIStreamUpstreamError(c, account, true, resp.Header.Get("x-request-id"), "stream_missing_terminal", nil, message)
+			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, message)
+		}
 		if terminalOK && terminalType == "response.failed" {
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {

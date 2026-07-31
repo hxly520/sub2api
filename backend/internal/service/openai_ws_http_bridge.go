@@ -311,6 +311,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			ResponseHeaders:       cloneHeader(resp.Header),
 			Duration:              time.Since(turnStart),
 			FirstTokenMs:          firstTokenMs,
+			ClientDisconnect:      clientDisconnected,
 		}
 		if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 			result.wsReplayInput = replayInput
@@ -415,7 +416,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 				s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
 			}
-			if turn == 1 && !wroteDownstream && shouldFailover {
+			if turn == 1 && !wroteDownstream && !clientDisconnected && shouldFailover {
 				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 			}
 			upstreamEventErr = errors.New(errMessage)
@@ -475,7 +476,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	}
 	if err := scanner.Err(); err != nil {
 		streamErr := fmt.Errorf("read upstream http bridge stream: %w", err)
-		if turn == 1 && !wroteDownstream {
+		if turn == 1 && !wroteDownstream && !clientDisconnected {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, streamErr, true)
 		}
 		return resultWithUsage(), streamErr
@@ -484,7 +485,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	if sawDone {
 		terminalErr = errors.New("upstream http bridge stream sent [DONE] before terminal event")
 	}
-	if turn == 1 && !wroteDownstream {
+	if turn == 1 && !wroteDownstream && !clientDisconnected {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, terminalErr, true)
 	}
 	return resultWithUsage(), terminalErr

@@ -5,6 +5,7 @@
   const state = {
     policies: [],
     grants: [],
+    grantSummary: {},
     users: [],
     usersPage: { limit: 50, offset: 0, total: 0 },
     reverseID: "",
@@ -72,7 +73,8 @@
     ui.byId("overview-checkin-card").dataset.state = policy?.checkin_enabled ? "enabled" : "disabled";
 
     const pendingStatuses = new Set(["pending", "processing", "reversal_pending", "reversal_processing"]);
-    const pendingCount = state.grants.filter((grant) => pendingStatuses.has(grant.status)).length;
+    const statusCount = (status) => ui.number(state.grantSummary[status]);
+    const pendingCount = [...pendingStatuses].reduce((total, status) => total + statusCount(status), 0);
     ui.byId("overview-pending").textContent = String(pendingCount);
     ui.byId("overview-pending-card").dataset.state = pendingCount > 0 ? "warning" : "neutral";
     const summary = ui.byId("grant-status-summary");
@@ -80,7 +82,7 @@
     const groups = [
       ["待处理", ["pending", "processing"]],
       ["已到账", ["settled"]],
-      ["失败", ["failed", "permanently_failed"]],
+      ["失败", ["failed", "permanently_failed", "reversal_permanently_failed"]],
       ["冲正中", ["reversal_pending", "reversal_processing"]],
       ["已冲正", ["reversed"]]
     ];
@@ -89,7 +91,7 @@
       const name = document.createElement("span");
       const count = document.createElement("strong");
       name.textContent = label;
-      count.textContent = String(state.grants.filter((grant) => statuses.includes(grant.status)).length);
+      count.textContent = String(statuses.reduce((total, status) => total + statusCount(status), 0));
       item.dataset.state = statuses.includes("settled") ? "enabled"
         : statuses.some((status) => status.includes("failed")) ? "danger"
           : statuses.some((status) => status.includes("pending") || status.includes("processing")) ? "warning"
@@ -153,8 +155,12 @@
   }
 
   async function loadAdminGrants() {
-    const rows = await ui.api("/api/v1/admin/balance-grants?limit=100");
+    const [rows, summary] = await Promise.all([
+      ui.api("/api/v1/admin/balance-grants?limit=100"),
+      ui.api("/api/v1/admin/balance-grants/summary")
+    ]);
     state.grants = Array.isArray(rows) ? rows : [];
+    state.grantSummary = summary?.counts && typeof summary.counts === "object" ? summary.counts : {};
     ui.renderRows("admin-grants-body", state.grants, [
       (grant) => ui.dateTime(grant.created_at),
       "user_id",
