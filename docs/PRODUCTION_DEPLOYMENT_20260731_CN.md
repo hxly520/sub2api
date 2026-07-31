@@ -104,6 +104,8 @@ Selected model is at capacity. Please try a different model.
 
 在 GitHub 构建完成前，下一候选的镜像 tag、OCI revision 和 registry digest 仍为空。推送最终 `main` 后必须把 commit、两个 workflow run、不可变 tag 和 registry digest 追加到本节或同日续录，禁止把源码工作树、旧 registry digest、image ID 或 archive SHA256 互相冒充。
 
+`2026-07-31 18:41 CST` 对源码 commit `6d40a9d8c3b0a27662a25139d7e9801537b01f3b` 触发了两次正式构建请求：Points System Image [run 30624409567](https://github.com/hxly520/sub2api/actions/runs/30624409567)（`publish_version_tag=true`）和 Cachecompat Image [run 30624411767](https://github.com/hxly520/sub2api/actions/runs/30624411767)（`version=0.1.169`、`publish_latest=false`）。两者都在 runner 分配前被 GitHub 账户计费门禁终止，注释为近期付款失败或需要提高支出上限；`runner_id=0`、`steps=[]`，没有 checkout、测试、Docker build、registry push、镜像 tag 或 digest。该结论只表示外部构建基础设施未启动，不表示源码测试或镜像构建步骤失败。解除 Billing & plans 门禁后必须在当时最终 `main` 上重新触发两个 workflow，并用新 run 的成功输出补写制品信息。
+
 ## 10. 不可破坏约束
 
 - 不自动替换、重启或重建生产 Sub2API；普通用户入口由维护者手工切换候选后加载 ready 配置。
