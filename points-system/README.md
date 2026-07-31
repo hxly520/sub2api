@@ -28,20 +28,19 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `63d320fbf6ca`; the container is healthy with restart count zero. It was
   switched manually by the operator and remains outside automated replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-f79803bb73d6`, OCI revision
-  `f79803bb73d659e36627d6f716aab065ff4d56a6`, and is also healthy. Updating the
+  `ghcr.io/hxly520/sub2api-points:0.1.169-e39c78bf8f6c`, OCI revision
+  `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`, and is also healthy. Updating the
   points container did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
-- The running production `points_app` role is still at the audited legacy
-  `SELECT (username)` allowlist from the previous release, in addition to the
-  existing `id` and `deleted_at` grants. This is a historical compatibility
-  state, not the new display contract. Stage A grants `email` while retaining
-  `username`; stage B removes `username` only after the login-email image has
-  passed production checks. The role must retain no table-wide user-table
-  access, no other user columns, and no write permission throughout.
+- The running production `points_app` role completed stage A in transaction
+  `1960217` and now has the exact `id/email/username/deleted_at` read-only
+  allowlist. Stage B remains pending until user 1 and administrator launch
+  tickets confirm the login-email UI, theme, pagination, and refresh behavior;
+  it then removes `username`. The role retains no table-wide user-table access,
+  no other user columns, and no write permission throughout.
 - Sub2API has 250 applied public migrations. Private migrations
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
@@ -62,14 +61,12 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   points user session. Administrator access remains available, and both gates
   change to all-users mode only after preview acceptance.
 - The uploaded Sub2API logo integration, deleted-user session invalidation,
-  and per-request preview enforcement are deployed from revision `f79803bb73d6`.
-  Its legacy blue workspace and username projection are superseded by the
-  Sub2API-matched light/dark palette, login-email browser identity, compact
-  cards, and paginated records in the next points-only candidate.
-  Its immutable GHCR digest is
-  `sha256:d5325808dc2950632f4d4f98ff87a167265d0dbf2a45e9f0b8e446bd51c96876`.
-  Sub2API already runs the matching revision; only the new points-only
-  candidate remains pending independent deployment.
+  per-request preview enforcement, Sub2API-matched light/dark palette,
+  login-email browser identity, compact cards, and paginated records are
+  deployed from points revision `e39c78bf8f6c`. Its immutable GHCR digest is
+  `sha256:502abb9dbffa5237b388f70208ec0e72550b126baa398921aad9c4884048d2eb`.
+  Sub2API remains on `f79803bb73d6`; its `e39c78bf8f6c` image is only a cached
+  manual candidate and was not used to recreate the production container.
 
 ## Runtime Architecture
 

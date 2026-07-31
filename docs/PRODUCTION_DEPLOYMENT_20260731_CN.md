@@ -7,7 +7,7 @@
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
 | Sub2API | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，healthy、restart count `0` | 已由维护者手工切换，含管理员新标签、用户 1 预览授权、主题同步和显式拒绝优先级 | 后续自动化不得替换或重启 |
-| 积分服务 | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `05f43434...`，healthy、restart count `0` | 双工作区、实时主题和用户 1 逐请求预览门禁已上线 | 可在备份后独立更新；后续不得重跑历史基线 |
+| 积分服务 | `0.1.169-e39c78bf8f6c`，revision `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`，容器 `11b1f9820fa7...`，healthy、restart count `0` | 登录邮箱、Taste 定向重设计、双记录游标分页和异步恢复已上线；仍为用户 1 预览 | 阶段 B 必须等真实用户/管理员票据验收后执行；不得重跑历史基线 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -20,6 +20,8 @@
 - `04a19ca082ee43853573795d1385727bd38f20e9`：v0.1.169 首轮发布阶段节点；补齐非流式 Gemini SSE 聚合在正式 `finishReason` 后立即完成、不等待 `[DONE]` 或 EOF 的回归边界，后续由 `f79803bb7` 预览收口取代。
 - `5b27f0b80337c0d33435322a9307d84a9edac110`：管理员积分配置改为隔离新标签，增加 Sub2API 用户 1 预览名单和 iframe 实时主题同步。
 - `f79803bb73d659e36627d6f716aab065ff4d56a6`：最终预览修复；用户级显式拒绝覆盖陈旧公共设置，积分服务在 ticket 交换和每次既有 user session 请求双重执行预览门禁。
+- `7e50f9aa9f395f00f235365376d33f859ae7d16f`：积分用户/管理员工作区按 `design-taste-frontend` 定向重设计，补齐登录邮箱、业务发放时间、稳定游标分页、请求超时和邮箱 ACL 四阶段迁移。
+- `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`：隔离屏幕阅读器趋势数据表的 table layout，消除桌面约 `658px` 无效空白尾部；当前积分生产 revision 和 Sub2API 手工候选 revision。
 - `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 随后已由维护者在 `2026-07-31 23:47 CST` 手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
 
 ## 2. 积分激活与历史基线
@@ -29,7 +31,7 @@
 - 一次性历史作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已进入 `succeeded`，且仍是唯一成功基线。`2026-07-31 23:27 CST` 核对时共有 29 个积分账户、316 条每日快照、311 条积分账本；`2026-08-01 00:05 CST` 正常调度完成后，最新只读计数为 29 个积分账户、328 条每日快照/修订、322 条积分账本。两个时间点均为 `needs_review=0`，签到和余额发放记录均为 0。
 - `2026-07-31 23:27 CST` 用户 ID 1 的历史抽查值为总积分 `7514.94`、昨日积分 `938.07`；`2026-08-01 00:05 CST` 调度后的抽查值为总积分 `9283.00`、`2026-07-31` 业务快照积分 `1768.06`。这些值只用于对应时间点的交接抽查，不应硬编码到页面或测试。
 - 当前 `points` schema 已应用 `001_init.sql`、`002_balance_grant_outbox.sql`、`003_usage_history_backfill.sql`，共 21 张表、3 条积分迁移；Sub2API `public` 迁移与 `points.points_schema_migrations` 继续严格分离。
-- 当前生产 `points_app` 已通过历史专用模板和事务 `1914532` 完成 `SELECT (username)` 单列授权，与原有 `id/deleted_at` 组成 `id/username/deleted_at` 列级只读 allowlist。该记录是已执行审计事实，旧模板不得改写或重跑。登录邮箱候选采用两阶段 ACL：切换前的阶段 A 只授予 `email` 并保留 `username`；新镜像验收后阶段 B 才撤销 `username`，最终收敛为 `id/email/deleted_at`。
+- `2026-08-01 04:40 CST` 已通过事务 `1960217` 执行登录邮箱阶段 A：`points_app` 当前精确为 `id/email/username/deleted_at` 列级只读 allowlist，无整表、其他列、写权限或 grant option；用户、账户、快照和账本计数不变。阶段 B 尚未执行，必须等用户 1 与管理员真实票据确认 `login_email`、主题、分页和刷新后才撤销 `username`，最终收敛为 `id/email/deleted_at`。
 - 历史基线在整个 schema 生命周期中只允许成功一次。后续镜像更新不得执行 `points-history-backfill activate/plan/apply/resume`，也不得新建重叠作业。正常积分只由 `00:05` 自动调度和滚动差量对账维护；比例变更次日生效且只影响新消费。
 - 4 个遗留 `points_shared_*` 测试 schema 已清理，清理后数量为 0，正式 `points` 数据计数未变化。清理前备份为 `/home/api/sub2api-deploy/backups/points-test-schema-cleanup-20260731-090001`，dump SHA256 `ecfc41fb6d3fbd332b3b0b86f9f8707257a81d4c266d9c6a7d6290c9ce661c29`，catalog 659 行。
 
@@ -217,5 +219,20 @@ docker compose up -d --no-deps sub2api
 - `2026-08-01 00:05 CST` 的自动调度已成功结算业务日期 `2026-07-31`：来源用户 12、来源行 30,078、变更用户 12、消费差量 `498488911` microUSD、积分差量 `498483` hundredths。随后只读计数为 29 账户、328 快照、328 修订、322 账本、`needs_review=0`、签到/签到尝试/余额发放/发放尝试均为 0；用户 1 总积分 `9283.00`、当日业务快照积分 `1768.06`。该调度不是历史基线重跑。
 - 下一积分独立候选把浏览器身份改为 `login_email`，个人消费积分的“发放时间”按业务日期次日 `00:05` 投影，修复刷新/签到异步状态，并把四张概览卡收紧为等高布局。个人积分记录和签到奖励记录分别默认每页 10 条，使用独立前后翻页。
 - 该候选依据 `design-taste-frontend` 的重设计审计做定向演进，不改变信息架构或权限边界：浅色模式复用 Sub2API 的中性浅色与 teal 主色，深色模式复用 `dark-950/dark-800/dark-700` 层级；表头、表格行、悬停、分页、状态标签及 Canvas 曲线完整随父主题切换。父主题一旦通过严格 Origin/source 校验到达，后续 `/api/v1/me` 刷新不得用旧启动主题覆盖。
-- `2026-08-01 01:25 CST` 曾把旧的一步收敛草案临时替换为 `ROLLBACK` 做生产预演。事务 `1947043` 验证升级前 `email=false/username=true`、草案临时态 `email=true/username=false` 后完整回滚；该记录只证明当时生产 ACL 没有变化，不能作为当前两阶段模板已执行的证据。当前生产仍精确为 `id/username/deleted_at`。
-- 切换该积分候选前仍必须备份 `points` schema、Compose、环境和 ACL，先执行阶段 A 得到 `id/email/username/deleted_at`，再只更新积分服务；真实验收通过后执行阶段 B 收敛为 `id/email/deleted_at`。任一阶段失败都停止，阶段 B 后回滚先恢复双读再切旧镜像。Sub2API 容器完整 ID、启动时间、镜像和 restart count 必须保持上述值，签到及全站开放继续关闭。
+- `2026-08-01 01:25 CST` 曾把旧的一步收敛草案临时替换为 `ROLLBACK` 做生产预演。事务 `1947043` 验证升级前 `email=false/username=true`、草案临时态 `email=true/username=false` 后完整回滚；该记录只证明当时生产 ACL 没有变化，不能作为两阶段模板已执行的证据。该历史 `id/username/deleted_at` 状态随后由第 11.9 节的正式阶段 A 替代。
+- 候选要求的数据库备份、阶段 A 和积分服务独立切换已按第 11.9 节完成；真实用户/管理员票据验收与阶段 B 尚未完成。阶段 B 后回滚仍须先恢复双读再切旧镜像。Sub2API 容器完整 ID、启动时间、镜像和 restart count 必须保持上述值，签到及全站开放继续关闭。
+
+### 11.9 Taste 积分候选构建与独立上线
+
+- `2026-08-01` 的最终源码节点为 `7e50f9aa9f395f00f235365376d33f859ae7d16f` 和无障碍布局修复 `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`。后端全量 test/vet/build、积分 test/vet/build 与 integration tag 编译、前端 ESLint/typecheck/全量 Vitest/production build、三个积分脚本语法和浏览器多视口 QA 均通过。桌面/移动四卡高度差为 `0`，`390px` 无横向溢出，浅/深 hover 对比度分别约 `16.26:1`、`9.88:1`。
+- GitHub Actions `30662285938` 与 `30662288244` 均绑定完整 revision `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`，但在执行任何 step 前被账户付款/支出限额拒绝。随后按受控本机构建回退生成 `linux/amd64` 二进制层，复用未变化的既有 Alpine 运行时层，逐层回读远端二进制 SHA256、所有权、权限、入口、架构与 OCI revision；生产服务器只执行鉴权拉取、`docker save` 和积分服务更新，没有编译或构建镜像。
+
+| 制品 | 标签 | registry digest | image ID | 服务器 archive SHA256 | bytes |
+| --- | --- | --- | --- | --- | ---: |
+| Sub2API 手工候选 | `ghcr.io/hxly520/sub2api:0.1.169-e39c78bf8f6c` | `sha256:344bf36a7cb21f7f0935f7cc5803cf2a2b83273054a8c07fd2dae0148203d910` | `sha256:2e58e6984e58c0c416695c899fc76fd31ef5165d62b46ff22bf6335240249be3` | `5eed097d2c65535747f85eed4fc0b3de105248da0c35ea8d0efd45c4868dcc61` | 360,636,928 |
+| 积分服务 | `ghcr.io/hxly520/sub2api-points:0.1.169-e39c78bf8f6c`、`sha-e39c78bf8f6c` | `sha256:502abb9dbffa5237b388f70208ec0e72550b126baa398921aad9c4884048d2eb` | `sha256:d34ad6906ba39d904301c5cd6f6194cea06b5c9356cfe2547a447d91eb85d223` | `8c9218ef1270d37a2a48f9d5a83882dcda32beec8cd5959e680240ec7d7cce13` | 71,173,120 |
+
+- Sub2API archive 位于 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.169-e39c78bf8f6c-linux-amd64.tar`，只供维护者手工切换；运行中的 Sub2API 仍为容器 `63d320fbf6ca...`、镜像 `0.1.169-f79803bb73d6`、healthy、restart count `0`。积分 archive 位于 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-e39c78bf8f6c-linux-amd64.tar`。两者均为 `0600 root:root`，临时 registry 凭据和 `.partial` 文件均已清理。
+- 切换前全库 custom backup 为 `/home/api/sub2api-points/backups/sub2api-before-points-e39c78bf8f6c-20260801-043917.dump`，SHA256 `099a567598f64b07b25678e9fccb43f941f3daf41191beaddf73369f1fbc4574`，大小 `98,757,221` 字节，catalog `1,290` 行。阶段 A 事务 `1960217` 后 allowlist 精确为 `id/email/username/deleted_at`，整表和敏感列读取仍被拒绝。
+- 积分 Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-e39c78bf8f6c-20260801-045914.yml`。仅执行 `docker compose up -d --no-deps points-system` 后，新容器为 `11b1f9820fa7...`，healthy、restart count `0`；本地 health 为 `200`，本地/公网根和公网 health 仍为 `404`。启动对账 run `8b8a2d7b-17c9-4e9a-8074-105307203f5d` 读取 `30,078` 行、`12` 个来源用户，`changed_users=0`；用户 `187`、积分账户 `29`、快照 `328`、账本 `322` 均与切换前一致。
+- 浏览器没有可复用登录态，`/points` 被正确重定向到登录页，因此本轮没有伪造真实用户或管理员票据。阶段 B 明确保留为待办：维护者需登录后验证用户 1 嵌入页 `login_email`、浅/深主题、两表分页、刷新恢复、管理员用户明细和发放记录，并验证非预览用户拒绝；全部通过后才能执行 `shared-database-users-email-finalize.sql.example` 撤销 `username`。签到和全站开放继续关闭。

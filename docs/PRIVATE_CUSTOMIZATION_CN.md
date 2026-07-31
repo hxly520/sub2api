@@ -16,7 +16,7 @@
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
 - 当前仓库候选基线：官方 Release `v0.1.169`（release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.169`。本轮只合入该已发布 tag，不合入 tag 之后的官方 `main`。媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护和跨协议终态校验均属于必须保留的二开。
-- 截至 `2026-08-01 01:04 CST`，生产 Sub2API 已由维护者手工切换为 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`；积分服务仍为同 revision，容器 `05f43434fc20...`。两者均 healthy、restart count `0`。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
+- 截至 `2026-08-01 04:59 CST`，生产 Sub2API 仍为维护者手工切换的 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`；积分服务已独立切换为 `0.1.169-e39c78bf8f6c` / revision `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`，容器 `11b1f9820fa7...`。两者均 healthy、restart count `0`。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -39,8 +39,10 @@
 | `c0fe91506` | 中文积分双工作区 | 用户/管理员页面与脚本分离、用户关闭态二次校验、7/30/90 日趋势和用户响应脱敏；历史积分生产节点 |
 | `d6b367f31` | 历史积分激活与容量错误精确重试 | 增加一次性历史回算、启用策略门禁，以及仅针对精确容量拒绝文案的有界文本重试；当前 Sub2API 候选必须保留 |
 | `28e760bc8` | 积分用户明细与签到发放任务收敛 | 管理员全站用户积分明细；删除积分侧手工赠送和快照刷新入口，发放任务只处理签到奖励；历史生产积分 revision |
-| `874255bcd` | 嵌入式积分大屏优化 | 用户大屏、管理员紧凑工作区、中文结算状态和嵌入式布局优化；当前视觉基线 |
+| `874255bcd` | 嵌入式积分大屏优化 | 用户大屏、管理员紧凑工作区、中文结算状态和嵌入式布局优化；历史视觉基线，已由 `7e50f9aa9/e39c78bf8` 演进 |
 | `1e33e7f7a` | v0.1.169 升级前二开收口 | 历史用户名积分展示与最小 ACL、软删除会话失效、双工作区/首页视觉、跨协议终态和客户端断连有限排空；当前展示契约已演进为登录邮箱 |
+| `7e50f9aa9` | Taste 积分工作区与登录邮箱候选 | 用户/管理员主题融合、业务发放时间、HMAC 游标分页、请求超时、邮箱 ACL 四阶段迁移与完整回归 |
+| `e39c78bf8` | 无障碍趋势表布局隔离 | 保留屏幕阅读器 table 语义，同时消除隐藏表造成的桌面空白尾部；当前积分生产 revision |
 | `3da18b9dd` | 合并官方 v0.1.169 | 双亲为私有收口 `1e33e7f7a` 与官方 release `26d894ef4`；冲突按官方能力优先并兼容保留私有调度、渠道可见性、媒体和积分行为 |
 | `04a19ca08` | v0.1.169 发布链历史节点 | Gemini 非流式 SSE 聚合收到正式 `finishReason` 后立即完成；后续已由用户 1 预览兼容提交 `f79803bb7` 取代 |
 
@@ -250,8 +252,8 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和一般失败终态不自动重放。精确容量拒绝文案是唯一额外例外，按 3.2 节的原文匹配、未输出正文、最多两次及 `100ms/200ms` 退避执行。图片和视频创建继续严格一次提交。
 - Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 都不得把 HTTP 200、EOF 或 framing 哨兵当成成功终态；缺正式终态时按 3.2 节区分“未输出正文进入安全故障切换判断”“已输出正文发送协议显式错误”和“客户端已断开继续 drain usage、禁止重放”。升级合并必须保留三条路径及其测试。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- 当前生产 Sub2API 与积分服务均为 `0.1.169-f79803bb73d6`；Sub2API 已由维护者手工切换，后续自动化仍不得替换或重启。当前积分运行态仍保留历史用户名展示/ACL；下一登录邮箱与主题适配候选切换前只执行阶段 A 双读授权，镜像验收后再执行阶段 B 收敛为 `id/email/deleted_at`，从而保留旧镜像回滚能力。policy v3 仍为比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业仍为原成功记录。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
-- 当前生产 Sub2API GHCR digest 为 `sha256:efeac9309f33a9ccd204932ed1144955641a78260982c3041842fb89c71caa49`；当前生产积分 GHCR digest 为 `sha256:d5325808dc2950632f4d4f98ff87a167265d0dbf2a45e9f0b8e446bd51c96876`。服务器缓存中的 image ID、传输 archive SHA256 和运行容器 revision 必须继续分别核对，不能把任一值当作另一值。
+- 当前生产 Sub2API 为 `0.1.169-f79803bb73d6`，积分服务为 `0.1.169-e39c78bf8f6c`；Sub2API 仍由维护者手工切换，自动化不得替换或重启。积分已执行阶段 A 并运行登录邮箱/Taste 候选，ACL 当前为 `id/email/username/deleted_at` 双读兼容态；阶段 B 必须等用户 1 与管理员真实票据验收后再收敛为 `id/email/deleted_at`。policy v3 仍为比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业仍为原成功记录。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
+- 当前生产 Sub2API GHCR digest 为 `sha256:efeac9309f33a9ccd204932ed1144955641a78260982c3041842fb89c71caa49`；当前生产积分 GHCR digest 为 `sha256:502abb9dbffa5237b388f70208ec0e72550b126baa398921aad9c4884048d2eb`。下一 Sub2API 手工候选 digest 为 `sha256:344bf36a7cb21f7f0935f7cc5803cf2a2b83273054a8c07fd2dae0148203d910`，但缓存或 archive 存在不等于生产已切换。image ID、传输 archive SHA256 和运行容器 revision 必须继续分别核对，不能把任一值当作另一值。
 - 后端全量测试、vet、编译，积分服务单元/vet/integration-tag 编译，前端 lint/typecheck/全量测试/生产构建和 Compose 解析已通过。官方纳秒 TTL 测试已在 `d83ea1bb` 改为显式过期快照，Windows 连续 20 次验证通过；真实 PostgreSQL 事务和并发用例必须由 GitHub PostgreSQL 16 CI 最终确认。
 
 ### 5.1 升级前盘点
