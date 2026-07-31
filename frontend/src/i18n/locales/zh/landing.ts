@@ -28,8 +28,11 @@ export default {
     },
     hero: {
       eyebrow: '稳定连接 · 清晰计量 · 灵活管理',
+      titlePrimary: '让服务更稳定',
+      titleSecondary: '让每次使用更有价值',
       description:
         '用一套访问凭证连接对话、推理、代码、图像与视频能力。状态、用量和费用集中查看，个人与团队都能快速开始。',
+      visualAlt: '数字化服务能力与运行数据主视觉',
       secondaryAction: '查看功能概览',
       assurances: {
         clearUsage: '用量明细清晰可查',

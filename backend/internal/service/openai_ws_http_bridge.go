@@ -239,6 +239,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		return nil, fmt.Errorf("upstream http bridge request failed: %s", safeErr)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, openAIWSHTTPBridgeErrorBodyLimitBytes))
@@ -426,6 +428,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			if err := writeClientMessage(upstreamMessage); err != nil {
 				if isOpenAIWSClientDisconnectError(err) {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
 					logOpenAIWSModeInfo(
 						"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",

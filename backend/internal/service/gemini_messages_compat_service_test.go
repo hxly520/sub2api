@@ -457,13 +457,32 @@ func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLo
 			"Content-Type":      []string{"application/json"},
 			"X-RateLimit-Limit": []string{"60"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2}}`)),
+		Body: io.NopCloser(strings.NewReader(`{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2}}`)),
 	}
 
-	usage, err := svc.handleNativeNonStreamingResponse(c, resp, false)
+	usage, err := svc.handleNativeNonStreamingResponse(c, resp, false, true)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.False(t, logSink.ContainsMessage("[GeminiAPI]"), "debug 关闭时不应输出 Gemini 响应头日志")
+}
+
+func TestGeminiHandleNativeNonStreamingResponseCountTokensDoesNotRequireFinishReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:countTokens", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"totalTokens":12}`)),
+	}
+
+	usage, err := (&GeminiMessagesCompatService{}).handleNativeNonStreamingResponse(c, resp, false, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"totalTokens":12}`, rec.Body.String())
 }
 
 func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpstreamModel(t *testing.T) {
@@ -476,7 +495,7 @@ func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpst
 		response: &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"x-request-id": []string{"gemini-req-1"}},
-			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
 		},
 	}
 	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
@@ -512,7 +531,7 @@ func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t
 		response: &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"x-request-id": []string{"gemini-req-2"}},
-			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`)),
 		},
 	}
 	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
@@ -547,6 +566,57 @@ func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t
 	require.False(t, hasCamel)
 	_, hasFuncDecl := searchTool["functionDeclarations"]
 	require.False(t, hasFuncDecl)
+}
+
+func TestGeminiMessagesStreamingMissingFinishReasonEmitsErrorWithoutMessageStop(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"response":{"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}}` + "\n\n",
+		)),
+	}
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+
+	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test")
+
+	require.ErrorIs(t, err, errGeminiStreamMissingTerminal)
+	require.NotNil(t, result)
+	require.False(t, result.clientDisconnected)
+	require.Contains(t, rec.Body.String(), `"text":"partial"`)
+	require.Contains(t, rec.Body.String(), `"type":"upstream_error"`)
+	require.NotContains(t, rec.Body.String(), "event: message_stop")
+}
+
+func TestGeminiMessagesStreamingClientDisconnectStillCollectsTerminalUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Writer = &geminiChatFailingWriter{ResponseWriter: c.Writer, failAfter: 0}
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"response":{"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}}`,
+			"",
+			`data: {"response":{"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":6,"candidatesTokenCount":3}}}`,
+			"",
+		}, "\n"))),
+	}
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+
+	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "gemini-test")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.clientDisconnected)
+	require.Equal(t, 6, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
 }
 
 func TestConvertClaudeMessagesToGeminiGenerateContent_AddsThoughtSignatureForToolUse(t *testing.T) {
@@ -1017,7 +1087,7 @@ func TestGeminiNativeStreamingResponse_KeepaliveDoesNotCountAsFirstToken(t *test
 	upstreamReader, upstreamWriter := io.Pipe()
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		_, _ = io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}}]}}]}`+"\n\n")
+		_, _ = io.WriteString(upstreamWriter, `data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}}]},"finishReason":"STOP"}]}`+"\n\n")
 		_ = upstreamWriter.Close()
 	}()
 
@@ -1030,7 +1100,7 @@ func TestGeminiNativeStreamingResponse_KeepaliveDoesNotCountAsFirstToken(t *test
 	c, _ := gin.CreateTestContext(rec)
 
 	svc := &GeminiMessagesCompatService{}
-	result, err := svc.handleNativeStreamingResponse(c, resp, time.Now(), false, 5*time.Millisecond)
+	result, err := svc.handleNativeStreamingResponse(context.Background(), c, resp, nil, "", time.Now(), false, 5*time.Millisecond)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.firstTokenMs)
@@ -1040,6 +1110,66 @@ func TestGeminiNativeStreamingResponse_KeepaliveDoesNotCountAsFirstToken(t *test
 	require.True(t, strings.HasPrefix(body, ":\n\n"), "静默上游期间应先发送 SSE 注释心跳")
 	require.Contains(t, body, `"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="}`)
 	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+}
+
+func TestGeminiNativeStreamingResponseMissingFinishReasonEmitsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:streamGenerateContent", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}`,
+			"",
+			"data: [DONE]",
+			"",
+		}, "\n"))),
+	}
+	svc := &GeminiMessagesCompatService{}
+
+	result, err := svc.handleNativeStreamingResponse(
+		context.Background(), c, resp, &Account{ID: 12, Platform: PlatformGemini},
+		"gemini-native-request", time.Now(), false, 0,
+	)
+
+	require.ErrorIs(t, err, errGeminiStreamMissingTerminal)
+	require.NotNil(t, result)
+	require.False(t, result.clientDisconnected)
+	require.Contains(t, rec.Body.String(), `"text":"partial"`)
+	require.Contains(t, rec.Body.String(), `"status":"UNAVAILABLE"`)
+	require.NotContains(t, rec.Body.String(), "data: [DONE]")
+}
+
+func TestGeminiNativeStreamingResponseClientDisconnectDrainsTerminalUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Writer = &geminiChatFailingWriter{ResponseWriter: c.Writer, failAfter: 0}
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:streamGenerateContent", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}`,
+			"",
+			`data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":5}}`,
+			"",
+		}, "\n"))),
+	}
+	svc := &GeminiMessagesCompatService{}
+
+	result, err := svc.handleNativeStreamingResponse(
+		context.Background(), c, resp, &Account{ID: 13, Platform: PlatformGemini},
+		"gemini-native-request", time.Now(), false, 0,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.clientDisconnected)
+	require.Equal(t, 8, result.usage.InputTokens)
+	require.Equal(t, 5, result.usage.OutputTokens)
 }
 
 func TestGeminiNativeStreamKeepaliveInterval_UsesImageSpecificSetting(t *testing.T) {

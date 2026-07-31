@@ -34,6 +34,12 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
+- As of this handoff, the running production `points_app` role has not yet
+  received the new column-level `public.users.username` grant. Apply the
+  audited existing-role upgrade described under Deployment before starting a
+  points image that uses
+  usernames; this source-tree change is not evidence that the production ACL
+  has changed.
 - Sub2API has 250 applied public migrations. Private migrations
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
@@ -48,6 +54,10 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   root-owned ready file is prepared with `true`, but that value is not hot
   loaded. The ordinary user menu remains hidden until the operator manually
   switches the next Sub2API candidate. Administrator access remains available.
+- The cold-gray/electric-blue user and administrator workspaces plus uploaded
+  Sub2API logo integration are still uncommitted candidate changes. No final
+  commit, candidate tag, OCI revision, or registry digest has been generated
+  for them, and neither production container has been switched to this worktree.
 
 ## Runtime Architecture
 
@@ -108,6 +118,13 @@ access log.
 | POST | `/api/v1/admin/balance-grants/{id}/reverse` | Audit and reverse/cancel a check-in reward delivery |
 | GET | `/healthz` | Database-backed health check |
 
+Every user-facing identity is a Sub2API username: the user and administrator
+headers, the administrator user-points directory, and the user column in
+check-in balance-grant delivery records. Numeric Sub2API user IDs remain
+server-side keys for joins, financial records, audit attribution, and
+idempotency only. Browser APIs must return `username` where an identity is
+needed and must not return an otherwise unnecessary `user_id`.
+
 The built-in user and administrator workspaces are separate Chinese pages at
 `/app/` and `/admin/`, with separate scripts. Both require a session created by
 `/launch`; the domain root returns 404. A user session cannot fetch the admin
@@ -115,6 +132,11 @@ page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
 total/yesterday points, today's and settled
 unreversed check-in credits, a 7/30/90-day points trend, and personal records;
 it contains no policy, manual grant, snapshot, retry, or reversal controls.
+Its candidate visual system uses a cold-gray canvas, ink navigation,
+electric-blue four-metric summary, a wide trend chart, and separate personal
+ledger and check-in reward tables. The administrator page uses the same visual
+language in a denser operations layout; sharing visual tokens does not merge
+pages, scripts, roles, or API permissions.
 User and administrator routes are role-exact in both directions. An
 administrator session cannot invoke the user account, ledger, check-in, or
 grant APIs, and the shared logout route is the only role-neutral write route.
@@ -127,12 +149,12 @@ also has no manual snapshot-refresh control. Daily snapshots are internal,
 idempotent accounting records produced automatically at the configured refresh
 time, while the one-time full historical baseline is executed only by the
 audited `points-history-backfill` operations workflow below. The administrator
-user directory reads only `users.id` and `users.deleted_at` from Sub2API, then
-exposes points and successful-spend totals plus the prior natural day's
-settlement state. Zero-spend users remain visible with zero totals. The delivery
-workspace contains check-in reward records only; legacy manual-grant rows remain
-in the database for audit but are not listed or mutable through the points HTTP
-API.
+user directory reads only `users.id`, `users.username`, and `users.deleted_at`
+from Sub2API, then exposes usernames, points, and successful-spend totals plus
+the prior natural day's settlement state. Zero-spend users remain visible with
+zero totals. The delivery workspace uses the same username projection for
+check-in reward records only; legacy manual-grant rows remain in the database
+for audit but are not listed or mutable through the points HTTP API.
 
 Sub2API opens both workspaces inside its authenticated right-hand content area.
 It appends the exact allowlisted `ui_mode=embedded` value to `/launch`; the
@@ -143,6 +165,13 @@ standalone top bar so the Sub2API sidebar and uploaded logo remain authoritative
 The embedded administrator view likewise removes its duplicate brand and logout
 controls, while retaining a compact horizontal navigation bar for points-only
 administrative functions. Direct standalone access keeps the original layouts.
+Standalone brand slots on both pages receive the exact Sub2API logo URL from
+the server: `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`. Letter placeholders
+such as the former user/admin marks are not part of the contract. The CSP adds
+only the exact configured parent origin to `img-src`; if that image cannot load,
+the shared script applies `/assets/logo.svg` once as the image-bundled,
+authenticated fallback. Logo loading does not select a role or relax launch,
+session, Origin, or administrator API checks.
 The parent waits for a role- and Origin-validated `sub2api:points-ready`
 message from the iframe instead of treating an HTTP error document as a loaded
 workspace. The iframe receives scripts, forms, and same-origin access only; it
@@ -255,8 +284,10 @@ Copy `.env.example` and replace every placeholder. Important details:
   secure cookies are enabled.
 - `POINTS_EMBED_PARENT_ORIGIN` is the one exact Sub2API browser origin permitted
   by CSP `frame-ancestors`. It is required and rejects paths, queries, fragments,
-  credentials, and wildcard hosts. Do not add `X-Frame-Options` at Nginx because
-  it would conflict with the exact cross-origin embedding policy.
+  credentials, and wildcard hosts. The same exact origin is the only additional
+  CSP `img-src` and is used to construct the uploaded-logo URL; no independent
+  arbitrary image origin is accepted. Do not add `X-Frame-Options` at Nginx
+  because it would conflict with the exact cross-origin embedding policy.
 
 Generate 32-byte secrets with a CSPRNG. Production points, bridge, and psql
 variable files are root-owned mode `0600`. Never place production secrets in
@@ -274,7 +305,21 @@ from `deploy/usage-reader.sql.example`. Both templates require fresh role names,
 run in a transaction, and fail instead of changing shared PUBLIC ACLs. Supply
 their psql variables through a root-only stdin file rather than process arguments.
 The bootstrap installs `btree_gist` and creates only the isolated points schema
-and role; embedded migrations then run inside that schema.
+and role; its Sub2API user-table allowlist is exactly `id`, `username`, and
+`deleted_at`. Embedded migrations then run inside that schema.
+
+For an existing deployment created before the username UI, do not rerun the
+bootstrap. First take and verify a database backup, record the pre-change points
+account/snapshot/ledger and Sub2API user counts, and load the existing role name
+as the `points_app_role` psql variable from a root-only stdin file. Then run
+`deploy/shared-database-users-username-upgrade.sql.example` as the PostgreSQL
+bootstrap superuser and retain its non-secret before/after audit output. The
+script runs in one transaction, validates the role/table/column and existing
+least-privilege shape, grants only `SELECT (username)` on `public.users`, makes
+no PUBLIC ACL change, and asserts the direct column grant before commit. After
+the grant, repeat the counts and verify there was no data change before updating
+the points container. The production role recorded above has not yet completed
+this step.
 
 The Compose template publishes the service on loopback only and joins the
 existing Sub2API Docker network for the read-only database and balance bridge.
@@ -287,6 +332,11 @@ APIs, denials, authorization failures, and rate limits retain access logs.
 The launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
 its browser origin must exactly match `POINTS_EMBED_PARENT_ORIGIN` including any
 non-default port.
+Verify both authenticated workspaces with an uploaded Sub2API logo and with a
+forced parent-logo load failure. The first case must display the uploaded raster
+logo; the second must display `/assets/logo.svg` without a CSP violation loop.
+Neither case may make the user admin HTML/script/API reachable, and the image
+fallback must not be served outside an authenticated points session.
 
 The user profile field `checkin_available` is a read-only eligibility result. It
 checks that check-in is enabled, the daily count remains, yesterday's snapshot

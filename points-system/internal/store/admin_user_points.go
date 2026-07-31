@@ -14,6 +14,7 @@ const (
 // the points user directory. Accounting internals stay behind the store API.
 type AdminUserPoints struct {
 	UserID                    int64
+	Username                  string
 	TotalPointsHundredths     int64
 	YesterdayPointsHundredths int64
 	TotalSpendMicroUSD        int64
@@ -48,7 +49,7 @@ func (s *Store) ListAdminUserPoints(ctx context.Context, businessDate time.Time,
 		WHERE deleted_at IS NULL`).Scan(&page.Total); err != nil {
 		return AdminUserPointsPage{}, err
 	}
-	rows, err := s.DB.Query(ctx, `SELECT site_user.id,
+	rows, err := s.DB.Query(ctx, `SELECT site_user.id,site_user.username,
 		COALESCE(account.total_points_hundredths,0)::bigint,
 		COALESCE(snapshot.awarded_points_hundredths,0)::bigint,
 		COALESCE(account.total_spend_microusd,0)::bigint,
@@ -67,7 +68,7 @@ func (s *Store) ListAdminUserPoints(ctx context.Context, businessDate time.Time,
 	for rows.Next() {
 		var item AdminUserPoints
 		var snapshotStatus *string
-		if err := rows.Scan(&item.UserID, &item.TotalPointsHundredths,
+		if err := rows.Scan(&item.UserID, &item.Username, &item.TotalPointsHundredths,
 			&item.YesterdayPointsHundredths, &item.TotalSpendMicroUSD,
 			&item.YesterdaySpendMicroUSD, &item.SnapshotBusinessDate, &snapshotStatus); err != nil {
 			return AdminUserPointsPage{}, err

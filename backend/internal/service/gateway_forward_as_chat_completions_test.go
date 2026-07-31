@@ -3,6 +3,7 @@
 package service
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,34 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type ccAnthropicReadErrorBody struct {
+	payload []byte
+	sent    bool
+	err     error
+}
+
+func (r *ccAnthropicReadErrorBody) Read(p []byte) (int, error) {
+	if !r.sent {
+		r.sent = true
+		return copy(p, r.payload), nil
+	}
+	return 0, r.err
+}
+
+func (r *ccAnthropicReadErrorBody) Close() error { return nil }
+
+type ccAnthropicFailWriter struct {
+	gin.ResponseWriter
+}
+
+func (w *ccAnthropicFailWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("client disconnected")
+}
+
+func (w *ccAnthropicFailWriter) WriteString(_ string) (int, error) {
+	return 0, errors.New("client disconnected")
+}
 
 func TestExtractCCReasoningEffortFromBody(t *testing.T) {
 	t.Parallel()
@@ -128,7 +157,7 @@ func TestHandleCCStreamingFromAnthropic_CompactSSEFormat(t *testing.T) {
 			`data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"OK"}}`,
 			``,
 			`event:message_delta`,
-			`data:{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
+			`data:{"type":"message_delta","delta":{},"usage":{"output_tokens":4}}`,
 			``,
 			`event:message_stop`,
 			`data:{"type":"message_stop"}`,
@@ -184,4 +213,247 @@ func TestHandleCCStreamingFromAnthropic_PreservesMessageStartCacheUsageAndReason
 	require.NotNil(t, result.ReasoningEffort)
 	require.Equal(t, "medium", *result.ReasoningEffort)
 	require.Contains(t, rec.Body.String(), `[DONE]`)
+}
+
+func TestHandleCCBufferedFromAnthropic_EOFAfterFirstContentReturns502(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_buffered_eof"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_eof","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":3}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"partial"}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCBufferedFromAnthropic(resp, c, "model", "claude", nil, time.Now())
+	require.ErrorContains(t, err, "without terminal event")
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), `"error"`)
+	require.NotContains(t, rec.Body.String(), `"choices"`)
+}
+
+func TestHandleCCBufferedFromAnthropic_StreamErrorReturns502(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_buffered_error"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: error`,
+			`data: {"type":"error","error":{"type":"overloaded_error","message":"upstream overloaded"}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCBufferedFromAnthropic(resp, c, "model", "claude", nil, time.Now())
+	require.ErrorContains(t, err, "upstream overloaded")
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "upstream overloaded")
+}
+
+func TestHandleCCBufferedFromAnthropic_ReadErrorReturns502(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_buffered_read_error"}},
+		Body: &ccAnthropicReadErrorBody{
+			payload: []byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_read\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude\",\"usage\":{\"input_tokens\":4}}}\n\n"),
+			err:     io.ErrUnexpectedEOF,
+		},
+	}
+
+	result, err := (&GatewayService{}).handleCCBufferedFromAnthropic(resp, c, "model", "claude", nil, time.Now())
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "read error")
+}
+
+func TestHandleCCStreamingFromAnthropic_EOFAfterPartialWritesErrorWithoutDone(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_eof"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_stream_eof","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":5}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), false)
+	require.ErrorContains(t, err, "before a terminal response event")
+	require.NotNil(t, result)
+	body := rec.Body.String()
+	require.Contains(t, body, "partial")
+	require.Contains(t, body, `"type":"upstream_error"`)
+	require.NotContains(t, body, "[DONE]")
+	require.NotContains(t, body, `"finish_reason":"stop"`)
+}
+
+func TestHandleCCStreamingFromAnthropic_EOFBeforeOutputReturns502(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_empty_eof"}},
+		Body:   io.NopCloser(strings.NewReader("")),
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), false)
+	require.ErrorContains(t, err, "before a terminal response event")
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	require.Contains(t, rec.Body.String(), `"error"`)
+	require.NotContains(t, rec.Body.String(), "[DONE]")
+}
+
+func TestHandleCCStreamingFromAnthropic_StreamErrorAfterPartialWritesErrorWithoutDone(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_error"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_stream_error","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":6}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}`,
+			``,
+			`event: error`,
+			`data: {"type":"error","error":{"type":"api_error","message":"provider stream failed"}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), false)
+	require.ErrorContains(t, err, "provider stream failed")
+	require.NotNil(t, result)
+	body := rec.Body.String()
+	require.Contains(t, body, "provider stream failed")
+	require.Contains(t, body, `"type":"upstream_error"`)
+	require.NotContains(t, body, "[DONE]")
+}
+
+func TestHandleCCStreamingFromAnthropic_ReadErrorAfterPartialWritesErrorWithoutDone(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_read_error"}},
+		Body: &ccAnthropicReadErrorBody{
+			payload: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_stream_read","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":7}}}`,
+				``,
+				`event: content_block_start`,
+				`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+				``,
+				`event: content_block_delta`,
+				`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}`,
+				``,
+			}, "\n")),
+			err: io.ErrUnexpectedEOF,
+		},
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), false)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), "read error")
+	require.NotContains(t, rec.Body.String(), "[DONE]")
+}
+
+func TestHandleCCStreamingFromAnthropic_StopReasonIsFormalTerminal(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_stop_reason"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_stop_reason","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":8}}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), true)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 8, result.Usage.InputTokens)
+	require.Equal(t, 9, result.Usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), "[DONE]")
+	require.Contains(t, rec.Body.String(), `"finish_reason":"stop"`)
+}
+
+func TestHandleCCStreamingFromAnthropic_ClientDisconnectStillDrainsTerminalUsage(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Writer = &ccAnthropicFailWriter{ResponseWriter: c.Writer}
+	resp := &http.Response{
+		Header: http.Header{"x-request-id": []string{"rid_cc_stream_disconnect"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_disconnect","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":10,"cache_read_input_tokens":2}}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ignored"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":11}}`,
+			``,
+		}, "\n"))),
+	}
+
+	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), true)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.ClientDisconnect)
+	require.Equal(t, 10, result.Usage.InputTokens)
+	require.Equal(t, 11, result.Usage.OutputTokens)
+	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
+	require.Empty(t, rec.Body.String())
 }

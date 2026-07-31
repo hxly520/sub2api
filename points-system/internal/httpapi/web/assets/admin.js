@@ -127,7 +127,7 @@
     page.limit = Math.max(1, ui.number(data?.limit) || page.limit);
     page.offset = Math.max(0, ui.number(data?.offset));
     ui.renderRows("admin-users-body", state.users, [
-      "user_id",
+      (user) => user.username || "未设置用户名",
       (user) => ui.points(user.total_points_hundredths),
       (user) => ui.points(user.yesterday_points_hundredths),
       (user) => ui.money(user.total_spend_microusd),
@@ -163,7 +163,7 @@
     state.grantSummary = summary?.counts && typeof summary.counts === "object" ? summary.counts : {};
     ui.renderRows("admin-grants-body", state.grants, [
       (grant) => ui.dateTime(grant.created_at),
-      "user_id",
+      (grant) => grant.username || "未设置用户名",
       (grant) => ui.money(grant.amount_microusd),
       (grant) => ui.kindText(grant.kind),
       (grant) => ui.statusChip(grant.status),
@@ -491,7 +491,7 @@
         return;
       }
       ui.setSession(data);
-      ui.byId("admin-user-id").textContent = `管理员 ${data.user_id}`;
+      ui.byId("admin-username").textContent = data.username || "未设置用户名";
       access.remove();
       app.hidden = false;
       bindEvents();

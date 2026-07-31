@@ -78,10 +78,16 @@ describe('public landing page entry contract', () => {
     expect(document.querySelector('link[rel="stylesheet"], video, audio')).toBeNull()
 
     const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'))
-    expect(images).toHaveLength(3)
+    expect(images).toHaveLength(2)
     expect(images.every((image) => image.getAttribute('src') === '/api/v1/settings/logo')).toBe(
       true,
     )
+  })
+
+  it('ships the split hero and its raster visual inside the exact-root HTML', () => {
+    expect(document.querySelector('.hero-layout .hero-copy-block')).not.toBeNull()
+    expect(document.querySelector('.hero-layout .hero-visual[role="img"]')).not.toBeNull()
+    expect(html).toContain('data:image/webp;base64,')
   })
 })
 

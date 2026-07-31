@@ -61,6 +61,7 @@
 | OpenAI-compatible 缓存锚点 | 保留客户端显式 `prompt_cache_key`；没有显式锚点时，按 API Key、模型、稳定会话信息和请求前缀派生短哈希 | `backend/internal/service/openai_compat_prompt_cache_key.go`、`openai_content_session_seed.go` | `openai_compat_prompt_cache_key_test.go`、Chat/Responses/Anthropic 转换测试 |
 | 提示词归属 | OpenAI APIKey 账号可显式开启 `extra.openai_upstream_relay`。开启后不再由平台重复注入默认 Codex 基础提示词；客户端显式 `instructions` 原样保留，上游内部提示词由上游负责。默认关闭，维持官方兼容行为 | `backend/internal/service/account.go`、`openai_gateway_forward.go`、账号创建/编辑前端 | `account_openai_passthrough_test.go`、`openai_gateway_service_hotpath_test.go`、账号前端测试 |
 | Chat/Responses/Anthropic 工具流 | 保留 function/custom/freeform 工具、工具顺序归一、call id、thinking 和 terminal 事件 | `backend/internal/pkg/apicompat/`、`backend/internal/service/openai_gateway_*` | `chatcompletions_responses_bridge_*`、`openai_gateway_*_test.go` |
+| 跨协议流终态与断流保护 | Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 只有收到各自正式成功终态才可成功；EOF、读取错误、上游 SSE/WebSocket error 和缺终态不能静默返回成功 | `backend/internal/service/openai_gateway_response_handling.go`、`openai_gateway_chat_completions*.go`、`gateway_forward_as_chat_completions.go`、`gemini_*_compat_service.go`、`openai_ws_http_bridge.go`、`openai_ws_v2/` 及对应 handler | `openai_gateway_chat_completions*_test.go`、`gateway_forward_as_chat_completions_test.go`、`gemini_*_compat_service_test.go`、`openai_ws_*_test.go` |
 | OpenAI-compatible 账号 | 支持精确 Chat Completions URL、Responses/Chat 模式和可配置认证头 | `backend/internal/service/openai_compatible_auth.go`、账号配置与各 OpenAI 转发服务 | 账号探测、模型同步、Chat/Responses/Embeddings/Images 回归 |
 | Codex 模型清单 | 带 `client_version` 的请求优先使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey 账号按官方代理路径获取并复用缓存、ETag 与 singleflight。APIKey-only 分组全部失败时返回合法空远程清单，由 Codex 合并内置目录；OAuth 凭据损坏仍报错 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`openai_codex_models_handler_test.go`、`gateway_codex_models_test.go` |
 | 错误脱敏 | 用户仅看到稳定错误结构，内部日志保留不含凭据的诊断字段 | `backend/internal/service/upstream_error_sanitize.go`、各 gateway handler | `upstream_error_sanitize_test.go`、协议错误回归 |
@@ -89,7 +90,14 @@
 
 同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、一般 `5xx/524`、流中断和一般 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。唯一新增例外是上游错误消息去除首尾空白后精确等于 `Selected model is at capacity. Please try a different model.`：该消息被视为生成前的明确容量拒绝，不依赖 HTTP 状态码；HTTP 错误、HTTP 200 内的 `response.failed` 或 SSE `error` 只要尚未向客户端输出任何语义正文，即可复用原请求体执行最多两次重放，并分别等待 `100ms`、`200ms`。调度先选择其他账号；没有其他候选时可在同一账号上使用剩余预算，故单账号组最多为首次请求加两次重放。该请求级错误不得降低账号健康分、写入运行时 block 或触发账号冷却。近似文案、大小写变化、附加前后缀、媒体创建请求及已经输出正文的流均不适用。每次容量重试写入 `openai.model_capacity_retry_scheduled` 结构化日志，但不记录请求正文。pool 上游发生其他故障后，当前请求返回真实错误；下一次客户端重试会在绑定仍指向故障账号时原子解除旧粘性，并在 2 分钟软降权窗口内优先选择健康账号。并发请求已经写入的新绑定不会被旧失败请求删除。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
 
-Responses SSE 的成功终态只能是 `response.completed` 或 `response.done`；`response.failed`、`response.incomplete`、`response.cancelled`/`response.canceled` 是失败终态。上游单独发送通用哨兵 `data: [DONE]` 后关闭连接，不得被解释为 Responses 成功，也不得生成零 usage 的静默 HTTP 200。若尚未向客户端输出语义正文，应进入现有安全换号边界；若已经输出部分正文且客户端仍连接，handler 必须补标准 `response.failed` 后结束流，使客户端得到可见错误。若客户端已经关闭连接，HTTP 状态已固定且没有回写通道，服务端继续 drain 上游完成 usage/计费收口，并记录 `openai.responses_client_disconnected`，字段至少包含服务端/客户端 request ID、用户、API Key、分组、账号、模型、上游 request ID 和断开发生阶段；日志不得包含请求正文或凭据。`response_id` 的账号绑定必须保留 trace 值并脱离已取消的请求上下文完成，避免后续连续会话丢失账号亲和。
+响应成功不能由 HTTP 200、EOF 或通用 framing 哨兵推断，必须满足当前协议的正式成功终态：Responses 为 `response.completed`/`response.done`；原生 Chat 非流式每个 choice 必须有 `finish_reason`，流式必须观察到 `finish_reason` 和 `[DONE]`；Anthropic 转 Chat 必须收到 `message_stop` 或带 `stop_reason` 的 `message_delta`；Gemini 转 Chat/Messages 与 Gemini native 流必须收到 `finishReason`；Responses WS v2 和 WS-to-HTTP bridge 必须收到正式 Responses 成功终态。`response.failed`、`response.incomplete`、`response.cancelled`/`response.canceled`、Anthropic/Gemini/OpenAI SSE `error` 和 WebSocket `error` 都是显式失败，不得改写为成功。
+
+所有上述入口统一遵守以下断流边界：
+
+1. 上游 EOF、scanner/WebSocket 读取错误或缺正式终态时，尚未向客户端输出语义正文的请求进入既有安全故障切换判断；已经输出部分正文时在仍可写的连接上发送当前下游协议的显式错误，禁止伪造 `[DONE]`、`finish_reason=stop`、`message_stop` 或其他成功终止事件。
+2. 正式上游错误必须继续走原有 HTTP/错误事件分类、账号健康、粘性释放和故障切换规则；本修复只关闭静默成功路径，不把一般 5xx、读错误或部分输出重新定义为可安全重放。
+3. 客户端断开后关闭所有重放窗口和下游写入，但服务端继续 drain 上游终态与 usage，供真实消费计费收口。结果必须标记 `ClientDisconnect`；后续 EOF、容量错误或读取错误不得因此触发第二次上游请求。断开日志记录请求、用户、分组、账号、模型、上游 request ID 和阶段，不记录正文、cookie 或凭据。
+4. Responses 的 `response_id` 账号绑定继续保留 trace 值，并使用不继承客户端取消信号的上下文完成，避免连续会话因客户端先断开而丢失账号亲和。
 
 TTFT 起点必须设置在最终选中账号实际发出上游请求之前。系统设置 `openai_first_response_enabled=true` 时，最终 attempt 收到上游 2xx 响应头即表示上游已经接受并正常开始响应，`first_token_ms` 在此处结束；关闭时恢复首个真实语义输出口径。4xx/5xx、transport error、调度排队和之前失败 attempt 不得留下快值。该值是首响应指标，不代表首段可见文本；`duration_ms` 仍保留从客户端请求进入到完成的完整耗时。禁止发送本地伪造 token、提前结束请求或修改计费记录来缩短指标。
 
@@ -152,11 +160,15 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 每个积分阶梯只能选择固定余额区间或消费金额百分比区间。百分比基数使用对应统计周期的原始成功消费金额，不得用积分反推；所有金额向下量化到 `0.01 U`，随机值来自 CSPRNG，用户页面只显示实际中奖金额。
 - 用户工作台同时显示总积分、昨日积分、今日签到所得和累计签到赠送金额。累计值只汇总已经成功发放且未冲正的签到余额，不能把 pending、永久失败或已冲正金额用于展示。7/30/90 日趋势按今天之前的连续完整自然日查询，缺失快照补零，日均固定除以自然日天数。
 - 用户工作区 `/app/` 与管理员工作区 `/admin/` 是两套中文页面和脚本。用户端只提供总积分、昨日积分、今日/累计签到赠送、7/30/90 日积分趋势和个人记录；管理员端提供策略版本、全站用户积分明细以及签到发放任务的查询、重试和审计冲正。管理员发放概览使用服务端对全部 `checkin` 任务的状态聚合，不能只汇总最新 100 条列表，冲正永久失败必须进入失败告警。积分系统不提供手工余额赠送或手工快照刷新入口，直接调余额继续使用 Sub2API 原有管理能力，每日快照只由调度器自动结算。普通用户必须同时被页面、管理员脚本和 `/api/v1/admin/*` 权限校验拦截，管理员也不得调用用户账户、积分、签到或个人赠送 API；除共用退出外均按精确角色返回 `403`。
+- 用户和管理员积分工作区共用冷灰底、深墨导航和电蓝数据指标的数字化视觉系统，但继续使用独立 HTML、脚本、路由和双向精确角色授权。用户页采用四指标大屏、宽幅 7/30/90 日趋势和个人双明细；管理员页采用同一设计语言下的紧凑运维工作区，视觉改版不得合并角色页面或放宽 API 权限。
+- 积分界面中所有可见身份统一显示 Sub2API 用户名，包括用户页顶部身份、管理员页顶部身份、全站用户积分明细首列和签到余额发放任务的用户列。数值用户 ID 只保留在服务端账户关联、财务记录、审计和幂等键中；浏览器 API 需要标识身份时返回 `username`，不得额外暴露无展示或操作用途的 `user_id`。
 - 单次、单用户每日、全平台每日奖励上限均为管理员配置。签到资格读取、次数和金额占用、规则快照、审计记录及余额发放事务发件箱必须在同一串行化事务中完成。
 - 积分业务写表复用现有 `sub2api` 数据库，但固定在独立 `points` schema，写池默认最多 8 条连接；消费读取使用另一只读账号和最多 4 条连接。启动时 `current_schema()` 不匹配必须失败，禁止回退到 `public` 建表。
+- 新装时 `points-system/deploy/shared-database-bootstrap.sql.example` 对 `public.users` 只授予 `SELECT (id, username, deleted_at)`；不得为了显示用户名扩大到整表 `SELECT`。存量环境不得重跑首次 bootstrap，必须先完成数据库备份和积分账户/快照/账本、Sub2API 用户计数，再以 root-only stdin 传入既有 `points_app_role`，单独执行事务化的 `shared-database-users-username-upgrade.sql.example`，保存其无密钥审计输出并复核计数无变化。脚本只增加 `SELECT (username)`、不修改 PUBLIC ACL，且角色、表、列、既有最小权限或授权后断言任一不满足都整体回滚。截至 `2026-07-31` 文档收口，生产 `points_app` 尚未执行该存量授权，切换使用用户名查询的积分候选前必须完成，不能把仓库文件改动当作线上 ACL 已生效。
 - 业务拒绝按用户、自然日和拒绝原因收敛，恶意轮换幂等键不能无界增加财务表。余额 credit 的网络、超时或 5xx 结果属于未知状态，必须用原 UUID 重试确认到账后才能排队 debit；不得直接标为已冲正。
 - Sub2API 与积分服务使用 Base64 编码的版本化 HMAC 密钥。启动票据为 `key_id.payload.signature` 三段格式并绑定 `aud=points-system`；余额请求签名绑定 key ID、方法、路径、时间戳、交易 UUID 和请求体摘要，同一交易只能入账一次。
 - 用户入口：Sub2API `/points`；管理员入口：系统设置内的“积分系统”标签及独立路由 `/admin/settings/points`。这两个入口是内置菜单，不得再把积分域名配置成普通自定义菜单。两者都在 Sub2API 右侧内容区加载受票据保护的 iframe，左侧导航、Header 和上传的 `site_logo` 始终由 Sub2API 提供；积分内页在 `ui_mode=embedded` 下隐藏重复品牌和退出入口，管理员保留横向积分子导航。管理员入口不依赖用户菜单开关，可在 `points_system.enabled=false` 时检查桥接状态并通过 step-up 在当前页启动策略控制台；普通用户入口继续由用户开关和生效 policy 双重控制。积分域名根路径不提供工作台，直接访问 `/app/` 或 `/admin/` 没有积分会话时必须拒绝。
+- 积分独立页和管理页的品牌位必须加载 `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`，不得再显示“积”或“管”等文字占位。服务端只把精确父站 Origin 加入 CSP `img-src`；父站 Logo 请求失败时前端仅回退到积分镜像内、受积分会话保护的 `/assets/logo.svg`。该图片来源规则不改变 iframe Origin、启动票据、session 或角色权限。
 - 普通用户开放必须同时满足 Sub2API 菜单开关和积分服务当前生效策略完整启用。积分服务在用户 ticket、页面、静态资源和 API 四层执行关闭态校验，旧会话与手工 URL 不能绕过。截至 `2026-07-31`，policy v3 已启用、历史回算已成功且签到关闭；运行中的 Sub2API 仍加载 `POINTS_SYSTEM_ENABLED=false`，准备文件为 `true` 但不会热加载，只有维护者手工切换后续 Sub2API 候选时才会开放普通用户入口。
 - 全历史回算是当前 `points` schema 的一次性已完成操作，成功作业为 `5174eef7-5f0a-4a17-b4f1-f50840940f64`。后续不得再次创建或应用历史计划；日常只允许调度器按版本化策略自动对账，迟到消费在滚动窗口内按原日期固定比例修订。
 - Sub2API 余额缓存使用 Redis 用户代次保护回源写入：余额失效或扣减必须原子推进代次，旧数据库读取只能在代次未变化时回填。积分 credit 已提交但缓存失效失败时返回可重试 `503`，积分发件箱用原 UUID 重试，不能把未完成缓存同步的交易标为 settled。
@@ -178,9 +190,9 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
-- Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。
+- Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。两套入口必须同步采用生图参考稿确定的冷灰/电蓝数据化风格、左文右图主视觉和一致的信息层级，不能只改 Vue 页面后把生产根路径遗留为旧版。
 - 上传 Logo 的同源图片入口为 `GET /api/v1/settings/logo`：只接受后台 `site_logo` 中不超过 2 MiB 且真实文件签名一致的 PNG/JPEG/WebP/GIF Base64 Data URI，响应设置 `nosniff`；后台上传控件同步只接受这四类栅格格式。异常值、伪造类型、SVG、AVIF 或未配置时重定向到 `/logo.svg`。公开首页和积分嵌入页统一使用该上传 Logo，不复制品牌素材。
-- 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
+- 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。`frontend/src/views/HomeView.vue`、其主视觉资源和 `deploy/public-landing/index.html` 必须作为同一次首页改版审查；静态 exact-root 应保持单文件自包含或把新增资产纳入原子发布清单。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
 - Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
 - 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
 - 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。
@@ -193,6 +205,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 新增的非事务并发索引迁移，服务于全站到期冻结扫描，当前已进入生产。后续发布必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本，当前已进入生产；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
+- 积分角色读取 Sub2API 用户表必须保持列级 allowlist：内部关联用 `id`、界面身份用 `username`、过滤软删除用 `deleted_at`。任何新增展示字段都必须先经过数据最小化审查，禁止把用户表整表授权给积分角色。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
 - 修改 `backend/ent/schema/` 后必须重新生成 Ent 文件，并提交 schema、生成代码、SQL migration 和回归测试。
@@ -221,9 +234,10 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - 账号选择使用高级智能调度但关闭粘性加权。新会话按综合分选择；已有会话只有在同画像成功样本证明候选显著更快时才通过 Redis CAS 迁移。迁移不发送探测请求，不增加上游调用和计费。
 - OpenAI Images JSON 保活和 Gemini SSE 心跳兼容继续保留；Gemini 工作台改为流式聚合，不依赖超过 120 秒的无字节非流式响应。
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和一般失败终态不自动重放。精确容量拒绝文案是唯一额外例外，按 3.2 节的原文匹配、未输出正文、最多两次及 `100ms/200ms` 退避执行。图片和视频创建继续严格一次提交。
-- Responses 不得把 `[DONE]` 当成成功终态；缺少正式终态时按 3.2 节区分“未输出正文可安全换号”“已输出正文补 `response.failed`”和“客户端已断开只记录并收口计费”。升级合并必须保留三条路径及其测试，不能只依据最终 HTTP 200 判断成功。
+- Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 都不得把 HTTP 200、EOF 或 framing 哨兵当成成功终态；缺正式终态时按 3.2 节区分“未输出正文进入安全故障切换判断”“已输出正文发送协议显式错误”和“客户端已断开继续 drain usage、禁止重放”。升级合并必须保留三条路径及其测试。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- 仓库与当前生产版本号均为 `0.1.168`。Sub2API 当前仍为 `0.1.168-339422728b2c`；包含容量精确重试、历史激活门禁、新未登录首页和同源上传 Logo 的后续候选只构建、上传并缓存，必须由维护者手工切换。积分服务当前为 `0.1.168-28e760bc8c6d`，已包含第三条历史迁移、管理员用户积分明细及仅签到发放任务；下一积分候选在此基础上优化嵌入式双工作区，可在备份 `points` schema 后独立更新。policy v3 已启用，比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业已成功，运行中的 Sub2API 用户开关仍关闭。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
+- 仓库与当前生产版本号均为 `0.1.168`。Sub2API 当前仍为 `0.1.168-339422728b2c`；包含容量精确重试、跨协议会话中断修复、历史激活门禁、新未登录首页和同源上传 Logo 的后续候选必须先生成最终 commit，再构建、上传并缓存，且只能由维护者手工切换。积分服务当前为 `0.1.168-28e760bc8c6d`，已包含第三条历史迁移、管理员用户积分明细及仅签到发放任务；下一积分候选在此基础上优化嵌入式双工作区与品牌 Logo，可在备份 `points` schema 后独立更新。policy v3 已启用，比例 `10.00:1`、刷新 `00:05`、签到关闭；历史作业已成功，运行中的 Sub2API 用户开关仍关闭。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)，`2026-07-30` 文档只作为历史发布记录。
+- 截至本轮文档收口时，上述工作仍是未提交工作树：最终 commit、候选 tag、OCI revision 和 registry digest 均尚未生成，也没有推送、构建或切换生产。后续只能用最终推送 commit 和对应镜像工作流输出补写这些值，禁止用 `874255bcd`、旧生产 revision、image ID 或本地 archive SHA256 代替。
 - 后端全量测试、vet、编译，积分服务单元/vet/integration-tag 编译，前端 lint/typecheck/全量测试/生产构建和 Compose 解析已通过。官方纳秒 TTL 测试已在 `d83ea1bb` 改为显式过期快照，Windows 连续 20 次验证通过；真实 PostgreSQL 事务和并发用例必须由 GitHub PostgreSQL 16 CI 最终确认。
 
 ### 5.1 升级前盘点
@@ -286,9 +300,10 @@ go build ./cmd/server
 
 | 范围 | 最低验证 |
 | --- | --- |
-| OpenAI | Responses、Chat Completions、SSE、非流式、工具调用、缓存 usage、Embeddings、账号错误 |
-| Anthropic | Messages、thinking、tool_use/tool_result、cache creation/read、流终态 |
-| Gemini | native `v1beta`、兼容 Chat/Messages、模型列表、SSE 注释心跳、分块图片聚合和流终态 |
+| OpenAI | Responses、原生 Chat Completions、SSE、非流式、工具调用、缓存 usage、Embeddings、账号错误；逐项验证正式成功/失败终态、EOF、读取错误、SSE error、部分输出显式错误、客户端断开 drain usage 且禁止重放 |
+| Anthropic | Messages、thinking、tool_use/tool_result、cache creation/read、Anthropic 转 Chat 的 `message_stop`/`stop_reason`、缺终态、SSE error、部分输出和客户端断开 |
+| Gemini | native `v1beta`、兼容 Chat/Messages、模型列表、SSE 注释心跳、分块图片聚合、`finishReason`、缺终态、读取错误、部分输出和客户端断开 |
+| WebSocket | Responses WS v2 与 WS-to-HTTP bridge 的正式成功/失败终态、上游 error、终态前 EOF、终态后正常关闭、客户端断开 drain usage 及零重放 |
 | 调度 | 分组隔离、模型/端点/协议画像隔离、近似评分分流、粘性、显著快账号 CAS 迁移、CAS 冲突回退、明确拒绝切号、模糊失败不重放 |
 | 图片 | 同步生成、同步编辑、手动异步、重复查询、失败不扣费、成功一次计费、代理 URL |
 | 视频 | 每个公开模型的创建、查询、内容下载、长轮询恢复、公开 ID、失败不扣费、成功一次计费 |
@@ -317,6 +332,7 @@ go build ./cmd/server
 - 快账号迁移不得发送探测请求；候选槽位必须先获取，原子改绑失败后必须释放并继续使用原粘性账号。
 - 全局首响应优化开启时，TTFT 从最终账号真实上游发送开始，以最终成功 attempt 的 2xx 响应头作为最早正常响应；关闭时使用首个真实语义输出。错误切号、调度排队和失败响应不计入，不能发送本地伪造 token 或篡改总耗时。
 - 文本请求最多按明确安全条件故障转移；媒体创建发出后绝不跨账号自动重放。
+- 流式 HTTP/WS 只有协议正式成功终态才能成功；EOF、读取错误、上游错误或缺终态必须显式失败。部分输出后不得合成成功终止事件；客户端断开后只允许有界 drain usage，禁止再写下游或重放上游请求。
 - 图片/视频任务使用公开 ID；查询固定回创建账号；成功一次计费，失败不扣费。
 - 用户响应和浏览器 Network 不出现供应商域名、账号 Base URL、供应商任务 ID或认证头。
 - 可用渠道只展示渠道定价中且用户有权访问的模型，并在桌面/移动端完整可查看。
@@ -324,6 +340,7 @@ go build ./cmd/server
 - 积分只统计成功余额消费且不可兑换；签到奖励通过余额发放事务发件箱入账。最低签到消费金额只读昨日成功消费，百分比奖励只读对应周期原始消费金额，浏览器参数不能改变用户、积分、消费基数、阶梯或奖励。
 - 积分配置只追加版本并次日生效；仅消费用户必须锁定昨日积分。直接访问积分域名不能建立会话，余额发放必须同时通过 HMAC、时间窗、key ID、交易 UUID 和数据库幂等校验。
 - 积分服务只能在现有 Sub2API 数据库的独立 schema 写入；首次迁移前必须备份数据库，启动或回滚积分容器不得停止、重启或替换运行中的 Sub2API 容器。
+- 积分页面只显示用户名，不显示数值用户 ID；数值 ID 只允许在服务端关联、财务审计和幂等处理中使用，浏览器 API 不返回无必要的 `user_id`。
 - 余额缓存旧回源不得覆盖积分 credit/reversal 后的新余额；缓存同步失败必须保持同一交易可重试。公网域名不得代理内部 credit 路径，`/launch` 之外的积分访问日志不得整体关闭。
 
 ## 8. 文档更新规则

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,13 @@ func (s *Store) ConsumeLaunchTicket(ctx context.Context, claims security.LaunchC
 	session := Session{UserID: userID, Role: claims.Role, Theme: claims.Theme,
 		Language: claims.Language, ExpiresAt: sessionExpiry}
 	err := s.withSerializableTx(ctx, func(tx pgx.Tx) error {
+		var activeUser bool
+		if err := tx.QueryRow(ctx, `SELECT TRUE FROM users WHERE id=$1 AND deleted_at IS NULL`, userID).Scan(&activeUser); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return security.ErrInvalidTicket
+			}
+			return fmt.Errorf("verify launch user: %w", err)
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO points_launch_ticket_nonces(jti_hash,subject_user_id,role,expires_at)
 			VALUES($1,$2,$3,$4)`, security.HashToken(claims.Nonce), userID, claims.Role, ticketExpiry); err != nil {
 			return fmt.Errorf("consume launch ticket: %w", err)
@@ -54,8 +62,10 @@ func sessionTTLForRole(role string, configured time.Duration) time.Duration {
 
 func (s *Store) Session(ctx context.Context, token string, now time.Time) (Session, error) {
 	var session Session
-	err := s.DB.QueryRow(ctx, `SELECT user_id,role,theme,language,expires_at FROM points_sessions
-		WHERE token_hash=$1 AND expires_at>$2`,
+	err := s.DB.QueryRow(ctx, `SELECT session.user_id,session.role,session.theme,session.language,session.expires_at
+		FROM points_sessions AS session
+		JOIN users AS site_user ON site_user.id=session.user_id AND site_user.deleted_at IS NULL
+		WHERE session.token_hash=$1 AND session.expires_at>$2`,
 		security.HashToken(token), now).Scan(&session.UserID, &session.Role, &session.Theme,
 		&session.Language, &session.ExpiresAt)
 	return session, translateNotFound(err)

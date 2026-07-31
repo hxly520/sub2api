@@ -13,7 +13,7 @@
   <div id="admin-app" class="admin-layout" hidden>
     <aside class="admin-sidebar">
       <div class="brand-lockup admin-brand">
-        <span class="brand-mark" aria-hidden="true">管</span>
+        <span class="brand-mark"><img src="__SUB2API_BRAND_LOGO__" data-brand-logo alt="Sub2API Logo"></span>
         <div><strong>积分管理</strong><span>独立管理后台</span></div>
       </div>
       <nav class="admin-nav" aria-label="后台管理功能" role="tablist">
@@ -23,7 +23,7 @@
         <button id="tab-operations" class="admin-nav-button" data-view="operations" type="button" role="tab" aria-controls="view-operations" aria-selected="false" tabindex="-1">签到发放记录</button>
       </nav>
       <div class="admin-sidebar-footer">
-        <span id="admin-user-id">管理员</span>
+        <span id="admin-username">管理员</span>
         <button id="logout" class="button ghost sidebar-logout" type="button">退出后台</button>
       </div>
     </aside>
@@ -71,7 +71,7 @@
         <section class="table-panel admin-table-panel">
           <div class="table-wrap">
             <table class="users-points-table">
-              <thead><tr><th>用户 ID</th><th>总消费积分</th><th>昨日消费积分</th><th>累计消费金额</th><th>昨日消费金额</th><th>结算日期</th><th>结算状态</th></tr></thead>
+              <thead><tr><th>用户名</th><th>总消费积分</th><th>昨日消费积分</th><th>累计消费金额</th><th>昨日消费金额</th><th>结算日期</th><th>结算状态</th></tr></thead>
               <tbody id="admin-users-body"></tbody>
             </table>
           </div>

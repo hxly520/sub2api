@@ -161,73 +161,78 @@
       <section
         id="top"
         data-testid="home-hero"
-        class="home-hero relative isolate flex min-h-[calc(100svh-9rem)] items-center overflow-hidden border-b border-gray-200 bg-[#f7f9fc] sm:min-h-[calc(100svh-10rem)] dark:border-dark-800 dark:bg-dark-950"
+        class="home-hero relative isolate flex min-h-[calc(100svh-7rem)] items-center overflow-hidden border-b border-gray-200 bg-[#f5f8fc] dark:border-dark-800 dark:bg-dark-950"
         aria-labelledby="home-title"
       >
         <div class="home-scene pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
           <span class="home-scene-frame"></span>
           <span class="home-scene-line home-scene-line-one"></span>
           <span class="home-scene-line home-scene-line-two"></span>
-          <span class="home-scene-marker home-scene-marker-one"></span>
-          <span class="home-scene-marker home-scene-marker-two"></span>
-          <span class="home-scene-marker home-scene-marker-three"></span>
-          <span class="home-scene-marker home-scene-marker-four"></span>
         </div>
 
-        <div class="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
-          <div class="mx-auto max-w-4xl text-center">
-            <div class="home-logo-frame mx-auto flex h-20 w-20 items-center justify-center rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900 sm:h-24 sm:w-24">
-              <img
-                :src="siteLogo || '/logo.svg'"
-                :alt="siteName"
-                class="h-14 w-14 rounded-md object-contain sm:h-[4.25rem] sm:w-[4.25rem]"
-              />
-            </div>
-            <p class="mt-6 flex items-center justify-center gap-3 text-xs font-semibold text-blue-700 dark:text-blue-300">
-              <span class="h-px w-8 bg-blue-500" aria-hidden="true"></span>
+        <div class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+          <div class="grid items-center gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-4">
+            <div class="home-hero-copy max-w-2xl">
+              <p class="flex items-center gap-2.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+                <span class="h-px w-7 bg-blue-500" aria-hidden="true"></span>
               {{ t('home.hero.eyebrow') }}
-              <span class="h-px w-8 bg-blue-500" aria-hidden="true"></span>
-            </p>
-            <h1
-              id="home-title"
-              class="mx-auto mt-5 max-w-4xl break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl lg:text-6xl dark:text-white"
-            >
-              {{ siteName }}
-            </h1>
-            <p class="mx-auto mt-5 max-w-3xl text-lg font-semibold leading-8 text-gray-700 dark:text-dark-100">
-              {{ siteSubtitle }}
-            </p>
-            <p class="mx-auto mt-3 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base dark:text-dark-300">
-              {{ t('home.hero.description') }}
-            </p>
+              </p>
+              <h1
+                id="home-title"
+                class="mt-5 break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl dark:text-white"
+              >
+                {{ siteName }}
+              </h1>
+              <p class="home-hero-display-title mt-3 break-words text-4xl font-bold leading-tight text-gray-950 sm:text-5xl dark:text-white">
+                <span class="block">{{ t('home.hero.titlePrimary') }}</span>
+                <span class="block text-blue-600 dark:text-blue-400">{{ t('home.hero.titleSecondary') }}</span>
+              </p>
+              <p class="mt-5 max-w-xl text-lg font-semibold leading-8 text-gray-700 dark:text-dark-100">
+                {{ siteSubtitle }}
+              </p>
+              <p class="mt-2 max-w-xl text-sm leading-7 text-gray-600 sm:text-base dark:text-dark-300">
+                {{ t('home.hero.description') }}
+              </p>
 
-            <div class="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-              <router-link
-                :to="primaryEntryPath"
-                data-testid="home-primary-entry"
-                class="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:bg-blue-500 dark:hover:bg-blue-400"
-              >
-                {{ primaryEntryLabel }}
-                <Icon name="arrowRight" size="sm" class="ml-2" />
-              </router-link>
-              <a
-                href="#overview"
-                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:border-blue-300 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-dark-600 dark:bg-dark-900 dark:text-white dark:hover:border-blue-500 dark:hover:text-blue-300"
-              >
-                {{ t('home.hero.secondaryAction') }}
-              </a>
+              <div class="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                <router-link
+                  :to="primaryEntryPath"
+                  data-testid="home-primary-entry"
+                  class="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                >
+                  {{ primaryEntryLabel }}
+                  <Icon name="arrowRight" size="sm" class="ml-2" />
+                </router-link>
+                <a
+                  href="#overview"
+                  class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:border-blue-300 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-dark-600 dark:bg-dark-900 dark:text-white dark:hover:border-blue-500 dark:hover:text-blue-300"
+                >
+                  {{ t('home.hero.secondaryAction') }}
+                </a>
+              </div>
+
+              <ul class="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-gray-600 dark:text-dark-300">
+                <li v-for="item in heroAssurances" :key="item" class="inline-flex items-center gap-1.5">
+                  <Icon name="checkCircle" size="xs" class="text-blue-600 dark:text-blue-400" />
+                  {{ item }}
+                </li>
+              </ul>
             </div>
 
-            <ul class="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-medium text-gray-600 dark:text-dark-300">
-              <li v-for="item in heroAssurances" :key="item" class="inline-flex items-center gap-1.5">
-                <Icon name="checkCircle" size="xs" class="text-blue-600 dark:text-blue-400" />
-                {{ item }}
-              </li>
-            </ul>
+            <figure class="home-data-visual relative min-w-0" aria-labelledby="home-visual-caption">
+              <img
+                src="/home-data-visual.png"
+                :alt="t('home.hero.visualAlt')"
+                class="home-data-visual-image block h-auto w-full object-contain"
+              />
+              <figcaption id="home-visual-caption" class="sr-only">
+                {{ t('home.hero.visualAlt') }}
+              </figcaption>
+            </figure>
           </div>
 
           <div
-            class="home-service-flow mx-auto mt-9 hidden max-w-5xl grid-cols-4 border-y border-gray-200 bg-white/70 md:grid dark:border-dark-700 dark:bg-dark-900/70"
+            class="home-service-flow mt-8 hidden grid-cols-4 border-y border-gray-200 bg-white/75 md:grid dark:border-dark-700 dark:bg-dark-900/70"
             aria-hidden="true"
           >
             <div
@@ -247,14 +252,6 @@
               <span v-if="index < serviceFlowItems.length - 1" class="home-flow-pulse"></span>
             </div>
           </div>
-
-          <a
-            href="#overview"
-            :aria-label="t('home.hero.secondaryAction')"
-            class="mx-auto mt-5 flex h-9 w-9 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-dark-500 dark:hover:bg-dark-900 dark:hover:text-blue-300"
-          >
-            <Icon name="arrowDown" size="sm" />
-          </a>
         </div>
       </section>
 
@@ -716,7 +713,7 @@ onMounted(() => {
 <style scoped>
 .home-scene-frame {
   position: absolute;
-  inset: 8% 6%;
+  inset: 7% 5%;
   border-right: 1px solid rgba(148, 163, 184, 0.22);
   border-left: 1px solid rgba(148, 163, 184, 0.22);
 }
@@ -730,56 +727,38 @@ onMounted(() => {
 }
 
 .home-scene-line-one {
-  top: 22%;
+  top: 18%;
 }
 
 .home-scene-line-two {
-  bottom: 18%;
+  bottom: 14%;
 }
 
-.home-scene-marker {
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  border: 1px solid rgba(37, 99, 235, 0.58);
-  border-radius: 2px;
-  background: #f7f9fc;
+.home-brand-signal img {
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
 }
 
-.dark .home-scene-marker {
-  background: #020617;
+.home-data-visual {
+  display: flex;
+  min-height: 310px;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
 }
 
-.home-scene-marker-one {
-  top: calc(22% - 3px);
-  left: calc(6% - 3px);
+.home-data-visual-image {
+  max-height: 390px;
+  filter: drop-shadow(0 28px 42px rgba(49, 92, 167, 0.11));
+  mix-blend-mode: multiply;
+  animation: home-visual-enter 700ms ease-out both;
 }
 
-.home-scene-marker-two {
-  top: calc(22% - 3px);
-  right: calc(6% - 3px);
-}
-
-.home-scene-marker-three {
-  bottom: calc(18% - 3px);
-  left: calc(6% - 3px);
-}
-
-.home-scene-marker-four {
-  right: calc(6% - 3px);
-  bottom: calc(18% - 3px);
-}
-
-.home-logo-frame {
-  box-shadow:
-    0 18px 45px rgba(15, 23, 42, 0.08),
-    0 0 0 8px rgba(255, 255, 255, 0.52);
-}
-
-.dark .home-logo-frame {
-  box-shadow:
-    0 18px 45px rgba(0, 0, 0, 0.24),
-    0 0 0 8px rgba(15, 23, 42, 0.58);
+.dark .home-data-visual-image {
+  border-radius: 8px;
+  background: #f5f8fc;
+  filter: none;
+  mix-blend-mode: normal;
+  opacity: 0.88;
 }
 
 .home-overview-item:not(:last-child) {
@@ -912,8 +891,47 @@ onMounted(() => {
   }
 }
 
+@keyframes home-visual-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1023px) {
+  .home-data-visual {
+    min-height: 220px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .home-data-visual-image {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 639px) {
+  .home-hero > div:last-child {
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  .home-data-visual {
+    min-height: 125px;
+  }
+
+  .home-data-visual-image {
+    max-height: 125px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .home-flow-pulse {
+  .home-flow-pulse,
+  .home-data-visual-image {
     animation: none;
   }
 }

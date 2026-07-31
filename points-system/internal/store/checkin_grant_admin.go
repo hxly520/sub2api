@@ -2,27 +2,20 @@ package store
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/hxly520/sub2api/points-system/internal/domain"
 )
 
-// ListCheckinBalanceGrants excludes the retired points-system manual grant
-// type while preserving historical rows for accounting and audit purposes.
-func (s *Store) ListCheckinBalanceGrants(ctx context.Context, userID int64, admin bool, limit int) ([]BalanceGrant, error) {
+// ListCheckinBalanceGrants returns one user's check-in grants while excluding
+// the retired manual grant type.
+func (s *Store) ListCheckinBalanceGrants(ctx context.Context, userID int64, limit int) ([]BalanceGrant, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	query := balanceGrantSelect + ` FROM points_balance_grants WHERE kind='checkin'`
-	args := []any{}
-	if !admin {
-		query += ` AND user_id=$1`
-		args = append(args, userID)
-	}
-	query += ` ORDER BY created_at DESC LIMIT $` + fmt.Sprint(len(args)+1)
-	args = append(args, limit)
-	rows, err := s.DB.Query(ctx, query, args...)
+	query := balanceGrantSelect + ` FROM points_balance_grants
+		WHERE kind='checkin' AND user_id=$1 ORDER BY created_at DESC LIMIT $2`
+	rows, err := s.DB.Query(ctx, query, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -31,6 +24,41 @@ func (s *Store) ListCheckinBalanceGrants(ctx context.Context, userID int64, admi
 	for rows.Next() {
 		var item BalanceGrant
 		if err := scanBalanceGrant(rows, &item); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+type AdminCheckinBalanceGrant struct {
+	Grant    BalanceGrant
+	Username string
+}
+
+// ListAdminCheckinBalanceGrants joins the public username for display while
+// retaining the numeric account key only inside the accounting projection.
+func (s *Store) ListAdminCheckinBalanceGrants(ctx context.Context, limit int) ([]AdminCheckinBalanceGrant, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.DB.Query(ctx, `SELECT grant_row.id,grant_row.user_id,grant_row.amount_microusd,
+		grant_row.kind,grant_row.status,grant_row.external_event_id,grant_row.policy_version,
+		grant_row.attempts,grant_row.next_attempt_at,COALESCE(grant_row.last_error,''),
+		grant_row.reason,grant_row.created_at,grant_row.updated_at,COALESCE(site_user.username,'')
+		FROM points_balance_grants grant_row
+		LEFT JOIN users site_user ON site_user.id=grant_row.user_id
+		WHERE grant_row.kind='checkin'
+		ORDER BY grant_row.created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]AdminCheckinBalanceGrant, 0, limit)
+	for rows.Next() {
+		var item AdminCheckinBalanceGrant
+		targets := append(balanceGrantScanTargets(&item.Grant), &item.Username)
+		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
 		result = append(result, item)

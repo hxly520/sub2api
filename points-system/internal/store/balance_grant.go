@@ -238,9 +238,13 @@ const balanceGrantSelect = `SELECT id,user_id,amount_microusd,kind,status,extern
 	policy_version,attempts,next_attempt_at,COALESCE(last_error,''),reason,created_at,updated_at`
 
 func scanBalanceGrant(row rowScanner, grant *BalanceGrant) error {
-	return row.Scan(&grant.ID, &grant.UserID, &grant.AmountMicroUSD, &grant.Kind, &grant.Status,
+	return row.Scan(balanceGrantScanTargets(grant)...)
+}
+
+func balanceGrantScanTargets(grant *BalanceGrant) []any {
+	return []any{&grant.ID, &grant.UserID, &grant.AmountMicroUSD, &grant.Kind, &grant.Status,
 		&grant.ExternalEventID, &grant.PolicyVersion, &grant.Attempts, &grant.NextAttemptAt,
-		&grant.LastError, &grant.Reason, &grant.CreatedAt, &grant.UpdatedAt)
+		&grant.LastError, &grant.Reason, &grant.CreatedAt, &grant.UpdatedAt}
 }
 
 func scanBalanceGrantWithOperation(row rowScanner, grant *BalanceGrant, operation *string) error {

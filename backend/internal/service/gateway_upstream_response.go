@@ -648,6 +648,8 @@ type streamingResult struct {
 }
 
 func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool) (*streamingResult, error) {
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
@@ -1030,6 +1032,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						restored := reverseToolNamesIfPresent(c, []byte(block))
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
+							drainGuard.ClientDisconnected()
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 							// 不 break：客户端断开后仍需继续合并本事件及后续事件的 usage，
 							// 否则会漏计当前事件携带的 usage 导致少计费。后续写入由
@@ -1087,6 +1090,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			}
 			if _, werr := fmt.Fprint(w, keepaliveBlock); werr != nil {
 				clientDisconnected = true
+				drainGuard.ClientDisconnected()
 				logger.LegacyPrintf("service.gateway", "Client disconnected during keepalive ping, continuing to drain upstream for billing")
 				continue
 			}

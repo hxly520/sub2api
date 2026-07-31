@@ -1,0 +1,199 @@
+\set ON_ERROR_STOP on
+
+-- Existing shared-database deployments only. Preload this psql variable from
+-- a root-only file on stdin:
+--   points_app_role
+--
+-- Do not rerun shared-database-bootstrap.sql.example. This upgrade changes no
+-- schema objects or PUBLIC ACLs and grants only SELECT on public.users.username
+-- to the existing points application role. Capture the non-secret audit rows
+-- below in the root-only deployment record. Any failed preflight or assertion
+-- rolls the complete transaction back.
+
+BEGIN;
+
+SELECT pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+        current_database() || ':points-users-username-grant-v1',
+        0
+    )
+);
+
+SELECT format($preflight_sql$
+DO $preflight$
+DECLARE
+    target_role_oid oid;
+    target_role_unsafe boolean;
+    target_role_can_login boolean;
+    target_role_inherits boolean;
+    target_table_oid oid;
+BEGIN
+    SELECT oid,
+           rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls,
+           rolcanlogin,
+           rolinherit
+      INTO target_role_oid,
+           target_role_unsafe,
+           target_role_can_login,
+           target_role_inherits
+      FROM pg_catalog.pg_roles
+     WHERE rolname = %L;
+
+    IF target_role_oid IS NULL THEN
+        RAISE EXCEPTION 'target points application role does not exist';
+    END IF;
+    IF target_role_unsafe OR NOT target_role_can_login OR target_role_inherits THEN
+        RAISE EXCEPTION 'target role does not match the restricted points application role';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_auth_members
+         WHERE member = target_role_oid
+    ) THEN
+        RAISE EXCEPTION 'target points application role is a member of another role';
+    END IF;
+    IF pg_catalog.has_database_privilege(%L, current_database(), 'CREATE') THEN
+        RAISE EXCEPTION 'target role inherits CREATE on the shared database';
+    END IF;
+    IF pg_catalog.has_schema_privilege(%L, 'public', 'CREATE') THEN
+        RAISE EXCEPTION 'target role inherits CREATE on public schema';
+    END IF;
+
+    SELECT relation.oid
+      INTO target_table_oid
+      FROM pg_catalog.pg_class relation
+      JOIN pg_catalog.pg_namespace namespace
+        ON namespace.oid = relation.relnamespace
+     WHERE namespace.nspname = 'public'
+       AND relation.relname = 'users'
+       AND relation.relkind IN ('r', 'p');
+
+    IF target_table_oid IS NULL THEN
+        RAISE EXCEPTION 'required table public.users does not exist';
+    END IF;
+    IF EXISTS (
+        SELECT required.name
+          FROM (VALUES ('id'), ('username'), ('deleted_at')) AS required(name)
+         WHERE NOT EXISTS (
+             SELECT 1
+               FROM pg_catalog.pg_attribute attribute
+              WHERE attribute.attrelid = target_table_oid
+                AND attribute.attname = required.name
+                AND attribute.attnum > 0
+                AND NOT attribute.attisdropped
+         )
+    ) THEN
+        RAISE EXCEPTION 'public.users is missing an expected id, username, or deleted_at column';
+    END IF;
+
+    IF NOT pg_catalog.has_schema_privilege(%L, 'public', 'USAGE') THEN
+        RAISE EXCEPTION 'target role lacks the expected USAGE privilege on public schema';
+    END IF;
+    IF NOT pg_catalog.has_column_privilege(%L, target_table_oid, 'id', 'SELECT')
+       OR NOT pg_catalog.has_column_privilege(%L, target_table_oid, 'deleted_at', 'SELECT') THEN
+        RAISE EXCEPTION 'target role lacks the existing public.users id/deleted_at grants';
+    END IF;
+    IF pg_catalog.has_table_privilege(%L, target_table_oid, 'SELECT') THEN
+        RAISE EXCEPTION 'target role already has table-wide SELECT on public.users';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_attribute attribute
+         WHERE attribute.attrelid = target_table_oid
+           AND attribute.attnum > 0
+           AND NOT attribute.attisdropped
+           AND attribute.attname NOT IN ('id', 'username', 'deleted_at')
+           AND pg_catalog.has_column_privilege(%L, target_table_oid, attribute.attnum, 'SELECT')
+    ) THEN
+        RAISE EXCEPTION 'target role already has SELECT access outside the public.users allowlist';
+    END IF;
+    IF pg_catalog.has_table_privilege(%L, target_table_oid, 'INSERT')
+       OR pg_catalog.has_table_privilege(%L, target_table_oid, 'UPDATE')
+       OR pg_catalog.has_table_privilege(%L, target_table_oid, 'DELETE')
+       OR pg_catalog.has_table_privilege(%L, target_table_oid, 'TRUNCATE')
+       OR pg_catalog.has_table_privilege(%L, target_table_oid, 'REFERENCES')
+       OR pg_catalog.has_table_privilege(%L, target_table_oid, 'TRIGGER')
+       OR pg_catalog.has_any_column_privilege(%L, target_table_oid, 'INSERT')
+       OR pg_catalog.has_any_column_privilege(%L, target_table_oid, 'UPDATE')
+       OR pg_catalog.has_any_column_privilege(%L, target_table_oid, 'REFERENCES') THEN
+        RAISE EXCEPTION 'target role has unexpected write or reference access on public.users';
+    END IF;
+END
+$preflight$;
+$preflight_sql$,
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role',
+    :'points_app_role')
+\gexec
+
+SELECT current_database() AS database_name,
+       session_user AS executed_by,
+       :'points_app_role' AS target_role,
+       pg_catalog.pg_current_xact_id()::text AS transaction_id,
+       clock_timestamp() AS observed_at,
+       pg_catalog.has_column_privilege(
+           :'points_app_role', 'public.users', 'username', 'SELECT'
+       ) AS username_select_before;
+
+SELECT format(
+    'GRANT SELECT (username) ON TABLE public.users TO %I',
+    :'points_app_role'
+)
+\gexec
+
+SELECT format($assert_sql$
+DO $assertion$
+DECLARE
+    target_role_oid oid;
+    target_table_oid oid := 'public.users'::regclass::oid;
+BEGIN
+    SELECT oid
+      INTO target_role_oid
+      FROM pg_catalog.pg_roles
+     WHERE rolname = %L;
+
+    IF NOT pg_catalog.has_column_privilege(%L, target_table_oid, 'username', 'SELECT') THEN
+        RAISE EXCEPTION 'username SELECT grant is not effective';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_attribute attribute
+          CROSS JOIN LATERAL pg_catalog.aclexplode(attribute.attacl) privilege
+         WHERE attribute.attrelid = target_table_oid
+           AND attribute.attname = 'username'
+           AND attribute.attnum > 0
+           AND NOT attribute.attisdropped
+           AND privilege.grantee = target_role_oid
+           AND privilege.privilege_type = 'SELECT'
+    ) THEN
+        RAISE EXCEPTION 'username SELECT was not recorded as a direct column grant';
+    END IF;
+END
+$assertion$;
+$assert_sql$, :'points_app_role', :'points_app_role')
+\gexec
+
+SELECT current_database() AS database_name,
+       session_user AS executed_by,
+       :'points_app_role' AS target_role,
+       pg_catalog.pg_current_xact_id()::text AS transaction_id,
+       clock_timestamp() AS observed_at,
+       pg_catalog.has_column_privilege(
+           :'points_app_role', 'public.users', 'username', 'SELECT'
+       ) AS username_select_after;
+
+COMMIT;

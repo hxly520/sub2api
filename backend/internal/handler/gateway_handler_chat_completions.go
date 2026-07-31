@@ -274,6 +274,15 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 
 		if err != nil {
+			if result != nil && result.ClientDisconnect {
+				accountFailure := !service.IsStreamIncompleteAfterClientDisconnect(err)
+				reqLog.Info("gateway.cc.client_disconnected_after_upstream_error",
+					zap.Int64("account_id", account.ID),
+					zap.Bool("account_failure", accountFailure),
+					zap.Error(err),
+				)
+				return
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

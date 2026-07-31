@@ -1,17 +1,17 @@
 :root {
   color-scheme: light;
-  --bg: #f2f5f4;
+  --bg: #f3f6fb;
   --surface: #ffffff;
-  --surface-subtle: #f7f9f8;
-  --text: #13201b;
-  --muted: #65736d;
-  --line: #dfe6e2;
-  --line-strong: #cbd5d0;
-  --primary: #08785a;
-  --primary-hover: #056146;
-  --primary-soft: #e7f4ef;
-  --blue: #315fac;
-  --blue-soft: #edf2fa;
+  --surface-subtle: #f7f9fc;
+  --text: #172238;
+  --muted: #66738a;
+  --line: #dce4ef;
+  --line-strong: #c8d3e1;
+  --primary: #246bfd;
+  --primary-hover: #1658dc;
+  --primary-soft: #eaf1ff;
+  --blue: #246bfd;
+  --blue-soft: #edf3ff;
   --amber: #96620c;
   --amber-soft: #fff4dd;
   --cyan: #157687;
@@ -19,28 +19,28 @@
   --danger: #b42318;
   --danger-soft: #fff0ee;
   --focus: #2b73c8;
-  --sidebar: #13201b;
-  --sidebar-text: #f2f7f5;
-  --sidebar-muted: #a8b9b2;
-  --chart-line: #08785a;
-  --chart-fill: rgba(8, 120, 90, .10);
-  --shadow: 0 1px 2px rgba(19, 32, 27, .04), 0 10px 28px rgba(19, 32, 27, .035);
+  --sidebar: #111c31;
+  --sidebar-text: #f6f8fc;
+  --sidebar-muted: #aebbd0;
+  --chart-line: #246bfd;
+  --chart-fill: rgba(36, 107, 253, .09);
+  --shadow: 0 1px 2px rgba(27, 45, 76, .04), 0 14px 34px rgba(34, 61, 99, .055);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #141816;
-  --surface: #202622;
-  --surface-subtle: #272e2a;
-  --text: #edf2ef;
-  --muted: #a9b2ae;
-  --line: #3a423e;
-  --line-strong: #4b5550;
-  --primary: #49bd91;
-  --primary-hover: #60caa1;
-  --primary-soft: #203b32;
-  --blue: #78a7e6;
-  --blue-soft: #253445;
+  --bg: #0f1625;
+  --surface: #172238;
+  --surface-subtle: #1d2a43;
+  --text: #f2f6ff;
+  --muted: #a9b7cd;
+  --line: #2b3b58;
+  --line-strong: #405272;
+  --primary: #6e9dff;
+  --primary-hover: #8ab0ff;
+  --primary-soft: #1d3563;
+  --blue: #6e9dff;
+  --blue-soft: #1d3156;
   --amber: #efb755;
   --amber-soft: #3d3322;
   --cyan: #67bdc8;
@@ -48,11 +48,11 @@
   --danger: #ff8b82;
   --danger-soft: #462925;
   --focus: #78aeea;
-  --sidebar: #101613;
-  --sidebar-text: #f2f7f5;
-  --sidebar-muted: #9aa9a3;
-  --chart-line: #43b98f;
-  --chart-fill: rgba(67, 185, 143, .14);
+  --sidebar: #0b1220;
+  --sidebar-text: #f2f6ff;
+  --sidebar-muted: #9facc2;
+  --chart-line: #6e9dff;
+  --chart-fill: rgba(110, 157, 255, .14);
   --shadow: none;
 }
 
@@ -185,16 +185,21 @@ textarea:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
   flex: 0 0 36px;
   width: 36px;
   height: 36px;
-  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   border-radius: 7px;
-  background: var(--primary);
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 800;
+  background: var(--surface);
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .user-topbar {
@@ -741,8 +746,8 @@ tbody tr:hover td {
 }
 
 .admin-brand .brand-mark {
-  background: #d29a32;
-  color: #20180b;
+  border-color: rgba(255, 255, 255, .16);
+  background: #182842;
 }
 
 .admin-brand > div > span {
@@ -1627,5 +1632,288 @@ body[data-ui-mode="embedded"] .admin-main {
   body[data-ui-mode="embedded"] .admin-main {
     padding-right: 12px;
     padding-left: 12px;
+  }
+}
+
+/* Reference-led data workspace. These rules are scoped to the points service. */
+.dashboard-page {
+  width: min(1480px, calc(100% - 36px));
+  margin-top: 16px;
+}
+
+.dashboard-heading {
+  min-height: 52px;
+  margin-bottom: 12px;
+}
+
+.dashboard-heading h1 {
+  font-size: 22px;
+}
+
+.scoreboard {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scoreboard > div,
+.scoreboard > .checkin-band {
+  min-height: 148px;
+  border-color: var(--line);
+  border-radius: 8px;
+  padding: 21px 22px;
+  background: var(--surface);
+}
+
+.scoreboard > div::before,
+.scoreboard > .checkin-band::before,
+.scoreboard .score-primary::before,
+.scoreboard .points-accent::before,
+.scoreboard .reward-accent::before,
+.scoreboard .today-accent::before {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  width: auto;
+  height: 3px;
+  background: var(--primary);
+}
+
+.scoreboard .score-primary strong,
+.scoreboard strong {
+  min-height: 34px;
+  margin-top: 10px;
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 30px;
+  font-weight: 730;
+  line-height: 1.1;
+}
+
+.scoreboard .score-primary strong {
+  color: var(--primary);
+  font-size: 34px;
+}
+
+.metric-label {
+  color: #526077;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.metric-foot {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.checkin-band {
+  display: block;
+  margin-top: 0;
+  color: var(--text);
+}
+
+.metric-action-row {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.checkin-band .checkin-button {
+  min-height: 30px;
+  border-radius: 5px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.checkin-band[data-status="off"] .checkin-button.button.primary {
+  border-color: var(--line-strong);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  opacity: 1;
+}
+
+.checkin-state {
+  display: block;
+  margin-top: 9px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkin-band .metric-foot {
+  display: block;
+  margin-top: 2px;
+}
+
+.checkin-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.chart-panel,
+.table-panel,
+.overview-band,
+.command-panel,
+.result-panel,
+.policy-editor,
+.admin-metrics > div {
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+.chart-panel {
+  margin-top: 12px;
+}
+
+.chart-heading,
+.table-wrap {
+  border-color: var(--line);
+}
+
+.chart-stage {
+  height: 330px;
+  padding: 12px 12px 0;
+}
+
+.period-button.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.chart-summary {
+  background: #f8faff;
+}
+
+.records-grid {
+  gap: 12px;
+  margin-top: 12px;
+}
+
+th {
+  background: #f6f8fc;
+  color: #5d6a80;
+}
+
+tbody tr:hover td {
+  background: #f2f6ff;
+}
+
+.admin-sidebar {
+  background: var(--sidebar);
+}
+
+.admin-brand .brand-mark {
+  border-color: rgba(255, 255, 255, .16);
+  background: #182842;
+}
+
+.admin-nav-button.active {
+  box-shadow: inset 3px 0 var(--primary);
+}
+
+.admin-metrics > div::before,
+.admin-metrics > div[data-state="enabled"]::before,
+.admin-metrics .admin-metric-version::before {
+  background: var(--primary);
+}
+
+body[data-ui-mode="embedded"] .dashboard-page {
+  width: min(1480px, calc(100% - 28px));
+  margin-top: 12px;
+}
+
+body[data-ui-mode="embedded"] .admin-main {
+  max-width: 1480px;
+  padding-top: 16px;
+}
+
+body[data-ui-mode="embedded"] .admin-nav-button:hover,
+body[data-ui-mode="embedded"] .admin-nav-button.active {
+  color: var(--primary);
+}
+
+body[data-ui-mode="embedded"] .admin-nav-button.active {
+  box-shadow: inset 0 -3px var(--primary);
+}
+
+@media (max-width: 1100px) {
+  .scoreboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-page,
+  body[data-ui-mode="embedded"] .dashboard-page {
+    width: calc(100% - 20px);
+  }
+
+  .scoreboard {
+    grid-template-columns: 1fr;
+  }
+
+  .scoreboard .score-primary {
+    grid-column: auto;
+  }
+
+  .scoreboard > div,
+  .scoreboard > .checkin-band,
+  .scoreboard > div:nth-child(2n),
+  .scoreboard > div:nth-child(3n) {
+    min-height: 128px;
+    padding: 18px;
+  }
+
+  .chart-stage {
+    height: 270px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0f1625;
+    --surface: #172238;
+    --surface-subtle: #1d2a43;
+    --text: #f2f6ff;
+    --muted: #a9b7cd;
+    --line: #2b3b58;
+    --line-strong: #405272;
+    --primary: #6e9dff;
+    --primary-hover: #8ab0ff;
+    --primary-soft: #1d3563;
+    --blue: #6e9dff;
+    --blue-soft: #1d3156;
+    --sidebar: #0b1220;
+    --sidebar-text: #f2f6ff;
+    --sidebar-muted: #9facc2;
+    --chart-line: #6e9dff;
+    --chart-fill: rgba(110, 157, 255, .14);
+    --shadow: none;
+  }
+
+  .metric-label,
+  th {
+    color: var(--muted);
+  }
+
+  .chart-summary,
+  th {
+    background: var(--surface-subtle);
+  }
+
+  tbody tr:hover td {
+    background: var(--primary-soft);
   }
 }

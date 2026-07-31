@@ -61,7 +61,7 @@
     }
     profile = data;
     ui.setSession(data);
-    ui.byId("user-id").textContent = `用户 ${data.user_id}`;
+    ui.byId("username").textContent = data.username || "未设置用户名";
     ui.byId("total-points").textContent = ui.points(data.account?.total_points_hundredths);
     ui.byId("today-rewards").textContent = ui.money(data.checkin?.awarded_microusd);
     ui.byId("total-checkin-rewards").textContent = ui.money(data.account?.settled_checkin_reward_microusd);

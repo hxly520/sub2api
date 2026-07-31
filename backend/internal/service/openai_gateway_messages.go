@@ -526,6 +526,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(nil, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
 
 	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
 	if err != nil {
@@ -541,7 +543,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 		return nil, fmt.Errorf("upstream stream ended without terminal event")
 	}
 
-	if strings.TrimSpace(finalResponse.Status) == "failed" {
+	if isOpenAICompatResponsesFailure(finalResponse.Status) {
 		payload, _ := json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
 		if hit, code, msg := detectOpenAICyberPolicy(payload); hit {
 			MarkOpsCyberPolicy(c, CyberPolicyMark{
@@ -606,7 +608,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 func isOpenAICompatResponsesTerminalEvent(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.completed", "response.done", "response.incomplete", "response.failed":
+	case "response.completed", "response.done", "response.incomplete", "response.failed",
+		"response.cancelled", "response.canceled":
 		return true
 	default:
 		return false
@@ -846,6 +849,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
 
 	state := apicompat.NewResponsesEventToAnthropicState()
 	state.Model = originalModel
@@ -908,6 +913,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			for _, pending := range pendingSSE {
 				if _, err := fmt.Fprint(c.Writer, pending); err != nil {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					return false
 				}
 			}
@@ -916,6 +922,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		if _, err := fmt.Fprint(c.Writer, sse); err != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			return false
 		}
 		clientOutputStarted = true
@@ -965,7 +972,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 			// cyber_policy 致命不可重试：标记供 handler 事后记录；以 Anthropic SSE error 事件
 			// 回写让客户端感知并停止重试（F4），丢弃后续转换输出。
-			if eventType == "response.failed" || isBareErrorEvent {
+			if isOpenAICompatResponsesFailure(eventType) || isBareErrorEvent {
 				if hit, code, msg := detectOpenAICyberPolicy(payloadBytes); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -985,6 +992,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 							c.Writer.Flush()
 						}
 						clientDisconnected = true
+						drainGuard.ClientDisconnected()
 					}
 					return true
 				}
@@ -1039,6 +1047,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				}
 				if !writeConvertedSSE(sse) {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					logger.L().Info("openai messages stream: client disconnected, continuing to drain upstream for billing",
 						zap.String("request_id", requestID),
 					)
@@ -1071,6 +1080,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				}
 				if !writeConvertedSSE(sse) {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					logger.L().Info("openai messages stream: client disconnected during final flush",
 						zap.String("request_id", requestID),
 					)
@@ -1264,6 +1274,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					zap.String("request_id", requestID),
 				)
 				clientDisconnected = true
+				drainGuard.ClientDisconnected()
 				continue
 			}
 			clientOutputStarted = true

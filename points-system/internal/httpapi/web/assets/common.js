@@ -9,6 +9,14 @@
   document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
   let readySent = false;
 
+  document.querySelectorAll("[data-brand-logo]").forEach((image) => {
+    image.addEventListener("error", () => {
+      if (image.dataset.fallbackApplied === "true") return;
+      image.dataset.fallbackApplied = "true";
+      image.src = "/assets/logo.svg";
+    }, { once: true });
+  });
+
   function notifyReady() {
     if (readySent || !embedded || window.parent === window) return;
     readySent = true;

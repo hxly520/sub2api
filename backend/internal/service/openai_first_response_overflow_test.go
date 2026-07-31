@@ -176,6 +176,7 @@ func TestOpenAIFirstResponseOverflow_CommitsRawChatStream(t *testing.T) {
 			nil,
 			nil,
 			time.Now(),
+			1,
 			0,
 		)
 		done <- err

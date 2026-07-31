@@ -24,7 +24,7 @@ func TestQueryOffsetUsesBoundedDefault(t *testing.T) {
 func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 	date := time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
 	body, err := json.Marshal(publicAdminUserPoints{
-		UserID:                    7,
+		Username:                  "alice",
 		TotalPointsHundredths:     12_345,
 		YesterdayPointsHundredths: 125,
 		TotalSpendMicroUSD:        12_345_000,
@@ -37,7 +37,7 @@ func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 	}
 	content := string(body)
 	for _, required := range []string{
-		`"user_id"`, `"total_points_hundredths"`, `"yesterday_points_hundredths"`,
+		`"username":"alice"`, `"total_points_hundredths"`, `"yesterday_points_hundredths"`,
 		`"total_spend_microusd"`, `"yesterday_spend_microusd"`,
 		`"snapshot_business_date"`, `"snapshot_status"`,
 	} {
@@ -46,11 +46,58 @@ func TestAdminUserPointsResponseUsesWhitelistedFields(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"email", "balance", "policy_version", "source_fingerprint", "source_max_usage_log_id",
+		"user_id", "email", "balance", "policy_version", "source_fingerprint", "source_max_usage_log_id",
 		"external_event_id", "request_fingerprint", "metadata",
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("administrator user points response exposed %q: %s", forbidden, content)
+		}
+	}
+}
+
+func TestAdminBalanceGrantResponseUsesUsernameWithoutInternalUserID(t *testing.T) {
+	body, err := json.Marshal(publicAdminBalanceGrant{
+		ID: "00000000-0000-4000-8000-000000000001", Username: "alice",
+		AmountMicroUSD: 100_000, Kind: "checkin", Status: "settled", Attempts: 1,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(body)
+	for _, required := range []string{`"id"`, `"username":"alice"`, `"amount_microusd"`, `"status"`, `"attempts"`} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("administrator balance grant response is missing %s: %s", required, content)
+		}
+	}
+	for _, forbidden := range []string{"user_id", "external_event_id", "policy_version", "request_fingerprint"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("administrator balance grant response exposed %q: %s", forbidden, content)
+		}
+	}
+}
+
+func TestBrowserIdentitySurfacesUseUsernameOnly(t *testing.T) {
+	paths := []string{
+		"web/user.html", "web/admin.html", "web/assets/user.js", "web/assets/admin.js",
+	}
+	var content strings.Builder
+	for _, path := range paths {
+		body, err := webFS.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content.Write(body)
+	}
+	combined := content.String()
+	for _, required := range []string{"username", "用户名"} {
+		if !strings.Contains(combined, required) {
+			t.Fatalf("browser identity surfaces are missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"user_id", "user-id", "admin-user-id", "用户 ID", "用户ID"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("browser identity surfaces still expose %q", forbidden)
 		}
 	}
 }

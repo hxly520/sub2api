@@ -1,5 +1,5 @@
 <template>
-  <component :is="embedded ? 'div' : AppLayout">
+  <component :is="embedded ? 'div' : AppLayout" class="points-workspace-shell">
     <div class="mx-auto max-w-6xl space-y-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -165,6 +165,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import '@/styles/points-workspace.css'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'

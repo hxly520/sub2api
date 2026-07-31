@@ -41,6 +41,17 @@ func IsOpenAIStreamIncompleteAfterClientDisconnect(err error) bool {
 	return strings.HasPrefix(strings.TrimSpace(err.Error()), "stream usage incomplete")
 }
 
+// IsStreamIncompleteAfterClientDisconnect applies the same no-account-fault
+// classification to all compatibility protocols that keep draining upstream
+// after the downstream connection is gone.
+func IsStreamIncompleteAfterClientDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.HasPrefix(message, "stream usage incomplete") && strings.Contains(message, "client disconnect")
+}
+
 func logOpenAIResponsesClientDisconnect(
 	ctx context.Context,
 	c *gin.Context,
@@ -86,6 +97,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (*openaiStreamingResult, error) {
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
+
 	firstOutputTimeout := time.Duration(0)
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
@@ -278,6 +292,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return
 		}
 		clientDisconnected = true
+		drainGuard.ClientDisconnected()
 		logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "stream_write")
 	}
 	completeGuardedEvent := func(queueDrained bool) {
@@ -291,6 +306,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if shouldFlush {
 				if err := flushBuffered(); err != nil {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "stream_flush")
 				} else {
 					clientOutputStarted = true
@@ -315,14 +331,17 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			return
 		}
 		if _, err := writePendingString("data: " + payload + "\n\n"); err != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			return
 		}
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			return
 		}
 		clientOutputStarted = true
@@ -349,6 +368,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, disconnectStage)
 			return
 		}
@@ -362,6 +382,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if !clientDisconnected && ctx != nil && ctx.Err() != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "request_context_canceled")
 		}
 		if sawTerminalEvent && !sawFailedEvent {
@@ -398,6 +419,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if !clientDisconnected && ctx != nil && ctx.Err() != nil {
 			clientDisconnected = true
+			drainGuard.ClientDisconnected()
 			logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "request_context_canceled")
 		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && firstTokenMs == nil {
@@ -646,6 +668,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				if shouldFlush {
 					if err := flushBuffered(); err != nil {
 						clientDisconnected = true
+						drainGuard.ClientDisconnected()
 						logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "stream_flush")
 					} else {
 						clientOutputStarted = true
@@ -789,6 +812,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				// committed here, but account headers remain private until semantic output.
 				if _, err := w.Write([]byte(":\n\n")); err != nil {
 					clientDisconnected = true
+					drainGuard.ClientDisconnected()
 					logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "keepalive_write")
 					continue
 				}
@@ -798,11 +822,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if _, err := writePendingString(":\n\n"); err != nil {
 				clientDisconnected = true
+				drainGuard.ClientDisconnected()
 				logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "keepalive_write")
 				continue
 			}
 			if err := flushBuffered(); err != nil {
 				clientDisconnected = true
+				drainGuard.ClientDisconnected()
 				logOpenAIResponsesClientDisconnect(ctx, c, account, originalModel, upstreamRequestID, "keepalive_flush")
 			} else {
 				lastDownstreamWriteAt = time.Now()
@@ -1183,6 +1209,9 @@ func openAICacheCreationTokensFromUsage(value gjson.Result) int {
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
+
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err

@@ -16,6 +16,11 @@ import (
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
 	now := time.Now()
+	username, err := s.username(r.Context(), p.Session.UserID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	account, err := s.Store.Account(r.Context(), p.Session.UserID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -63,9 +68,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
+		"username": publicUsername(username), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
-		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret), "account": account,
+		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret), "account": publicAccountFrom(account),
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
 		"features": map[string]any{
@@ -75,6 +80,32 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			"checkin_available":   checkinAvailable,
 		},
 	})
+}
+
+type publicAccount struct {
+	TotalPointsHundredths        int64     `json:"total_points_hundredths"`
+	TotalSpendMicroUSD           int64     `json:"total_spend_microusd"`
+	SettledCheckinRewardMicroUSD int64     `json:"settled_checkin_reward_microusd"`
+	CreatedAt                    time.Time `json:"created_at"`
+	UpdatedAt                    time.Time `json:"updated_at"`
+}
+
+func publicAccountFrom(account domain.Account) publicAccount {
+	return publicAccount{
+		TotalPointsHundredths:        account.TotalPointsHundredths,
+		TotalSpendMicroUSD:           account.TotalSpendMicroUSD,
+		SettledCheckinRewardMicroUSD: account.SettledCheckinRewardMicroUSD,
+		CreatedAt:                    account.CreatedAt,
+		UpdatedAt:                    account.UpdatedAt,
+	}
+}
+
+func publicUsername(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "未设置用户名"
+	}
+	return username
 }
 
 func publicSnapshot(snapshot store.Snapshot) map[string]any {
@@ -90,6 +121,11 @@ func publicSnapshot(snapshot store.Snapshot) map[string]any {
 
 func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
+	username, err := s.username(r.Context(), p.Session.UserID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	policy, err := s.currentPolicy(r.Context(), time.Now())
 	if errors.Is(err, domain.ErrNotFound) {
 		policy = domain.Policy{}
@@ -100,7 +136,7 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id": p.Session.UserID, "role": p.Session.Role, "theme": p.Session.Theme,
+		"username": publicUsername(username), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
 		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret),
 		"features": map[string]any{

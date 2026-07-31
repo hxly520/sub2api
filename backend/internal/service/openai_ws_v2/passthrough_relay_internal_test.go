@@ -127,6 +127,7 @@ func TestRunUpstreamToClient_ErrorAndDropPaths(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 			drop,
 			nil,
 			nil,
@@ -154,6 +155,7 @@ func TestRunUpstreamToClient_ErrorAndDropPaths(t *testing.T) {
 			time.Now(),
 			time.Now,
 			&relayState{},
+			nil,
 			nil,
 			nil,
 			nil,
@@ -190,6 +192,7 @@ func TestRunUpstreamToClient_ErrorAndDropPaths(t *testing.T) {
 			time.Now(),
 			time.Now,
 			&relayState{},
+			nil,
 			nil,
 			nil,
 			nil,
@@ -461,6 +464,7 @@ func TestObserveUpstreamMessage_ResponseIDFallbackPolicy(t *testing.T) {
 	t.Parallel()
 
 	state := &relayState{requestModel: "gpt-5"}
+	state.beginTurn()
 	startAt := time.Unix(0, 0)
 	now := startAt
 	nowFn := func() time.Time {
@@ -489,4 +493,5 @@ func TestObserveUpstreamMessage_ResponseIDFallbackPolicy(t *testing.T) {
 	)
 	require.True(t, observed.terminal)
 	require.Equal(t, "resp_fallback", observed.responseID)
+	require.True(t, state.isTurnInProgress(), "terminal observation must not publish turn completion before its callback")
 }

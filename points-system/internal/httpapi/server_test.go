@@ -55,6 +55,9 @@ func TestSecurityHeaders(t *testing.T) {
 		strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Fatalf("unexpected frame-ancestors policy: %q", csp)
 	}
+	if !strings.Contains(csp, "img-src 'self' data: https://sub2api.example.test;") {
+		t.Fatalf("uploaded logo origin is missing from img-src: %q", csp)
+	}
 	if value := recorder.Header().Get("X-Frame-Options"); value != "" {
 		t.Fatalf("X-Frame-Options conflicts with exact CSP embedding policy: %q", value)
 	}
@@ -111,6 +114,36 @@ func TestDirectRootDoesNotOpenWorkspace(t *testing.T) {
 	server.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("direct root status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestPointsPagesUseUploadedSub2APILogoAndLocalFallback(t *testing.T) {
+	server := testRoleServer("user", true)
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("user page status = %d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `src="https://sub2api.example.test/api/v1/settings/logo"`) ||
+		strings.Contains(body, brandLogoPlaceholder) || strings.Contains(body, `aria-hidden="true">积`) {
+		t.Fatalf("user page did not receive uploaded logo URL: %s", body)
+	}
+
+	adminServer := testRoleServer("admin", true)
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/admin/"))
+	body = recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, `src="https://sub2api.example.test/api/v1/settings/logo"`) ||
+		strings.Contains(body, `aria-hidden="true">管`) {
+		t.Fatalf("admin page did not receive uploaded logo URL: status=%d body=%s", recorder.Code, body)
+	}
+
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/assets/logo.svg"))
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "image/svg+xml" ||
+		!strings.Contains(recorder.Body.String(), "Sub2API") {
+		t.Fatalf("local logo fallback failed: status=%d type=%q", recorder.Code, recorder.Header().Get("Content-Type"))
 	}
 }
 
@@ -297,7 +330,8 @@ func testRoleServer(role string, enabled bool) *Server {
 			return store.Session{UserID: 7, Role: role, Theme: "light", Language: "zh-CN",
 				ExpiresAt: time.Now().Add(time.Hour)}, nil
 		},
-		policyLookup: func(context.Context, time.Time) (domain.Policy, error) { return policy, nil },
+		policyLookup:   func(context.Context, time.Time) (domain.Policy, error) { return policy, nil },
+		usernameLookup: func(context.Context, int64) (string, error) { return "测试用户", nil },
 	}
 	server.routes()
 	return server
@@ -363,6 +397,36 @@ func TestAdministratorCannotUseUserFinancialSurface(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("admin GET %s status = %d, want 200", path, recorder.Code)
 		}
+	}
+}
+
+func TestInvalidatedSourceUserSessionCannotReachAnyRoleSurface(t *testing.T) {
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/me"},
+		{method: http.MethodGet, path: "/api/v1/admin/me"},
+		{method: http.MethodGet, path: "/api/v1/admin/policies"},
+		{method: http.MethodPost, path: "/api/v1/admin/policies"},
+		{method: http.MethodPost, path: "/api/v1/admin/balance-grants/00000000-0000-0000-0000-000000000000/retry"},
+		{method: http.MethodPost, path: "/api/v1/admin/balance-grants/00000000-0000-0000-0000-000000000000/reverse"},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			server := &Server{
+				Config: configForWebTest(), mux: http.NewServeMux(), limits: security.NewRateLimiter(),
+				sessionLookup: func(context.Context, string, time.Time) (store.Session, error) {
+					// Store.Session maps a missing or soft-deleted source user to not found.
+					return store.Session{}, domain.ErrNotFound
+				},
+			}
+			server.routes()
+			recorder := httptest.NewRecorder()
+			server.mux.ServeHTTP(recorder, requestWithSession(test.method, test.path))
+			if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "unauthorized") {
+				t.Fatalf("invalidated session response: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }
 
@@ -469,6 +533,36 @@ func TestPublicActivityResponsesHideInternalIdentifiers(t *testing.T) {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("public activity response exposed %q: %s", forbidden, content)
 		}
+	}
+}
+
+func TestPublicAccountAndAdminProfileHideNumericUserID(t *testing.T) {
+	account, err := json.Marshal(publicAccountFrom(domain.Account{
+		UserID: 7, TotalPointsHundredths: 123, TotalSpendMicroUSD: 456_000,
+		SettledCheckinRewardMicroUSD: 10_000, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(account), "user_id") {
+		t.Fatalf("public account exposed numeric identity: %s", account)
+	}
+
+	server := testRoleServer("admin", true)
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/api/v1/admin/me"))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"username":"测试用户"`) ||
+		strings.Contains(recorder.Body.String(), "user_id") {
+		t.Fatalf("administrator profile identity response: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPublicUsernameNeverFallsBackToNumericIdentity(t *testing.T) {
+	if got := publicUsername("  alice  "); got != "alice" {
+		t.Fatalf("trimmed username = %q, want alice", got)
+	}
+	if got := publicUsername("  "); got != "未设置用户名" {
+		t.Fatalf("empty username fallback = %q", got)
 	}
 }
 

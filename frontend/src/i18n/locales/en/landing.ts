@@ -28,8 +28,11 @@ export default {
     },
     hero: {
       eyebrow: 'Stable access · Clear usage · Flexible control',
+      titlePrimary: 'Make services more reliable',
+      titleSecondary: 'Make every use more valuable',
       description:
         'Use one credential for conversation, reasoning, code, image, and video capabilities. Review status, usage, and cost in one place for individual or team workflows.',
+      visualAlt: 'Digital service capabilities and operational data visualization',
       secondaryAction: 'Explore capabilities',
       assurances: {
         clearUsage: 'Clear usage records',

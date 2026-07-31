@@ -66,11 +66,11 @@ $audit_sql$, :'points_app_role', :'points_app_role', :'points_app_role',
     :'points_app_role', :'points_app_role')
 \gexec
 
--- The administrator points directory needs only stable user IDs and the
--- soft-delete marker. It must not read email, balance, credentials, group
--- membership, or any other Sub2API user column.
+-- The points workspaces need the stable internal user key, the display-only
+-- username, and the soft-delete marker. They must not read email, balance,
+-- credentials, group membership, or any other Sub2API user column.
 SELECT format(
-    'GRANT SELECT (id, deleted_at) ON TABLE public.users TO %I',
+    'GRANT SELECT (id, username, deleted_at) ON TABLE public.users TO %I',
     :'points_app_role'
 )
 \gexec

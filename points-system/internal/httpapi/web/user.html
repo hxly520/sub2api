@@ -10,14 +10,14 @@
 <body class="user-shell" data-ui-mode="standalone">
   <header class="user-topbar">
     <div class="brand-lockup">
-      <span class="brand-mark" aria-hidden="true">积</span>
+      <span class="brand-mark"><img src="__SUB2API_BRAND_LOGO__" data-brand-logo alt="Sub2API Logo"></span>
       <div>
         <strong>积分中心</strong>
         <span>个人积分看板</span>
       </div>
     </div>
     <div class="topbar-actions">
-      <span id="user-id" class="identity-chip">个人账户</span>
+      <span id="username" class="identity-chip">用户名</span>
       <button id="logout" class="button ghost compact" type="button">退出</button>
     </div>
   </header>
@@ -49,22 +49,16 @@
         <strong id="total-checkin-rewards">0.00 U</strong>
         <span class="metric-foot">已到账且未冲正</span>
       </div>
-    </section>
-
-    <section class="checkin-band" aria-labelledby="checkin-title">
-      <div>
-        <span class="section-kicker">每日签到</span>
-        <h1 id="checkin-title">今日签到状态</h1>
-        <p id="checkin-detail">签到状态加载中</p>
-      </div>
-      <div class="checkin-actions">
-        <div class="checkin-today">
-          <span>今日已赠送</span>
-          <strong id="today-rewards">0.00 U</strong>
-          <small id="checkin-count">今日已签到 0 次</small>
+      <section class="score-metric today-accent checkin-band" aria-labelledby="checkin-title">
+        <div class="metric-action-row">
+          <span class="metric-label">今日签到</span>
+          <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
         </div>
-        <button id="checkin" class="button primary checkin-button" type="button" disabled>立即签到</button>
-      </div>
+        <strong id="today-rewards">0.00 U</strong>
+        <span id="checkin-title" class="checkin-state">今日签到状态</span>
+        <small id="checkin-count" class="metric-foot">今日已签到 0 次</small>
+        <p id="checkin-detail" class="checkin-detail">签到状态加载中</p>
+      </section>
     </section>
 
     <section class="chart-panel" aria-labelledby="chart-title">

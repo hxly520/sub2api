@@ -8,7 +8,7 @@ import (
 )
 
 type publicAdminUserPoints struct {
-	UserID                    int64      `json:"user_id"`
+	Username                  string     `json:"username"`
 	TotalPointsHundredths     int64      `json:"total_points_hundredths"`
 	YesterdayPointsHundredths int64      `json:"yesterday_points_hundredths"`
 	TotalSpendMicroUSD        int64      `json:"total_spend_microusd"`
@@ -41,7 +41,7 @@ func (s *Server) adminUserPoints(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range page.Items {
 		response.Items = append(response.Items, publicAdminUserPoints{
-			UserID:                    item.UserID,
+			Username:                  publicUsername(item.Username),
 			TotalPointsHundredths:     item.TotalPointsHundredths,
 			YesterdayPointsHundredths: item.YesterdayPointsHundredths,
 			TotalSpendMicroUSD:        item.TotalSpendMicroUSD,
@@ -63,7 +63,7 @@ func queryOffset(r *http.Request) int {
 
 func (s *Server) checkinBalanceGrants(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
-	items, err := s.Store.ListCheckinBalanceGrants(r.Context(), p.Session.UserID, false, queryLimit(r))
+	items, err := s.Store.ListCheckinBalanceGrants(r.Context(), p.Session.UserID, queryLimit(r))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -79,12 +79,33 @@ func (s *Server) checkinBalanceGrants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminCheckinBalanceGrants(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListCheckinBalanceGrants(r.Context(), 0, true, queryLimit(r))
+	items, err := s.Store.ListAdminCheckinBalanceGrants(r.Context(), queryLimit(r))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	result := make([]publicAdminBalanceGrant, 0, len(items))
+	for _, item := range items {
+		grant := item.Grant
+		result = append(result, publicAdminBalanceGrant{
+			ID: grant.ID, Username: publicUsername(item.Username), AmountMicroUSD: grant.AmountMicroUSD,
+			Kind: grant.Kind, Status: grant.Status, Attempts: grant.Attempts, LastError: grant.LastError,
+			CreatedAt: grant.CreatedAt, UpdatedAt: grant.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+type publicAdminBalanceGrant struct {
+	ID             string    `json:"id"`
+	Username       string    `json:"username"`
+	AmountMicroUSD int64     `json:"amount_microusd"`
+	Kind           string    `json:"kind"`
+	Status         string    `json:"status"`
+	Attempts       int       `json:"attempts"`
+	LastError      string    `json:"last_error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (s *Server) adminCheckinBalanceGrantSummary(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout class="points-workspace-shell">
     <section
       class="-m-4 h-[calc(100dvh-4rem)] overflow-hidden bg-gray-50 dark:bg-dark-950 md:-m-6 lg:-m-8"
       data-testid="points-portal"
@@ -65,6 +65,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
+import '@/styles/points-workspace.css'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { createPointsLaunch } from '@/api/points'
