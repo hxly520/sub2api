@@ -16,7 +16,7 @@
 - `28e760bc8c6d66414595ef2af213d301a423acf2`：管理员用户积分明细、删除积分侧手工赠送/快照刷新入口、发放任务只处理签到奖励。
 - `874255bcd37d4820989eb1e13cdaf84f417996aa`：用户与管理员嵌入式积分工作区视觉及信息层级优化。
 - `1e33e7f7a`：未登录首页、同源上传 Logo、同步生图冻结时限、用户名积分与最小 ACL、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态/断连排空修复的升级前收口点。
-- v0.1.169 merge 兼容保留上述二开，并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固；同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。最终 merge commit 以本轮 `main` 双亲历史为准。
+- `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e`：v0.1.169 正式兼容 merge，双亲为私有收口 `1e33e7f7a` 与官方 release `26d894ef4`；保留上述二开并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固，同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。
 - 截至候选源码收口尚未生成新的镜像 tag、OCI revision 或 registry digest，也没有切换生产。制品标识必须来自最终推送 commit 和镜像工作流，禁止用 `1e33e7f7a`、旧生产 revision、image ID 或本地 archive SHA256 猜测。
 
 ## 2. 积分激活与历史基线
