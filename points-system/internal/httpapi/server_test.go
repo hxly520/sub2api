@@ -342,6 +342,7 @@ func testRoleServer(role string, enabled bool) *Server {
 func configForWebTest() config.Config {
 	return config.Config{Timezone: time.UTC, PublicOrigin: "https://points.example.test",
 		EmbedParentOrigin: "https://sub2api.example.test",
+		UserAccessMode:    "all",
 		SessionSecret:     []byte("01234567890123456789012345678901")}
 }
 
@@ -479,6 +480,66 @@ func TestDisabledPolicyRejectsUserLaunchBeforeSessionCreation(t *testing.T) {
 		"https://points.example.test/launch?ticket="+ticket, nil))
 	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "points_disabled") {
 		t.Fatalf("disabled launch: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPreviewGateRejectsNewTicketAndRevokesExistingUserSession(t *testing.T) {
+	now := time.Now().UTC()
+	secret := []byte("01234567890123456789012345678901")
+	ticket, err := security.SignLaunchTicket(security.LaunchClaims{
+		Issuer: "sub2api", Audience: "points-system", Subject: 7, Role: "user", Theme: "light",
+		Language: "zh-CN", Nonce: "non-preview-user-launch", IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
+	}, "launch-v1", secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := testRoleServer("user", true)
+	server.Config.LaunchIssuer = "sub2api"
+	server.Config.LaunchAudience = "points-system"
+	server.Config.LaunchKeys = map[string][]byte{"launch-v1": secret}
+	server.Config.UserAccessMode = "preview"
+	server.Config.UserPreviewIDs = map[int64]struct{}{1: {}}
+
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+		"https://points.example.test/launch?ticket="+ticket, nil))
+	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "points_disabled") {
+		t.Fatalf("non-preview launch: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	for _, path := range []string{"/app/", "/assets/user.js", "/api/v1/me", "/api/v1/daily-points"} {
+		recorder = httptest.NewRecorder()
+		server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, path))
+		if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "points_disabled") {
+			t.Fatalf("old non-preview session GET %s: status=%d body=%s", path, recorder.Code, recorder.Body.String())
+		}
+		if len(recorder.Result().Cookies()) == 0 || recorder.Result().Cookies()[0].MaxAge >= 0 {
+			t.Fatalf("old non-preview session GET %s did not clear its cookie", path)
+		}
+	}
+}
+
+func TestPreviewGateAllowsListedUserAndDoesNotRestrictAdmin(t *testing.T) {
+	userServer := testRoleServer("user", true)
+	userServer.Config.UserAccessMode = "preview"
+	userServer.Config.UserPreviewIDs = map[int64]struct{}{1: {}}
+	userServer.sessionLookup = func(context.Context, string, time.Time) (store.Session, error) {
+		return store.Session{UserID: 1, Role: "user", Theme: "light", Language: "zh-CN",
+			ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
+	recorder := httptest.NewRecorder()
+	userServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("preview user workspace status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	adminServer := testRoleServer("admin", true)
+	adminServer.Config.UserAccessMode = "preview"
+	adminServer.Config.UserPreviewIDs = map[int64]struct{}{1: {}}
+	recorder = httptest.NewRecorder()
+	adminServer.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/admin/"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("preview mode restricted admin workspace: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

@@ -173,6 +173,10 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if claims.Role != "admin" {
+		if !s.Config.UserAccessAllowed(claims.Subject) {
+			writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
+			return
+		}
 		policy, policyErr := s.currentPolicy(r.Context(), now)
 		allowed := false
 		if policyErr == nil {
@@ -239,6 +243,11 @@ func (s *Server) auth(requiredRole string, csrf, requireEnabled bool, next http.
 		}
 		if requiredRole == "" && session.Role != "user" && session.Role != "admin" {
 			writeError(w, http.StatusForbidden, "forbidden", "Forbidden")
+			return
+		}
+		if session.Role == "user" && !s.Config.UserAccessAllowed(session.UserID) {
+			s.clearSessionCookie(w)
+			writeError(w, http.StatusForbidden, "points_disabled", "Points system is disabled")
 			return
 		}
 		ctx := context.WithValue(r.Context(), principalKey, principal{Session: session, Token: cookie.Value})

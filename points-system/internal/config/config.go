@@ -25,6 +25,8 @@ type Config struct {
 	UsageReconcileDays int
 	PublicOrigin       string
 	EmbedParentOrigin  string
+	UserAccessMode     string
+	UserPreviewIDs     map[int64]struct{}
 	TrustedProxyCIDR   string
 	Timezone           *time.Location
 	SessionTTL         time.Duration
@@ -66,6 +68,7 @@ func Load() (Config, error) {
 		UsageReconcileDays: intEnv("POINTS_USAGE_RECONCILE_DAYS", 7),
 		PublicOrigin:       strings.TrimRight(strings.TrimSpace(os.Getenv("POINTS_PUBLIC_ORIGIN")), "/"),
 		EmbedParentOrigin:  strings.TrimSpace(os.Getenv("POINTS_EMBED_PARENT_ORIGIN")),
+		UserAccessMode:     strings.ToLower(strings.TrimSpace(os.Getenv("POINTS_USER_ACCESS_MODE"))),
 		TrustedProxyCIDR:   strings.TrimSpace(os.Getenv("POINTS_TRUSTED_PROXY_CIDR")),
 		Timezone:           location,
 		SessionTTL:         durationEnv("POINTS_SESSION_TTL", 8*time.Hour),
@@ -81,6 +84,10 @@ func Load() (Config, error) {
 		},
 		HTTPTimeout:    durationEnv("POINTS_HTTP_TIMEOUT", 10*time.Second),
 		WorkerInterval: durationEnv("POINTS_WORKER_INTERVAL", 5*time.Second),
+	}
+	cfg.UserPreviewIDs, err = parsePositiveIDSet(os.Getenv("POINTS_USER_PREVIEW_IDS"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse POINTS_USER_PREVIEW_IDS: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -123,6 +130,18 @@ func (c Config) Validate() error {
 	embedParent, err := url.Parse(c.EmbedParentOrigin)
 	if err != nil || !validHTTPOrigin(c.EmbedParentOrigin, embedParent) {
 		return errors.New("POINTS_EMBED_PARENT_ORIGIN must be one exact HTTP(S) origin without a path or wildcard")
+	}
+	switch c.UserAccessMode {
+	case "all":
+		if len(c.UserPreviewIDs) != 0 {
+			return errors.New("POINTS_USER_PREVIEW_IDS must be empty when POINTS_USER_ACCESS_MODE=all")
+		}
+	case "preview":
+		if len(c.UserPreviewIDs) == 0 {
+			return errors.New("POINTS_USER_PREVIEW_IDS requires at least one user when POINTS_USER_ACCESS_MODE=preview")
+		}
+	default:
+		return errors.New("POINTS_USER_ACCESS_MODE must be all or preview")
 	}
 	if c.SessionTTL < 5*time.Minute || c.SessionTTL > 24*time.Hour {
 		return errors.New("POINTS_SESSION_TTL must be between 5m and 24h")
@@ -180,6 +199,45 @@ func validDatabaseSchema(value string) bool {
 
 func (c Config) Sub2Configured() bool {
 	return c.Sub2URL != "" && validKeyID(c.Sub2Key.ID) && len(c.Sub2Key.Secret) >= 32
+}
+
+// UserAccessAllowed is the points service's independent rollout gate. It is
+// checked both when a user ticket is exchanged and on every user-session
+// request, so narrowing a rollout also revokes sessions issued previously.
+func (c Config) UserAccessAllowed(userID int64) bool {
+	if userID <= 0 {
+		return false
+	}
+	switch c.UserAccessMode {
+	case "all":
+		return true
+	case "preview":
+		_, allowed := c.UserPreviewIDs[userID]
+		return allowed
+	default:
+		return false
+	}
+}
+
+const maxUserPreviewIDs = 10000
+
+func parsePositiveIDSet(raw string) (map[int64]struct{}, error) {
+	result := make(map[int64]struct{})
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		userID, err := strconv.ParseInt(item, 10, 64)
+		if err != nil || userID <= 0 {
+			return nil, errors.New("values must be comma-separated positive integers")
+		}
+		result[userID] = struct{}{}
+		if len(result) > maxUserPreviewIDs {
+			return nil, fmt.Errorf("at most %d users are allowed", maxUserPreviewIDs)
+		}
+	}
+	return result, nil
 }
 
 func parseKeyring(raw string) (map[string][]byte, error) {

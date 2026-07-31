@@ -72,7 +72,8 @@ func TestConfigRequiresExactEmbedParentOrigin(t *testing.T) {
 		DatabaseURL: "postgres://points", DatabaseSchema: "points", DatabaseMaxConns: 1,
 		UsageDatabaseURL: "postgres://usage", UsageReconcileDays: 1,
 		PublicOrigin: "https://points.example.test", EmbedParentOrigin: "https://sub2api.example.test",
-		Timezone: time.UTC, SessionTTL: time.Hour, CookieSecure: true,
+		UserAccessMode: "all",
+		Timezone:       time.UTC, SessionTTL: time.Hour, CookieSecure: true,
 		LaunchKeys:    map[string][]byte{"v1": []byte(strings.Repeat("l", 32))},
 		SessionSecret: []byte(strings.Repeat("s", 32)), Sub2URL: "http://sub2api:8080",
 		Sub2Key:     HMACKey{ID: "v1", Secret: []byte(strings.Repeat("c", 32))},
@@ -87,5 +88,56 @@ func TestConfigRequiresExactEmbedParentOrigin(t *testing.T) {
 		if err := candidate.Validate(); err == nil || !strings.Contains(err.Error(), "POINTS_EMBED_PARENT_ORIGIN") {
 			t.Fatalf("embed parent %q validation error = %v", value, err)
 		}
+	}
+}
+
+func TestUserAccessRolloutGate(t *testing.T) {
+	preview, err := parsePositiveIDSet("1, 42,1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{UserAccessMode: "preview", UserPreviewIDs: preview}
+	if !cfg.UserAccessAllowed(1) || !cfg.UserAccessAllowed(42) {
+		t.Fatal("preview users were rejected")
+	}
+	if cfg.UserAccessAllowed(2) || cfg.UserAccessAllowed(0) {
+		t.Fatal("non-preview user was allowed")
+	}
+	cfg.UserAccessMode = "all"
+	cfg.UserPreviewIDs = nil
+	if !cfg.UserAccessAllowed(2) {
+		t.Fatal("all-users mode rejected a positive user")
+	}
+	for _, raw := range []string{"-1", "0", "abc", "1,2.5"} {
+		if _, err := parsePositiveIDSet(raw); err == nil {
+			t.Fatalf("invalid preview list %q was accepted", raw)
+		}
+	}
+}
+
+func TestConfigRequiresExplicitPreviewUsers(t *testing.T) {
+	base := Config{
+		DatabaseURL: "postgres://points", DatabaseSchema: "points", DatabaseMaxConns: 1,
+		UsageDatabaseURL: "postgres://usage", UsageReconcileDays: 1,
+		PublicOrigin: "https://points.example.test", EmbedParentOrigin: "https://sub2api.example.test",
+		UserAccessMode: "preview", UserPreviewIDs: map[int64]struct{}{1: {}},
+		Timezone: time.UTC, SessionTTL: time.Hour, CookieSecure: true,
+		LaunchKeys:    map[string][]byte{"v1": []byte(strings.Repeat("l", 32))},
+		SessionSecret: []byte(strings.Repeat("s", 32)), Sub2URL: "http://sub2api:8080",
+		Sub2Key:     HMACKey{ID: "v1", Secret: []byte(strings.Repeat("c", 32))},
+		HTTPTimeout: time.Second, WorkerInterval: time.Second,
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid preview config failed validation: %v", err)
+	}
+	missing := base
+	missing.UserPreviewIDs = nil
+	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "POINTS_USER_PREVIEW_IDS") {
+		t.Fatalf("missing preview list validation error = %v", err)
+	}
+	ambiguous := base
+	ambiguous.UserAccessMode = "all"
+	if err := ambiguous.Validate(); err == nil || !strings.Contains(err.Error(), "must be empty") {
+		t.Fatalf("ambiguous all-users config validation error = %v", err)
 	}
 }

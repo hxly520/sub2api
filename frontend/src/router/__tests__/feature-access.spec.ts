@@ -248,4 +248,28 @@ describe('feature route guard', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith('/dashboard')
   })
+
+  it('honors an explicit per-user denial when public settings fail to load', async () => {
+    authStore.user = { id: 2, points_system_access: false }
+    appStore.fetchPublicSettings.mockResolvedValue(null)
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(appStore.publicSettingsLoaded).toBe(false)
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('lets an explicit per-user denial override a stale global enabled value', async () => {
+    authStore.user = { id: 2, points_system_access: false }
+    appStore.cachedPublicSettings = { points_system_enabled: true }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
 })

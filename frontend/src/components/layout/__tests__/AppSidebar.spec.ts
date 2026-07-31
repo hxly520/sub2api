@@ -235,4 +235,17 @@ describe('AppSidebar points navigation', () => {
     expect(navigationPaths(wrapper)).not.toContain('/points')
     wrapper.unmount()
   })
+
+  it('lets an explicit per-user denial override a stale global enabled value', () => {
+    storeState.auth.user = { id: 2, points_system_access: false }
+    storeState.app.cachedPublicSettings = {
+      points_system_enabled: true,
+      custom_menu_items: [],
+    }
+
+    const wrapper = mountSidebar()
+
+    expect(navigationPaths(wrapper)).not.toContain('/points')
+    wrapper.unmount()
+  })
 })

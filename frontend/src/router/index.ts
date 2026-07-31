@@ -963,9 +963,10 @@ router.beforeEach(async (to, _from, next) => {
 
   if (
     to.meta.requiresPointsSystem &&
-    appStore.publicSettingsLoaded &&
-    appStore.cachedPublicSettings?.points_system_enabled !== true &&
-    authStore.user?.points_system_access !== true
+    (authStore.user?.points_system_access === false ||
+      (authStore.user?.points_system_access !== true &&
+        appStore.publicSettingsLoaded &&
+        appStore.cachedPublicSettings?.points_system_enabled !== true))
   ) {
     next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
     return

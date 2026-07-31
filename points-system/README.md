@@ -293,12 +293,16 @@ start this operation.
 
 Copy `.env.example` and replace every placeholder. Important details:
 
-The corresponding Sub2API `points_system` block owns the user rollout gate.
-Keep `enabled: false` and `preview_user_ids: [1]` for the initial preview. The
-list is server-only configuration: browsers receive only the current user's
-`points_system_access` result. Set `enabled: true` explicitly after acceptance
-to allow all valid users; do not emulate a global rollout by continually
-expanding the preview list.
+User rollout is enforced independently by both services. Keep the Sub2API
+`points_system` block at `enabled: false` with `preview_user_ids: [1]`, and set
+the points service to `POINTS_USER_ACCESS_MODE=preview` with
+`POINTS_USER_PREVIEW_IDS=1`. The lists are server-only configuration: browsers
+receive only the current user's `points_system_access` result. The points
+service checks its gate when exchanging a ticket and on every existing user
+session request, so narrowing a rollout revokes older sessions immediately.
+After acceptance, set Sub2API `enabled: true`, set the points service mode to
+`all`, and clear its preview list in the same maintenance change; do not emulate
+a global rollout by continually expanding either preview list.
 
 - `POINTS_DATABASE_URL` connects to the existing Sub2API database with the
   dedicated points application role. `POINTS_DATABASE_SCHEMA` defaults to
@@ -316,6 +320,10 @@ expanding the preview list.
   CSP `img-src` and is used to construct the uploaded-logo URL; no independent
   arbitrary image origin is accepted. Do not add `X-Frame-Options` at Nginx
   because it would conflict with the exact cross-origin embedding policy.
+- `POINTS_USER_ACCESS_MODE` is required and is exactly `preview` or `all`. Preview mode requires
+  one to 10,000 positive comma-separated IDs in `POINTS_USER_PREVIEW_IDS`; all
+  mode requires that list to be empty. This is an independent fail-closed gate,
+  not a replacement for the Sub2API menu, route, and ticket checks.
 
 Generate 32-byte secrets with a CSPRNG. Production points, bridge, and psql
 variable files are root-owned mode `0600`. Never place production secrets in

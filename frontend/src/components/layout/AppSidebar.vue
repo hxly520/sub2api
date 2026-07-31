@@ -685,8 +685,12 @@ const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
-const flagPointsSystem = () =>
-  isFeatureFlagEnabled(FeatureFlags.pointsSystem) || authStore.user?.points_system_access === true
+const flagPointsSystem = () => {
+  const userAccess = authStore.user?.points_system_access
+  return typeof userAccess === 'boolean'
+    ? userAccess
+    : isFeatureFlagEnabled(FeatureFlags.pointsSystem)
+}
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value
