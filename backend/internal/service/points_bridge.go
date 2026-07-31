@@ -110,6 +110,14 @@ func (s *PointsBridgeService) Enabled() bool {
 	return s != nil && s.cfg != nil && s.cfg.PointsSystem.Active()
 }
 
+// UserAccessAllowed is the server-side gate for user-scoped points tickets.
+// It deliberately remains separate from Enabled: a configured preview list
+// can expose the user page for selected accounts while balance-credit traffic
+// and the public menu remain globally disabled.
+func (s *PointsBridgeService) UserAccessAllowed(userID int64) bool {
+	return s != nil && s.cfg != nil && s.cfg.PointsSystem.UserAccessAllowed(userID)
+}
+
 func (s *PointsBridgeService) Status() PointsBridgeStatus {
 	status := PointsBridgeStatus{MenuLabel: "积分中心"}
 	if s == nil || s.cfg == nil {
@@ -150,7 +158,7 @@ func (s *PointsBridgeService) CreateLaunchURL(userID int64, role, theme, languag
 		return "", infraerrors.BadRequest("POINTS_ROLE_INVALID", "invalid points launch role")
 	}
 	if (role == "admin" && !s.cfg.PointsSystem.Configured()) ||
-		(role == "user" && !s.cfg.PointsSystem.Active()) {
+		(role == "user" && !s.UserAccessAllowed(userID)) {
 		return "", ErrPointsSystemUnavailable
 	}
 	theme = strings.ToLower(strings.TrimSpace(theme))

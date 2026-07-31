@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PointsPortalView from '../PointsPortalView.vue'
-import { POINTS_FRAME_READY_MESSAGE } from '@/utils/embedded-url'
+import { POINTS_FRAME_READY_MESSAGE, POINTS_FRAME_THEME_MESSAGE } from '@/utils/embedded-url'
 
 const { createPointsLaunch, routeMeta } = vi.hoisted(() => ({
   createPointsLaunch: vi.fn(),
@@ -57,6 +57,7 @@ describe('PointsPortalView', () => {
 
     const wrapper = mountView()
     expect(wrapper.get('[data-testid="app-layout"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="app-layout"]').classes()).not.toContain('points-workspace-shell')
     expect(wrapper.get('[data-testid="points-portal-loading"]').exists()).toBe(true)
 
     await flushPromises()
@@ -91,6 +92,60 @@ describe('PointsPortalView', () => {
     }))
     await flushPromises()
     expect(wrapper.find('[data-testid="points-portal-loading"]').exists()).toBe(false)
+  })
+
+  it('passes the active dark theme to the embedded points page without styling AppLayout', async () => {
+    document.documentElement.classList.add('dark')
+    createPointsLaunch.mockResolvedValue({
+      launch_url: 'https://points.example.test/launch?ticket=dark-ticket',
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(createPointsLaunch).toHaveBeenCalledWith('user', {
+      theme: 'dark',
+      language: 'zh-CN',
+    })
+    expect(wrapper.get('[data-testid="app-layout"]').classes()).not.toContain('points-workspace-shell')
+    expect(wrapper.get('[data-testid="points-portal"]').classes()).toContain('points-workspace-shell')
+  })
+
+  it('syncs later Sub2API theme changes to the trusted points iframe only', async () => {
+    createPointsLaunch.mockResolvedValue({
+      launch_url: 'https://points.example.test/launch?ticket=theme-sync-ticket',
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const frame = wrapper.get('[data-testid="points-portal-frame"]')
+    const postMessage = vi.fn()
+    const frameWindow = { postMessage } as unknown as Window
+    Object.defineProperty(frame.element, 'contentWindow', {
+      configurable: true,
+      value: frameWindow,
+    })
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: POINTS_FRAME_READY_MESSAGE, role: 'user' },
+      origin: 'https://points.example.test',
+      source: frameWindow,
+    }))
+    await flushPromises()
+
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: POINTS_FRAME_THEME_MESSAGE, theme: 'light' },
+      'https://points.example.test',
+    )
+
+    document.documentElement.classList.add('dark')
+    await flushPromises()
+
+    expect(postMessage).toHaveBeenLastCalledWith(
+      { type: POINTS_FRAME_THEME_MESSAGE, theme: 'dark' },
+      'https://points.example.test',
+    )
+    expect(createPointsLaunch).toHaveBeenCalledTimes(1)
   })
 
   it('shows a complete retry state when launch creation fails', async () => {

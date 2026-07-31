@@ -1,6 +1,7 @@
 <template>
-  <component :is="embedded ? 'div' : AppLayout" class="points-workspace-shell">
-    <div class="mx-auto max-w-6xl space-y-6">
+  <component :is="embedded ? 'div' : AppLayout">
+    <div class="points-workspace-shell">
+      <div class="mx-auto max-w-6xl space-y-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
@@ -95,75 +96,18 @@
           </dl>
         </div>
 
-        <div v-if="launchFailed && !consoleURL" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+        <div v-if="launchFailed" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200" data-testid="points-console-error" role="alert">
           {{ t('pointsSettings.launchFailed') }}
         </div>
-
-        <div
-          v-if="consoleURL"
-          class="overflow-hidden border-t border-gray-200 dark:border-dark-700"
-          data-testid="points-console-panel"
-        >
-          <div class="flex min-h-14 items-center border-b border-gray-100 px-4 py-3 dark:border-dark-700 sm:px-6">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">
-              {{ t('pointsSettings.consoleTitle') }}
-            </h2>
-          </div>
-          <div class="relative h-[calc(100dvh-12rem)] min-h-[32rem] overflow-hidden">
-            <iframe
-              ref="consoleFrameElement"
-              :src="consoleURL"
-              :title="t('pointsSettings.consoleFrameTitle')"
-              class="block h-full min-h-0 w-full border-0 bg-white dark:bg-dark-900"
-              sandbox="allow-scripts allow-forms allow-same-origin"
-              referrerpolicy="no-referrer"
-              data-testid="points-console-frame"
-              @error="handleConsoleError"
-            ></iframe>
-            <div
-              v-if="consoleLoading"
-              class="absolute inset-0 flex items-center justify-center bg-white/95 dark:bg-dark-900/95"
-              role="status"
-              data-testid="points-console-loading"
-            >
-              <div class="flex flex-col items-center gap-3 text-center">
-                <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-                <p class="text-sm font-medium text-gray-600 dark:text-dark-300">
-                  {{ t('pointsSettings.consoleLoading') }}
-                </p>
-              </div>
-            </div>
-            <div
-              v-else-if="launchFailed"
-              class="absolute inset-0 flex items-center justify-center bg-white px-6 text-center dark:bg-dark-900"
-              data-testid="points-console-error"
-            >
-              <div class="max-w-sm space-y-4">
-                <Icon name="exclamationTriangle" size="xl" class="mx-auto text-amber-500" />
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {{ t('pointsSettings.launchFailed') }}
-                </p>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  :disabled="launching"
-                  data-testid="retry-points-console"
-                  @click="openConsole"
-                >
-                  {{ t('pointsSettings.retry') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </template>
+      </div>
+      <TotpStepUpDialog :controller="pointsStepUp" />
     </div>
-    <TotpStepUpDialog :controller="pointsStepUp" />
   </component>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import '@/styles/points-workspace.css'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -175,9 +119,6 @@ import {
   getPointsBridgeStatus,
   type PointsBridgeStatus,
 } from '@/api/points'
-import { buildEmbeddedFrameUrl, isPointsFrameReadyMessage } from '@/utils/embedded-url'
-
-const FRAME_LOAD_TIMEOUT_MS = 20_000
 
 const { locale, t } = useI18n()
 withDefaults(defineProps<{ embedded?: boolean }>(), {
@@ -188,12 +129,7 @@ const loading = ref(false)
 const launching = ref(false)
 const loadFailed = ref(false)
 const launchFailed = ref(false)
-const consoleLoading = ref(false)
-const consoleURL = ref('')
-const consoleOrigin = ref('')
-const consoleFrameElement = ref<HTMLIFrameElement | null>(null)
 const pointsStepUp = useStepUp()
-let frameLoadTimer: number | null = null
 
 const yesNo = (value: boolean) => value ? t('pointsSettings.ready') : t('pointsSettings.missing')
 const enabledState = (value: boolean) => value ? t('pointsSettings.enabled') : t('pointsSettings.disabled')
@@ -255,69 +191,68 @@ async function loadStatus(): Promise<void> {
   }
 }
 
+function prepareConsolePopup(popup: Window): void {
+  // The popup is still same-origin about:blank here, so isolate it and set a
+  // no-referrer policy before it is navigated to the points service.
+  popup.opener = null
+  const popupDocument = popup.document
+  const referrerMeta = popupDocument.createElement('meta')
+  referrerMeta.name = 'referrer'
+  referrerMeta.content = 'no-referrer'
+  popupDocument.head.appendChild(referrerMeta)
+  popupDocument.title = t('pointsSettings.consoleTitle')
+  popupDocument.body.textContent = t('pointsSettings.consoleLoading')
+}
+
+function closeConsolePopup(popup: Window): void {
+  try {
+    popup.close()
+  } catch {
+    // A popup can be closed by the user while the launch request is pending.
+  }
+}
+
 async function openConsole(): Promise<void> {
   if (!status.value?.configured || launching.value) return
+  launchFailed.value = false
+
+  // Open while the click still has user activation; opening after the async
+  // step-up/API call is commonly rejected by popup blockers.
+  let popup: Window | null = null
+  try {
+    popup = window.open('about:blank', '_blank')
+  } catch {
+    launchFailed.value = true
+    return
+  }
+  if (!popup) {
+    launchFailed.value = true
+    return
+  }
+
   launching.value = true
   try {
+    prepareConsolePopup(popup)
     const { launch_url: launchURL } = await pointsStepUp.run(() =>
       createPointsLaunch('admin', {
         theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
         language: locale.value,
       }),
     )
-    const embeddedURL = buildEmbeddedFrameUrl(launchURL)
-    launchFailed.value = false
-    consoleLoading.value = true
-    consoleOrigin.value = new URL(embeddedURL).origin
-    consoleURL.value = embeddedURL
-    waitForConsoleLoad()
+    if (popup.closed) throw new Error('points console popup was closed')
+    popup.location.replace(launchURL)
   } catch (error) {
+    closeConsolePopup(popup)
     if (isStepUpCancelled(error)) {
       return
     }
     launchFailed.value = true
-    consoleLoading.value = false
   } finally {
     launching.value = false
   }
 }
 
-function clearFrameLoadTimer(): void {
-  if (frameLoadTimer !== null) {
-    window.clearTimeout(frameLoadTimer)
-    frameLoadTimer = null
-  }
-}
-
-function handleConsoleReady(): void {
-  clearFrameLoadTimer()
-  consoleLoading.value = false
-  launchFailed.value = false
-}
-
-function handleConsoleMessage(event: MessageEvent): void {
-  if (!isPointsFrameReadyMessage(event.data, 'admin')) return
-  if (event.origin !== consoleOrigin.value || event.source !== consoleFrameElement.value?.contentWindow) return
-  handleConsoleReady()
-}
-
-function handleConsoleError(): void {
-  clearFrameLoadTimer()
-  consoleLoading.value = false
-  launchFailed.value = true
-}
-
-function waitForConsoleLoad(): void {
-  clearFrameLoadTimer()
-  frameLoadTimer = window.setTimeout(handleConsoleError, FRAME_LOAD_TIMEOUT_MS)
-}
-
 onMounted(() => {
-  window.addEventListener('message', handleConsoleMessage)
   void loadStatus()
-})
-onBeforeUnmount(() => {
-  clearFrameLoadTimer()
-  window.removeEventListener('message', handleConsoleMessage)
 })
 </script>

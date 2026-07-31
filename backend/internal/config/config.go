@@ -169,23 +169,46 @@ type UpdateConfig struct {
 // in the points service database; this block only configures signed SSO and the
 // idempotent balance-credit bridge.
 type PointsSystemConfig struct {
-	Enabled          bool   `mapstructure:"enabled"`
-	PublicURL        string `mapstructure:"public_url"`
-	MenuLabel        string `mapstructure:"menu_label"`
-	LaunchKeyID      string `mapstructure:"launch_key_id"`
-	LaunchSecret     string `mapstructure:"launch_secret"`
-	CreditKeyID      string `mapstructure:"credit_key_id"`
-	CreditSecret     string `mapstructure:"credit_secret"`
-	LaunchTTLSeconds int    `mapstructure:"launch_ttl_seconds"`
-	ClockSkewSeconds int    `mapstructure:"clock_skew_seconds"`
+	Enabled   bool   `mapstructure:"enabled"`
+	PublicURL string `mapstructure:"public_url"`
+	MenuLabel string `mapstructure:"menu_label"`
+	// PreviewUserIDs grants the user-facing points entry to a bounded list of
+	// users while the global switch remains disabled. The list is intentionally
+	// kept in the server configuration and is never returned by an API.
+	PreviewUserIDs   []int64 `mapstructure:"preview_user_ids"`
+	LaunchKeyID      string  `mapstructure:"launch_key_id"`
+	LaunchSecret     string  `mapstructure:"launch_secret"`
+	CreditKeyID      string  `mapstructure:"credit_key_id"`
+	CreditSecret     string  `mapstructure:"credit_secret"`
+	LaunchTTLSeconds int     `mapstructure:"launch_ttl_seconds"`
+	ClockSkewSeconds int     `mapstructure:"clock_skew_seconds"`
 }
 
 func (c PointsSystemConfig) Active() bool {
 	return c.Enabled && c.Configured()
 }
 
+// UserAccessAllowed reports whether a user may obtain a user-scoped points
+// launch ticket. A preview entry never bypasses bridge configuration checks:
+// the signed launch URL still requires a fully configured points integration.
+// When the global switch is enabled, all positive user IDs are allowed.
+func (c PointsSystemConfig) UserAccessAllowed(userID int64) bool {
+	if userID <= 0 || !c.Configured() {
+		return false
+	}
+	if c.Enabled {
+		return true
+	}
+	for _, previewUserID := range c.PreviewUserIDs {
+		if previewUserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // Configured reports whether the signed bridge can be used by administrators
-// to finish policy setup. User access remains gated by Active.
+// to finish policy setup. User access remains gated by UserAccessAllowed.
 func (c PointsSystemConfig) Configured() bool {
 	if strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) ||
 		!validPointsKeyID(c.CreditKeyID) {
@@ -243,6 +266,20 @@ func validPointsKeyID(value string) bool {
 		return false
 	}
 	return true
+}
+
+const maxPointsPreviewUserIDs = 10000
+
+func validatePointsPreviewUserIDs(userIDs []int64) error {
+	if len(userIDs) > maxPointsPreviewUserIDs {
+		return fmt.Errorf("points_system.preview_user_ids must contain at most %d user IDs", maxPointsPreviewUserIDs)
+	}
+	for _, userID := range userIDs {
+		if userID <= 0 {
+			return fmt.Errorf("points_system.preview_user_ids must contain only positive user IDs")
+		}
+	}
+	return nil
 }
 
 type IdempotencyConfig struct {
@@ -2340,6 +2377,7 @@ func setDefaults() {
 	viper.SetDefault("points_system.enabled", false)
 	viper.SetDefault("points_system.public_url", "")
 	viper.SetDefault("points_system.menu_label", "积分中心")
+	viper.SetDefault("points_system.preview_user_ids", []int64{})
 	viper.SetDefault("points_system.launch_key_id", "v1")
 	viper.SetDefault("points_system.launch_secret", "")
 	viper.SetDefault("points_system.credit_key_id", "v1")
@@ -3686,7 +3724,10 @@ func (c *Config) Validate() error {
 	if c.Concurrency.PingInterval < 5 || c.Concurrency.PingInterval > 30 {
 		return fmt.Errorf("concurrency.ping_interval must be between 5-30 seconds")
 	}
-	if c.PointsSystem.Enabled {
+	if err := validatePointsPreviewUserIDs(c.PointsSystem.PreviewUserIDs); err != nil {
+		return err
+	}
+	if c.PointsSystem.Enabled || len(c.PointsSystem.PreviewUserIDs) > 0 {
 		if err := ValidateAbsoluteHTTPURL(c.PointsSystem.PublicURL); err != nil {
 			return fmt.Errorf("points_system.public_url invalid: %w", err)
 		}

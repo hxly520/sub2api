@@ -36,7 +36,8 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 		}
 	}
 	commonContent := string(commonJS)
-	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,", `"needs_review"].includes(value)`} {
+	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,", `"needs_review"].includes(value)`,
+		"sub2api:points-theme", "event.source !== window.parent", "event.origin !== parentOrigin"} {
 		if !strings.Contains(commonContent, required) {
 			t.Fatalf("shared embedded UI is missing delayed ready behavior %q", required)
 		}

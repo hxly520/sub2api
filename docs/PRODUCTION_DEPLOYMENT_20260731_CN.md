@@ -6,8 +6,8 @@
 
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
-| Sub2API | `0.1.168-339422728b2c`，revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，容器 `bfd162bb...`，healthy | `0.1.169-04a19ca082ee` 已构建、推送并加载到服务器缓存，revision `04a19ca082ee43853573795d1385727bd38f20e9` | 维护者手工切换；自动化不得替换或重启 |
-| 积分服务 | `0.1.169-04a19ca082ee`，revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `ac58ec88...`，healthy | 冷灰/电蓝双工作区、上传 Logo、镜像内回退、用户名展示和软删除会话失效均已上线 | 已完成备份、用户名单列授权和独立更新；后续不得重跑历史基线 |
+| Sub2API | `0.1.169-04a19ca082ee`，revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `c37a7a01...`，healthy、restart count `0` | 下一候选增加管理员新标签、用户 1 预览授权和主题同步 | 维护者手工切换；自动化不得替换或重启 |
+| 积分服务 | `0.1.169-04a19ca082ee`，同一 revision，容器 `e92b5ddc...`，healthy、restart count `0` | 当前冷灰/电蓝双工作区已上线；下一积分候选补实时主题消息接收 | 可在备份后独立更新；后续不得重跑历史基线 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -18,7 +18,7 @@
 - `1e33e7f7a`：未登录首页、同源上传 Logo、同步生图冻结时限、用户名积分与最小 ACL、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态/断连排空修复的升级前收口点。
 - `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e`：v0.1.169 正式兼容 merge，双亲为私有收口 `1e33e7f7a` 与官方 release `26d894ef4`；保留上述二开并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固，同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。
 - `04a19ca082ee43853573795d1385727bd38f20e9`：最终发布源码；补齐非流式 Gemini SSE 聚合在正式 `finishReason` 后立即完成、不等待 `[DONE]` 或 EOF 的回归边界。
-- 该 revision 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分已独立切换，Sub2API 仍等待维护者手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11 节，不得互相替代。
+- 该 revision 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 后由维护者手工切换，两者当前均运行该 revision。registry digest、image ID 与 archive SHA256 分别记录在第 11 节，不得互相替代。
 
 ## 2. 积分激活与历史基线
 
@@ -32,14 +32,14 @@
 
 ## 3. 用户入口与签到状态
 
-- 运行中的 Sub2API 仍加载 `POINTS_SYSTEM_ENABLED=false`；仓库外 `bridge-secrets.ready.env` 已准备为 `true`，但进程不会热加载该文件。因此当前普通用户菜单仍隐藏，不能把 policy v3 已启用误写成 Sub2API 用户入口已上线。
-- 维护者手工切换下一 Sub2API 候选后，ready 配置才随新容器加载并显示 `/points`。切换前必须核对状态接口的 enabled/configured/active、积分 Origin、Key ID、TTL 和时钟偏差；接口不得返回密钥原值。
+- 分阶段调试配置必须保持 `points_system.enabled=false`，并设置 `points_system.preview_user_ids: [1]`。只有用户 ID 1 显示积分菜单、通过 `/points` 路由并获得 user ticket；其他用户的手工路由和 launch 请求必须由服务端拒绝。旧的 `enabled=true` ready 文件不得在预览期加载。
+- 完整白名单只保存在服务端配置中，浏览器认证状态只返回当前用户专属的 `points_system_access` 布尔值。切换候选前必须核对 configured/active、积分 Origin、Key ID、TTL、时钟偏差以及用户 1/非白名单用户的正反授权；调试无误后再由维护者显式设置 `enabled=true` 开放全体用户，接口始终不得返回密钥或完整白名单。
 - 签到继续关闭。后续启用必须追加最早次日生效的新策略，完整配置每日次数、仅消费用户、昨日/总积分依据、最低昨日消费、固定/百分比阶梯及单次/用户每日/平台每日金额上限。
-- 用户入口和管理员入口都是 Sub2API 内置页面，不得把 `points.52token.org` 配成普通自定义菜单。积分域名根路径保持 404，没有一次性 ticket/session 时 `/app/` 和 `/admin/` 必须拒绝。
+- 用户入口和管理员入口都是 Sub2API 内置页面，不得把 `points.52token.org` 配成普通自定义菜单。用户页嵌在 Sub2API 右侧内容区；管理员从设置页打开新浏览器标签。积分域名根路径保持 404，没有一次性 ticket/session 时 `/app/` 和 `/admin/` 必须拒绝。
 
 ## 4. 积分界面与权限
 
-- Sub2API 在右侧内容区嵌入积分 iframe，左侧导航、Header 和上传 Logo 保持可见；`ui_mode=embedded` 只改变展示，不改变角色、ticket、session 或 API 授权。
+- Sub2API 仅把用户积分页以 iframe 嵌入右侧内容区，左侧导航、Header、当前明暗主题和上传 Logo 保持可见；`ui_mode=embedded` 只改变展示，不改变角色、ticket、session 或 API 授权。管理员在 `/admin/settings/points` 点击“打开积分配置”后，经 step-up 生成一次性管理员票据并以 `noopener,noreferrer` 新开浏览器标签页；原设置页保留，不跳转，也不在底部渲染管理员 iframe，浏览器拦截新窗口时显示失败状态。
 - 用户工作区采用冷灰底、深墨导航、电蓝四指标、宽幅趋势图和个人双明细的数据化大屏，只显示总积分、昨日积分、今日/累计签到赠送、7/30/90 日积分趋势、个人积分记录和签到奖励记录。签到关闭时按钮必须清晰锁定，页面不得出现策略、全站用户列表、发放重试、冲正或其他管理员控件。
 - 用户页和管理员页顶部身份、管理员全站用户积分明细首列以及签到余额发放任务用户列都显示 Sub2API 用户名。数值用户 ID 只保留在服务端账户关联、财务记录、审计和幂等处理中；浏览器 API 需要身份时返回 `username`，不得返回无必要的 `user_id`。
 - 管理员工作区沿用同一视觉系统但保持紧凑运维布局，提供运行概览、全站用户积分明细、策略管理和签到发放任务。用户明细以未删除 Sub2API 用户为基准，按用户名显示总/昨日积分、累计/昨日成功消费和昨日结算状态，零消费用户补零显示。
@@ -111,7 +111,7 @@ Selected model is at capacity. Please try a different model.
 
 ## 10. 不可破坏约束
 
-- 不自动替换、重启或重建生产 Sub2API；普通用户入口由维护者手工切换候选后加载 ready 配置。
+- 不自动替换、重启或重建生产 Sub2API；预览入口只由维护者手工切换候选并加载 `enabled=false`、`preview_user_ids: [1]` 后生效，禁止加载旧的全站 enabled ready 配置。
 - 积分更新前备份，更新后不重跑历史基线，不删除历史 job、快照、积分账本、审计或 outbox。
 - 生产 `points_app` 已完成用户名单列授权；后续必须保持 `id/username/deleted_at` 的列级只读 allowlist，禁止重跑 bootstrap、授予用户表整表读取或修改 PUBLIC ACL。
 - 签到保持关闭；积分展示开放不能隐式启用余额奖励。
@@ -158,7 +158,7 @@ Selected model is at capacity. Please try a different model.
 - 专用用户名升级模板以事务 `1914532` 执行，只给既有 `points_app` 直接授予 `public.users.username` 单列 SELECT；`id/deleted_at` 原授权保留，整表 SELECT 仍为 false，其他用户列和写权限未开放。授权前后全部业务计数一致。
 - 只修改 `/home/api/sub2api-points/compose.yml` 的积分镜像标签并执行 `docker compose up -d --no-deps points-system`。新容器 `ac58ec881e35...` 使用非 root `65532:65532`、只读 rootfs、`cap_drop: ALL`、`no-new-privileges`、PID 128，healthy 且 restart count 为 0。
 - 启动新增一条 `2026-07-30` 的幂等 `startup` 刷新记录：`source_users=14`、`source_rows=19056`、`changed_users=0`、消费和积分差量均为 0。账户仍为 29、快照 316、修订 316、账本 311、`needs_review=0`；历史 job 仍只有 `5174eef7-5f0a-4a17-b4f1-f50840940f64:succeeded`，40 个历史日期不变；签到、签到尝试、余额发放和发放尝试均为 0。
-- 管理员真实票据会话验证了嵌入式管理员页、同源上传 Logo、管理员脚本、policy v3、签到关闭、余额发放空记录，以及 186 个未删除用户的两页完整明细；每条只返回非空展示用户名，不返回 `user_id`。用户真实票据会话验证了嵌入式用户页、Logo、个人总览、39 条账本、连续 30 日曲线和空签到发放记录，同样没有 `user_id`。两类测试均正常注销，残留测试 session 已清零。
+- 当时的管理员真实票据会话验证了旧版嵌入式管理员页、同源上传 Logo、管理员脚本、policy v3、签到关闭、余额发放空记录，以及 186 个未删除用户的两页完整明细；每条只返回非空展示用户名，不返回 `user_id`。该历史证据不代表后续管理员入口仍应嵌入，最新契约已改为从 Sub2API 设置页新开独立标签。用户真实票据会话验证了嵌入式用户页、Logo、个人总览、39 条账本、连续 30 日曲线和空签到发放记录，同样没有 `user_id`。两类测试均正常注销，残留测试 session 已清零。
 - 更新前后 Sub2API 始终为容器 `bfd162bb9380...`、镜像 `0.1.168-339422728b2c`、原启动时间、restart count 0 和 healthy；没有重建或重启。
 
 ### 11.4 exact-root 首页
@@ -175,6 +175,13 @@ docker compose config -q
 docker compose up -d --no-deps sub2api
 ```
 
-切换前必须确认无在途媒体创建；切换后核对 `-version`、250 条 public 迁移、桥接 ready 配置、用户积分菜单、媒体冻结核销、容量精确重试和跨协议终态。PostgreSQL、Redis、积分服务和生图工作台不得随该命令重建。
+切换前必须确认无在途媒体创建；切换后核对 `-version`、250 条 public 迁移、`enabled=false` 与 `preview_user_ids: [1]`、用户 1 的积分菜单/`/points`/user ticket、非白名单用户三层拒绝、管理员新标签配置入口、媒体冻结核销、容量精确重试和跨协议终态。PostgreSQL、Redis、积分服务和生图工作台不得随该命令重建。
 
 `2026-07-31 20:58 CST` 最终只读复核确认：Sub2API 仍为容器 `bfd162bb9380...`、镜像 `0.1.168-339422728b2c`，积分服务仍为容器 `ac58ec881e35...`、镜像 `0.1.169-04a19ca082ee`；两者均 running、healthy、restart count 0。Sub2API 新候选只存在于服务器镜像缓存，Compose 仍引用旧生产标签。Nginx 为 active，PostgreSQL 与 Redis 均 healthy；Sub2API 本地/公网健康检查、积分本地健康检查和生图工作台本地/公网首页均返回 200，积分公网根路径与健康端点保持 404、无票据的 `/app/` 与 `/admin/` 保持 401。宿主 exact-root、`/` 和 `/index.html` 的 SHA256 继续一致。该复核没有修改配置、数据库、容器或镜像。
+
+### 11.6 维护者切换后的当前状态与用户 1 预览准备
+
+- `2026-07-31 22:05 CST` 只读核对确认，维护者已经把 Sub2API 手工切换到 `ghcr.io/hxly520/sub2api:0.1.169-04a19ca082ee`。运行容器为 `c37a7a014997...`，OCI revision `04a19ca082ee43853573795d1385727bd38f20e9`，image ID `sha256:b2fcce5b...`，running、healthy、restart count `0`；Compose 已引用相同不可变标签。
+- 同次核对的积分服务为容器 `e92b5ddc872b...`、镜像 `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`、同一 OCI revision，image ID `sha256:568c1af8...`，running、healthy、restart count `0`。PostgreSQL 与 Redis 均保持原容器并 healthy。
+- 当前运行进程仍加载 `POINTS_SYSTEM_ENABLED=false`，尚不具备本轮新增的预览名单代码。`2026-07-31 22:06 CST` 已在不重启、不替换任何容器的前提下，把 `POINTS_SYSTEM_PREVIEW_USER_IDS=1` 原子写入 `/home/api/sub2api-points/bridge-secrets.env`；文件保持 `0600 root:root`，备份位于 `/home/api/sub2api-deploy/backups/points-preview-user1-20260731T220613+0800`，随后 `docker compose config -q` 通过。该配置只在维护者手工切换下一 Sub2API 候选后加载。
+- 下一候选必须保持全局 `enabled=false`，仅向用户 ID 1 返回 `points_system_access=true`；菜单、`/points` 路由和 user launch ticket 三层都使用该服务端决定，其他用户不得通过手工 URL 绕过。管理员配置改为隔离 opener/referrer 的新标签页，原 Sub2API 设置页保留；用户 iframe 实时跟随 Sub2API 明暗主题，并严格校验消息来源，不能再影响官方导航主题。

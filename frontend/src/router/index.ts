@@ -926,6 +926,21 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  // Sessions created by an older frontend do not have the per-user preview
+  // decision in localStorage. Resolve it from the authenticated endpoint before
+  // deciding access to the points route; never infer preview access from an ID.
+  if (
+    to.meta.requiresPointsSystem &&
+    authStore.user &&
+    authStore.user.points_system_access === undefined
+  ) {
+    try {
+      await authStore.refreshUser()
+    } catch (error) {
+      console.warn('Failed to refresh points preview access in route guard', error)
+    }
+  }
+
   // Only an explicit value from successfully loaded settings can disable a route.
   // A transient settings failure is unknown state, not a confirmed feature toggle.
   if (
@@ -949,7 +964,8 @@ router.beforeEach(async (to, _from, next) => {
   if (
     to.meta.requiresPointsSystem &&
     appStore.publicSettingsLoaded &&
-    appStore.cachedPublicSettings?.points_system_enabled !== true
+    appStore.cachedPublicSettings?.points_system_enabled !== true &&
+    authStore.user?.points_system_access !== true
   ) {
     next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
     return

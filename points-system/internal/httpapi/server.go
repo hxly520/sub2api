@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"html"
 	"log/slog"
 	"net"
 	"net/http"
@@ -45,6 +46,7 @@ const policyKey contextKey = "points-policy"
 
 const embeddedUIMode = "embedded"
 const brandLogoPlaceholder = "__SUB2API_BRAND_LOGO__"
+const embedParentOriginPlaceholder = "__SUB2API_EMBED_PARENT_ORIGIN__"
 
 func New(cfg config.Config, pointsStore *store.Store, logger *slog.Logger) (*Server, error) {
 	if pointsStore == nil {
@@ -124,7 +126,8 @@ func (s *Server) servePage(w http.ResponseWriter, name string) {
 		writeError(w, http.StatusInternalServerError, "asset_error", "Internal server error")
 		return
 	}
-	body = bytes.ReplaceAll(body, []byte(brandLogoPlaceholder), []byte(s.brandLogoURL()))
+	body = bytes.ReplaceAll(body, []byte(brandLogoPlaceholder), []byte(html.EscapeString(s.brandLogoURL())))
+	body = bytes.ReplaceAll(body, []byte(embedParentOriginPlaceholder), []byte(html.EscapeString(s.Config.EmbedParentOrigin)))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)

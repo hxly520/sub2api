@@ -17,6 +17,8 @@ const authStore = vi.hoisted(() => ({
   isAdmin: false,
   isSimpleMode: false,
   hasPendingAuthSession: false,
+  user: null as null | { id: number; points_system_access?: boolean },
+  refreshUser: vi.fn(),
 }))
 
 const appStore = vi.hoisted(() => ({
@@ -119,6 +121,8 @@ describe('feature route guard', () => {
     authStore.isAuthenticated = true
     authStore.isAdmin = false
     authStore.isSimpleMode = false
+    authStore.user = null
+    authStore.refreshUser.mockReset()
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
@@ -202,5 +206,46 @@ describe('feature route guard', () => {
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith()
+  })
+
+  it('allows a user with preview access to open points while globally disabled', async () => {
+    authStore.user = { id: 1, points_system_access: true }
+    appStore.cachedPublicSettings = { points_system_enabled: false }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('refreshes a legacy session before deciding preview access', async () => {
+    authStore.user = { id: 1 }
+    authStore.refreshUser.mockImplementation(async () => {
+      authStore.user = { id: 1, points_system_access: true }
+      return authStore.user
+    })
+    appStore.cachedPublicSettings = { points_system_enabled: false }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(authStore.refreshUser).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('does not infer points preview access from user ID alone', async () => {
+    authStore.user = { id: 1, points_system_access: false }
+    appStore.cachedPublicSettings = { points_system_enabled: false }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
   })
 })

@@ -195,7 +195,7 @@ import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } 
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
-import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { FeatureFlags, isFeatureFlagEnabled, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 interface NavItem {
@@ -685,7 +685,8 @@ const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
-const flagPointsSystem = makeSidebarFlag(FeatureFlags.pointsSystem)
+const flagPointsSystem = () =>
+  isFeatureFlagEnabled(FeatureFlags.pointsSystem) || authStore.user?.points_system_access === true
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value
@@ -942,6 +943,9 @@ watch(
 
 onMounted(() => {
   void refreshBatchImageAccess()
+  if (authStore.user && authStore.user.points_system_access === undefined) {
+    void authStore.refreshUser().catch(() => undefined)
+  }
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }

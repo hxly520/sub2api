@@ -1293,6 +1293,8 @@ points_system:
   enabled: false
   public_url: "https://points.example.com"
   menu_label: "积分中心"
+  # Preview-only user IDs while enabled=false. Keep empty for no preview users.
+  preview_user_ids: []
   launch_key_id: "launch-v1"
   # Base64/base64url of at least 32 random bytes; never commit a real value.
   launch_secret: "BASE64URL_32_BYTE_SECRET"

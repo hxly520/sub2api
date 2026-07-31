@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PointsSettingsView from '../PointsSettingsView.vue'
-import { POINTS_FRAME_READY_MESSAGE } from '@/utils/embedded-url'
 
 const { getPointsBridgeStatus, createPointsLaunch } = vi.hoisted(() => ({
   getPointsBridgeStatus: vi.fn(),
@@ -38,6 +37,36 @@ const status = {
   clock_skew_seconds: 60,
 }
 
+interface PopupFixture {
+  window: Window
+  document: Document
+  replace: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+}
+
+function createPopupFixture(): PopupFixture {
+  const popupDocument = document.implementation.createHTMLDocument('')
+  const replace = vi.fn()
+  const close = vi.fn()
+  const popupWindow = {
+    opener: window,
+    document: popupDocument,
+    location: { replace },
+    close,
+    closed: false,
+  } as unknown as Window
+
+  return {
+    window: popupWindow,
+    document: popupDocument,
+    replace,
+    close,
+  }
+}
+
+let openWindow: ReturnType<typeof vi.spyOn>
+let popup: PopupFixture
+
 function mountView() {
   return mount(PointsSettingsView, {
     global: {
@@ -63,6 +92,12 @@ describe('PointsSettingsView', () => {
     getPointsBridgeStatus.mockReset()
     createPointsLaunch.mockReset()
     document.documentElement.classList.remove('dark')
+    popup = createPopupFixture()
+    openWindow = vi.spyOn(window, 'open').mockReturnValue(popup.window)
+  })
+
+  afterEach(() => {
+    openWindow.mockRestore()
   })
 
   it('keeps the admin entry usable while user access is disabled', async () => {
@@ -70,6 +105,8 @@ describe('PointsSettingsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
+    expect(wrapper.get('main').classes()).not.toContain('points-workspace-shell')
+    expect(wrapper.get('.points-workspace-shell').exists()).toBe(true)
     expect(wrapper.text()).toContain('https://points.example.test')
     expect(wrapper.text()).toContain('pointsSettings.disabled')
     expect(wrapper.get('[data-testid="open-points-console"]').attributes('disabled')).toBeUndefined()
@@ -99,7 +136,7 @@ describe('PointsSettingsView', () => {
     expect(wrapper.get('[data-testid="points-status-error"]').exists()).toBe(true)
   })
 
-  it('prompts for step-up verification and treats cancellation as a no-op', async () => {
+  it('opens and isolates a blank tab synchronously, then closes it when step-up is cancelled', async () => {
     getPointsBridgeStatus.mockResolvedValue(status)
     createPointsLaunch.mockRejectedValue({
       status: 403,
@@ -108,17 +145,27 @@ describe('PointsSettingsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    const click = wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    expect(openWindow).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(popup.window.opener).toBeNull()
+    const referrerMeta = popup.document.querySelector('meta[name="referrer"]')
+    expect(referrerMeta?.getAttribute('content')).toBe('no-referrer')
+    expect(popup.document.body.textContent).toBe('pointsSettings.consoleLoading')
+    expect(popup.replace).not.toHaveBeenCalled()
+
+    await click
     await flushPromises()
     expect(wrapper.get('[data-testid="cancel-step-up"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="cancel-step-up"]').trigger('click')
     await flushPromises()
+    expect(popup.close).toHaveBeenCalledTimes(1)
+    expect(popup.replace).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('pointsSettings.launchFailed')
     expect(wrapper.get('[data-testid="open-points-console"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('embeds the verified admin launch beside the bridge status', async () => {
+  it('navigates the isolated tab after verified admin launch and keeps the settings page in place', async () => {
     getPointsBridgeStatus.mockResolvedValue(status)
     createPointsLaunch
       .mockRejectedValueOnce({ status: 403, code: 'STEP_UP_REQUIRED' })
@@ -128,7 +175,11 @@ describe('PointsSettingsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    const click = wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    expect(openWindow).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(popup.replace).not.toHaveBeenCalled()
+
+    await click
     await flushPromises()
     expect(wrapper.get('[data-testid="verify-step-up"]').exists()).toBe(true)
 
@@ -137,40 +188,42 @@ describe('PointsSettingsView', () => {
 
     expect(createPointsLaunch).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('https://points.example.test')
-    const frame = wrapper.get('[data-testid="points-console-frame"]')
-    const frameURL = new URL(frame.attributes('src'))
-    expect(frameURL.searchParams.get('ticket')).toBe('verified-ticket')
-    expect(frameURL.searchParams.get('scope')).toBe('admin')
-    expect(frameURL.searchParams.get('ui_mode')).toBe('embedded')
-    expect(frame.attributes('sandbox')).toBe('allow-scripts allow-forms allow-same-origin')
-    expect(frame.attributes('allow')).toBeUndefined()
-    expect(frame.attributes('referrerpolicy')).toBe('no-referrer')
-    expect(wrapper.get('[data-testid="points-console-loading"]').exists()).toBe(true)
-
-    window.dispatchEvent(new MessageEvent('message', {
-      data: { type: POINTS_FRAME_READY_MESSAGE, role: 'admin' },
-      origin: frameURL.origin,
-      source: frame.element.contentWindow,
-    }))
-    await flushPromises()
-    expect(wrapper.find('[data-testid="points-console-loading"]').exists()).toBe(false)
+    expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(popup.replace).toHaveBeenCalledWith(
+      'https://points.example.test/launch?ticket=verified-ticket&scope=admin',
+    )
+    expect(popup.close).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="points-console-frame"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="points-console-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="points-console-error"]').exists()).toBe(false)
   })
 
-  it('keeps the iframe in place and offers a fresh launch after a frame error', async () => {
+  it('shows an error without requesting a ticket when the browser blocks the blank tab', async () => {
     getPointsBridgeStatus.mockResolvedValue(status)
-    createPointsLaunch.mockResolvedValue({
-      launch_url: 'https://points.example.test/launch?ticket=frame-error',
-    })
+    openWindow.mockReturnValue(null)
     const wrapper = mountView()
     await flushPromises()
 
     await wrapper.get('[data-testid="open-points-console"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="points-console-frame"]').trigger('error')
 
     expect(wrapper.get('[data-testid="points-console-error"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="retry-points-console"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="points-console-frame"]').exists()).toBe(true)
+    expect(openWindow).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(createPointsLaunch).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="points-console-frame"]').exists()).toBe(false)
+  })
+
+  it('closes the blank tab and reports an API launch failure', async () => {
+    getPointsBridgeStatus.mockResolvedValue(status)
+    createPointsLaunch.mockRejectedValue(new Error('network'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    await flushPromises()
+
+    expect(popup.close).toHaveBeenCalledTimes(1)
+    expect(popup.replace).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="points-console-error"]').exists()).toBe(true)
   })
 })

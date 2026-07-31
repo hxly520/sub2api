@@ -123,6 +123,26 @@ func TestPointsBridgeAllowsAdminSetupWhileUserEntryIsDisabled(t *testing.T) {
 	}
 }
 
+func TestPointsBridgePreviewUserCanCreateUserLaunchWhileGlobalEntryIsDisabled(t *testing.T) {
+	cfg := testPointsBridgeConfig()
+	cfg.PointsSystem.Enabled = false
+	cfg.PointsSystem.PreviewUserIDs = []int64{1}
+	svc := NewPointsBridgeService(&pointsBridgeRepositoryStub{}, nil, cfg)
+
+	if !svc.UserAccessAllowed(1) {
+		t.Fatal("preview user should be allowed by the bridge service")
+	}
+	if svc.UserAccessAllowed(2) {
+		t.Fatal("non-preview user should remain blocked")
+	}
+	if _, err := svc.CreateLaunchURL(1, "user", "light", "zh-CN"); err != nil {
+		t.Fatalf("preview user launch should succeed: %v", err)
+	}
+	if _, err := svc.CreateLaunchURL(2, "user", "light", "zh-CN"); err != ErrPointsSystemUnavailable {
+		t.Fatalf("non-preview user launch error = %v", err)
+	}
+}
+
 func TestPointsBridgeVerifyAndApplyCreditBindsKeyAndBody(t *testing.T) {
 	cfg := testPointsBridgeConfig()
 	repo := &pointsBridgeRepositoryStub{}

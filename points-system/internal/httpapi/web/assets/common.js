@@ -7,7 +7,18 @@
   const embedded = new URLSearchParams(window.location.search).get("ui_mode") === "embedded";
   document.body.dataset.uiMode = embedded ? "embedded" : "standalone";
   document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
+  const parentOrigin = document.querySelector('meta[name="sub2api-parent-origin"]')?.content || "";
   let readySent = false;
+
+  function applyEmbeddedTheme(event) {
+    if (!embedded || window.parent === window || !parentOrigin) return;
+    if (event.source !== window.parent || event.origin !== parentOrigin) return;
+    if (event.data?.type !== "sub2api:points-theme") return;
+    if (event.data.theme !== "light" && event.data.theme !== "dark") return;
+    document.documentElement.dataset.theme = event.data.theme;
+  }
+
+  window.addEventListener("message", applyEmbeddedTheme);
 
   document.querySelectorAll("[data-brand-logo]").forEach((image) => {
     image.addEventListener("error", () => {
@@ -23,7 +34,7 @@
     window.parent.postMessage({
       type: "sub2api:points-ready",
       role: document.body.classList.contains("admin-shell") ? "admin" : "user"
-    }, "*");
+    }, parentOrigin || "*");
   }
 
   const errorMessages = {

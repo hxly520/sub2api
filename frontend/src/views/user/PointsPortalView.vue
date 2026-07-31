@@ -1,7 +1,7 @@
 <template>
-  <AppLayout class="points-workspace-shell">
+  <AppLayout>
     <section
-      class="-m-4 h-[calc(100dvh-4rem)] overflow-hidden bg-gray-50 dark:bg-dark-950 md:-m-6 lg:-m-8"
+      class="points-workspace-shell -m-4 h-[calc(100dvh-4rem)] overflow-hidden bg-gray-50 dark:bg-dark-950 md:-m-6 lg:-m-8"
       data-testid="points-portal"
     >
       <div class="relative h-full min-h-0 w-full">
@@ -69,7 +69,11 @@ import '@/styles/points-workspace.css'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { createPointsLaunch } from '@/api/points'
-import { buildEmbeddedFrameUrl, isPointsFrameReadyMessage } from '@/utils/embedded-url'
+import {
+  buildEmbeddedFrameUrl,
+  isPointsFrameReadyMessage,
+  POINTS_FRAME_THEME_MESSAGE,
+} from '@/utils/embedded-url'
 
 const FRAME_LOAD_TIMEOUT_MS = 20_000
 
@@ -84,6 +88,19 @@ const frameElement = ref<HTMLIFrameElement | null>(null)
 const isAdminPortal = computed(() => route.meta.requiresAdmin === true)
 const backPath = computed(() => isAdminPortal.value ? '/admin/settings' : '/dashboard')
 let frameLoadTimer: number | null = null
+let themeObserver: MutationObserver | null = null
+
+function activeTheme(): 'light' | 'dark' {
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}
+
+function syncFrameTheme(): void {
+  if (!frameOrigin.value || !frameElement.value?.contentWindow) return
+  frameElement.value.contentWindow.postMessage(
+    { type: POINTS_FRAME_THEME_MESSAGE, theme: activeTheme() },
+    frameOrigin.value,
+  )
+}
 
 function clearFrameLoadTimer(): void {
   if (frameLoadTimer !== null) {
@@ -96,6 +113,7 @@ function handleFrameReady(): void {
   clearFrameLoadTimer()
   frameLoading.value = false
   failed.value = false
+  syncFrameTheme()
 }
 
 function handleFrameMessage(event: MessageEvent): void {
@@ -126,7 +144,7 @@ async function launch(): Promise<void> {
     const { launch_url: launchURL } = await createPointsLaunch(
       isAdminPortal.value ? 'admin' : 'user',
       {
-        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+        theme: activeTheme(),
         language: locale.value,
       },
     )
@@ -144,10 +162,14 @@ async function launch(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('message', handleFrameMessage)
+  themeObserver = new MutationObserver(syncFrameTheme)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   void launch()
 })
 onBeforeUnmount(() => {
   clearFrameLoadTimer()
+  themeObserver?.disconnect()
+  themeObserver = null
   window.removeEventListener('message', handleFrameMessage)
 })
 </script>

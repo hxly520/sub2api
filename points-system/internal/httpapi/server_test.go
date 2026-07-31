@@ -126,7 +126,9 @@ func TestPointsPagesUseUploadedSub2APILogoAndLocalFallback(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	if !strings.Contains(body, `src="https://sub2api.example.test/api/v1/settings/logo"`) ||
-		strings.Contains(body, brandLogoPlaceholder) || strings.Contains(body, `aria-hidden="true">积`) {
+		!strings.Contains(body, `name="sub2api-parent-origin" content="https://sub2api.example.test"`) ||
+		strings.Contains(body, brandLogoPlaceholder) || strings.Contains(body, embedParentOriginPlaceholder) ||
+		strings.Contains(body, `aria-hidden="true">积`) {
 		t.Fatalf("user page did not receive uploaded logo URL: %s", body)
 	}
 

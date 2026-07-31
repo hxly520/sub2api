@@ -26,6 +26,8 @@ const storeState = vi.hoisted(() => ({
   auth: {
     isAdmin: false,
     isSimpleMode: false,
+    user: null as null | { id: number; points_system_access?: boolean },
+    refreshUser: vi.fn(),
   },
   onboarding: {
     isCurrentStep: vi.fn(() => false),
@@ -125,6 +127,8 @@ beforeAll(async () => {
 beforeEach(() => {
   storeState.auth.isAdmin = false
   storeState.auth.isSimpleMode = false
+  storeState.auth.user = null
+  storeState.auth.refreshUser.mockReset()
   storeState.app.cachedPublicSettings = {
     points_system_enabled: false,
     custom_menu_items: [],
@@ -200,6 +204,35 @@ describe('AppSidebar points navigation', () => {
 
     expect(navigationPaths(wrapper)).not.toContain('/points')
     expect(navigationPaths(wrapper)).not.toContain('/admin/settings/points')
+    wrapper.unmount()
+  })
+
+  it('shows the points entry only to a user with preview access while globally disabled', () => {
+    storeState.auth.user = { id: 1, points_system_access: true }
+
+    const wrapper = mountSidebar()
+
+    expect(navigationPaths(wrapper)).toContain('/points')
+    expect(navigationPaths(wrapper)).not.toContain('/admin/settings/points')
+    wrapper.unmount()
+  })
+
+  it('refreshes a legacy session once so the server can resolve preview access', () => {
+    storeState.auth.user = { id: 1 }
+    storeState.auth.refreshUser.mockResolvedValue({ id: 1, points_system_access: true })
+
+    const wrapper = mountSidebar()
+
+    expect(storeState.auth.refreshUser).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('does not infer preview access from user ID alone', () => {
+    storeState.auth.user = { id: 1, points_system_access: false }
+
+    const wrapper = mountSidebar()
+
+    expect(navigationPaths(wrapper)).not.toContain('/points')
     wrapper.unmount()
   })
 })

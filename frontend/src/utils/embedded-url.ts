@@ -14,6 +14,7 @@ const EMBEDDED_SRC_HOST_QUERY_KEY = 'src_host'
 const EMBEDDED_SRC_QUERY_KEY = 'src_url'
 
 export const POINTS_FRAME_READY_MESSAGE = 'sub2api:points-ready'
+export const POINTS_FRAME_THEME_MESSAGE = 'sub2api:points-theme'
 
 export function isPointsFrameReadyMessage(
   data: unknown,

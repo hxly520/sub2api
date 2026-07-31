@@ -78,11 +78,29 @@ type LoginRequest struct {
 
 // AuthResponse 认证响应格式（匹配前端期望）
 type AuthResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token,omitempty"` // 新增：Refresh Token
-	ExpiresIn    int       `json:"expires_in,omitempty"`    // 新增：Access Token有效期（秒）
-	TokenType    string    `json:"token_type"`
-	User         *dto.User `json:"user"`
+	AccessToken  string            `json:"access_token"`
+	RefreshToken string            `json:"refresh_token,omitempty"` // 新增：Refresh Token
+	ExpiresIn    int               `json:"expires_in,omitempty"`    // 新增：Access Token有效期（秒）
+	TokenType    string            `json:"token_type"`
+	User         *AuthUserResponse `json:"user"`
+}
+
+// AuthUserResponse adds current-user feature access without exposing the
+// server-side preview allowlist through the shared user DTO.
+type AuthUserResponse struct {
+	*dto.User
+	PointsSystemAccess bool `json:"points_system_access"`
+}
+
+func newAuthUserResponse(authService *service.AuthService, user *service.User) *AuthUserResponse {
+	userDTO := dto.UserFromService(user)
+	if userDTO == nil {
+		return nil
+	}
+	return &AuthUserResponse{
+		User:               userDTO,
+		PointsSystemAccess: authService != nil && authService.PointsSystemUserAccessAllowed(user.ID),
+	}
 }
 
 func ensureLoginUserActive(user *service.User) error {
@@ -119,7 +137,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 		response.Success(c, AuthResponse{
 			AccessToken: token,
 			TokenType:   "Bearer",
-			User:        dto.UserFromService(user),
+			User:        newAuthUserResponse(authService, user),
 		})
 		return
 	}
@@ -128,7 +146,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    tokenPair.ExpiresIn,
 		TokenType:    "Bearer",
-		User:         dto.UserFromService(user),
+		User:         newAuthUserResponse(authService, user),
 	})
 }
 
@@ -427,7 +445,8 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 
 	type UserResponse struct {
 		userProfileResponse
-		RunMode string `json:"run_mode"`
+		RunMode            string `json:"run_mode"`
+		PointsSystemAccess bool   `json:"points_system_access"`
 	}
 
 	runMode := config.RunModeStandard
@@ -438,6 +457,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	response.Success(c, UserResponse{
 		userProfileResponse: userProfileResponseFromService(user, identities),
 		RunMode:             runMode,
+		PointsSystemAccess:  h.cfg != nil && h.cfg.PointsSystem.UserAccessAllowed(subject.UserID),
 	})
 }
 

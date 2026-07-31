@@ -23,8 +23,8 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
 ## Production Baseline (2026-07-31)
 
-- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`, OCI revision
-  `339422728b2ceb87b4a81bb08229d370c4ca589d`; the container is healthy with
+- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-04a19ca082ee`, OCI revision
+  `04a19ca082ee43853573795d1385727bd38f20e9`; the container is healthy with
   restart count zero.
 - The points service runs
   `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`, OCI revision
@@ -48,17 +48,18 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   daily snapshots, 311 point-ledger rows, no `needs_review` rows, and no
   check-in or balance-grant rows. This production schema must not run another
   history plan or apply.
-- The running Sub2API process still has `POINTS_SYSTEM_ENABLED=false`; its
-  root-owned ready file is prepared with `true`, but that value is not hot
-  loaded. The ordinary user menu remains hidden until the operator manually
-  switches the next Sub2API candidate. Administrator access remains available.
+- The staged rollout keeps `points_system.enabled=false` and sets
+  `points_system.preview_user_ids: [1]`. After the matching Sub2API candidate is
+  switched, only user ID 1 may see the ordinary user menu, visit `/points`, or
+  obtain a user launch ticket. Administrator access remains available, and the
+  global switch is changed to `true` only after preview acceptance.
 - The cold-gray/electric-blue user and administrator workspaces, uploaded
   Sub2API logo integration, username-only browser identity, deleted-user session
   invalidation, and minimal username ACL template are deployed from revision
   `04a19ca082ee`. The immutable GHCR digest is
   `sha256:4a31fa5efb1542db3a26940f262e544dbb7124ba1d907458d704d8d26311e2c9`.
-  Sub2API remains on its prior production container until the operator manually
-  switches the already loaded `v0.1.169` candidate.
+  Both production services currently run that revision. The next preview-access
+  candidate still requires an explicit operator switch for Sub2API.
 
 ## Runtime Architecture
 
@@ -157,15 +158,26 @@ zero totals. The delivery workspace uses the same username projection for
 check-in reward records only; legacy manual-grant rows remain in the database
 for audit but are not listed or mutable through the points HTTP API.
 
-Sub2API opens both workspaces inside its authenticated right-hand content area.
-It appends the exact allowlisted `ui_mode=embedded` value to `/launch`; the
-points service preserves that value on the redirect to `/app/` or `/admin/`.
-This mode changes presentation only: it does not select a role, relax ticket or
-session checks, or expose administrator APIs. The embedded user view hides its
-standalone top bar so the Sub2API sidebar and uploaded logo remain authoritative.
-The embedded administrator view likewise removes its duplicate brand and logout
-controls, while retaining a compact horizontal navigation bar for points-only
-administrative functions. Direct standalone access keeps the original layouts.
+Sub2API opens the user workspace inside its authenticated right-hand content
+area. It appends the exact allowlisted `ui_mode=embedded` value to `/launch`, and
+the points service preserves that value on the redirect to `/app/`. This mode
+changes presentation only: it does not select a role, relax ticket or session
+checks, or expose administrator APIs. The embedded user view hides its
+standalone top bar so the Sub2API sidebar, current light/dark theme, and uploaded
+logo remain authoritative. Later parent theme changes use the
+`sub2api:points-theme` message; the child applies only `light` or `dark` when
+both `event.source` and the exact configured parent Origin match.
+
+The administrator route `/admin/settings/points` remains in Sub2API for bridge
+status and launch controls, but the policy workspace is not appended as a
+bottom iframe. After step-up authentication, **Open points settings** creates a
+one-time administrator launch URL and opens it in a new browser tab with an
+isolated opener and no-referrer policy; the original Sub2API settings page remains in place. A
+blocked popup is reported as an explicit launch failure. The launched
+administrator workspace keeps its compact points-only navigation and exact
+administrator role checks.
+
+Direct standalone access keeps the original layouts.
 Standalone brand slots on both pages receive the exact Sub2API logo URL from
 the server: `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`. Letter placeholders
 such as the former user/admin marks are not part of the contract. The CSP adds
@@ -173,16 +185,24 @@ only the exact configured parent origin to `img-src`; if that image cannot load,
 the shared script applies `/assets/logo.svg` once as the image-bundled,
 authenticated fallback. Logo loading does not select a role or relax launch,
 session, Origin, or administrator API checks.
-The parent waits for a role- and Origin-validated `sub2api:points-ready`
-message from the iframe instead of treating an HTTP error document as a loaded
-workspace. The iframe receives scripts, forms, and same-origin access only; it
-does not receive popup, top-navigation, or clipboard permissions.
+For the user workspace, the parent waits for a role- and Origin-validated
+`sub2api:points-ready` message from the iframe instead of treating an HTTP error
+document as a loaded workspace. The iframe receives scripts, forms, and
+same-origin access only; it does not receive popup, top-navigation, or clipboard
+permissions. The administrator launch is a separate browser tab and does not
+reuse this iframe-ready protocol.
 
 Sub2API's Points tab in System Settings and the administrator route
 `/admin/settings/points` are always visible to authenticated administrators, including while
 `points_system.enabled=false`, so an administrator can inspect bridge status
-and use step-up authentication to launch the policy workspace. The ordinary
-user menu and `/points` route remain hidden unless the enabled switch is on.
+and use step-up authentication to launch the policy workspace in a new tab. The
+ordinary user menu, `/points` route, and user launch ticket share one server-side
+authorization rule: all valid users are allowed when `enabled=true`; while it
+is false, only IDs in `preview_user_ids` are allowed. The preview list remains
+server-side, while `/api/v1/auth/me` exposes only the current user's
+`points_system_access` boolean. The rollout value is `[1]`; non-preview users
+must be rejected by the backend even if they construct the route or launch
+request manually.
 The points service independently rejects user launch tickets, user pages,
 user assets, and user APIs when the effective points policy is missing,
 disabled, incomplete, or is the initial activation policy whose confirmed
@@ -273,6 +293,13 @@ start this operation.
 
 Copy `.env.example` and replace every placeholder. Important details:
 
+The corresponding Sub2API `points_system` block owns the user rollout gate.
+Keep `enabled: false` and `preview_user_ids: [1]` for the initial preview. The
+list is server-only configuration: browsers receive only the current user's
+`points_system_access` result. Set `enabled: true` explicitly after acceptance
+to allow all valid users; do not emulate a global rollout by continually
+expanding the preview list.
+
 - `POINTS_DATABASE_URL` connects to the existing Sub2API database with the
   dedicated points application role. `POINTS_DATABASE_SCHEMA` defaults to
   `points`; `POINTS_DATABASE_MAX_CONNS` defaults to eight and cannot exceed 32.
@@ -331,7 +358,7 @@ points container; forwarded client IP headers are ignored from every other
 source. Only the Nginx `/launch` location disables access logging so one-time
 tickets are not persisted in query-string logs. `/app/`, `/admin/`, assets,
 APIs, denials, authorization failures, and rate limits retain access logs.
-The launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
+The user launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
 its browser origin must exactly match `POINTS_EMBED_PARENT_ORIGIN` including any
 non-default port.
 Verify both authenticated workspaces with an uploaded Sub2API logo and with a
@@ -441,9 +468,10 @@ dry run. It also requires applied calendar days, unique users, user-days,
 business days, source rows, maximum source ID, spend delta, and point delta to
 match exactly. Drift or pre-existing accounting leaves the job `failed`; do not
 enable the bridge. Only after a `succeeded` job, database/account/ledger totals,
-service health, embedded UI, and launch denial while disabled have all been
-verified may the Sub2API bridge be prepared for manual enablement. Check-in stays
-off until a later explicit policy version enables it.
+service health, embedded user UI, administrator new-tab launch, preview-user
+success, and non-preview launch denial have all been verified may the Sub2API
+bridge be prepared for manual preview. Check-in stays off until a later explicit
+policy version enables it; all-user access stays off until separate acceptance.
 
 The baseline is one-time for the schema. Re-applying the exact successful plan
 returns the original successful job; a different second plan is rejected. While

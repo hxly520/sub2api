@@ -132,6 +132,12 @@ func (s *AuthService) EntClient() *dbent.Client {
 	return s.entClient
 }
 
+// PointsSystemUserAccessAllowed exposes only the current user's access decision
+// to authentication responses. The configured preview IDs remain private.
+func (s *AuthService) PointsSystemUserAccessAllowed(userID int64) bool {
+	return s != nil && s.cfg != nil && s.cfg.PointsSystem.UserAccessAllowed(userID)
+}
+
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
 	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
