@@ -23,6 +23,13 @@
   let adminInitialized = false;
   let bootstrapInFlight = false;
 
+  function setAdminSyncState(state, label) {
+    const syncMark = ui.byId("admin-sync-mark");
+    syncMark.dataset.state = state;
+    syncMark.title = label;
+    syncMark.setAttribute("aria-label", label);
+  }
+
   function setAccessState(message, { error = false, retry = false } = {}) {
     const access = ui.byId("admin-access-state");
     access.classList.toggle("error", error);
@@ -557,11 +564,14 @@
     ui.byId("logout").addEventListener("click", () => ui.logout().catch((error) => ui.notice(error.message, true)));
     ui.byId("refresh-admin").addEventListener("click", async (event) => {
       const button = event.currentTarget;
+      setAdminSyncState("loading", "正在同步控制台数据");
       ui.setButtonBusy(button, true, "刷新中");
       try {
         await refreshAll();
+        setAdminSyncState("ready", "控制台数据已同步");
         ui.notice("后台数据已刷新");
       } catch (error) {
+        setAdminSyncState("error", "控制台数据同步失败");
         ui.notice(error.message, true);
       } finally {
         ui.setButtonBusy(button, false);
@@ -682,6 +692,7 @@
     const retryButton = ui.byId("retry-admin-bootstrap");
     if (bootstrapInFlight) return;
     bootstrapInFlight = true;
+    setAdminSyncState("loading", "正在同步控制台数据");
     ui.setButtonBusy(retryButton, true, "加载中");
     setAccessState("正在加载积分控制台");
     try {
@@ -695,9 +706,11 @@
       ui.byId("admin-login-email").textContent = data.login_email || "未设置登录邮箱";
       initializeAdminWorkspace();
       await refreshAll();
+      setAdminSyncState("ready", "控制台数据已同步");
       access.remove();
       app.hidden = false;
     } catch (error) {
+      setAdminSyncState("error", "控制台数据同步失败");
       app.hidden = true;
       setAccessState(error.message, { error: true, retry: true });
     } finally {

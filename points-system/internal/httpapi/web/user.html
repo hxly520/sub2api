@@ -41,14 +41,17 @@
     </section>
 
     <header class="dashboard-heading">
-      <div>
+      <div class="dashboard-heading-copy">
         <span class="section-kicker">积分账户</span>
         <h1>我的积分</h1>
       </div>
-      <button id="refresh-dashboard" class="button secondary compact" type="button">
-        <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg>
-        <span data-button-label>刷新数据</span>
-      </button>
+      <div class="dashboard-heading-actions">
+        <span id="dashboard-sync-mark" class="sync-mark" data-state="loading" title="正在同步积分数据" aria-label="正在同步积分数据"><span aria-hidden="true"></span></span>
+        <button id="refresh-dashboard" class="button secondary compact" type="button">
+          <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg>
+          <span data-button-label>刷新数据</span>
+        </button>
+      </div>
     </header>
 
     <section class="scoreboard" aria-label="积分概览">
@@ -153,6 +156,11 @@
         </nav>
       </section>
     </section>
+
+    <aside class="points-info-strip" aria-label="积分结算说明">
+      <span class="points-info-icon" aria-hidden="true"><svg class="icon"><use href="/assets/lucide-sprite.svg#calendar-days"></use></svg></span>
+      <span>积分按成功消费金额结算，历史记录会在业务日次日 00:05 入账。</span>
+    </aside>
   </main>
 
   <script src="/assets/common.js" defer></script>

@@ -39,8 +39,11 @@
 
     <main class="admin-main">
       <header class="admin-topbar">
-        <div><span class="section-kicker">积分控制台</span><h1 id="admin-page-title">运行总览</h1></div>
-        <button id="refresh-admin" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新数据</span></button>
+        <div class="admin-heading-copy"><span class="section-kicker">积分控制台</span><h1 id="admin-page-title">运行总览</h1></div>
+        <div class="admin-topbar-actions">
+          <span id="admin-sync-mark" class="sync-mark" data-state="loading" title="正在同步控制台数据" aria-label="正在同步控制台数据"><span aria-hidden="true"></span></span>
+          <button id="refresh-admin" class="button secondary compact" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg><span data-button-label>刷新数据</span></button>
+        </div>
       </header>
       <div id="notice" role="status" aria-live="polite" class="notice hidden"></div>
 

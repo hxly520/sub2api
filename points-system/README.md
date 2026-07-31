@@ -155,11 +155,16 @@ rows, hover states, pagination, status chips, and chart colors must all remain
 readable in both themes. The administrator page uses the same visual language
 in a denser operations layout; sharing visual tokens does not merge pages,
 scripts, roles, or API permissions.
-The visual contract uses `DESIGN_VARIANCE=4`, `MOTION_INTENSITY=3`, and
-`VISUAL_DENSITY=6`: this is a dense embedded product workspace rather than a
-marketing page. It keeps the existing CSS tokens, permitted Lucide sprite, and
-native canvas as one design system; a second component runtime must not be added
-only for decoration. The canvas always uses its measured CSS width. Date ticks are capped at six and
+The current visual contract uses `DESIGN_VARIANCE=6`, `MOTION_INTENSITY=4`, and
+`VISUAL_DENSITY=5`: this remains an embedded product workspace rather than a
+marketing page, while the user surface receives a clearer primary-score focal
+point, a low-contrast precision grid, compact settlement context, and semantic
+loading/ready/error synchronization state. All tool panels and metric cards keep
+the established 8-pixel radius scale. Hover lift is limited to two pixels and
+is removed under `prefers-reduced-motion`. It keeps the existing CSS tokens,
+permitted Lucide sprite, and native canvas as one design system; a second
+component runtime must not be added only for decoration. The canvas always uses
+its measured CSS width. Date ticks are capped at six and
 are reduced against an 88-pixel readability interval, so a 390-pixel viewport
 renders three or four separated labels instead of scaling a fixed-width plot.
 Ordinary table hover uses a light primary tint rather than a selected-row fill,

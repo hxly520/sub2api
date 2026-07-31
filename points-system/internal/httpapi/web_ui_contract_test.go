@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,14 @@ func TestUserAsyncActionsRestoreButtonsAndConfirmCheckinState(t *testing.T) {
 	}
 	if strings.Count(checkinBlock, "event.currentTarget") != 1 {
 		t.Fatal("user check-in reads event.currentTarget after its async boundary")
+	}
+	responseReceived := strings.Index(checkinBlock, "responseReceived = true;")
+	confirmationRead := strings.Index(checkinBlock, "refreshedProfile = await loadProfile({ confirmCheckin: true });")
+	if responseReceived < 0 || confirmationRead <= responseReceived {
+		t.Fatal("successful check-in does not enter profile confirmation")
+	}
+	if strings.Contains(checkinBlock[responseReceived:confirmationRead], "clearPendingCheckin();") {
+		t.Fatal("successful check-in clears its idempotency key before profile confirmation")
 	}
 	for _, required := range []string{
 		`let checkinInFlight = false;`, `let checkinNeedsConfirmation = false;`,
@@ -362,6 +371,33 @@ func TestWebControlsUseLicensedIconSpriteAndPreserveLabels(t *testing.T) {
 	} {
 		if !strings.Contains(content+string(adminJSForContract(t)), required) {
 			t.Fatalf("icon button is missing its accessible label contract %q", required)
+		}
+	}
+}
+
+func TestWebIconReferencesExistInLicensedSprite(t *testing.T) {
+	userHTML, err := webFS.ReadFile("web/user.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sprite, err := webFS.ReadFile("web/assets/lucide-sprite.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	symbolPattern := regexp.MustCompile(`<symbol id="([^"]+)"`)
+	referencePattern := regexp.MustCompile(`/assets/lucide-sprite\.svg#([^"]+)`)
+	symbols := make(map[string]struct{})
+	for _, match := range symbolPattern.FindAllStringSubmatch(string(sprite), -1) {
+		symbols[match[1]] = struct{}{}
+	}
+	for _, match := range referencePattern.FindAllStringSubmatch(string(userHTML)+string(adminHTML), -1) {
+		if _, ok := symbols[match[1]]; !ok {
+			t.Fatalf("web page references missing Lucide symbol %q", match[1])
 		}
 	}
 }

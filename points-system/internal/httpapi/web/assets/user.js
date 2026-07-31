@@ -513,14 +513,22 @@
 
   function showDashboardError(error) {
     const page = document.querySelector(".dashboard-page");
+    const syncMark = ui.byId("dashboard-sync-mark");
     page.dataset.loadState = "error";
+    syncMark.dataset.state = "error";
+    syncMark.title = "积分数据同步失败";
+    syncMark.setAttribute("aria-label", "积分数据同步失败");
     ui.byId("dashboard-error-message").textContent = error?.message || "请重新加载积分数据。";
     ui.byId("dashboard-error").classList.remove("hidden");
   }
 
   function clearDashboardError() {
     const page = document.querySelector(".dashboard-page");
+    const syncMark = ui.byId("dashboard-sync-mark");
     page.dataset.loadState = "loading";
+    syncMark.dataset.state = "loading";
+    syncMark.title = "正在同步积分数据";
+    syncMark.setAttribute("aria-label", "正在同步积分数据");
     ui.byId("dashboard-error").classList.add("hidden");
   }
 
@@ -536,6 +544,10 @@
       const failed = results.find((result) => result.status === "rejected");
       if (failed) throw failed.reason;
       page.dataset.loadState = "ready";
+      const syncMark = ui.byId("dashboard-sync-mark");
+      syncMark.dataset.state = "ready";
+      syncMark.title = "积分数据已同步";
+      syncMark.setAttribute("aria-label", "积分数据已同步");
     } catch (error) {
       showDashboardError(error);
       throw error;
