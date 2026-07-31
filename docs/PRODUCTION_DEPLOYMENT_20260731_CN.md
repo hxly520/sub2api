@@ -6,9 +6,9 @@
 
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
-| Sub2API | `0.1.168-339422728b2c`，revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，容器 `bfd162bb...`，healthy | 官方 `v0.1.169` 加私有兼容提交，源码 `VERSION=0.1.169`；跨协议终态、容量精确重试、新 Vue 首页、积分桥接和 v0.1.169 官方能力均已进入待发布候选，最终 commit 以本轮推送后的 `main` 为准 | 只构建、推送并上传/缓存候选；维护者手工切换，自动化不得替换或重启 |
-| 积分服务 | `0.1.168-28e760bc8c6d`，revision `28e760bc8c6d66414595ef2af213d301a423acf2`，容器 `7b745c53...`，healthy | `1e33e7f7a` 已收口冷灰/电蓝双工作区、上传 Logo、镜像内回退、用户名展示和软删除会话失效；候选由与 Sub2API 相同的最终 `main` commit 构建 | 先备份并执行存量角色 `username` 单列授权，再独立更新积分服务并验证；不得重跑历史基线，且不得改动 Sub2API 容器 |
-| exact-root 首页 | Nginx 从宿主 `/home/api/sub2api-deploy/public/index.html` 提供旧生产文件 | 必须把 `deploy/public-landing/index.html` 与新版 Vue `/home` 同步为冷灰/电蓝、左文右图的数据化风格；最终状态以提交前静态页测试和文件 diff 为准 | 备份后原子替换并核对 SHA256；不 reload Nginx，不重启 Sub2API |
+| Sub2API | `0.1.168-339422728b2c`，revision `339422728b2ceb87b4a81bb08229d370c4ca589d`，容器 `bfd162bb...`，healthy | `0.1.169-04a19ca082ee` 已构建、推送并加载到服务器缓存，revision `04a19ca082ee43853573795d1385727bd38f20e9` | 维护者手工切换；自动化不得替换或重启 |
+| 积分服务 | `0.1.169-04a19ca082ee`，revision `04a19ca082ee43853573795d1385727bd38f20e9`，容器 `ac58ec88...`，healthy | 冷灰/电蓝双工作区、上传 Logo、镜像内回退、用户名展示和软删除会话失效均已上线 | 已完成备份、用户名单列授权和独立更新；后续不得重跑历史基线 |
+| exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
 
@@ -17,7 +17,8 @@
 - `874255bcd37d4820989eb1e13cdaf84f417996aa`：用户与管理员嵌入式积分工作区视觉及信息层级优化。
 - `1e33e7f7a`：未登录首页、同源上传 Logo、同步生图冻结时限、用户名积分与最小 ACL、连续自然日积分曲线、全量签到发放汇总、中文状态和跨协议会话终态/断连排空修复的升级前收口点。
 - `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e`：v0.1.169 正式兼容 merge，双亲为私有收口 `1e33e7f7a` 与官方 release `26d894ef4`；保留上述二开并增加官方上游路径校验、代理流熔断 fail-open、订阅配额显示、价格资源和容器加固，同时修复 Composite 分组模型快照以及 Gemini 收到 `finishReason` 后等待 EOF 的挂起。
-- 截至候选源码收口尚未生成新的镜像 tag、OCI revision 或 registry digest，也没有切换生产。制品标识必须来自最终推送 commit 和镜像工作流，禁止用 `1e33e7f7a`、旧生产 revision、image ID 或本地 archive SHA256 猜测。
+- `04a19ca082ee43853573795d1385727bd38f20e9`：最终发布源码；补齐非流式 Gemini SSE 聚合在正式 `finishReason` 后立即完成、不等待 `[DONE]` 或 EOF 的回归边界。
+- 该 revision 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分已独立切换，Sub2API 仍等待维护者手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11 节，不得互相替代。
 
 ## 2. 积分激活与历史基线
 
@@ -25,7 +26,7 @@
 - 一次性历史作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已进入 `succeeded`。当前有 29 个积分账户、316 条每日快照、311 条积分账本，`needs_review=0`，签到和余额发放记录均为 0。
 - 用户 ID 1 的对账值为总积分 `7514.94`、昨日积分 `938.07`。该值用于本次交接抽查，不应硬编码到页面或测试。
 - 当前 `points` schema 已应用 `001_init.sql`、`002_balance_grant_outbox.sql`、`003_usage_history_backfill.sql`，共 21 张表、3 条积分迁移；Sub2API `public` 迁移与 `points.points_schema_migrations` 继续严格分离。
-- 当前生产 `points_app` 仍只有 `public.users.id/deleted_at` 的列级读取权限，尚未执行用户名候选所需的 `SELECT (username)` 单列授权。仓库新增授权模板不代表线上 ACL 已改变；积分候选切换前必须按第 9 节备份、计数、执行并保存审计结果。
+- 当前生产 `points_app` 已通过专用升级模板和事务 `1914532` 完成 `SELECT (username)` 单列授权，与原有 `id/deleted_at` 组成 `id/username/deleted_at` 列级只读 allowlist。整表 SELECT、其他用户列和写权限仍未开放，授权前后业务计数一致；审计依据见第 11.3 节。
 - 历史基线在整个 schema 生命周期中只允许成功一次。后续镜像更新不得执行 `points-history-backfill activate/plan/apply/resume`，也不得新建重叠作业。正常积分只由 `00:05` 自动调度和滚动差量对账维护；比例变更次日生效且只影响新消费。
 - 4 个遗留 `points_shared_*` 测试 schema 已清理，清理后数量为 0，正式 `points` 数据计数未变化。清理前备份为 `/home/api/sub2api-deploy/backups/points-test-schema-cleanup-20260731-090001`，dump SHA256 `ecfc41fb6d3fbd332b3b0b86f9f8707257a81d4c266d9c6a7d6290c9ce661c29`，catalog 659 行。
 
@@ -92,26 +93,88 @@ Selected model is at capacity. Please try a different model.
 
 ## 9. 发布与验证
 
-本轮已完成的源码验证包括后端 `go test ./...`、`go vet ./...` 和 build；前端 ESLint、typecheck、全量 Vitest 和 production build；积分 `go test ./...`、`go vet ./...` 和 build；已渲染的桌面/移动 Vue 与积分页面无横向溢出且趋势图非空。exact-root 同步完成后仍必须重新运行静态页测试和最终截图检查；镜像工作流还须在最终 `main` commit 上执行自身测试和冒烟，不能用本地通过替代制品证据。
+本轮已完成的源码验证包括后端 `go test ./...`、`go vet ./...` 和 build；前端 ESLint、typecheck、全量 Vitest 和 production build；积分 `go test ./...`、`go vet ./...` 和 build；已渲染的桌面/移动 Vue 与积分页面无横向溢出且趋势图非空。exact-root 发布前的静态页测试共 19 项通过，发布后完成宿主与公网 SHA256 对账。无论使用 GitHub runner 还是受控本地回退，制品构建路径都必须在最终 `main` commit 上另行验证镜像层内容、revision、校验和与隔离冒烟；本轮结果见第 11 节。
+
+以下 1-7 是发布前执行清单；本轮实际执行结果、制品身份和生产断言见第 11 节。
 
 1. 推送最终 `main` 后触发 `.github/workflows/points-image.yml`，`publish_version_tag=true`；记录 tag、完整 revision、registry digest 和 workflow run。
 2. 触发 `.github/workflows/cachecompat-image.yml`，`version=0.1.169`、`publish_latest=false`；记录同样的不可变制品信息。
 3. 若 GitHub runner 仍在分配前被计费门禁终止，沿用受控本机构建标准 Docker archive 的既有流程；服务器只执行校验和 `docker load`，不编译源码或构建镜像。
 4. Sub2API 候选只上传、导入或缓存到服务器，不执行 `docker compose up`，不修改当前容器。把候选 tag/digest 和人工切换命令交给维护者。
-5. 更新积分前新建并校验数据库备份，记录旧容器、镜像、积分账户/快照/账本和 Sub2API 用户计数。生产 `points_app` 当前尚未具备用户名列权限；不得重跑 `shared-database-bootstrap.sql.example`，应通过 root-only stdin 提供既有 `points_app_role`，单独运行 `points-system/deploy/shared-database-users-username-upgrade.sql.example`。该事务必须只产生 `GRANT SELECT (username)`，不改 PUBLIC ACL；保存脚本输出的执行人、目标角色、事务号和前后断言，授权后复核上述数据计数完全不变。任一预检或断言失败时停止积分更新并保留当前容器。
+5. 更新积分前新建并校验数据库备份，记录旧容器、镜像、积分账户/快照/账本和 Sub2API 用户计数。存量角色不得重跑 `shared-database-bootstrap.sql.example`；应通过 root-only stdin 提供既有 `points_app_role`，单独运行 `points-system/deploy/shared-database-users-username-upgrade.sql.example`。该事务只能产生 `GRANT SELECT (username)`，不得修改 PUBLIC ACL；保存脚本输出的执行人、目标角色、事务号和前后断言，授权后复核上述数据计数完全不变。任一预检或断言失败时停止积分更新并保留当前容器。
 6. 完成单列授权后，仅对积分服务执行 `docker compose up -d --no-deps points-system`。更新后核对 21 表/3 迁移、policy v3 和历史 job ID 不变，对比更新前计数与期间正常调度增量，确认无重复历史账本、无异常减少、`needs_review=0`、签到/发放仍为 0；同时检查用户/管理员顶部、管理员用户明细和签到发放用户列只显示用户名，并断言浏览器响应没有无必要的 `user_id`，Sub2API 容器 ID、启动时间和镜像引用完全不变。
 7. exact-root 首页按第 5 节独立原子发布。它不依赖镜像切换，也不需要 Nginx reload，但线上 SHA256 必须与仓库候选一致。
 
-在 GitHub 构建完成前，下一候选的镜像 tag、OCI revision 和 registry digest 仍为空。推送最终 `main` 后必须把 commit、两个 workflow run、不可变 tag 和 registry digest 追加到本节或同日续录，禁止把源码工作树、旧 registry digest、image ID 或 archive SHA256 互相冒充。
+在制品构建完成前，下一候选的镜像 tag、OCI revision 和 registry digest 必须视为空。最终 `main`、不可变 tag、registry digest、image ID 和 archive SHA256 已在第 11 节分别补录，仍禁止把这些标识互相冒充。
 
-`2026-07-31 18:41 CST` 对源码 commit `6d40a9d8c3b0a27662a25139d7e9801537b01f3b` 触发了两次正式构建请求：Points System Image [run 30624409567](https://github.com/hxly520/sub2api/actions/runs/30624409567)（`publish_version_tag=true`）和 Cachecompat Image [run 30624411767](https://github.com/hxly520/sub2api/actions/runs/30624411767)（`version=0.1.169`、`publish_latest=false`）。两者都在 runner 分配前被 GitHub 账户计费门禁终止，注释为近期付款失败或需要提高支出上限；`runner_id=0`、`steps=[]`，没有 checkout、测试、Docker build、registry push、镜像 tag 或 digest。该结论只表示外部构建基础设施未启动，不表示源码测试或镜像构建步骤失败。解除 Billing & plans 门禁后必须在当时最终 `main` 上重新触发两个 workflow，并用新 run 的成功输出补写制品信息。
+`2026-07-31 18:41 CST` 对源码 commit `6d40a9d8c3b0a27662a25139d7e9801537b01f3b` 触发了两次正式构建请求：Points System Image [run 30624409567](https://github.com/hxly520/sub2api/actions/runs/30624409567)（`publish_version_tag=true`）和 Cachecompat Image [run 30624411767](https://github.com/hxly520/sub2api/actions/runs/30624411767)（`version=0.1.169`、`publish_latest=false`）。两者都在 runner 分配前被 GitHub 账户计费门禁终止，注释为近期付款失败或需要提高支出上限；`runner_id=0`、`steps=[]`，没有 checkout、测试、Docker build、registry push、镜像 tag 或 digest。该结论只表示外部构建基础设施未启动，不表示源码测试或镜像构建步骤失败。本次发布随后按第 11 节的受控本机构建流程完成，不再依赖这两个失败 run；账户门禁解除后可在新的最终 `main` 上补跑工作流验证，但新 run 不能冒充或改变本次已记录制品的身份。
 
 ## 10. 不可破坏约束
 
 - 不自动替换、重启或重建生产 Sub2API；普通用户入口由维护者手工切换候选后加载 ready 配置。
 - 积分更新前备份，更新后不重跑历史基线，不删除历史 job、快照、积分账本、审计或 outbox。
-- 生产存量 `points_app` 的用户名单列授权尚未执行；切换用户名积分候选前只能运行专用升级模板，禁止重跑 bootstrap、授予用户表整表读取或修改 PUBLIC ACL。
+- 生产 `points_app` 已完成用户名单列授权；后续必须保持 `id/username/deleted_at` 的列级只读 allowlist，禁止重跑 bootstrap、授予用户表整表读取或修改 PUBLIC ACL。
 - 签到保持关闭；积分展示开放不能隐式启用余额奖励。
 - `/api/internal/points/credits` 公网 `POST/OPTIONS` 继续精确 404，只允许积分容器经 Docker 网络调用；HMAC、幂等 UUID、Redis fail-close 限流和余额缓存代次保护必须保留。
 - `/launch` 是唯一可关闭 access log 的积分路径，其他页面、API、拒绝、越权和限流请求保留日志；任何日志均不得记录 ticket、cookie、HMAC、密钥或请求正文。
 - 后续合并官方版本时，以官方结构与通用行为为主，同时逐项回归媒体冻结核销、积分同库、历史积分、双工作区、管理员用户明细、签到发放安全、容量精确重试、跨协议正式终态/断流/客户端断开、Vue 与 exact-root 同步首页以及同源上传 Logo。
+
+## 11. v0.1.169 最终制品与生产续录
+
+### 11.1 GPT-5.6 生产渠道价格
+
+`2026-07-31 20:04:06 CST` 通过生产现有管理员渠道更新接口修改渠道 1“海外渠道”的 GPT-5.6 自定义价格；该接口在数据库事务提交后主动重建运行中渠道缓存，没有重启或替换 Sub2API。单位均为 USD/token，括号内为 USD/百万 token：
+
+| 模型 | 输入 | 缓存读取 | 缓存写入 | 输出 |
+| --- | ---: | ---: | ---: | ---: |
+| `gpt-5.6-sol` | `0.000005`（5） | `0.0000005`（0.5） | `0.00000625`（6.25） | `0.00003`（30） |
+| `gpt-5.6-terra` | `0.000002`（2） | `0.0000002`（0.2） | `0.0000025`（2.5） | `0.000012`（12） |
+| `gpt-5.6-luna` | `0.0000002`（0.2） | `0.00000002`（0.02） | `0.00000025`（0.25） | `0.0000012`（1.2） |
+
+生产所用 `0.1.168-339422728b2c` 已把公开别名 `gpt-5.6` 归一到 `gpt-5.6-sol`，因此别名没有遗漏。价格更新只影响后续成功消费；没有回写历史 usage、积分快照或积分账本。更新前后 Sub2API 容器均为 `bfd162bb9380...`，启动时间、镜像和 restart count 完全一致。
+
+### 11.2 最终源码与镜像
+
+- 最终发布源码：`04a19ca082ee43853573795d1385727bd38f20e9`，已推送私有仓库 `main`；`VERSION=0.1.169`。
+- 官方最新正式版仍为 `v0.1.169` / `26d894ef4`。官方 `main` 的后续 5 个未发布提交没有混入本轮 release。
+- 最终补丁让非流式 `collectGeminiSSE` 在解析完带正式 `finishReason` 的内容和 usage 后立即完成，不再等待 `[DONE]` 或 EOF；新增未关闭 `io.Pipe` 的阻塞回归测试。
+- GitHub Actions 仍受 runner 分配前的账户计费门禁影响，本轮按既有受控本机构建流程使用 Go `1.26.5`、pnpm `9.15.9`、`CGO_ENABLED=0` 和标准 Docker archive；服务器只执行 SHA256 校验、`docker load` 和运行时冒烟，没有编译源码或构建镜像。
+
+| 制品 | 标签 | registry digest | image ID | archive SHA256 | bytes |
+| --- | --- | --- | --- | --- | ---: |
+| Sub2API | `ghcr.io/hxly520/sub2api:0.1.169-04a19ca082ee`、`0.1.169` | `sha256:08013eeab760fce095ea9e8d945edf5e5ec0ac9057b8af69dad299f5522778f7` | `sha256:b2fcce5b732d42e6a3b67d6b48366dc9bf5b590781c07ce19581dfa6377b1408` | `9186d79c67f20962901af216e2c1f75de5d9f2bc5d62ea5320c1ee2d69d7f84e` | 47,931,392 |
+| 积分服务 | `ghcr.io/hxly520/sub2api-points:sha-04a19ca082ee`、`0.1.169-04a19ca082ee` | `sha256:4a31fa5efb1542db3a26940f262e544dbb7124ba1d907458d704d8d26311e2c9` | `sha256:568c1af8447d1c8b03192163885a6a4426de4720aeb52408ffb0ee391808dda1` | `c25d8635358d9341084ab825097d67017aabf51a657c33fd2247361f58d137c8` | 11,846,656 |
+
+服务器归档分别位于：
+
+- `/home/api/sub2api-deploy/image-archives/sub2api-0.1.169-04a19ca082ee-linux-amd64.tar`
+- `/home/api/sub2api-points/releases/sub2api-points-0.1.169-04a19ca082ee-linux-amd64.tar`
+
+两份文件均为 `0600 root:root`，本地与服务器 SHA256 一致。Sub2API 候选在隔离、无网络容器中的 `-version` 输出为 `0.1.169`、完整 revision 和 release 构建时间；当前生产 Sub2API 没有切换。
+
+### 11.3 积分独立更新与验收
+
+- 更新前备份：`/home/api/sub2api-deploy/backups/points-04a19ca082ee-20260731T2035110800/`。包含 `points` schema custom dump、catalog、完整数据库 schema、Compose、环境文件、运行时和前后数据断言，权限均为 root-only。
+- 专用用户名升级模板以事务 `1914532` 执行，只给既有 `points_app` 直接授予 `public.users.username` 单列 SELECT；`id/deleted_at` 原授权保留，整表 SELECT 仍为 false，其他用户列和写权限未开放。授权前后全部业务计数一致。
+- 只修改 `/home/api/sub2api-points/compose.yml` 的积分镜像标签并执行 `docker compose up -d --no-deps points-system`。新容器 `ac58ec881e35...` 使用非 root `65532:65532`、只读 rootfs、`cap_drop: ALL`、`no-new-privileges`、PID 128，healthy 且 restart count 为 0。
+- 启动新增一条 `2026-07-30` 的幂等 `startup` 刷新记录：`source_users=14`、`source_rows=19056`、`changed_users=0`、消费和积分差量均为 0。账户仍为 29、快照 316、修订 316、账本 311、`needs_review=0`；历史 job 仍只有 `5174eef7-5f0a-4a17-b4f1-f50840940f64:succeeded`，40 个历史日期不变；签到、签到尝试、余额发放和发放尝试均为 0。
+- 管理员真实票据会话验证了嵌入式管理员页、同源上传 Logo、管理员脚本、policy v3、签到关闭、余额发放空记录，以及 186 个未删除用户的两页完整明细；每条只返回非空展示用户名，不返回 `user_id`。用户真实票据会话验证了嵌入式用户页、Logo、个人总览、39 条账本、连续 30 日曲线和空签到发放记录，同样没有 `user_id`。两类测试均正常注销，残留测试 session 已清零。
+- 更新前后 Sub2API 始终为容器 `bfd162bb9380...`、镜像 `0.1.168-339422728b2c`、原启动时间、restart count 0 和 healthy；没有重建或重启。
+
+### 11.4 exact-root 首页
+
+`frontend/src/utils/__tests__/publicStaticPages.spec.ts` 共 19 项通过后，把 `deploy/public-landing/index.html` 原子发布到 `/home/api/sub2api-deploy/public/index.html`。备份位于 `/home/api/sub2api-deploy/backups/public-landing-04a19ca082ee-20260731T2048340800/`。仓库文件、宿主文件、`https://api.52token.org/` 和 `/index.html` 的 SHA256 均为 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0`。没有 reload Nginx，Sub2API 和积分容器身份均未变化。
+
+### 11.5 维护者手工切换边界
+
+服务器已经加载 `ghcr.io/hxly520/sub2api:0.1.169-04a19ca082ee`。自动化没有修改 `/home/api/sub2api-deploy/docker-compose.yml` 的 Sub2API 镜像，也没有执行该项目的 `up`。维护者在窗口内将该服务的镜像改为上述不可变标签后，只对 Sub2API 服务执行：
+
+```bash
+cd /home/api/sub2api-deploy
+docker compose config -q
+docker compose up -d --no-deps sub2api
+```
+
+切换前必须确认无在途媒体创建；切换后核对 `-version`、250 条 public 迁移、桥接 ready 配置、用户积分菜单、媒体冻结核销、容量精确重试和跨协议终态。PostgreSQL、Redis、积分服务和生图工作台不得随该命令重建。
+
+`2026-07-31 20:58 CST` 最终只读复核确认：Sub2API 仍为容器 `bfd162bb9380...`、镜像 `0.1.168-339422728b2c`，积分服务仍为容器 `ac58ec881e35...`、镜像 `0.1.169-04a19ca082ee`；两者均 running、healthy、restart count 0。Sub2API 新候选只存在于服务器镜像缓存，Compose 仍引用旧生产标签。Nginx 为 active，PostgreSQL 与 Redis 均 healthy；Sub2API 本地/公网健康检查、积分本地健康检查和生图工作台本地/公网首页均返回 200，积分公网根路径与健康端点保持 404、无票据的 `/app/` 与 `/admin/` 保持 401。宿主 exact-root、`/` 和 `/index.html` 的 SHA256 继续一致。该复核没有修改配置、数据库、容器或镜像。

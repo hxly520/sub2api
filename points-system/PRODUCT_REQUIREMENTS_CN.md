@@ -6,8 +6,9 @@
 
 ## 0. 当前生产基线与入口契约
 
-- 截至 `2026-07-31`，Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`；积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.168-28e760bc8c6d`，OCI revision `28e760bc8c6d66414595ef2af213d301a423acf2`。两者均 healthy，积分更新未重建或重启 Sub2API。镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
+- 截至 `2026-07-31`，Sub2API 仍运行 `ghcr.io/hxly520/sub2api:0.1.168-339422728b2c`，OCI revision `339422728b2ceb87b4a81bb08229d370c4ca589d`；`v0.1.169` 候选已加载服务器但等待维护者手工切换。积分服务已独立更新为 `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`，OCI revision `04a19ca082ee43853573795d1385727bd38f20e9`。两者均 healthy，积分更新未重建或重启 Sub2API。镜像 digest、image ID 与传输归档 SHA256 必须在每次发布记录中分别记载，不能互相替代。
 - 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 21 张表、3 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。
+- 生产 `points_app` 已完成 `public.users.username` 单列升级，当前对 Sub2API 用户表的直接读取权限严格限定为 `id/username/deleted_at`；整表 SELECT、其他用户列和写权限均未开放。后续部署不得重跑首次 bootstrap 或扩大该 allowlist。
 - Sub2API 当前共应用 250 条 public 迁移，`192_media_balance_hold_reconciliation_index_notx.sql` 与 `193_points_balance_credit_ledger.sql` 均已进入生产；积分迁移必须继续记录在 `points.points_schema_migrations`，不得混入 Sub2API 迁移表。
 - 系统设置内的“积分系统”标签和管理员入口 `/admin/settings/points` 必须始终对已认证管理员可见，即使 `points_system.enabled=false`，以便检查桥接状态并经 step-up 进入策略台；普通用户菜单和 `/points` 只在 enabled 开启时显示。配置或状态 API 只能返回是否配置、Key ID、URL、TTL 等非敏感元数据，禁止回传 launch/credit 密钥原值。
 - 用户工作区 `/app/` 与管理员工作区 `/admin/` 必须使用独立中文页面和独立脚本。普通用户不得下载管理员脚本、打开管理员页面或调用 `/api/v1/admin/*`，管理员也不得调用普通用户账户、积分、签到或赠送 API；角色不匹配一律返回 `403`，不能在同一页面用前端显隐混合两类能力。两个工作区均通过 Sub2API 右侧内容区 iframe 嵌入，左侧继续使用 Sub2API 导航及其上传 Logo；`ui_mode=embedded` 只控制展示，必须原样保留到角色对应工作区，不得参与角色或授权判定。积分服务的 CSP `frame-ancestors` 只能包含精确配置的 Sub2API Origin，禁止通配符及与跨 Origin 嵌入冲突的 `X-Frame-Options`。
@@ -63,7 +64,7 @@
 - 用户页面只显示实际获得金额，不显示管理员配置的随机区间。
 - 用户页面除总积分和昨日积分外，还要突出显示累计签到赠送金额，并保留今日签到所得与最近发放记录。累计赠送金额只统计已经成功发放且未冲正的签到余额，待发放、永久失败和已冲正记录不得计入。
 - 用户页面使用简洁的大屏中文看板，展示总积分、昨日积分、今日及累计签到赠送，并提供 7/30/90 日消费积分曲线、个人积分记录和签到奖励记录；曲线固定覆盖今天之前的连续完整自然日，缺失快照补零且日均按完整天数计算，不能退化为最近 N 条消费记录。页面不得出现策略、阶梯、手工赠送、快照刷新、冲正或其他管理员控件。
-- 管理员页面提供独立的用户积分明细列表，以 Sub2API 未删除用户为基准分页展示总消费积分、昨日消费积分、累计成功消费金额、昨日成功消费金额及昨日结算状态；从 Sub2API 用户表只允许读取 `id` 和 `deleted_at` 两列，零消费用户必须补零显示，普通用户 API 和页面不得取得该全站列表。
+- 管理员页面提供独立的用户积分明细列表，以 Sub2API 未删除用户为基准分页展示用户名、总消费积分、昨日消费积分、累计成功消费金额、昨日成功消费金额及昨日结算状态；从 Sub2API 用户表只允许读取 `id`、`username` 和 `deleted_at` 三列，零消费用户必须补零显示，普通用户 API 和页面不得取得该全站列表。
 - 积分系统不提供手工余额赠送功能，管理员如需直接调整余额必须使用 Sub2API 原有余额管理能力。积分系统的发放任务页面只查询签到随机余额发放记录，不得混入历史手工赠送记录；失败重试和审计冲正也必须先确认任务类型为 `checkin`。管理员概览的状态汇总必须由服务端对全部 `checkin` 任务聚合，不得只统计页面最新 100 条，`reversal_permanently_failed` 必须进入失败计数。
 
 ## 5. 余额与安全

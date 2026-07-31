@@ -27,19 +27,17 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `339422728b2ceb87b4a81bb08229d370c4ca589d`; the container is healthy with
   restart count zero.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.168-28e760bc8c6d`, OCI revision
-  `28e760bc8c6d66414595ef2af213d301a423acf2`, and is also healthy. Updating the
+  `ghcr.io/hxly520/sub2api-points:0.1.169-04a19ca082ee`, OCI revision
+  `04a19ca082ee43853573795d1385727bd38f20e9`, and is also healthy. Updating the
   points container did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
-- As of this handoff, the running production `points_app` role has not yet
-  received the new column-level `public.users.username` grant. Apply the
-  audited existing-role upgrade described under Deployment before starting a
-  points image that uses
-  usernames; this source-tree change is not evidence that the production ACL
-  has changed.
+- The running production `points_app` role has the audited column-level
+  `SELECT (username)` grant on `public.users`, in addition to the existing
+  `id` and `deleted_at` grants. It still has no table-wide user-table access,
+  no other user columns, and no write permission.
 - Sub2API has 250 applied public migrations. Private migrations
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
@@ -56,11 +54,11 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   switches the next Sub2API candidate. Administrator access remains available.
 - The cold-gray/electric-blue user and administrator workspaces, uploaded
   Sub2API logo integration, username-only browser identity, deleted-user session
-  invalidation, and minimal username ACL template are consolidated in private
-  checkpoint `1e33e7f7a` and carried by the `v0.1.169` source candidate. No new
-  candidate image tag, OCI revision, or registry digest exists until the final
-  `main` workflows finish, and neither production container has been switched
-  to this candidate.
+  invalidation, and minimal username ACL template are deployed from revision
+  `04a19ca082ee`. The immutable GHCR digest is
+  `sha256:4a31fa5efb1542db3a26940f262e544dbb7124ba1d907458d704d8d26311e2c9`.
+  Sub2API remains on its prior production container until the operator manually
+  switches the already loaded `v0.1.169` candidate.
 
 ## Runtime Architecture
 
@@ -135,7 +133,7 @@ page, admin script, or any `/api/v1/admin/*` endpoint. The user dashboard shows
 total/yesterday points, today's and settled
 unreversed check-in credits, a 7/30/90-day points trend, and personal records;
 it contains no policy, manual grant, snapshot, retry, or reversal controls.
-Its candidate visual system uses a cold-gray canvas, ink navigation,
+Its deployed visual system uses a cold-gray canvas, ink navigation,
 electric-blue four-metric summary, a wide trend chart, and separate personal
 ledger and check-in reward tables. The administrator page uses the same visual
 language in a denser operations layout; sharing visual tokens does not merge
@@ -321,8 +319,9 @@ script runs in one transaction, validates the role/table/column and existing
 least-privilege shape, grants only `SELECT (username)` on `public.users`, makes
 no PUBLIC ACL change, and asserts the direct column grant before commit. After
 the grant, repeat the counts and verify there was no data change before updating
-the points container. The production role recorded above has not yet completed
-this step.
+the points container. The production role recorded above completed this step on
+2026-07-31; future deployments must preserve the resulting narrow ACL and must
+not rerun the bootstrap.
 
 The Compose template publishes the service on loopback only and joins the
 existing Sub2API Docker network for the read-only database and balance bridge.
