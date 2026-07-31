@@ -12,6 +12,95 @@
   let checkinInFlight = false;
   let checkinNeedsConfirmation = false;
   let pendingCheckinKey = "";
+  let pendingCheckinBaseline = null;
+  const pendingCheckinStorageKey = "points.pending-checkin.v1";
+
+  function checkinBusinessDate(data) {
+    const serverDate = String(data?.business_date || "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(serverDate)) return serverDate;
+    const raw = String(data?.yesterday_snapshot?.business_date || "").slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!match) return "";
+    const next = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1));
+    return next.toISOString().slice(0, 10);
+  }
+
+  function removeStoredPendingCheckin() {
+    try {
+      sessionStorage.removeItem(pendingCheckinStorageKey);
+    } catch {
+      // Session storage is optional; the in-memory idempotency guard remains active.
+    }
+  }
+
+  function clearPendingCheckin() {
+    pendingCheckinKey = "";
+    pendingCheckinBaseline = null;
+    removeStoredPendingCheckin();
+  }
+
+  function savePendingCheckin(data) {
+    if (!pendingCheckinKey || !pendingCheckinBaseline) return;
+    const value = {
+      key: pendingCheckinKey,
+      login_email: String(data?.login_email || ""),
+      business_date: pendingCheckinBaseline.businessDate,
+      count: pendingCheckinBaseline.count
+    };
+    try {
+      sessionStorage.setItem(pendingCheckinStorageKey, JSON.stringify(value));
+    } catch {
+      // The current page still reuses the in-memory key when storage is unavailable.
+    }
+  }
+
+  function restorePendingCheckin(data) {
+    if (pendingCheckinKey) return;
+    let value = null;
+    try {
+      value = JSON.parse(sessionStorage.getItem(pendingCheckinStorageKey) || "null");
+    } catch {
+      removeStoredPendingCheckin();
+      return;
+    }
+    const key = String(value?.key || "");
+    const count = Number(value?.count);
+    const businessDate = checkinBusinessDate(data);
+    if (key.length < 16 || key.length > 128 || !Number.isInteger(count) || count < 0 ||
+        !businessDate || value?.business_date !== businessDate ||
+        value?.login_email !== String(data?.login_email || "")) {
+      removeStoredPendingCheckin();
+      return;
+    }
+    pendingCheckinKey = key;
+    pendingCheckinBaseline = { count, businessDate };
+    checkinNeedsConfirmation = true;
+  }
+
+  function beginPendingCheckin(data) {
+    if (pendingCheckinKey) return;
+    pendingCheckinKey = ui.idempotencyKey();
+    pendingCheckinBaseline = {
+      count: ui.number(data?.checkin?.count),
+      businessDate: checkinBusinessDate(data)
+    };
+    savePendingCheckin(data);
+  }
+
+  function resolvePendingCheckin(data, confirmCheckin) {
+    restorePendingCheckin(data);
+    if (!confirmCheckin && !checkinNeedsConfirmation) return;
+    if (!pendingCheckinKey) {
+      checkinNeedsConfirmation = false;
+      return;
+    }
+    const sameBusinessDate = pendingCheckinBaseline?.businessDate === checkinBusinessDate(data);
+    const countAdvanced = ui.number(data?.checkin?.count) > ui.number(pendingCheckinBaseline?.count);
+    if (!sameBusinessDate || countAdvanced) {
+      clearPendingCheckin();
+      checkinNeedsConfirmation = false;
+    }
+  }
 
   function createRecordPage(endpoint) {
     return {
@@ -50,8 +139,8 @@
       return;
     }
     if (checkinNeedsConfirmation) {
-      button.disabled = true;
-      ui.setButtonLabel(button, "状态待确认");
+      button.disabled = !pendingCheckinKey;
+      ui.setButtonLabel(button, pendingCheckinKey ? "确认签到结果" : "状态待确认");
       band.dataset.status = "off";
       return;
     }
@@ -80,8 +169,8 @@
       window.location.replace("/admin/");
       return null;
     }
+    resolvePendingCheckin(data, confirmCheckin);
     profile = data;
-    if (confirmCheckin) checkinNeedsConfirmation = false;
     ui.setSession(data);
     ui.byId("login-email").textContent = data.login_email || "未设置登录邮箱";
     ui.byId("total-points").textContent = ui.points(data.account?.total_points_hundredths);
@@ -158,6 +247,11 @@
         items: Array.isArray(data?.items) ? data.items : [],
         nextCursor: typeof data?.next_cursor === "string" ? data.next_cursor : ""
       });
+    } catch (error) {
+      if (requestSequence === page.requestSequence && cursor && error?.code === "invalid_cursor") {
+        return loadRecordPage(name, { cursor: "", navigation: "reset" });
+      }
+      throw error;
     } finally {
       if (requestSequence === page.requestSequence) {
         page.loading = false;
@@ -230,7 +324,9 @@
     }
 
     const bounds = canvas.getBoundingClientRect();
-    const width = Math.max(320, Math.round(bounds.width));
+    // Use the actual CSS width. A fixed canvas floor makes narrow embedded
+    // views scale down the plot and crowds the date labels on mobile.
+    const width = Math.max(1, Math.round(bounds.width));
     const height = Math.max(250, Math.round(bounds.height));
     const density = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(width * density);
@@ -265,7 +361,9 @@
       context.fillText(ui.points(((maximum * (4 - index)) / 4) * 100), padding.left - 10, y);
     }
 
-    const labelCount = Math.min(rows.length, 6);
+    // Keep enough horizontal breathing room for a date label while retaining
+    // the first and last dates as useful anchors on small screens.
+    const labelCount = Math.min(rows.length, 6, Math.max(2, Math.floor(plotWidth / 88) + 1));
     const labelIndexes = new Set();
     for (let index = 0; index < labelCount; index += 1) {
       labelIndexes.add(Math.round((index * (rows.length - 1)) / Math.max(labelCount - 1, 1)));
@@ -413,9 +511,23 @@
     loadDailyPoints(Number(buttons[next].dataset.days)).catch((error) => ui.notice(error.message, true));
   }
 
+  function showDashboardError(error) {
+    const page = document.querySelector(".dashboard-page");
+    page.dataset.loadState = "error";
+    ui.byId("dashboard-error-message").textContent = error?.message || "请重新加载积分数据。";
+    ui.byId("dashboard-error").classList.remove("hidden");
+  }
+
+  function clearDashboardError() {
+    const page = document.querySelector(".dashboard-page");
+    page.dataset.loadState = "loading";
+    ui.byId("dashboard-error").classList.add("hidden");
+  }
+
   async function refreshDashboard() {
     const page = document.querySelector(".dashboard-page");
     const confirmCheckin = checkinNeedsConfirmation && !checkinInFlight;
+    clearDashboardError();
     page.setAttribute("aria-busy", "true");
     try {
       const data = await loadProfile({ confirmCheckin });
@@ -423,6 +535,10 @@
       const results = await Promise.allSettled([loadDailyPoints(), loadLedger(), loadGrants()]);
       const failed = results.find((result) => result.status === "rejected");
       if (failed) throw failed.reason;
+      page.dataset.loadState = "ready";
+    } catch (error) {
+      showDashboardError(error);
+      throw error;
     } finally {
       page.setAttribute("aria-busy", "false");
     }
@@ -431,14 +547,25 @@
   function bindEvents() {
     window.addEventListener("points:themechange", drawChart);
     ui.byId("logout").addEventListener("click", () => ui.logout().catch((error) => ui.notice(error.message, true)));
+    ui.byId("retry-dashboard").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      ui.setButtonBusy(button, true, "加载中");
+      try {
+        await refreshDashboard();
+      } catch {
+        // refreshDashboard renders the persistent retry state.
+      } finally {
+        ui.setButtonBusy(button, false);
+      }
+    });
     ui.byId("refresh-dashboard").addEventListener("click", async (event) => {
       const button = event.currentTarget;
       ui.setButtonBusy(button, true, "刷新中");
       try {
         await refreshDashboard();
         ui.notice("数据已刷新");
-      } catch (error) {
-        ui.notice(error.message, true);
+      } catch {
+        // refreshDashboard renders the persistent retry state.
       } finally {
         ui.setButtonBusy(button, false);
       }
@@ -484,23 +611,28 @@
       checkinInFlight = true;
       ui.setButtonBusy(button, true, "签到中");
       try {
-        if (!pendingCheckinKey) pendingCheckinKey = ui.idempotencyKey();
+        beginPendingCheckin(profile || {});
         const result = await ui.api("/api/v1/checkins", {
           method: "POST",
           headers: { "Idempotency-Key": pendingCheckinKey }
         });
         responseReceived = true;
-        pendingCheckinKey = "";
         checkinNeedsConfirmation = true;
+        savePendingCheckin(profile || {});
         ui.notice(`签到成功，赠送 ${ui.money(result.reward_microusd)}，${ui.statusText(result.delivery_status)}`);
         refreshedProfile = await loadProfile({ confirmCheckin: true });
         await loadGrants({ cursor: "", navigation: "reset" });
       } catch (error) {
         if (!responseReceived) {
-          checkinNeedsConfirmation = true;
           const status = Number(error?.status);
           const definitiveFailure = Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
-          if (definitiveFailure) pendingCheckinKey = "";
+          if (definitiveFailure) {
+            clearPendingCheckin();
+            checkinNeedsConfirmation = false;
+          } else {
+            checkinNeedsConfirmation = true;
+            savePendingCheckin(profile || {});
+          }
         }
         ui.notice(error.message, true);
         if (!refreshedProfile) {
@@ -536,6 +668,6 @@
 
   bindEvents();
   refreshDashboard()
-    .catch((error) => ui.notice(error.message, true))
+    .catch(() => {})
     .finally(ui.notifyReady);
 })();

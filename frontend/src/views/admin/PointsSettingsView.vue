@@ -203,12 +203,107 @@ function prepareConsolePopup(popup: Window): void {
   // no-referrer policy before it is navigated to the points service.
   popup.opener = null
   const popupDocument = popup.document
+  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  const palette = theme === 'dark'
+    ? {
+        background: '#020617',
+        text: '#f1f5f9',
+        muted: '#94a3b8',
+        line: '#334155',
+        primary: '#2dd4bf',
+      }
+    : {
+        background: '#f9fafb',
+        text: '#111827',
+        muted: '#64748b',
+        line: '#e5e7eb',
+        primary: '#0f766e',
+      }
   const referrerMeta = popupDocument.createElement('meta')
   referrerMeta.name = 'referrer'
   referrerMeta.content = 'no-referrer'
-  popupDocument.head.appendChild(referrerMeta)
+  const colorSchemeMeta = popupDocument.createElement('meta')
+  colorSchemeMeta.name = 'color-scheme'
+  colorSchemeMeta.content = theme
+  const themeColorMeta = popupDocument.createElement('meta')
+  themeColorMeta.name = 'theme-color'
+  themeColorMeta.content = palette.background
+  const style = popupDocument.createElement('style')
+  style.dataset.pointsConsoleWaiting = ''
+  style.textContent = `
+    :root {
+      color-scheme: ${theme};
+      --points-popup-background: ${palette.background};
+      --points-popup-text: ${palette.text};
+      --points-popup-muted: ${palette.muted};
+      --points-popup-line: ${palette.line};
+      --points-popup-primary: ${palette.primary};
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      display: grid;
+      place-items: center;
+      margin: 0;
+      padding: 24px;
+      background: var(--points-popup-background);
+      color: var(--points-popup-text);
+      font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .points-console-waiting { width: min(100%, 320px); }
+    .points-console-waiting__label {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--points-popup-muted);
+      font-weight: 600;
+      text-align: center;
+    }
+    .points-console-waiting__progress {
+      position: relative;
+      display: block;
+      overflow: hidden;
+      width: 100%;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--points-popup-line);
+    }
+    .points-console-waiting__progress::after {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 42%;
+      border-radius: inherit;
+      background: var(--points-popup-primary);
+      animation: points-console-progress 1.1s ease-in-out infinite;
+      content: "";
+    }
+    @keyframes points-console-progress {
+      from { transform: translateX(-105%); }
+      to { transform: translateX(240%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .points-console-waiting__progress::after {
+        animation: none;
+        transform: translateX(70%);
+      }
+    }
+  `
+  popupDocument.head.append(referrerMeta, colorSchemeMeta, themeColorMeta, style)
+  popupDocument.documentElement.dataset.theme = theme
+  popupDocument.documentElement.lang = String(locale.value || 'zh-CN')
   popupDocument.title = t('pointsSettings.consoleTitle')
-  popupDocument.body.textContent = t('pointsSettings.consoleLoading')
+  const waitingState = popupDocument.createElement('main')
+  waitingState.className = 'points-console-waiting'
+  waitingState.setAttribute('role', 'status')
+  waitingState.setAttribute('aria-live', 'polite')
+  waitingState.setAttribute('aria-busy', 'true')
+  const waitingLabel = popupDocument.createElement('span')
+  waitingLabel.className = 'points-console-waiting__label'
+  waitingLabel.textContent = t('pointsSettings.consoleLoading')
+  const waitingProgress = popupDocument.createElement('span')
+  waitingProgress.className = 'points-console-waiting__progress'
+  waitingProgress.setAttribute('aria-hidden', 'true')
+  waitingState.append(waitingLabel, waitingProgress)
+  popupDocument.body.replaceChildren(waitingState)
 }
 
 function closeConsolePopup(popup: Window): void {

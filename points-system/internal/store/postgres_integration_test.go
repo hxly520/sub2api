@@ -221,6 +221,48 @@ func TestPostgresLedgerAwardedAtUsesBusinessDateWhenCreatedAtMatches(t *testing.
 	}
 }
 
+func TestPostgresLedgerAwardedAtUsesLedgerPolicyBeforePolicyEffectiveDate(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx := context.Background()
+	const userID int64 = 9203
+	createdAt := fixture.now.UTC()
+	effectiveDate := fixture.store.BusinessDate(fixture.now).AddDate(0, 0, -1)
+	historicalDate := effectiveDate.AddDate(0, 0, -14)
+
+	var policyVersion int64
+	if err := fixture.db.QueryRow(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,refresh_minute,created_by
+	) VALUES($1,FALSE,5,$2) RETURNING version_no`,
+		effectiveDate.Format("2006-01-02"), userID).Scan(&policyVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_accounts(user_id) VALUES($1)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_ledger(
+		user_id,kind,delta_points_hundredths,total_after_hundredths,source,
+		external_event_id,request_fingerprint,policy_version,business_date,created_at
+	) VALUES($1,'usage_points',100,100,'usage_snapshot',$2,$3,$4,$5,$6)`,
+		userID, "historical-policy-fallback", strings.Repeat("d", 64), policyVersion,
+		historicalDate.Format("2006-01-02"), createdAt); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := fixture.store.Ledger(ctx, userID, 10)
+	if err != nil {
+		t.Fatalf("list historical ledger: %v", err)
+	}
+	if len(entries) != 1 || entries[0].BusinessDate == nil {
+		t.Fatalf("historical ledger entries = %+v", entries)
+	}
+	year, month, day := entries[0].BusinessDate.Date()
+	expected := time.Date(year, month, day+1, 0, 5, 0, 0, fixture.location)
+	if !entries[0].AwardedAt.Equal(expected) {
+		t.Fatalf("historical business date %s awarded_at = %s, want %s",
+			entries[0].BusinessDate.Format("2006-01-02"), entries[0].AwardedAt, expected)
+	}
+}
+
 func TestPostgresCheckinGrantCursorStaysStableAcrossInsert(t *testing.T) {
 	fixture := newPostgresFixture(t)
 	ctx := context.Background()

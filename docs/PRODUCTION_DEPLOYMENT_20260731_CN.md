@@ -27,7 +27,7 @@
 ## 2. 积分激活与历史基线
 
 - 当前 policy 为 v3，`enabled=true`、`1 U = 10.00` 积分、每日 `00:05` 汇总前一自然日、签到关闭。启用积分展示不等于启用签到。
-- 个人消费积分账本的“发放时间”字段为 `awarded_at`，按 `Asia/Shanghai` 业务时间投影：消费账本行取 `business_date + 1` 发放自然日零点加该发放日实际生效策略的 `refresh_minute`，不得在策略切换日沿用消费日或账本绑定策略，当前默认即次日 `00:05`；非消费、旧版或找不到发放日策略的记录回退 `created_at`。该口径只用于展示，不改写不可变账本。
+- 个人消费积分账本的“发放时间”字段为 `awarded_at`，按 `Asia/Shanghai` 业务时间投影：消费账本行取 `business_date + 1` 发放自然日零点加该发放日实际生效策略的 `refresh_minute`，不得在正常策略切换日沿用消费日或账本绑定策略，当前默认即次日 `00:05`；只有发放日早于首个生效策略的历史回算行，才回退该账本固定 `policy_version` 的刷新分钟。非消费、旧版或同时缺少发放日/账本策略的记录回退 `created_at`。该口径只用于展示，不改写不可变账本。
 - 一次性历史作业 `5174eef7-5f0a-4a17-b4f1-f50840940f64` 已进入 `succeeded`，且仍是唯一成功基线。`2026-07-31 23:27 CST` 核对时共有 29 个积分账户、316 条每日快照、311 条积分账本；`2026-08-01 00:05 CST` 正常调度完成后，最新只读计数为 29 个积分账户、328 条每日快照/修订、322 条积分账本。两个时间点均为 `needs_review=0`，签到和余额发放记录均为 0。
 - `2026-07-31 23:27 CST` 用户 ID 1 的历史抽查值为总积分 `7514.94`、昨日积分 `938.07`；`2026-08-01 00:05 CST` 调度后的抽查值为总积分 `9283.00`、`2026-07-31` 业务快照积分 `1768.06`。这些值只用于对应时间点的交接抽查，不应硬编码到页面或测试。
 - 当前 `points` schema 已应用 `001_init.sql`、`002_balance_grant_outbox.sql`、`003_usage_history_backfill.sql`，共 21 张表、3 条积分迁移；Sub2API `public` 迁移与 `points.points_schema_migrations` 继续严格分离。
@@ -236,3 +236,11 @@ docker compose up -d --no-deps sub2api
 - 切换前全库 custom backup 为 `/home/api/sub2api-points/backups/sub2api-before-points-e39c78bf8f6c-20260801-043917.dump`，SHA256 `099a567598f64b07b25678e9fccb43f941f3daf41191beaddf73369f1fbc4574`，大小 `98,757,221` 字节，catalog `1,290` 行。阶段 A 事务 `1960217` 后 allowlist 精确为 `id/email/username/deleted_at`，整表和敏感列读取仍被拒绝。
 - 积分 Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-e39c78bf8f6c-20260801-045914.yml`。仅执行 `docker compose up -d --no-deps points-system` 后，新容器为 `11b1f9820fa7...`，healthy、restart count `0`；本地 health 为 `200`，本地/公网根和公网 health 仍为 `404`。启动对账 run `8b8a2d7b-17c9-4e9a-8074-105307203f5d` 读取 `30,078` 行、`12` 个来源用户，`changed_users=0`；用户 `187`、积分账户 `29`、快照 `328`、账本 `322` 均与切换前一致。
 - 浏览器没有可复用登录态，`/points` 被正确重定向到登录页，因此本轮没有伪造真实用户或管理员票据。阶段 B 明确保留为待办：维护者需登录后验证用户 1 嵌入页 `login_email`、浅/深主题、两表分页、刷新恢复、管理员用户明细和发放记录，并验证非预览用户拒绝；全部通过后才能执行 `shared-database-users-email-finalize.sql.example` 撤销 `username`。签到和全站开放继续关闭。
+- `2026-08-01 05:20 CST` 延迟只读复查确认积分容器仍为 `11b1f9820fa7...`、revision `e39c78bf8f6c...`、healthy、restart count `0`；Sub2API 仍为 `63d320fbf6ca...`、revision `f79803bb73d6...`、healthy、restart count `0`。积分启动后无 ERROR/WARN，`04:59` 启动对账仍为 `changed_users=0`；187 用户、29 账户、328 快照、328 修订和 322 账本未变化，签到及余额发放表仍为空。Sub2API 在 `05:12:43` 有一条上游 WebSocket `close 1006 (abnormal closure): unexpected EOF` 告警；上游已开始写流，访问日志最终为 `200` 且未写兜底错误，能解释无标准错误码的会话突然中断，不属于积分服务故障。该复查只执行容器、HTTP、日志和只读事务查询。
+
+### 11.10 下一轮 Taste 状态与响应式候选（未构建、未部署）
+
+- 本地后续候选在 `e39c78bf8f6c` 之上按 Taste 参数 `VARIANCE 4 / MOTION 3 / DENSITY 6` 继续收口视觉和完整状态循环：移动 Canvas 使用真实宽度并按约 `88px` 间距动态减少日期；表格 hover 降为轻量提示，签到赠送表缩小独立最小宽度；管理员待处理卡使用 amber 告警层级，策略阶梯改为表单内分隔行。候选继续使用现有 CSS token、Lucide sprite 和原生 Canvas，没有引入第二套组件运行时。
+- 用户首轮必需请求失败时显示持久错误面板与重试，不再把默认零值当作真实数据；管理员策略台等首轮汇总完成后才揭示。管理员新标签的 `about:blank` 等待页按 Sub2API 浅深主题渲染，带 `color-scheme`、主题色、语言、无障碍忙碌状态和 reduced-motion 降级，同时保持 opener/referrer 隔离。
+- 历史积分账本在业务日期早于首个策略生效日时，改用账本固定的 `policy_version` 回退刷新分钟，确保发放时间仍为业务日期次日 `00:05`，不修改账本或重跑历史作业。用户明细失效游标自动回第一页；管理员首轮失败保留原地重试。签到待确认意图使用服务端业务日期、登录邮箱、签到前次数和原幂等键绑定到当前浏览器会话，POST 成功后也要等权威次数增加再清理；行为夹具已验证连续重试与页面重载均复用同一幂等键。
+- 当前源码已用真实 Sub2API production build 与积分 iframe 双服务夹具完成桌面浅色、桌面深色、`390px` 嵌入和持久错误态截图；父页与 iframe 均无横向溢出，嵌入页隐藏自身 topbar，上传 Logo 与父主题保持权威。该候选尚未生成或上传镜像，生产仍精确为第 11.9 节记录的两个 revision；后续构建、上传或切换不得据本节推断已经发生。

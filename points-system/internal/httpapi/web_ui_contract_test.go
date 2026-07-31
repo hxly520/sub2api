@@ -23,6 +23,7 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 	for _, required := range []string{
 		`aria-busy="true"`, `id="total-points"`, `id="yesterday-points"`,
 		`id="total-checkin-rewards"`, `id="today-rewards"`, `id="average-points"`,
+		`id="dashboard-error"`, `id="retry-dashboard"`, `showDashboardError(error)`,
 		`Math.round(totalPoints / chartState.days)`, `.finally(ui.notifyReady)`,
 	} {
 		if !strings.Contains(userContent, required) {
@@ -43,6 +44,32 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 		"embedded && embeddedTheme ? embeddedTheme : sessionTheme"} {
 		if !strings.Contains(commonContent, required) {
 			t.Fatalf("shared embedded UI is missing delayed ready behavior %q", required)
+		}
+	}
+}
+
+func TestAdministratorWaitsForInitialDataBeforeShowingWorkspace(t *testing.T) {
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminJS, err := webFS.ReadFile("web/assets/admin.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(adminJS)
+	refresh := strings.Index(content, "await refreshAll();")
+	show := strings.Index(content, "app.hidden = false;")
+	if refresh < 0 || show < 0 || show < refresh {
+		t.Fatal("administrator workspace is shown before its initial data has loaded")
+	}
+	for _, required := range []string{
+		`id="admin-access-message"`, `id="retry-admin-bootstrap"`,
+		`setAccessState(error.message, { error: true, retry: true });`,
+		`ui.byId("retry-admin-bootstrap").addEventListener("click", bootstrap);`,
+	} {
+		if !strings.Contains(string(adminHTML)+content, required) {
+			t.Fatalf("administrator initial error recovery is missing %q", required)
 		}
 	}
 }
@@ -113,8 +140,10 @@ func TestUserAsyncActionsRestoreButtonsAndConfirmCheckinState(t *testing.T) {
 	checkinBlock := content[checkinStart:checkinEnd]
 	for _, required := range []string{
 		"const button = event.currentTarget;",
+		"beginPendingCheckin(profile || {});",
 		`headers: { "Idempotency-Key": pendingCheckinKey }`,
 		"checkinNeedsConfirmation = true;",
+		"savePendingCheckin(profile || {});",
 		"loadProfile({ confirmCheckin: true })",
 		`ui.setButtonBusy(button, false);`,
 		"syncCheckin(refreshedProfile || profile || {});",
@@ -128,8 +157,14 @@ func TestUserAsyncActionsRestoreButtonsAndConfirmCheckinState(t *testing.T) {
 	}
 	for _, required := range []string{
 		`let checkinInFlight = false;`, `let checkinNeedsConfirmation = false;`,
-		`let pendingCheckinKey = "";`, `if (checkinNeedsConfirmation)`,
-		`ui.setButtonLabel(button, "状态待确认");`,
+		`let pendingCheckinKey = "";`, `let pendingCheckinBaseline = null;`,
+		`const pendingCheckinStorageKey = "points.pending-checkin.v1";`,
+		`sessionStorage.setItem(pendingCheckinStorageKey`,
+		`sessionStorage.getItem(pendingCheckinStorageKey)`,
+		`const countAdvanced = ui.number(data?.checkin?.count) >`,
+		`if (!sameBusinessDate || countAdvanced)`,
+		`if (checkinNeedsConfirmation)`, `button.disabled = !pendingCheckinKey;`,
+		`pendingCheckinKey ? "确认签到结果" : "状态待确认"`,
 	} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("user check-in state guard is missing %q", required)
@@ -159,6 +194,8 @@ func TestUserRecordsUseTenRowPaginationAndCompactCheckinCard(t *testing.T) {
 		`id="grants-prev"`, `id="grants-next"`, `id="grants-page"`,
 		`const recordPageSize = 10;`, `createRecordPage("/api/v1/ledger")`,
 		`createRecordPage("/api/v1/balance-grants")`, `next_cursor`,
+		`cursor && error?.code === "invalid_cursor"`,
+		`loadRecordPage(name, { cursor: "", navigation: "reset" })`,
 		`class="table-pagination user-record-pagination"`,
 	} {
 		if !strings.Contains(markup+script, required) {
@@ -255,6 +292,8 @@ func TestUserTrendSupportsKeyboardAndEquivalentData(t *testing.T) {
 		`function moveChartPoint(event)`,
 		`["ArrowLeft", "ArrowRight", "Home", "End"]`,
 		`canvas.addEventListener("keydown", moveChartPoint);`,
+		`const width = Math.max(1, Math.round(bounds.width));`,
+		`Math.floor(plotWidth / 88) + 1`,
 		`ui.renderRows("chart-data-body", rows`,
 	} {
 		if !strings.Contains(content, required) {

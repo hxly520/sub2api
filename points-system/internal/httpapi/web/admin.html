@@ -9,7 +9,15 @@
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="admin-shell" data-ui-mode="standalone">
-  <div id="admin-access-state" class="access-state" role="status">正在验证管理员身份</div>
+  <div id="admin-access-state" class="access-state" role="status">
+    <div class="access-state-panel">
+      <span id="admin-access-message">正在验证管理员身份</span>
+      <button id="retry-admin-bootstrap" class="button secondary" type="button" hidden>
+        <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#refresh-cw"></use></svg>
+        <span data-button-label>重新加载</span>
+      </button>
+    </div>
+  </div>
 
   <div id="admin-app" class="admin-layout" hidden>
     <aside class="admin-sidebar">

@@ -322,6 +322,39 @@ textarea:focus-visible {
   color: var(--danger);
 }
 
+.dashboard-error {
+  display: flex;
+  min-height: 104px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 28px 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line));
+  border-radius: 8px;
+  padding: 20px;
+  background: color-mix(in srgb, var(--danger-soft) 72%, var(--surface));
+}
+
+.dashboard-error strong,
+.dashboard-error p {
+  display: block;
+  margin: 0;
+}
+
+.dashboard-error strong {
+  color: var(--danger);
+  font-size: 16px;
+}
+
+.dashboard-error p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.dashboard-page[data-load-state="error"] > :not(#notice):not(#dashboard-error) {
+  display: none;
+}
+
 .scoreboard {
   display: grid;
   grid-template-columns: 1.2fr repeat(3, minmax(0, 1fr));
@@ -710,6 +743,10 @@ table {
   border-collapse: collapse;
 }
 
+.grants-table {
+  min-width: 520px;
+}
+
 table.sr-only {
   min-width: 0;
 }
@@ -740,7 +777,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover td {
-  background: color-mix(in srgb, var(--primary-soft) 72%, var(--surface));
+  background: color-mix(in srgb, var(--primary-soft) 28%, var(--surface));
 }
 
 .user-shell .dashboard-page[aria-busy="false"] > .scoreboard,
@@ -826,6 +863,14 @@ tbody tr:hover td {
 
 .access-state.error {
   color: var(--danger);
+}
+
+.access-state-panel {
+  display: grid;
+  max-width: 420px;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
 }
 
 .admin-layout {
@@ -969,6 +1014,15 @@ tbody tr:hover td {
 
 .admin-metrics > div[data-state="warning"]::before {
   background: var(--amber);
+}
+
+.admin-metrics > div[data-state="warning"] {
+  border-color: color-mix(in srgb, var(--amber) 42%, var(--line));
+  background: color-mix(in srgb, var(--amber-soft) 42%, var(--surface));
+}
+
+.admin-metrics > div[data-state="warning"] strong {
+  color: var(--amber);
 }
 
 .admin-metrics > div[data-state="disabled"] strong {
@@ -1211,8 +1265,10 @@ textarea:disabled {
 
 .tiers {
   display: grid;
-  gap: 9px;
+  gap: 0;
   margin-top: 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .tier-row {
@@ -1220,10 +1276,14 @@ textarea:disabled {
   grid-template-columns: repeat(4, minmax(140px, 1fr));
   gap: 10px;
   align-items: end;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
   padding: 12px;
-  background: var(--surface-subtle);
+  background: transparent;
+}
+
+.tier-row:last-child {
+  border-bottom: 0;
 }
 
 .tier-row [hidden] {
@@ -1589,6 +1649,16 @@ td.actions {
     border-bottom: 0;
   }
 
+  .dashboard-error {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .dashboard-error .button {
+    width: 100%;
+  }
+
   .admin-topbar {
     margin-bottom: 12px;
   }
@@ -1637,7 +1707,7 @@ td.actions {
   }
 
   .table-wrap tbody tr:hover td:first-child {
-    background: var(--primary-soft);
+    background: color-mix(in srgb, var(--primary-soft) 28%, var(--surface));
   }
 
   .pagination-button {

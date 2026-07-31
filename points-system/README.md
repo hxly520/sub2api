@@ -155,6 +155,17 @@ rows, hover states, pagination, status chips, and chart colors must all remain
 readable in both themes. The administrator page uses the same visual language
 in a denser operations layout; sharing visual tokens does not merge pages,
 scripts, roles, or API permissions.
+The visual contract uses `DESIGN_VARIANCE=4`, `MOTION_INTENSITY=3`, and
+`VISUAL_DENSITY=6`: this is a dense embedded product workspace rather than a
+marketing page. It keeps the existing CSS tokens, permitted Lucide sprite, and
+native canvas as one design system; a second component runtime must not be added
+only for decoration. The canvas always uses its measured CSS width. Date ticks are capped at six and
+are reduced against an 88-pixel readability interval, so a 390-pixel viewport
+renders three or four separated labels instead of scaling a fixed-width plot.
+Ordinary table hover uses a light primary tint rather than a selected-row fill,
+and the four-column check-in grant table has its own narrower desktop minimum.
+Administrator pending work uses the amber semantic surface, while repeated
+reward tiers are divided rows inside the policy editor instead of nested cards.
 Its check-in grant history uses an administrator-bound signed keyset cursor and
 independent previous/next controls; it is not truncated to the latest 100 rows.
 User and administrator routes are role-exact in both directions. An
@@ -163,10 +174,20 @@ grant APIs, and the shared logout route is the only role-neutral write route.
 Dashboard refresh controls retain a stable button reference across asynchronous
 work so they always leave the busy state. Every browser API request has a
 20-second client timeout that is cleared on completion and returns a localized,
-retryable timeout message. Check-in keeps one idempotency key
-while a network outcome is uncertain, stays locked until an authoritative
-profile read confirms the result, and then renders the confirmed availability
-or completed state; a retry must never create a second reward.
+retryable timeout message. Check-in keeps one idempotency key, login email,
+business date, and pre-request count in session storage while a network outcome
+is uncertain. An authoritative profile count increase clears that pending
+intent; the key is also retained after a successful POST until that confirmation
+arrives. Otherwise the action becomes an explicit result-confirmation retry that
+replays the same key. It must never create a second reward or remain permanently
+disabled after a recoverable request.
+If the initial profile or any required dashboard request fails, the user page
+replaces default zero placeholders with a persistent error state and an explicit
+retry button. The iframe still sends its ready message so the parent can reveal
+that actionable failure instead of leaving an endless skeleton. The
+administrator workspace remains behind its loading state until its initial
+policy, user, and grant summaries have completed, so placeholder values are
+never presented as live business state.
 Session reads used by pages, assets, and APIs do not update `last_seen_at`, so a
 single page load does not create parallel write locks in the shared database.
 
@@ -206,6 +227,10 @@ isolated opener and no-referrer policy; the original Sub2API settings page remai
 blocked popup is reported as an explicit launch failure. The launched
 administrator workspace keeps its compact points-only navigation and exact
 administrator role checks.
+Before navigation completes, the isolated tab receives the active Sub2API
+light/dark color scheme, theme color, language, accessible busy status, and a
+reduced-motion-aware progress line. This waiting document keeps the existing
+`opener=null` and no-referrer guarantees and does not add a component runtime.
 
 Direct standalone access keeps the original layouts.
 Standalone brand slots on both pages receive the exact Sub2API logo URL from
@@ -318,9 +343,11 @@ not an alias for the immutable row's insertion time. For consumption rows with
 `Asia/Shanghai` natural day plus the `refresh_minute` from the policy effective
 on that award day. It deliberately does not reuse the consumption-day or
 ledger-bound policy at a schedule transition; the current default therefore
-displays `00:05` on the day after `business_date`. Non-consumption, legacy, or
-rows without an award-day policy fall back to `created_at`. This display projection must not
-rewrite `points_ledger.created_at` or any historical ledger row.
+displays `00:05` on the day after `business_date`. A history-backfill row whose
+award day predates the first effective policy uses its immutable ledger policy's
+`refresh_minute` as the fallback. Non-consumption, legacy, or rows with neither
+schedule nor ledger policy fall back to `created_at`. This display projection
+must not rewrite `points_ledger.created_at` or any historical ledger row.
 
 The one-time pre-launch history baseline is deliberately separate from this
 rolling reconciliation. It processes one completed natural day per transaction,

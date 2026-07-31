@@ -70,7 +70,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"login_email": publicLoginEmail(loginEmail), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
-		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret), "account": publicAccountFrom(account),
+		"business_date": s.Store.BusinessDate(now).Format("2006-01-02"),
+		"csrf_token":    security.CSRFToken(p.Token, s.Config.SessionSecret), "account": publicAccountFrom(account),
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
 		"features": map[string]any{

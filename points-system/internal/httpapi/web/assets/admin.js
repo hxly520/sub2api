@@ -20,6 +20,28 @@
     policies: "策略管理",
     operations: "签到发放记录"
   };
+  let adminInitialized = false;
+  let bootstrapInFlight = false;
+
+  function setAccessState(message, { error = false, retry = false } = {}) {
+    const access = ui.byId("admin-access-state");
+    access.classList.toggle("error", error);
+    access.setAttribute("role", error ? "alert" : "status");
+    ui.byId("admin-access-message").textContent = message;
+    ui.byId("retry-admin-bootstrap").hidden = !retry;
+  }
+
+  function initializeAdminWorkspace() {
+    if (adminInitialized) return;
+    bindEvents();
+    const tomorrow = localDate(1);
+    ui.byId("policy-date").min = tomorrow;
+    ui.byId("policy-date").value = tomorrow;
+    addTier();
+    syncConsumerOnly();
+    syncCheckinControls();
+    adminInitialized = true;
+  }
 
   function localDate(daysAhead) {
     const value = new Date();
@@ -657,33 +679,34 @@
   async function bootstrap() {
     const access = ui.byId("admin-access-state");
     const app = ui.byId("admin-app");
+    const retryButton = ui.byId("retry-admin-bootstrap");
+    if (bootstrapInFlight) return;
+    bootstrapInFlight = true;
+    ui.setButtonBusy(retryButton, true, "加载中");
+    setAccessState("正在加载积分控制台");
     try {
       const data = await ui.api("/api/v1/admin/me");
       if (data?.role !== "admin") {
         app.remove();
-        access.textContent = "当前账户无权访问管理后台";
+        setAccessState("当前账户无权访问管理后台", { error: true });
         return;
       }
       ui.setSession(data);
       ui.byId("admin-login-email").textContent = data.login_email || "未设置登录邮箱";
+      initializeAdminWorkspace();
+      await refreshAll();
       access.remove();
       app.hidden = false;
-      bindEvents();
-      const tomorrow = localDate(1);
-      ui.byId("policy-date").min = tomorrow;
-      ui.byId("policy-date").value = tomorrow;
-      addTier();
-      syncConsumerOnly();
-      syncCheckinControls();
-      await refreshAll();
     } catch (error) {
-      app.remove();
-      access.textContent = error.message;
-      access.classList.add("error");
+      app.hidden = true;
+      setAccessState(error.message, { error: true, retry: true });
     } finally {
+      bootstrapInFlight = false;
+      ui.setButtonBusy(retryButton, false);
       ui.notifyReady();
     }
   }
 
+  ui.byId("retry-admin-bootstrap").addEventListener("click", bootstrap);
   bootstrap();
 })();

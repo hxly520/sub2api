@@ -150,6 +150,15 @@ describe('PointsSettingsView', () => {
     expect(popup.window.opener).toBeNull()
     const referrerMeta = popup.document.querySelector('meta[name="referrer"]')
     expect(referrerMeta?.getAttribute('content')).toBe('no-referrer')
+    expect(popup.document.documentElement.dataset.theme).toBe('light')
+    expect(popup.document.documentElement.lang).toBe('zh-CN')
+    expect(popup.document.querySelector('meta[name="color-scheme"]')?.getAttribute('content')).toBe('light')
+    expect(popup.document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#f9fafb')
+    expect(popup.document.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBe('true')
+    expect(popup.document.querySelector('.points-console-waiting__progress')?.getAttribute('aria-hidden')).toBe('true')
+    const waitingStyles = popup.document.querySelector('style[data-points-console-waiting]')?.textContent
+    expect(waitingStyles).toContain('--points-popup-background: #f9fafb')
+    expect(waitingStyles).toContain('--points-popup-primary: #0f766e')
     expect(popup.document.body.textContent).toBe('pointsSettings.consoleLoading')
     expect(popup.replace).not.toHaveBeenCalled()
 
@@ -163,6 +172,33 @@ describe('PointsSettingsView', () => {
     expect(popup.replace).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('pointsSettings.launchFailed')
     expect(wrapper.get('[data-testid="open-points-console"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('matches the isolated waiting tab to the active dark theme', async () => {
+    document.documentElement.classList.add('dark')
+    getPointsBridgeStatus.mockResolvedValue(status)
+    createPointsLaunch.mockResolvedValue({
+      launch_url: 'https://points.example.test/launch?ticket=dark-ticket&scope=admin',
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-points-console"]').trigger('click')
+    await flushPromises()
+
+    expect(popup.window.opener).toBeNull()
+    expect(popup.document.querySelector('meta[name="referrer"]')?.getAttribute('content')).toBe('no-referrer')
+    expect(popup.document.documentElement.dataset.theme).toBe('dark')
+    expect(popup.document.querySelector('meta[name="color-scheme"]')?.getAttribute('content')).toBe('dark')
+    expect(popup.document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#020617')
+    const waitingStyles = popup.document.querySelector('style[data-points-console-waiting]')?.textContent
+    expect(waitingStyles).toContain('--points-popup-background: #020617')
+    expect(waitingStyles).toContain('--points-popup-text: #f1f5f9')
+    expect(waitingStyles).toContain('--points-popup-primary: #2dd4bf')
+    expect(popup.document.body.textContent).toBe('pointsSettings.consoleLoading')
+    expect(popup.replace).toHaveBeenCalledWith(
+      'https://points.example.test/launch?ticket=dark-ticket&scope=admin',
+    )
   })
 
   it('navigates the isolated tab after verified admin launch and keeps the settings page in place', async () => {
