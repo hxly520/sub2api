@@ -39,6 +39,17 @@ func TestClientIPOnlyTrustsConfiguredProxy(t *testing.T) {
 	}
 }
 
+func TestSpendTierPolicyRequestForcesYesterdayBasis(t *testing.T) {
+	policy := (policyRequest{
+		Mode:             domain.PolicyModeAllUsers,
+		Basis:            domain.PolicyBasisTotal,
+		CheckinTierBasis: domain.CheckinTierBasisSpend,
+	}).toPolicy(time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC), 1)
+	if policy.Basis != domain.PolicyBasisYesterday {
+		t.Fatalf("spend-tier policy basis = %q, want yesterday", policy.Basis)
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	server := &Server{Config: config.Config{EmbedParentOrigin: "https://sub2api.example.test"}}
 	handler := server.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -225,6 +236,9 @@ func TestPolicyRequestDefaultsAndLocksConsumerBasis(t *testing.T) {
 	if policy.Basis != domain.PolicyBasisYesterday {
 		t.Fatalf("consumer-only basis = %q, want yesterday", policy.Basis)
 	}
+	if policy.CheckinTierBasis != domain.CheckinTierBasisPoints {
+		t.Fatalf("default check-in tier basis = %q, want points", policy.CheckinTierBasis)
+	}
 	if policy.CheckinDailyLimit == nil || *policy.CheckinDailyLimit != 1 {
 		t.Fatalf("default daily limit = %v, want 1", policy.CheckinDailyLimit)
 	}
@@ -273,6 +287,7 @@ func TestPolicyRequestMapsCheckinEligibilityAndSafetyLimits(t *testing.T) {
 		Enabled:                         true,
 		Mode:                            domain.PolicyModeAllUsers,
 		Basis:                           domain.PolicyBasisTotal,
+		CheckinTierBasis:                domain.CheckinTierBasisSpend,
 		CheckinEnabled:                  true,
 		CheckinDailyLimit:               &dailyLimit,
 		MinimumCheckinSpendMicroUSD:     minimumSpend,
@@ -283,6 +298,7 @@ func TestPolicyRequestMapsCheckinEligibilityAndSafetyLimits(t *testing.T) {
 		RefreshMinute:                   &refreshMinute,
 	}).toPolicy(time.Now(), 9)
 	if policy.MinimumCheckinSpendMicroUSD != minimumSpend ||
+		policy.CheckinTierBasis != domain.CheckinTierBasisSpend ||
 		policy.CheckinPlatformDailyCapMicroUSD != &platformCap ||
 		policy.CheckinUserDailyCapMicroUSD != &userCap ||
 		policy.CheckinSingleAwardCapMicroUSD != &singleCap ||

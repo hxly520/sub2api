@@ -472,6 +472,61 @@ func TestAdminPolicyEditorUsesSingleNextDayAppendFlow(t *testing.T) {
 	}
 }
 
+func TestAdminPolicyEditorSupportsPrivateSpendTiersAndUnlimitedCaps(t *testing.T) {
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminJS := adminJSForContract(t)
+	userHTML, err := webFS.ReadFile("web/user.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	userJS, err := webFS.ReadFile("web/assets/user.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admin := string(adminHTML) + string(adminJS)
+	for _, required := range []string{
+		`id="policy-tier-basis"`, `<option value="points">消费积分</option>`,
+		`<option value="spend">昨日消费金额</option>`, `阶梯条件（仅管理员可见）`,
+		`阶梯条件、比例和金额区间仅管理员可见，不会展示在用户积分中心。`,
+		`id="policy-checkin-limit" type="number" min="1" step="1" value="1" required`,
+		`id="policy-single-cap" type="number" min="0.01" step="0.01" placeholder="不限"`,
+		`id="policy-user-cap" type="number" min="0.01" step="0.01" placeholder="不限"`,
+		`id="policy-platform-cap" type="number" min="0.01" step="0.01" placeholder="不限"`,
+		`policy.checkin_tier_basis === "spend" ? "spend" : "points"`,
+		`checkin_tier_basis: tierBasis`, `lower_spend_microusd: spendBased ? lower : null`,
+		`upper_spend_microusd: spendBased ? upper : null`,
+		`lower_points_hundredths: spendBased ? null : lower`,
+		`upper_points_hundredths: spendBased ? null : upper`,
+		`return value == null ? "" : decimalValue(value, divisor, "");`,
+		`checkin_single_award_cap_microusd: nullableScaled`,
+		`checkin_user_daily_cap_microusd: nullableScaled`,
+		`checkin_platform_daily_cap_microusd: nullableScaled`,
+		`control.required = checkinEnabled && id === "policy-checkin-limit";`,
+		`basis.disabled = !checkinEnabled || consumerOnly || spendBased;`,
+		`function changeTierBasis()`,
+		`input.value = "";`,
+		`阶梯条件已切换，请重新填写每一档的起止范围。`,
+	} {
+		if !strings.Contains(admin, required) {
+			t.Fatalf("administrator spend-tier policy editor is missing %q", required)
+		}
+	}
+
+	user := string(userHTML) + string(userJS)
+	for _, forbidden := range []string{
+		"checkin_tier_basis", "lower_spend_microusd", "upper_spend_microusd",
+		"lower_points_hundredths", "upper_points_hundredths", "赠送阶梯", "比例最低（%）", "比例最高（%）",
+	} {
+		if strings.Contains(user, forbidden) {
+			t.Fatalf("user dashboard exposes private check-in tier information %q", forbidden)
+		}
+	}
+}
+
 func adminJSForContract(t *testing.T) []byte {
 	t.Helper()
 	content, err := webFS.ReadFile("web/assets/admin.js")

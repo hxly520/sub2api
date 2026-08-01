@@ -1,16 +1,43 @@
 package store
 
 import (
+	"math"
+
 	"github.com/hxly520/sub2api/points-system/internal/domain"
 	"github.com/hxly520/sub2api/points-system/internal/security"
 )
 
 func tierForPoints(policy domain.Policy, points int64) (domain.Tier, bool) {
-	for _, tier := range policy.Tiers {
-		if points < tier.LowerPointsHundredths {
+	return tierForValue(policy.Tiers, domain.CheckinTierBasisPoints, points)
+}
+
+func tierForMetrics(policy domain.Policy, metrics checkinMetrics) (domain.Tier, bool) {
+	basis := policy.CheckinTierBasis
+	if basis == "" {
+		basis = domain.CheckinTierBasisPoints
+	}
+	value := metrics.BasisPointsHundredths
+	if basis == domain.CheckinTierBasisSpend {
+		value = metrics.RewardBaseMicroUSD
+	}
+	return tierForValue(policy.Tiers, basis, value)
+}
+
+func tierForValue(tiers []domain.Tier, basis string, value int64) (domain.Tier, bool) {
+	for _, tier := range tiers {
+		var lower, upper *int64
+		switch basis {
+		case domain.CheckinTierBasisPoints:
+			lower, upper = tier.LowerPointsHundredths, tier.UpperPointsHundredths
+		case domain.CheckinTierBasisSpend:
+			lower, upper = tier.LowerSpendMicroUSD, tier.UpperSpendMicroUSD
+		default:
+			return domain.Tier{}, false
+		}
+		if lower == nil || value < *lower {
 			continue
 		}
-		if tier.UpperPointsHundredths == nil || points < *tier.UpperPointsHundredths {
+		if upper == nil || value < *upper {
 			return tier, true
 		}
 	}
@@ -44,14 +71,36 @@ func calculateCheckinReward(tier domain.Tier, rewardBaseMicroUSD int64) (domain.
 	return domain.CalculateReward(tier, rewardBaseMicroUSD, sampled)
 }
 
-func limitCheckinReward(calculated, singleCap, platformCap, platformUsed, userCap, userUsed int64) (int64, error) {
-	if calculated < 0 || singleCap <= 0 || platformCap <= 0 || platformUsed < 0 ||
-		userCap <= 0 || userUsed < 0 {
+func limitCheckinReward(calculated int64, singleCap, platformCap *int64, platformUsed int64,
+	userCap *int64, userUsed int64) (int64, error) {
+	if calculated < 0 || platformUsed < 0 || userUsed < 0 {
 		return 0, domain.ErrPolicyIncomplete
 	}
-	limited := min64(calculated, singleCap, platformCap-platformUsed, userCap-userUsed)
-	if calculated > 0 && limited <= 0 {
+	limited := calculated
+	for _, limit := range []struct {
+		cap  *int64
+		used int64
+	}{
+		{cap: singleCap},
+		{cap: platformCap, used: platformUsed},
+		{cap: userCap, used: userUsed},
+	} {
+		if limit.cap == nil {
+			continue
+		}
+		if *limit.cap <= 0 || *limit.cap%domain.MicroUSDPerCent != 0 {
+			return 0, domain.ErrPolicyIncomplete
+		}
+		limited = min64(limited, *limit.cap-limit.used)
+	}
+	if limited < 0 {
+		return 0, domain.ErrInvalidState
+	}
+	if calculated > 0 && limited == 0 {
 		return 0, domain.ErrCapExhausted
+	}
+	if limited > math.MaxInt64-platformUsed || limited > math.MaxInt64-userUsed {
+		return 0, domain.ErrInvalidState
 	}
 	return limited, nil
 }

@@ -126,22 +126,23 @@
             <div class="form-block-title"><h3 aria-hidden="true">签到资格与赠送上限</h3></div>
             <div class="form-state-messages">
               <p id="checkin-lock-reason" class="form-lock-reason" role="status" aria-live="polite">请先开放用户积分功能，再启用签到赠送。</p>
-              <p id="basis-lock-reason" class="form-lock-reason hidden" role="status">仅限昨日消费用户开启时，签到阶梯依据固定为昨日积分。</p>
+              <p id="basis-lock-reason" class="form-lock-reason hidden" role="status">昨日消费资格或消费金额阶梯启用时，统计周期固定为昨日。</p>
             </div>
             <div class="form-grid">
               <label class="toggle-label"><input id="policy-checkin-enabled" type="checkbox"><span>启用签到赠送</span></label>
               <label class="toggle-label"><input id="policy-consumer-only" type="checkbox"><span>仅限昨日消费用户</span></label>
-              <label>签到阶梯依据<select id="policy-basis"><option value="yesterday">昨日积分</option><option value="total">总积分</option></select></label>
-              <label>每日签到次数<input id="policy-checkin-limit" type="number" min="1" step="1" value="1"></label>
+              <label>积分统计范围<select id="policy-basis"><option value="yesterday">昨日积分</option><option value="total">总积分</option></select></label>
+              <label>阶梯条件（仅管理员可见）<select id="policy-tier-basis"><option value="points">消费积分</option><option value="spend">昨日消费金额</option></select></label>
+              <label>每日签到次数<input id="policy-checkin-limit" type="number" min="1" step="1" value="1" required></label>
               <label>最低昨日消费（U）<input id="policy-minimum-spend" type="number" min="0" step="0.01" value="0.00"></label>
-              <label>单次赠送上限（U）<input id="policy-single-cap" type="number" min="0.01" step="0.01" value="1.00"></label>
-              <label>单用户每日上限（U）<input id="policy-user-cap" type="number" min="0.01" step="0.01" value="1.00"></label>
-              <label>全平台每日上限（U）<input id="policy-platform-cap" type="number" min="0.01" step="0.01" value="100.00"></label>
+              <label>单次赠送上限（U）<input id="policy-single-cap" type="number" min="0.01" step="0.01" placeholder="不限"></label>
+              <label>单用户每日上限（U）<input id="policy-user-cap" type="number" min="0.01" step="0.01" placeholder="不限"></label>
+              <label>全平台每日上限（U）<input id="policy-platform-cap" type="number" min="0.01" step="0.01" placeholder="不限"></label>
             </div>
           </fieldset>
           <fieldset id="checkin-tiers" class="form-block">
             <legend class="sr-only">赠送阶梯</legend>
-            <div class="form-block-title tier-title"><h3 aria-hidden="true">赠送阶梯</h3><button id="add-tier" type="button" class="button secondary compact"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>添加阶梯</span></button></div>
+            <div class="form-block-title tier-title"><div><h3 aria-hidden="true">赠送阶梯</h3><p class="form-lock-reason">阶梯条件、比例和金额区间仅管理员可见，不会展示在用户积分中心。</p></div><button id="add-tier" type="button" class="button secondary compact"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>添加阶梯</span></button></div>
             <div id="tiers" class="tiers"></div>
           </fieldset>
           <div class="form-actions">

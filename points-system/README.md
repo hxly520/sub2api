@@ -141,9 +141,11 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
    user aggregates below one micro-USD after rounding are omitted as zero.
 5. The policy-defined daily refresh aggregates the preceding natural day into
    immutable snapshot revisions and updates the user's read-only point total.
-6. Check-in locks the daily user/platform counters, calculates a reward using
-   `crypto/rand`, reserves every monetary cap, records the immutable rule
-   snapshot, and enqueues a balance grant in one serializable transaction.
+6. Check-in locks the daily user/platform counters, selects either a point or
+   raw-spend tier, calculates a reward using `crypto/rand`, applies every
+   configured monetary cap, records the immutable rule snapshot, and enqueues
+   a balance grant in one serializable transaction. A null monetary cap means
+   unlimited; the positive daily check-in count limit remains mandatory.
 7. The outbox worker signs an idempotent Sub2API balance-credit request. A
    retryable or unknown result must be retried with the same transaction UUID
    until Sub2API confirms settlement. Only settled credits can enqueue a debit
@@ -154,7 +156,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 - Money: micro-USD (`1 U = 1,000,000`, `0.01 U = 10,000`).
 - Point conversion: hundredths of a point per U (`10.25 = 1025`).
-- Point totals and tier bounds: hundredths of a point.
+- Point totals and point-tier bounds: hundredths of a point.
+- Spend-tier bounds: micro-USD, cent aligned.
 - Percentages: parts per million (`5% = 50,000 PPM`).
 
 Percentage rewards use integer arithmetic and are rounded down to `0.01 U`.
@@ -554,8 +557,10 @@ fallback must not be served outside an authenticated points session.
 
 The user profile field `checkin_available` is a read-only eligibility result. It
 checks that check-in is enabled, the daily count remains, yesterday's snapshot
-is ready and review-free, minimum prior-day spend and the selected points tier
-match, and both user and platform monetary caps have remaining headroom. The
+is ready and review-free, minimum prior-day spend and the selected private tier
+match, and every configured monetary cap has remaining headroom. Spend tiers
+are forced to the prior natural day's raw successful balance spend; neither an
+administrator request nor a direct store call can select cumulative spend. The
 same rules are revalidated transactionally on submission, which remains
 authoritative if eligibility changes after the profile response.
 

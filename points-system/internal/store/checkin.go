@@ -69,7 +69,7 @@ func (s *Store) CheckinAvailable(ctx context.Context, userID int64, now time.Tim
 	if err := validateCheckinSpend(policy, metrics.YesterdaySpendMicroUSD); err != nil {
 		return false, nil
 	}
-	if _, ok := tierForPoints(policy, metrics.BasisPointsHundredths); !ok {
+	if _, ok := tierForMetrics(policy, metrics); !ok {
 		return false, nil
 	}
 
@@ -79,9 +79,9 @@ func (s *Store) CheckinAvailable(ctx context.Context, userID int64, now time.Tim
 		dateString(date)).Scan(&platformAwardedMicroUSD); err != nil {
 		return false, err
 	}
-	_, err = limitCheckinReward(1, *policy.CheckinSingleAwardCapMicroUSD,
-		*policy.CheckinPlatformDailyCapMicroUSD, platformAwardedMicroUSD,
-		*policy.CheckinUserDailyCapMicroUSD, userAwardedMicroUSD)
+	_, err = limitCheckinReward(1, policy.CheckinSingleAwardCapMicroUSD,
+		policy.CheckinPlatformDailyCapMicroUSD, platformAwardedMicroUSD,
+		policy.CheckinUserDailyCapMicroUSD, userAwardedMicroUSD)
 	if err != nil {
 		if isCheckinIneligibility(err) {
 			return false, nil
@@ -155,7 +155,7 @@ func (s *Store) CheckIn(ctx context.Context, userID int64, eventID string, now t
 			return recordConvergedCheckinRejectionTx(ctx, tx, userID, date, policy, metrics,
 				domain.RewardCalculation{}, 0, "rejected", checkinRejectionMinimumSpend)
 		}
-		tier, ok := tierForPoints(policy, metrics.BasisPointsHundredths)
+		tier, ok := tierForMetrics(policy, metrics)
 		if !ok {
 			rejection = domain.ErrNoMatchingTier
 			return recordConvergedCheckinRejectionTx(ctx, tx, userID, date, policy, metrics,
@@ -177,8 +177,8 @@ func (s *Store) CheckIn(ctx context.Context, userID int64, eventID string, now t
 			return err
 		}
 		candidateMicroUSD, err := limitCheckinReward(calculation.CalculatedRewardMicroUSD,
-			*policy.CheckinSingleAwardCapMicroUSD, *policy.CheckinPlatformDailyCapMicroUSD,
-			platformAwardedMicroUSD, *policy.CheckinUserDailyCapMicroUSD, userAwardedMicroUSD)
+			policy.CheckinSingleAwardCapMicroUSD, policy.CheckinPlatformDailyCapMicroUSD,
+			platformAwardedMicroUSD, policy.CheckinUserDailyCapMicroUSD, userAwardedMicroUSD)
 		if errors.Is(err, domain.ErrCapExhausted) {
 			rejection = domain.ErrCapExhausted
 			return recordConvergedCheckinRejectionTx(ctx, tx, userID, date, policy, metrics,
@@ -351,10 +351,10 @@ func insertCheckinAttemptTx(ctx context.Context, tx pgx.Tx, userID int64, eventI
 	_, err := tx.Exec(ctx, query,
 		userID, dateString(date), eventID, outcome, nullableString(reason), policy.VersionNo,
 		policy.Basis, metrics.BasisPointsHundredths, metrics.YesterdaySpendMicroUSD, metrics.RewardBaseMicroUSD,
-		rewardMode, fixedMinimum(policy, calculation.Mode, metrics.BasisPointsHundredths),
-		fixedMaximum(policy, calculation.Mode, metrics.BasisPointsHundredths),
-		percentageMinimum(policy, calculation.Mode, metrics.BasisPointsHundredths),
-		percentageMaximum(policy, calculation.Mode, metrics.BasisPointsHundredths),
+		rewardMode, fixedMinimum(policy, calculation.Mode, metrics),
+		fixedMaximum(policy, calculation.Mode, metrics),
+		percentageMinimum(policy, calculation.Mode, metrics),
+		percentageMaximum(policy, calculation.Mode, metrics),
 		calculation.SampledPercentagePPM, nullableReward(calculation.Mode, calculation.CalculatedRewardMicroUSD),
 		nullableReward(calculation.Mode, actualMicroUSD))
 	return err
@@ -364,44 +364,44 @@ func convergedCheckinRejectionEventID(userID int64, date time.Time, reason strin
 	return "\x1fpoints-checkin-rejection:" + security.Fingerprint(userID, dateString(date), reason)
 }
 
-func fixedMinimum(policy domain.Policy, mode string, points int64) any {
+func fixedMinimum(policy domain.Policy, mode string, metrics checkinMetrics) any {
 	if mode != domain.RewardModeFixedRange {
 		return nil
 	}
-	tier, ok := tierForPoints(policy, points)
+	tier, ok := tierForMetrics(policy, metrics)
 	if !ok {
 		return nil
 	}
 	return tier.FixedRewardMinMicroUSD
 }
 
-func fixedMaximum(policy domain.Policy, mode string, points int64) any {
+func fixedMaximum(policy domain.Policy, mode string, metrics checkinMetrics) any {
 	if mode != domain.RewardModeFixedRange {
 		return nil
 	}
-	tier, ok := tierForPoints(policy, points)
+	tier, ok := tierForMetrics(policy, metrics)
 	if !ok {
 		return nil
 	}
 	return tier.FixedRewardMaxMicroUSD
 }
 
-func percentageMinimum(policy domain.Policy, mode string, points int64) any {
+func percentageMinimum(policy domain.Policy, mode string, metrics checkinMetrics) any {
 	if mode != domain.RewardModePercentageRange {
 		return nil
 	}
-	tier, ok := tierForPoints(policy, points)
+	tier, ok := tierForMetrics(policy, metrics)
 	if !ok {
 		return nil
 	}
 	return tier.RewardPercentageMinPPM
 }
 
-func percentageMaximum(policy domain.Policy, mode string, points int64) any {
+func percentageMaximum(policy domain.Policy, mode string, metrics checkinMetrics) any {
 	if mode != domain.RewardModePercentageRange {
 		return nil
 	}
-	tier, ok := tierForPoints(policy, points)
+	tier, ok := tierForMetrics(policy, metrics)
 	if !ok {
 		return nil
 	}

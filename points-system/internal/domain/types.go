@@ -10,6 +10,8 @@ const (
 	PolicyModeConsumerOnly = "consumer_only"
 	PolicyBasisYesterday   = "yesterday"
 	PolicyBasisTotal       = "total"
+	CheckinTierBasisPoints = "points"
+	CheckinTierBasisSpend  = "spend"
 
 	RewardModeFixedRange      = "fixed_range"
 	RewardModePercentageRange = "percentage_range"
@@ -31,8 +33,10 @@ var (
 )
 
 type Tier struct {
-	LowerPointsHundredths  int64  `json:"lower_points_hundredths"`
+	LowerPointsHundredths  *int64 `json:"lower_points_hundredths,omitempty"`
 	UpperPointsHundredths  *int64 `json:"upper_points_hundredths,omitempty"`
+	LowerSpendMicroUSD     *int64 `json:"lower_spend_microusd,omitempty"`
+	UpperSpendMicroUSD     *int64 `json:"upper_spend_microusd,omitempty"`
 	RewardMode             string `json:"reward_mode"`
 	FixedRewardMinMicroUSD *int64 `json:"fixed_reward_min_microusd,omitempty"`
 	FixedRewardMaxMicroUSD *int64 `json:"fixed_reward_max_microusd,omitempty"`
@@ -47,12 +51,13 @@ type Policy struct {
 	Enabled                         bool      `json:"enabled"`
 	Mode                            string    `json:"mode"`
 	Basis                           string    `json:"basis"`
+	CheckinTierBasis                string    `json:"checkin_tier_basis"`
 	CheckinEnabled                  bool      `json:"checkin_enabled"`
 	CheckinDailyLimit               *int      `json:"checkin_daily_limit,omitempty"`
 	MinimumCheckinSpendMicroUSD     int64     `json:"minimum_checkin_spend_microusd"`
-	CheckinPlatformDailyCapMicroUSD *int64    `json:"checkin_platform_daily_cap_microusd,omitempty"`
-	CheckinUserDailyCapMicroUSD     *int64    `json:"checkin_user_daily_cap_microusd,omitempty"`
-	CheckinSingleAwardCapMicroUSD   *int64    `json:"checkin_single_award_cap_microusd,omitempty"`
+	CheckinPlatformDailyCapMicroUSD *int64    `json:"checkin_platform_daily_cap_microusd"`
+	CheckinUserDailyCapMicroUSD     *int64    `json:"checkin_user_daily_cap_microusd"`
+	CheckinSingleAwardCapMicroUSD   *int64    `json:"checkin_single_award_cap_microusd"`
 	PointsPerUSDHundredths          int64     `json:"points_per_usd_hundredths"`
 	RefreshMinute                   int       `json:"refresh_minute"`
 	CreatedBy                       int64     `json:"created_by"`
@@ -61,33 +66,35 @@ type Policy struct {
 }
 
 func (p Policy) ValidateForEnable() error {
+	tierBasis := p.CheckinTierBasis
+	if tierBasis == "" {
+		tierBasis = CheckinTierBasisPoints
+	}
 	if (p.Mode != PolicyModeAllUsers && p.Mode != PolicyModeConsumerOnly) ||
 		(p.Basis != PolicyBasisYesterday && p.Basis != PolicyBasisTotal) ||
+		(tierBasis != CheckinTierBasisPoints && tierBasis != CheckinTierBasisSpend) ||
 		p.MinimumCheckinSpendMicroUSD < 0 || p.MinimumCheckinSpendMicroUSD%MicroUSDPerCent != 0 ||
 		p.PointsPerUSDHundredths <= 0 ||
 		p.RefreshMinute < 0 || p.RefreshMinute >= 24*60 {
 		return ErrPolicyIncomplete
 	}
 	// Consumer-only check-in is defined by prior-day consumption, so a total
-	// points tier would be internally contradictory and is rejected server-side.
+	// policy basis would be internally contradictory and is rejected server-side.
 	if p.Mode == PolicyModeConsumerOnly && p.Basis != PolicyBasisYesterday {
+		return ErrPolicyIncomplete
+	}
+	// Spend-based tiers must always use the prior natural day's raw spend.
+	// Reject total-spend policies even if they bypass the administrator UI.
+	if tierBasis == CheckinTierBasisSpend && p.Basis != PolicyBasisYesterday {
 		return ErrPolicyIncomplete
 	}
 	if p.CheckinEnabled {
 		if !p.Enabled {
 			return ErrPolicyIncomplete
 		}
-		if p.CheckinDailyLimit == nil || *p.CheckinDailyLimit <= 0 ||
-			p.CheckinPlatformDailyCapMicroUSD == nil || *p.CheckinPlatformDailyCapMicroUSD <= 0 ||
-			p.CheckinUserDailyCapMicroUSD == nil || *p.CheckinUserDailyCapMicroUSD <= 0 ||
-			p.CheckinSingleAwardCapMicroUSD == nil || *p.CheckinSingleAwardCapMicroUSD <= 0 ||
-			*p.CheckinPlatformDailyCapMicroUSD%MicroUSDPerCent != 0 ||
-			*p.CheckinUserDailyCapMicroUSD%MicroUSDPerCent != 0 ||
-			*p.CheckinSingleAwardCapMicroUSD%MicroUSDPerCent != 0 ||
-			len(p.Tiers) == 0 {
+		if p.CheckinDailyLimit == nil || *p.CheckinDailyLimit <= 0 || len(p.Tiers) == 0 {
 			return ErrPolicyIncomplete
 		}
-		return ValidateTiers(p.Tiers)
 	}
 	for _, cap := range []*int64{
 		p.CheckinPlatformDailyCapMicroUSD,
@@ -102,7 +109,7 @@ func (p Policy) ValidateForEnable() error {
 		return ErrPolicyIncomplete
 	}
 	if len(p.Tiers) > 0 {
-		return ValidateTiers(p.Tiers)
+		return ValidateTiersForBasis(p.Tiers, tierBasis)
 	}
 	return nil
 }
@@ -111,11 +118,21 @@ func ValidateTiers(tiers []Tier) error {
 	if len(tiers) == 0 {
 		return ErrPolicyIncomplete
 	}
+	basis := CheckinTierBasisPoints
+	if tiers[0].LowerSpendMicroUSD != nil || tiers[0].UpperSpendMicroUSD != nil {
+		basis = CheckinTierBasisSpend
+	}
+	return ValidateTiersForBasis(tiers, basis)
+}
+
+func ValidateTiersForBasis(tiers []Tier, basis string) error {
+	if len(tiers) == 0 || (basis != CheckinTierBasisPoints && basis != CheckinTierBasisSpend) {
+		return ErrPolicyIncomplete
+	}
 	for i, tier := range tiers {
-		if tier.LowerPointsHundredths < 0 {
-			return ErrPolicyIncomplete
-		}
-		if tier.UpperPointsHundredths != nil && *tier.UpperPointsHundredths <= tier.LowerPointsHundredths {
+		lower, upper, ok := tierBounds(tier, basis)
+		if !ok || lower < 0 || (basis == CheckinTierBasisSpend && lower%MicroUSDPerCent != 0) ||
+			(upper != nil && (*upper <= lower || (basis == CheckinTierBasisSpend && *upper%MicroUSDPerCent != 0))) {
 			return ErrPolicyIncomplete
 		}
 		switch tier.RewardMode {
@@ -139,7 +156,7 @@ func ValidateTiers(tiers []Tier) error {
 			return ErrPolicyIncomplete
 		}
 		for j := i + 1; j < len(tiers); j++ {
-			if overlaps(tier, tiers[j]) {
+			if overlaps(tier, tiers[j], basis) {
 				return ErrPolicyIncomplete
 			}
 		}
@@ -147,11 +164,33 @@ func ValidateTiers(tiers []Tier) error {
 	return nil
 }
 
-func overlaps(a, b Tier) bool {
-	if a.UpperPointsHundredths != nil && *a.UpperPointsHundredths <= b.LowerPointsHundredths {
+func tierBounds(tier Tier, basis string) (int64, *int64, bool) {
+	switch basis {
+	case CheckinTierBasisPoints:
+		if tier.LowerPointsHundredths == nil || tier.LowerSpendMicroUSD != nil || tier.UpperSpendMicroUSD != nil {
+			return 0, nil, false
+		}
+		return *tier.LowerPointsHundredths, tier.UpperPointsHundredths, true
+	case CheckinTierBasisSpend:
+		if tier.LowerSpendMicroUSD == nil || tier.LowerPointsHundredths != nil || tier.UpperPointsHundredths != nil {
+			return 0, nil, false
+		}
+		return *tier.LowerSpendMicroUSD, tier.UpperSpendMicroUSD, true
+	default:
+		return 0, nil, false
+	}
+}
+
+func overlaps(a, b Tier, basis string) bool {
+	aLower, aUpper, aOK := tierBounds(a, basis)
+	bLower, bUpper, bOK := tierBounds(b, basis)
+	if !aOK || !bOK {
+		return true
+	}
+	if aUpper != nil && *aUpper <= bLower {
 		return false
 	}
-	if b.UpperPointsHundredths != nil && *b.UpperPointsHundredths <= a.LowerPointsHundredths {
+	if bUpper != nil && *bUpper <= aLower {
 		return false
 	}
 	return true

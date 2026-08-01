@@ -115,6 +115,7 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 		"migrations/001_init.sql",
 		"migrations/002_balance_grant_outbox.sql",
 		"migrations/003_usage_history_backfill.sql",
+		"migrations/004_checkin_spend_tiers_and_optional_caps.sql",
 	} {
 		var applied bool
 		if err := fixture.db.QueryRow(ctx,
@@ -134,6 +135,89 @@ func TestPostgresMigrationsApplyAndRemainIdempotent(t *testing.T) {
 	}
 	if !balanceGrantsExists {
 		t.Fatal("points_balance_grants was not created")
+	}
+}
+
+func TestPostgresSpendTierUnlimitedCapsAndIdempotentReplay(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	ctx := context.Background()
+	businessDate := fixture.store.BusinessDate(fixture.now)
+	yesterday := businessDate.AddDate(0, 0, -1)
+	var policyID, version int64
+	if err := fixture.db.QueryRow(ctx, `INSERT INTO points_policy_versions(
+		effective_date,enabled,mode,basis,checkin_tier_basis,checkin_enabled,checkin_daily_limit,
+		minimum_checkin_spend_microusd,checkin_platform_daily_cap_microusd,
+		checkin_user_daily_cap_microusd,checkin_single_award_cap_microusd,
+		points_per_usd_hundredths,refresh_minute,created_by
+	) VALUES($1,TRUE,'consumer_only','yesterday','spend',TRUE,1,1000000,NULL,NULL,NULL,1000,5,9001)
+	RETURNING id,version_no`, businessDate.Format("2006-01-02")).Scan(&policyID, &version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_policy_tiers(
+		policy_id,lower_spend_microusd,upper_spend_microusd,reward_mode,
+		reward_percentage_min_ppm,reward_percentage_max_ppm
+	) VALUES
+		($1,1000000,10000000,'percentage_range',10000,50000),
+		($1,10000000,50000000,'percentage_range',20000,50000),
+		($1,50000000,100000000,'percentage_range',30000,50000),
+		($1,100000000,NULL,'percentage_range',40000,50000)`, policyID); err != nil {
+		t.Fatal(err)
+	}
+
+	const userID int64 = 9601
+	const spendMicroUSD int64 = 50_000_000
+	runID := uuid.New()
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_snapshot_refresh_runs(
+		id,business_date,trigger,source_window_start,source_window_end,source_fingerprint,
+		source_users,source_rows,changed_users,delta_spend_microusd,delta_points_hundredths,
+		status,completed_at
+	) VALUES($1,$2,'manual',$3,$4,$5,1,1,1,$6,1,'succeeded',$7)`, runID,
+		yesterday.Format("2006-01-02"), yesterday, businessDate, strings.Repeat("e", 64),
+		spendMicroUSD, fixture.now.UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `INSERT INTO points_daily_snapshots(
+		user_id,business_date,actual_cost_microusd,accounted_spend_microusd,policy_version,
+		points_per_usd_hundredths,target_points_hundredths,awarded_points_hundredths,
+		revision,status,source_row_count,source_max_usage_log_id,source_fingerprint,last_refresh_run_id
+	) VALUES($1,$2,$3,$3,$4,1000,1,1,1,'ready',1,1,$5,$6)`, userID,
+		yesterday.Format("2006-01-02"), spendMicroUSD, version, strings.Repeat("f", 64), runID); err != nil {
+		t.Fatal(err)
+	}
+
+	eventID := uuid.NewString()
+	accepted, err := fixture.store.CheckIn(ctx, userID, eventID, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.RewardMicroUSD < 1_500_000 || accepted.RewardMicroUSD > 2_500_000 ||
+		accepted.RewardMicroUSD%domain.MicroUSDPerCent != 0 {
+		t.Fatalf("50 U third-tier reward = %d, want a cent-aligned 3%%..5%% reward",
+			accepted.RewardMicroUSD)
+	}
+	replayed, err := fixture.store.CheckIn(ctx, userID, eventID, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.TransactionID != accepted.TransactionID || replayed.RewardMicroUSD != accepted.RewardMicroUSD {
+		t.Fatalf("idempotent replay changed reward: got %+v want %+v", replayed, accepted)
+	}
+	if _, err := fixture.store.CheckIn(ctx, userID, uuid.NewString(), fixture.now); !errors.Is(err, domain.ErrCheckinLimit) {
+		t.Fatalf("second daily check-in error = %v, want ErrCheckinLimit", err)
+	}
+
+	var checkins, grants, acceptedAttempts, idempotencyRows int
+	if err := fixture.db.QueryRow(ctx, `SELECT
+		(SELECT COUNT(*) FROM points_checkins WHERE user_id=$1 AND business_date=$2),
+		(SELECT COUNT(*) FROM points_balance_grants WHERE user_id=$1 AND kind='checkin'),
+		(SELECT COUNT(*) FROM points_checkin_attempts WHERE user_id=$1 AND outcome='accepted'),
+		(SELECT COUNT(*) FROM points_idempotency WHERE scope='checkin')`, userID,
+		businessDate.Format("2006-01-02")).Scan(&checkins, &grants, &acceptedAttempts, &idempotencyRows); err != nil {
+		t.Fatal(err)
+	}
+	if checkins != 1 || grants != 1 || acceptedAttempts != 1 || idempotencyRows != 1 {
+		t.Fatalf("accepted rows = checkins:%d grants:%d attempts:%d idempotency:%d, want 1/1/1/1",
+			checkins, grants, acceptedAttempts, idempotencyRows)
 	}
 }
 

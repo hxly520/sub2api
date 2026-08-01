@@ -182,6 +182,10 @@
     return (numeric / divisor).toFixed(2);
   }
 
+  function nullableDecimalValue(value, divisor) {
+    return value == null ? "" : decimalValue(value, divisor, "");
+  }
+
   function renderPolicyEditor(policy) {
     setPolicyEffectiveDate();
     ui.byId("policy-editor-source").textContent = policy
@@ -195,11 +199,12 @@
     ui.byId("policy-checkin-enabled").checked = Boolean(policy.checkin_enabled);
     ui.byId("policy-consumer-only").checked = policy.mode === "consumer_only";
     ui.byId("policy-basis").value = policy.basis === "total" ? "total" : "yesterday";
+    ui.byId("policy-tier-basis").value = policy.checkin_tier_basis === "spend" ? "spend" : "points";
     ui.byId("policy-checkin-limit").value = String(policy.checkin_daily_limit || 1);
     ui.byId("policy-minimum-spend").value = decimalValue(policy.minimum_checkin_spend_microusd, 1_000_000, "0.00");
-    ui.byId("policy-single-cap").value = decimalValue(policy.checkin_single_award_cap_microusd, 1_000_000, "1.00");
-    ui.byId("policy-user-cap").value = decimalValue(policy.checkin_user_daily_cap_microusd, 1_000_000, "1.00");
-    ui.byId("policy-platform-cap").value = decimalValue(policy.checkin_platform_daily_cap_microusd, 1_000_000, "100.00");
+    ui.byId("policy-single-cap").value = nullableDecimalValue(policy.checkin_single_award_cap_microusd, 1_000_000);
+    ui.byId("policy-user-cap").value = nullableDecimalValue(policy.checkin_user_daily_cap_microusd, 1_000_000);
+    ui.byId("policy-platform-cap").value = nullableDecimalValue(policy.checkin_platform_daily_cap_microusd, 1_000_000);
 
     const tiers = ui.byId("tiers");
     tiers.replaceChildren();
@@ -405,8 +410,12 @@
 
   function tierField(labelText, name, type, value = "", step = "0.01", mode = "") {
     const label = document.createElement("label");
-    label.textContent = labelText;
+    const caption = document.createElement("span");
+    caption.dataset.fieldLabel = "";
+    caption.textContent = labelText;
+    label.append(caption);
     if (mode) label.dataset.rewardFields = mode;
+    if (name === "lower" || name === "upper") label.dataset.tierBoundary = name;
     let input;
     if (type === "select") {
       input = document.createElement("select");
@@ -430,6 +439,20 @@
     return label;
   }
 
+  function selectedTierBasis() {
+    return ui.byId("policy-tier-basis").value === "spend" ? "spend" : "points";
+  }
+
+  function syncTierBoundaryLabels() {
+    const spendBased = selectedTierBasis() === "spend";
+    document.querySelectorAll("[data-tier-boundary]").forEach((label) => {
+      const boundary = label.dataset.tierBoundary;
+      label.querySelector("[data-field-label]").textContent = spendBased
+        ? `${boundary === "lower" ? "起始" : "结束"}消费（U）`
+        : `${boundary === "lower" ? "起始" : "结束"}积分`;
+    });
+  }
+
   function syncTierMode(row) {
     const mode = row.querySelector('[data-field="mode"]').value;
     row.querySelectorAll("[data-reward-fields]").forEach((label) => {
@@ -442,11 +465,18 @@
   function addTier(tier = null) {
     const source = tier || {};
     const mode = source.reward_mode || "fixed_range";
+    const spendBased = selectedTierBasis() === "spend";
+    const lowerValue = spendBased
+      ? decimalValue(source.lower_spend_microusd, 1_000_000, "0.00")
+      : decimalValue(source.lower_points_hundredths, 100, "0.00");
+    const upperValue = spendBased
+      ? nullableDecimalValue(source.upper_spend_microusd, 1_000_000)
+      : nullableDecimalValue(source.upper_points_hundredths, 100);
     const row = document.createElement("div");
     row.className = "tier-row";
     row.append(
-      tierField("起始积分", "lower", "number", decimalValue(source.lower_points_hundredths, 100, "0.00")),
-      tierField("结束积分", "upper", "number", source.upper_points_hundredths == null ? "" : decimalValue(source.upper_points_hundredths, 100, "")),
+      tierField(spendBased ? "起始消费（U）" : "起始积分", "lower", "number", lowerValue),
+      tierField(spendBased ? "结束消费（U）" : "结束积分", "upper", "number", upperValue),
       tierField("赠送方式", "mode", "select", mode),
       tierField("固定最低（U）", "fixedMin", "number", decimalValue(source.fixed_reward_min_microusd, 1_000_000, "0.01"), "0.01", "fixed_range"),
       tierField("固定最高（U）", "fixedMax", "number", decimalValue(source.fixed_reward_max_microusd, 1_000_000, "0.01"), "0.01", "fixed_range"),
@@ -464,6 +494,7 @@
     row.append(remove);
     ui.byId("tiers").append(row);
     syncTierMode(row);
+    syncTierBoundaryLabels();
   }
 
   function scaledInteger(raw, decimals, label) {
@@ -497,17 +528,22 @@
     return input.value === "" ? null : converter(input, label);
   }
 
-  function tiersPayload() {
+  function tiersPayload(tierBasis) {
+    const spendBased = tierBasis === "spend";
     return [...document.querySelectorAll(".tier-row")].map((row, index) => {
       const field = (name) => row.querySelector(`[data-field="${name}"]`);
       const mode = field("mode").value;
       const label = `第 ${index + 1} 档`;
-      const lower = pointsInput(field("lower"), `${label}起始积分`);
-      const upper = nullableScaled(field("upper"), pointsInput, `${label}结束积分`);
-      if (upper != null && upper <= lower) throw new Error(`${label}结束积分必须大于起始积分`);
+      const boundaryUnit = spendBased ? "消费金额" : "积分";
+      const boundaryInput = spendBased ? moneyInput : pointsInput;
+      const lower = boundaryInput(field("lower"), `${label}起始${boundaryUnit}`);
+      const upper = nullableScaled(field("upper"), boundaryInput, `${label}结束${boundaryUnit}`);
+      if (upper != null && upper <= lower) throw new Error(`${label}结束${boundaryUnit}必须大于起始${boundaryUnit}`);
       return {
-        lower_points_hundredths: lower,
-        upper_points_hundredths: upper,
+        lower_points_hundredths: spendBased ? null : lower,
+        upper_points_hundredths: spendBased ? null : upper,
+        lower_spend_microusd: spendBased ? lower : null,
+        upper_spend_microusd: spendBased ? upper : null,
         reward_mode: mode,
         fixed_reward_min_microusd: mode === "fixed_range" ? moneyInput(field("fixedMin"), `${label}固定最低金额`) : null,
         fixed_reward_max_microusd: mode === "fixed_range" ? moneyInput(field("fixedMax"), `${label}固定最高金额`) : null,
@@ -540,13 +576,31 @@
 
   function syncConsumerOnly() {
     const consumerOnly = ui.byId("policy-consumer-only").checked;
+    const spendBased = selectedTierBasis() === "spend";
     const basis = ui.byId("policy-basis");
-    if (consumerOnly) basis.value = "yesterday";
+    if (consumerOnly || spendBased) basis.value = "yesterday";
     const checkinEnabled = ui.byId("policy-enabled").checked && ui.byId("policy-checkin-enabled").checked;
-    basis.disabled = !checkinEnabled || consumerOnly;
-    const basisLocked = checkinEnabled && consumerOnly;
-    ui.byId("basis-lock-reason").classList.toggle("hidden", !basisLocked);
+    basis.disabled = !checkinEnabled || consumerOnly || spendBased;
+    const basisLocked = checkinEnabled && (consumerOnly || spendBased);
+    const reason = ui.byId("basis-lock-reason");
+    reason.textContent = spendBased
+      ? "按昨日消费金额划分签到阶梯，统计周期固定为昨日。"
+      : "仅限昨日消费用户开启时，积分统计范围固定为昨日积分。";
+    reason.classList.toggle("hidden", !basisLocked);
     setControlDescription(basis, !checkinEnabled ? "checkin-lock-reason" : basisLocked ? "basis-lock-reason" : "");
+  }
+
+  function syncTierBasis() {
+    syncTierBoundaryLabels();
+    syncConsumerOnly();
+  }
+
+  function changeTierBasis() {
+    document.querySelectorAll("[data-tier-boundary] input").forEach((input) => {
+      input.value = "";
+    });
+    syncTierBasis();
+    ui.notice("阶梯条件已切换，请重新填写每一档的起止范围。");
   }
 
   function syncCheckinControls() {
@@ -561,11 +615,11 @@
       : "请先开放用户积分功能，再启用签到赠送。";
     lockReason.classList.toggle("hidden", checkinEnabled);
     setControlDescription(checkinToggle, checkinEnabled ? "" : "checkin-lock-reason");
-    ["policy-consumer-only", "policy-checkin-limit", "policy-minimum-spend", "policy-single-cap", "policy-user-cap", "policy-platform-cap"].forEach((id) => {
+    ["policy-consumer-only", "policy-tier-basis", "policy-checkin-limit", "policy-minimum-spend", "policy-single-cap", "policy-user-cap", "policy-platform-cap"].forEach((id) => {
       const control = ui.byId(id);
       control.disabled = !checkinEnabled;
       setControlDescription(control, checkinEnabled ? "" : "checkin-lock-reason");
-      if (id !== "policy-consumer-only" && id !== "policy-minimum-spend") control.required = checkinEnabled;
+      control.required = checkinEnabled && id === "policy-checkin-limit";
     });
     const addTier = ui.byId("add-tier");
     addTier.disabled = !checkinEnabled;
@@ -590,7 +644,7 @@
       });
       if (checkinEnabled) syncTierMode(row);
     });
-    syncConsumerOnly();
+    syncTierBasis();
   }
 
   function moveAdminTab(event) {
@@ -676,6 +730,7 @@
     });
     ui.byId("add-tier").addEventListener("click", () => addTier());
     ui.byId("policy-consumer-only").addEventListener("change", syncConsumerOnly);
+    ui.byId("policy-tier-basis").addEventListener("change", changeTierBasis);
     ui.byId("policy-checkin-enabled").addEventListener("change", syncCheckinControls);
     ui.byId("policy-enabled").addEventListener("change", syncCheckinControls);
 
@@ -686,7 +741,8 @@
       try {
         const effectiveDate = setPolicyEffectiveDate();
         const checkinEnabled = ui.byId("policy-checkin-enabled").checked;
-        const tiers = tiersPayload();
+        const tierBasis = selectedTierBasis();
+        const tiers = tiersPayload(tierBasis);
         if (checkinEnabled && tiers.length === 0) throw new Error("启用签到赠送时至少需要一个赠送阶梯");
         await ui.api("/api/v1/admin/policies", {
           method: "POST",
@@ -695,12 +751,13 @@
             enabled: ui.byId("policy-enabled").checked,
             mode: ui.byId("policy-consumer-only").checked ? "consumer_only" : "all_users",
             basis: ui.byId("policy-basis").value,
+            checkin_tier_basis: tierBasis,
             checkin_enabled: checkinEnabled,
             checkin_daily_limit: integerInput("policy-checkin-limit", "每日签到次数"),
             minimum_checkin_spend_microusd: moneyInput(ui.byId("policy-minimum-spend"), "最低昨日消费"),
-            checkin_platform_daily_cap_microusd: moneyInput(ui.byId("policy-platform-cap"), "全平台每日上限"),
-            checkin_user_daily_cap_microusd: moneyInput(ui.byId("policy-user-cap"), "单用户每日上限"),
-            checkin_single_award_cap_microusd: moneyInput(ui.byId("policy-single-cap"), "单次赠送上限"),
+            checkin_platform_daily_cap_microusd: nullableScaled(ui.byId("policy-platform-cap"), moneyInput, "全平台每日上限"),
+            checkin_user_daily_cap_microusd: nullableScaled(ui.byId("policy-user-cap"), moneyInput, "单用户每日上限"),
+            checkin_single_award_cap_microusd: nullableScaled(ui.byId("policy-single-cap"), moneyInput, "单次赠送上限"),
             points_per_usd_hundredths: pointsInput(ui.byId("policy-points-rate"), "每 U 积分"),
             refresh_minute: refreshMinuteInput(),
             tiers

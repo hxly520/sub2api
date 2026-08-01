@@ -280,6 +280,7 @@ type policyRequest struct {
 	Enabled                         bool          `json:"enabled"`
 	Mode                            string        `json:"mode"`
 	Basis                           string        `json:"basis"`
+	CheckinTierBasis                string        `json:"checkin_tier_basis"`
 	CheckinEnabled                  bool          `json:"checkin_enabled"`
 	CheckinDailyLimit               *int          `json:"checkin_daily_limit"`
 	MinimumCheckinSpendMicroUSD     int64         `json:"minimum_checkin_spend_microusd"`
@@ -350,6 +351,13 @@ func (request policyRequest) toPolicy(effectiveDate time.Time, actorID int64) do
 	if basis == "" || mode == domain.PolicyModeConsumerOnly {
 		basis = domain.PolicyBasisYesterday
 	}
+	checkinTierBasis := request.CheckinTierBasis
+	if checkinTierBasis == "" {
+		checkinTierBasis = domain.CheckinTierBasisPoints
+	}
+	if checkinTierBasis == domain.CheckinTierBasisSpend {
+		basis = domain.PolicyBasisYesterday
+	}
 	dailyLimit := request.CheckinDailyLimit
 	if request.CheckinEnabled && dailyLimit == nil {
 		defaultLimit := 1
@@ -365,7 +373,8 @@ func (request policyRequest) toPolicy(effectiveDate time.Time, actorID int64) do
 	}
 	return domain.Policy{
 		EffectiveDate: effectiveDate, Enabled: request.Enabled, Mode: mode, Basis: basis,
-		CheckinEnabled: request.CheckinEnabled, CheckinDailyLimit: dailyLimit,
+		CheckinTierBasis: checkinTierBasis,
+		CheckinEnabled:   request.CheckinEnabled, CheckinDailyLimit: dailyLimit,
 		MinimumCheckinSpendMicroUSD:     request.MinimumCheckinSpendMicroUSD,
 		CheckinPlatformDailyCapMicroUSD: request.CheckinPlatformDailyCapMicroUSD,
 		CheckinUserDailyCapMicroUSD:     request.CheckinUserDailyCapMicroUSD,

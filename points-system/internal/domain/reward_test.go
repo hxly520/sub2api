@@ -8,7 +8,7 @@ import (
 func TestCalculateRewardPercentageUsesRawSpendAndFloorsToCent(t *testing.T) {
 	minimum, maximum := int64(50_000), int64(50_000) // 5%
 	tier := Tier{
-		LowerPointsHundredths:  100,
+		LowerPointsHundredths:  int64Pointer(100),
 		UpperPointsHundredths:  int64Pointer(10_100),
 		RewardMode:             RewardModePercentageRange,
 		RewardPercentageMinPPM: &minimum,
@@ -30,7 +30,7 @@ func TestCalculateRewardPercentageUsesRawSpendAndFloorsToCent(t *testing.T) {
 func TestCalculateRewardPercentageMatchesHundredUSDCheckinRange(t *testing.T) {
 	minimum, maximum := int64(1_000), int64(50_000) // 0.10% through 5.00%
 	tier := Tier{
-		LowerPointsHundredths:  0,
+		LowerPointsHundredths:  int64Pointer(0),
 		RewardMode:             RewardModePercentageRange,
 		RewardPercentageMinPPM: &minimum,
 		RewardPercentageMaxPPM: &maximum,
@@ -54,7 +54,7 @@ func TestCalculateRewardPercentageMatchesHundredUSDCheckinRange(t *testing.T) {
 func TestCalculateRewardPercentageDoesNotDeriveSpendFromPoints(t *testing.T) {
 	minimum, maximum := int64(0), int64(50_000)
 	tier := Tier{
-		LowerPointsHundredths:  1_000,
+		LowerPointsHundredths:  int64Pointer(1_000),
 		RewardMode:             RewardModePercentageRange,
 		RewardPercentageMinPPM: &minimum,
 		RewardPercentageMaxPPM: &maximum,
@@ -72,7 +72,7 @@ func TestCalculateRewardPercentageDoesNotDeriveSpendFromPoints(t *testing.T) {
 func TestCalculateRewardPercentageFloorsWithoutOverpaying(t *testing.T) {
 	minimum, maximum := int64(33_333), int64(33_333)
 	tier := Tier{
-		LowerPointsHundredths:  0,
+		LowerPointsHundredths:  int64Pointer(0),
 		RewardMode:             RewardModePercentageRange,
 		RewardPercentageMinPPM: &minimum,
 		RewardPercentageMaxPPM: &maximum,
@@ -90,7 +90,7 @@ func TestCalculateRewardPercentageFloorsWithoutOverpaying(t *testing.T) {
 func TestCalculateRewardFixedRangeAllowsZeroLowerBound(t *testing.T) {
 	minimum, maximum := int64(0), int64(1_000_000)
 	tier := Tier{
-		LowerPointsHundredths:  0,
+		LowerPointsHundredths:  int64Pointer(0),
 		RewardMode:             RewardModeFixedRange,
 		FixedRewardMinMicroUSD: &minimum,
 		FixedRewardMaxMicroUSD: &maximum,
@@ -108,7 +108,7 @@ func TestCalculateRewardFixedRangeAllowsZeroLowerBound(t *testing.T) {
 func TestCalculateRewardRejectsOutOfRangeServerSample(t *testing.T) {
 	minimum, maximum := int64(10_000), int64(20_000)
 	tier := Tier{
-		LowerPointsHundredths:  0,
+		LowerPointsHundredths:  int64Pointer(0),
 		RewardMode:             RewardModeFixedRange,
 		FixedRewardMinMicroUSD: &minimum,
 		FixedRewardMaxMicroUSD: &maximum,
