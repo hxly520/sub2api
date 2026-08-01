@@ -87,7 +87,7 @@
 - `video.52token.org`
 - `points.52token.org`
 
-活动业务域名只允许上述 `52token.org` 系列。`gpt-codex.top` 及其子域名已经淘汰，不是生产入口、回滚入口或仓库外依赖；相关字符串只可能保留在历史备份或审计记录中，不得重新写入活动 Nginx、积分父站 Origin、前端配置或发布说明。
+活动业务域名的目标清单只允许上述 `52token.org` 系列。`gpt-codex.top` 及其子域名已经淘汰，不应作为生产入口、回滚入口或仓库外依赖。`2026-08-01 08:29 CST` 只读执行 `nginx -T` 时仍发现 `/etc/nginx/conf.d/sub2api.conf`、`sub2api-api.conf`、`sub2api-images.conf` 加载了旧域名 server block；本轮按只读边界未修改或 reload Nginx，已作为配置漂移记录。下一次 Nginx 维护必须先备份并移除这些旧 block 和对应证书引用，通过 `nginx -t` 后再平滑 reload；在此之前不得宣称旧域名已清理，也不得把它写入新的积分 Origin、前端配置或发布说明。
 
 主要链路：
 
