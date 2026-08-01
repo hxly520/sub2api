@@ -9,8 +9,8 @@
 - 私有仓库：`hxly520/sub2api`。
 - 当前仓库候选代码基线：官方 Sub2API Release `v0.1.169`（commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）通过 merge `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e` 与私有兼容层汇合；关键功能节点为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8`、嵌入式积分大屏 `874255bcd`、升级前安全/终态收口 `1e33e7f7a`、管理员新标签与用户预览 `5b27f0b80`、双服务预览收口 `f79803bb7`、Taste 登录邮箱工作区 `7e50f9aa9`、无障碍布局修复 `e39c78bf8` 和 Taste 数字工作区增强 `e8d73f3e6`；`backend/cmd/server/VERSION=0.1.169`。生产运行版本与源码候选必须按下一条分别判断。
 - 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，OCI revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，运行态 healthy、restart count `0`。该版本已由维护者手工切换；后续 Sub2API 镜像仍须先构建上传，再由维护者手工切换，自动化不得替换运行中的 Sub2API。
-- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-99fbbb5c4c8a`，OCI revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，容器 `1ea80c704f40...`，运行态 healthy、restart count `0`。当前两端门禁均为全体模式，用户可见性由 policy `enabled` 控制；Sub2API 仍为 `0.1.169-f79803bb73d6`，没有替换版本。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 仍需真实登录验收后执行。
-- `2026-08-01 22:26 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `67cb30fbc53e8863615d1945b7ec88a65824c3473818dd2c746bd9f9f9ba1658`，服务器 `docker load` 后运行 `99fbbb5c4c8a`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
+- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-bee059a1cec5`，OCI revision `bee059a1cec5d0eb1a6d022d766670489dcf484d`，容器 `43bde62f3fa2...`，运行态 healthy、restart count `0`。当前两端门禁均为全体模式，用户可见性由 policy `enabled` 控制；Sub2API 仍为 `0.1.169-f79803bb73d6`，没有替换版本。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 仍需真实登录验收后执行。
+- `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
@@ -198,7 +198,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.1.169-f79803bb73d6`，当前积分服务为 `v0.1.169-e8d73f3e6655`，精确状态以本章 2.3 节及链接的 `2026-07-31` 记录为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.1.169-f79803bb73d6`，当前积分服务为 `v0.1.169-bee059a1cec5`，精确状态以本章 2.3 节及链接的 `2026-07-31` 记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
@@ -212,7 +212,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ### 9.2 独立积分系统发布与安全边界
 
-积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算和用户 1 双服务预览门禁；当前积分服务为 `v0.1.169-e8d73f3e6655`，Sub2API 为 `v0.1.169-f79803bb73d6`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
+积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算和全体用户门禁；当前积分服务为 `v0.1.169-bee059a1cec5`，Sub2API 为 `v0.1.169-f79803bb73d6`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
 
 1. 优先由 GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。CI runner 受计费门禁时可使用受控本机构建和标准 archive，但仍须把镜像推送 GHCR 并分别记录 registry digest、archive SHA256 和服务器加载后的 image ID。
    第 2-4 步只适用于空白新环境或经审计的灾难恢复。当前生产角色、schema 和密钥均已存在，普通积分镜像更新不得重跑 bootstrap 或重新生成密钥。

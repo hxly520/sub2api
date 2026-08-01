@@ -7,7 +7,7 @@
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
 | Sub2API | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，healthy、restart count `0` | 已由维护者手工切换，含管理员新标签、用户 1 预览授权、主题同步和显式拒绝优先级 | 后续自动化不得替换或重启 |
-| 积分服务 | `0.1.169-99fbbb5c4c8a`，revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，容器 `1ea80c704f40...`，healthy、restart count `0` | Taste 数字工作区、策略感知访问、登录邮箱、双记录游标分页和异步恢复已上线；全体用户门禁已打开 | 不得重跑历史基线；后续仅按次日策略配置和独立积分镜像边界更新 |
+| 积分服务 | `0.1.169-bee059a1cec5`，revision `bee059a1cec5d0eb1a6d022d766670489dcf484d`，容器 `43bde62f3fa2...`，healthy、restart count `0` | Taste 数字工作区、策略感知访问、登录邮箱、双记录游标分页和异步恢复已上线；全体用户门禁已打开 | 不得重跑历史基线；后续仅按次日策略配置和独立积分镜像边界更新 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -24,8 +24,8 @@
 - `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`：隔离屏幕阅读器趋势数据表的 table layout，消除桌面约 `658px` 无效空白尾部；上一积分生产 revision。
 - `e8d73f3e665596fc0d9e185d8ce706c45d04438a`：Taste 数字工作区增强，固定 `VARIANCE 6 / MOTION 4 / DENSITY 5`，新增主积分焦点、语义同步状态、8 px 面板尺度和 reduced-motion；当前积分生产 revision 和 Sub2API 手工候选 revision。
 - `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 随后已由维护者在 `2026-07-31 23:47 CST` 手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
-- `2026-08-01 22:26 CST` 仅更新积分服务：本机构建 revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，归档 SHA256 为 `67cb30fbc53e8863615d1945b7ec88a65824c3473818dd2c746bd9f9f9ba1658`，服务器完成 SHA256 对账后 `docker load`，仅替换 `points-system` 容器。Sub2API 仍为原 `0.1.169-f79803bb73d6` 镜像。
-- 同一变更将 `/home/api/sub2api-points/bridge-secrets.env` 设为 `POINTS_SYSTEM_ENABLED=true`、清空 `POINTS_SYSTEM_PREVIEW_USER_IDS`，将 `points.env` 设为 `POINTS_USER_ACCESS_MODE=all`、清空 `POINTS_USER_PREVIEW_IDS`；原文件备份位于 `/home/api/sub2api-deploy/backups/points-all-users-20260801-221005`，Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-99fbbb5c4c8a-20260801-222600.yml`。两文件继续保持 `0600 root:root`。
+- `2026-08-01 22:34 CST` 仅更新积分服务：本机构建 revision `bee059a1cec5d0eb1a6d022d766670489dcf484d`，归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器完成 SHA256 对账后 `docker load`，仅替换 `points-system` 容器。Sub2API 仍为原 `0.1.169-f79803bb73d6` 镜像；前一候选 `99fbbb5c4c8a` 仅作为同次配置切换的回滚点。
+- 同一变更将 `/home/api/sub2api-points/bridge-secrets.env` 设为 `POINTS_SYSTEM_ENABLED=true`、清空 `POINTS_SYSTEM_PREVIEW_USER_IDS`，将 `points.env` 设为 `POINTS_USER_ACCESS_MODE=all`、清空 `POINTS_USER_PREVIEW_IDS`；原文件备份位于 `/home/api/sub2api-deploy/backups/points-all-users-20260801-221005`，最终 Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-bee059a1-20260801-223426.yml`。两文件继续保持 `0600 root:root`。
 - 策略控制台改为单一当前配置表单：页面不再显示历史版本列表；每次保存仍由服务端追加不可变内部版本，并强制下一自然日生效。当前 policy v3 的 `enabled=true` 因此对所有有效用户开放，关闭该开关后用户菜单、票据、会话和用户 API 均自动隐藏/拒绝，管理员入口保留。
 
 ## 2. 积分激活与历史基线

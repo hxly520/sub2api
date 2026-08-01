@@ -28,10 +28,10 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `63d320fbf6ca`; the container is healthy with restart count zero. It was
   switched manually by the operator and remains outside automated replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-e8d73f3e6655`, OCI revision
-  `e8d73f3e665596fc0d9e185d8ce706c45d04438a`, container prefix
-  `1166d2ff140c`, and is also healthy with restart count zero. The
-  `2026-08-01 08:17 CST` points-only replacement did not recreate or restart
+  `ghcr.io/hxly520/sub2api-points:0.1.169-bee059a1cec5`, OCI revision
+  `bee059a1cec5d0eb1a6d022d766670489dcf484d`, container prefix
+  `43bde62f3fa2`, and is healthy with restart count zero. The
+  `2026-08-01 22:34 CST` points-only replacement did not recreate or restart
   Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
@@ -66,15 +66,13 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
   points focus, semantic synchronization status, 8 px panel scale, and reduced
-  motion behavior are deployed from points revision `e8d73f3e6655`. Its GHCR
-  manifest digest is
-  `sha256:4b18317d48783df966cf570e7bf7aa59b8261561d280de161ace137b41509746`,
-  loaded image ID is
-  `sha256:0b8a4732a17bce4ce9ff513f10c0599e736dd8ba69f16d4438f178cf8d96e9a9`,
-  and transferred archive SHA256 is
-  `2947440cfdf4dedd6bea09341969e99d9dfd49ef54c2739269e2831813a66925`.
-  Sub2API remains on `f79803bb73d6`; its `e8d73f3e6655` image is loaded only as
-  a manual candidate and was not used to recreate the production container.
+  motion behavior are deployed from points revision `bee059a1cec5`. The
+  final locally assembled archive SHA256 is
+  `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f` and
+  the loaded image ID is
+  `sha256:565c2c0c9cbd4af6a2466f4fc77aaf9e71b5a3a67be8732c3010dfdd5c2b2374`.
+  Sub2API remains on `f79803bb73d6` and was not recreated by the points image
+  replacement.
 
 ## Runtime Architecture
 
