@@ -21,18 +21,22 @@ Only server-recorded successful usage is accepted. A browser or push endpoint
 is never a usage fact source. Production reads Sub2API `usage_logs` through the
 dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
-## Production Baseline (2026-08-01)
+## Production Baseline (2026-08-02)
 
 - Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`, OCI revision
   `f79803bb73d659e36627d6f716aab065ff4d56a6`, container prefix
-  `63d320fbf6ca`; the container is healthy with restart count zero. It was
+  `dee0f8efd24d`; the container is healthy with restart count zero. It was
   switched manually by the operator and remains outside automated replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-bee059a1cec5`, OCI revision
-  `bee059a1cec5d0eb1a6d022d766670489dcf484d`, container prefix
-  `43bde62f3fa2`, and is healthy with restart count zero. The
-  `2026-08-01 22:34 CST` points-only replacement did not recreate or restart
-  Sub2API.
+  `ghcr.io/hxly520/sub2api-points:0.1.169-ca18cf77a86a`, OCI revision
+  `ca18cf77a86a921600e7324a75d09188e1e4fed7`, container prefix
+  `c7d819ea0ea9`, and is healthy with restart count zero. Its GHCR digest is
+  `sha256:b9f9b0c4924d73fb84a8a52ff6551b08cad3fb03c3c2797b705e55553118a6d2`,
+  the transferred archive SHA256 is
+  `34bc3495c1b5f1811af539f82fdb1e899055a171a665690bb140db3a5b679e40`,
+  and the loaded image ID is
+  `sha256:f77aabccae46c02549775b242ddfd42002d1aff2a114ef4c131837adf691c64d`.
+  This points-only replacement did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
@@ -47,8 +51,12 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
-- Policy version 3 is enabled at `10.00 points/U`, refreshes at `00:05`, and
-  keeps check-in disabled. Historical job
+- Policy version 4 has been effective since `2026-08-02`. It is enabled at
+  `10.00 points/U`, refreshes at `00:05`, permits one check-in per natural day,
+  and uses `consumer_only` with the `yesterday` basis. Its percentage reward
+  range is `1,000-50,000 PPM` (`0.1%-5%` of the prior natural day's successful
+  balance spend), and its per-grant, per-user daily, and platform daily safety
+  caps are each `100 U`. Historical job
   `5174eef7-5f0a-4a17-b4f1-f50840940f64` remains the only successful baseline.
   The `2026-08-01 00:05 CST` scheduled run settled business date `2026-07-31`
   for 12 users and completed successfully; production then had 29 point
@@ -71,13 +79,54 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
   points focus, semantic synchronization status, 8 px panel scale, and reduced
-  motion behavior are deployed from points revision `bee059a1cec5`. The
-  final locally assembled archive SHA256 is
-  `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f` and
-  the loaded image ID is
-  `sha256:565c2c0c9cbd4af6a2466f4fc77aaf9e71b5a3a67be8732c3010dfdd5c2b2374`.
+  motion behavior are deployed from points revision `ca18cf77a86a`.
   Sub2API remains on `f79803bb73d6` and was not recreated by the points image
   replacement.
+
+### Production check-in acceptance (user 1, 2026-08-02)
+
+- The `00:05` scheduler successfully settled business date `2026-08-01` for
+  user 1: successful prior-day spend was `86.890694 U` and the resulting prior-
+  day points were `868.90`.
+- The configured percentage tier produced a quantized theoretical reward range
+  of `0.08-4.34 U`. Cryptographic sampling selected `35,537 PPM` (`3.5537%`),
+  resulting in an actual `3.08 U` reward.
+- Grant UUID `8e20f4f9-d3ab-4d16-95be-0b186c96da97` reached `settled`. Sub2API
+  contains exactly one matching credit row. Replaying the same idempotency key
+  returned the original settled `3.08 U` result without another credit; a new
+  key for a second same-day check-in returned `409 daily check-in limit reached`.
+- User 2 retained points-center access but received `checkin_enabled=false`, and
+  a direct check-in POST returned `403 checkin_unavailable`. All users other
+  than user 1 still have zero check-ins, check-in attempts, and daily check-in
+  counters for this test.
+
+### Sub2API credit compatibility boundary
+
+The first production credit attempt reached the older Sub2API build but returned
+`500` because its `points.balance_credit` audit insert supplied
+`audit_logs.request_body=NULL` while the production column is `NOT NULL`. The
+credit was retried with the original grant UUID after installing the narrowly
+scoped compatibility trigger `points_credit_audit_request_body_compat` on
+`public.audit_logs`; function `public.points_credit_audit_request_body_compat()`
+substitutes an empty string only when `action='points.balance_credit'` and
+`request_body IS NULL`. It does not relax the column constraint or affect other
+audit actions. The retry settled once and did not duplicate the balance credit.
+
+The permanent source fix is prepared and already loaded on the server as
+`ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999` (GHCR digest
+`sha256:d9646464040e846999f960e3050646fcfe7cac38695834ba85df21385ae5c3ef`,
+archive SHA256
+`302f996c047c09919e8af53455851f0e18d7fd53d9c06640f8b2e3de7398c477`,
+image ID
+`sha256:07303dd1787d08a3038ba347a3fdaf0f78296f5f7a01aaf67ccce31edcd4ab16`).
+The Compose service still points to `0.1.169-f79803bb73d6`; only the operator may
+perform the manual Sub2API switch. After `1a4a690dd999` is running and its credit
+path is verified, remove the temporary compatibility objects:
+
+```sql
+DROP TRIGGER IF EXISTS points_credit_audit_request_body_compat ON public.audit_logs;
+DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
+```
 
 ## Runtime Architecture
 

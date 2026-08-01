@@ -2,14 +2,23 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-当前生产事实见 [2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md)。[2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留首次部署证据；后续排障不得把其中的旧积分镜像、disabled policy 或迁移数量当成现状。
+最新生产事实以本文件第 0 节及 [2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 第 0、11.12 节为准。[2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留首次部署证据；后续排障不得把其中的旧积分镜像、disabled policy 或迁移数量当成现状。
+
+## 0. 2026-08-02 当前生产事实
+
+- Sub2API 仍运行 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，容器 `dee0f8efd24d...`，healthy、restart count `0`；自动化不得切换或重启。修复候选 `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999` 已完成服务器 `docker load`，registry digest `sha256:d9646464040e846999f960e3050646fcfe7cac38695834ba85df21385ae5c3ef`，image ID `sha256:07303dd1787d08a3038ba347a3fdaf0f78296f5f7a01aaf67ccce31edcd4ab16`，archive SHA256 `302f996c047c09919e8af53455851f0e18d7fd53d9c06640f8b2e3de7398c477`，服务器文件 `/home/api/sub2api-deploy/releases/sub2api-0.1.169-1a4a690dd999-linux-amd64.tar`；Compose 尚未引用，等待维护者手工切换。
+- 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-ca18cf77a86a`，revision `ca18cf77a86a921600e7324a75d09188e1e4fed7`，容器 `c7d819ea0ea9...`，healthy、restart count `0`。registry digest `sha256:b9f9b0c4924d73fb84a8a52ff6551b08cad3fb03c3c2797b705e55553118a6d2`、image ID `sha256:f77aabccae46c02549775b242ddfd42002d1aff2a114ef4c131837adf691c64d`、archive SHA256 `34bc3495c1b5f1811af539f82fdb1e899055a171a665690bb140db3a5b679e40` 必须分别记录。
+- 积分中心为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`；签到为独立预览模式：`POINTS_CHECKIN_ACCESS_MODE=preview`、`POINTS_CHECKIN_PREVIEW_IDS=1`。policy v4 于 `2026-08-02` 生效，使用 `consumer_only/yesterday`、每日 1 次、昨日原始成功消费金额的 `0.1%-5%`（`1000-50000 PPM`），单次、用户每日、平台每日上限均为 `100 U`。
+- 用户 1 的 `2026-08-02 00:05` 快照为昨日消费 `86.890694 U`、昨日积分 `868.90`；签到范围 `0.08-4.34 U`，抽中 `35537 PPM`，实发 `3.08 U`。交易 `8e20f4f9-d3ab-4d16-95be-0b186c96da97` 为 `settled`，credit 唯一，`balance_after=8993.5808432400`；同幂等键重放没有重复加款，新键第二次签到返回 `409`。用户 2 积分中心可用但签到返回 `403 checkin_unavailable`，非用户 1 的签到相关记录为 0。
+- 首次发放的 `500` 来自旧 Sub2API 把 points credit 审计的 `request_body` 写成 `NULL`，不是签到随机计算或重复赠送故障；原 UUID 重试后只成功一次。当前精确兼容触发器 `points_credit_audit_request_body_compat` 仅兜底 `points.balance_credit` 的空审计正文，手工切换 `1a4a690dd999` 并验收后必须删除。
+- 操作前备份为 `/home/api/backups/points-checkin-user1-20260801-232458`；全库 dump SHA256 `2bfca513c1d7f0be7db1aaecf31f5e3004a43eb8c150d1d5e7a2dce4e5e9df98`，`pg_restore -l` 共 `1,291` 行。
 
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库候选代码基线：官方 Sub2API Release `v0.1.169`（commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）通过 merge `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e` 与私有兼容层汇合；关键功能节点为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8`、嵌入式积分大屏 `874255bcd`、升级前安全/终态收口 `1e33e7f7a`、管理员新标签与用户预览 `5b27f0b80`、双服务预览收口 `f79803bb7`、Taste 登录邮箱工作区 `7e50f9aa9`、无障碍布局修复 `e39c78bf8` 和 Taste 数字工作区增强 `e8d73f3e6`；`backend/cmd/server/VERSION=0.1.169`。生产运行版本与源码候选必须按下一条分别判断。
-- 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，OCI revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，运行态 healthy、restart count `0`。该版本已由维护者手工切换；后续 Sub2API 镜像仍须先构建上传，再由维护者手工切换，自动化不得替换运行中的 Sub2API。
-- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-bee059a1cec5`，OCI revision `bee059a1cec5d0eb1a6d022d766670489dcf484d`，容器 `43bde62f3fa2...`，运行态 healthy、restart count `0`。当前两端门禁均为全体模式，用户可见性由 policy `enabled` 控制；Sub2API 仍为 `0.1.169-f79803bb73d6`，没有替换版本。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 仍需真实登录验收后执行。
+- 当前仓库候选代码基线：官方 Sub2API Release `v0.1.169`（commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）通过 merge `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e` 与私有兼容层汇合；关键功能节点为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8`、嵌入式积分大屏 `874255bcd`、升级前安全/终态收口 `1e33e7f7a`、管理员新标签与用户预览 `5b27f0b80`、双服务预览收口 `f79803bb7`、Taste 登录邮箱工作区 `7e50f9aa9`、无障碍布局修复 `e39c78bf8`、Taste 数字工作区增强 `e8d73f3e6`、独立签到门禁 `ca18cf77a`、百分比签到精确回归 `7c62dd1a8` 和 credit 审计修复 `1a4a690dd`；`backend/cmd/server/VERSION=0.1.169`。生产运行版本与源码候选必须按下一条分别判断。
+- 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，OCI revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `dee0f8efd24d...`，运行态 healthy、restart count `0`。修复候选 `0.1.169-1a4a690dd999` 已加载但 Compose 未切；后续仍须由维护者手工切换，自动化不得替换运行中的 Sub2API。
+- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-ca18cf77a86a`，OCI revision `ca18cf77a86a921600e7324a75d09188e1e4fed7`，容器 `c7d819ea0ea9...`，运行态 healthy、restart count `0`。积分中心全体开放，签到独立门禁只允许用户 1；Sub2API 没有替换版本。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 仍需真实登录验收后执行。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
@@ -198,7 +207,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.1.169-f79803bb73d6`，当前积分服务为 `v0.1.169-bee059a1cec5`，精确状态以本章 2.3 节及链接的 `2026-07-31` 记录为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.1.169-f79803bb73d6`，当前积分服务为 `v0.1.169-ca18cf77a86a`，精确状态以本文件第 0 节及链接记录的第 0、11.12 节为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
@@ -212,7 +221,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ### 9.2 独立积分系统发布与安全边界
 
-积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算和全体用户门禁；当前积分服务为 `v0.1.169-bee059a1cec5`，Sub2API 为 `v0.1.169-f79803bb73d6`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
+积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算、全体积分中心门禁和独立签到门禁；当前积分服务为 `v0.1.169-ca18cf77a86a`，Sub2API 为 `v0.1.169-f79803bb73d6`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
 
 1. 优先由 GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。CI runner 受计费门禁时可使用受控本机构建和标准 archive，但仍须把镜像推送 GHCR 并分别记录 registry digest、archive SHA256 和服务器加载后的 image ID。
    第 2-4 步只适用于空白新环境或经审计的灾难恢复。当前生产角色、schema 和密钥均已存在，普通积分镜像更新不得重跑 bootstrap 或重新生成密钥。
@@ -221,12 +230,18 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 4. 生成独立 Base64 32 字节以上的 session、launch、credit 和内部集成密钥。生产 `points.env`、bridge env 和 psql 变量文件必须为 `root:root 0600`；Sub2API 与积分服务只共享对应公约中的同一解码后字节。状态或配置 API 只能返回是否已配置、Key ID 等非敏感元数据，不得回传密钥原值；文档、Compose、shell history 和日志也不能出现真实值。
    存量生产角色不得执行第 2 步或重跑历史 username 模板。登录邮箱候选切换前，先备份并记录积分账户/快照/账本与 Sub2API 用户计数，再执行阶段 A `shared-database-users-email-upgrade.sql.example`；它只授予 `email` 并保留 `username`，断言精确双读兼容态。新镜像真实验收后执行阶段 B `shared-database-users-email-finalize.sql.example` 撤销 `username`。两阶段均须保存审计输出、复核计数不变，并拒绝整表、其他列、写权限或 PUBLIC ACL。阶段 B 后回滚必须先执行 rollback-prepare，切回旧镜像验收后再执行 rollback-finalize。
 5. 运行积分迁移和只读消费查询自检后启动积分容器，再启用 Nginx 精确反代。可信代理 CIDR 必须与实际容器/loopback 网络一致；根路径返回 404。只有 `/launch` 关闭 access log，其余路径必须保留访问证据；此阶段不得修改、替换或重启现有 Sub2API 容器。
-6. 预览期保持 Sub2API `points_system.enabled=false`、`points_system.preview_user_ids: [1]`，同时配置积分服务 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。管理员设置导航 `/admin/settings/points` 必须可见并允许检查桥接状态；用户 ID 1 可看到用户菜单、访问 `/points` 并申请 user ticket，其他用户在菜单、前端路由、Sub2API launch、积分 ticket 交换和每次既有 user session 请求中均被拒绝。白名单只保存在两端服务端配置中，对浏览器只返回当前用户专属的 `points_system_access` 布尔值，不得返回完整 ID 列表。全量验收完成后再由维护者在同一维护变更中把 Sub2API `enabled` 明确改为 `true`、积分服务 mode 改为 `all` 并清空积分预览名单，不能把扩展预览白名单误当成全站开关。
+6. 当前积分中心保持 Sub2API points 全局 enabled 与积分服务 `POINTS_USER_ACCESS_MODE=all`，`POINTS_USER_PREVIEW_IDS` 为空；关闭 policy `enabled` 时仍自动隐藏用户入口并拒绝用户 API。签到使用独立的 `POINTS_CHECKIN_ACCESS_MODE=preview`、`POINTS_CHECKIN_PREVIEW_IDS=1`，只允许用户 1；其他用户的积分菜单、`/points`、ticket 和既有积分 session 均继续可用，但签到资料必须显示不可用且签到 POST 必须返回 `403`。两个门禁的完整名单只保存在服务端，对浏览器只返回当前用户自己的布尔能力，不得返回完整 ID 列表；修改签到范围不得连带收窄积分中心。
    候选切换前必须在 root-only `points.env` 配置 `POINTS_EMBED_PARENT_ORIGIN=https://实际Sub2API域名`（精确 Origin、无路径和尾斜杠），并确认用户 iframe 所需的 Sub2API CSP `frame-src` 包含积分 Origin、积分响应 `frame-ancestors` 只包含该父 Origin、没有冲突的 `X-Frame-Options`。管理员点击“打开积分配置”必须通过 step-up 生成一次性管理员票据并在带 `noopener,noreferrer` 的新标签页打开；原设置页保持不变，禁止重新在底部嵌入管理员 iframe。
 7. 验证用户/管理员角色隔离、票据一次性、CSRF、昨日消费快照、两位小数比例、最低昨日消费门槛、并发签到、三层金额上限和余额交易幂等后再开放用户 bridge。用户页、管理员页、全站明细和签到发放任务必须显示 `login_email`，不得继续返回 `username` 或无必要的 `user_id`。policy enabled 不等于签到 enabled，任何配置或镜像切换都不得隐式开启签到。
-8. 当前 policy v3 固定为比例 `10.00:1`、刷新 `00:05`、签到关闭。以后启用签到必须追加最早次日生效的新策略，并由管理员明确保存签到模式、最低消费、阶梯和所有金额安全上限。
+8. 当前 policy v4 自 `2026-08-02` 生效：比例 `10.00:1`、刷新 `00:05`、签到开启、`consumer_only`、依据昨日消费、每日 1 次，按昨日原始成功消费金额的 `1000-50000 PPM`（`0.1%-5%`）随机赠送；单次、用户每日和平台每日上限均为 `100 U`。策略修改仍最早次日生效，签到实际可用范围还必须经过第 6 步的独立运行门禁。
    个人消费积分账本的“发放时间”字段为 `awarded_at`，按 `Asia/Shanghai` 业务时间展示：`business_date + 1` 发放自然日零点加该发放日实际生效策略的 `refresh_minute`，不得在策略切换日沿用消费日或账本绑定策略，当前默认即次日 `00:05`；非消费、旧版或找不到发放日策略的记录回退 `created_at`。展示投影不得修改不可变账本。
 9. 余额发放超时后只重试同一交易 UUID；未知 credit 结果禁止直接冲正，必须确认 settled 后再发起关联 debit。确定性 4xx 进入永久失败终态，由管理员检查审计后显式重试；禁止删除幂等账本后重新发放。
+   当前旧 Sub2API 的 points credit 审计会把 `request_body` 写为 `NULL`。临时数据库函数与触发器 `points_credit_audit_request_body_compat` 只能为 `action='points.balance_credit' AND request_body IS NULL` 写入兼容空值，不得放宽列约束或覆盖其他审计 action。修复候选 `0.1.169-1a4a690dd999` 由维护者手工切换并验收 credit 唯一性后，立即执行：
+
+   ```sql
+   DROP TRIGGER IF EXISTS points_credit_audit_request_body_compat ON public.audit_logs;
+   DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
+   ```
 10. Sub2API 余额缓存必须使用 Redis 用户代次保护数据库回源：失效和扣减原子推进代次，旧读取只能在代次未变化时回填。credit 已在数据库提交但余额缓存同步失败时必须返回可重试 `503`，积分发件箱继续使用原 UUID，禁止把该交易提前标为 settled。
 11. `/api/internal/points/credits` 必须在应用层使用 Redis fail-close 限流，默认每分钟 120 次；限流存储异常时拒绝请求。公网 Nginx 对该精确路径的 `POST/OPTIONS` 返回 `404`，不能依赖 HMAC 作为唯一网络边界。
 12. 积分系统不提供手工余额赠送或手工快照刷新 API/页面。管理员用户明细是只读聚合；发放任务只查询和操作 `checkin` 类型记录。历史基线只能在空白新 schema 首次激活时由专用运维命令执行，当前生产成功作业不得重跑。
