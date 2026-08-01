@@ -9,7 +9,8 @@
 - 私有仓库：`hxly520/sub2api`。
 - 当前仓库候选代码基线：官方 Sub2API Release `v0.1.169`（commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）通过 merge `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e` 与私有兼容层汇合；关键功能节点为媒体核销 `9f1b6bae`、积分 `e4179147`、同库隔离 `55ac503b`、公开首页 `7e598fbb`、历史积分与容量精确重试 `d6b367f31`、管理员用户积分明细 `28e760bc8`、嵌入式积分大屏 `874255bcd`、升级前安全/终态收口 `1e33e7f7a`、管理员新标签与用户预览 `5b27f0b80`、双服务预览收口 `f79803bb7`、Taste 登录邮箱工作区 `7e50f9aa9`、无障碍布局修复 `e39c78bf8` 和 Taste 数字工作区增强 `e8d73f3e6`；`backend/cmd/server/VERSION=0.1.169`。生产运行版本与源码候选必须按下一条分别判断。
 - 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`，OCI revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，运行态 healthy、restart count `0`。该版本已由维护者手工切换；后续 Sub2API 镜像仍须先构建上传，再由维护者手工切换，自动化不得替换运行中的 Sub2API。
-- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-e8d73f3e6655`，OCI revision `e8d73f3e665596fc0d9e185d8ce706c45d04438a`，容器 `1166d2ff140c...`，运行态 healthy、restart count `0`。它继续使用用户 1 逐请求预览门禁；本次独立更新前后 Sub2API 容器 ID、启动时间和镜像引用完全不变。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 等真实登录验收。
+- 当前生产积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-99fbbb5c4c8a`，OCI revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，容器 `1ea80c704f40...`，运行态 healthy、restart count `0`。当前两端门禁均为全体模式，用户可见性由 policy `enabled` 控制；Sub2API 仍为 `0.1.169-f79803bb73d6`，没有替换版本。登录邮箱 ACL 当前停留在阶段 A 双读兼容态，阶段 B 仍需真实登录验收后执行。
+- `2026-08-01 22:26 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `67cb30fbc53e8863615d1945b7ec88a65824c3473818dd2c746bd9f9f9ba1658`，服务器 `docker load` 后运行 `99fbbb5c4c8a`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。

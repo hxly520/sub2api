@@ -173,18 +173,6 @@
     if (requestSequence !== state.requestSequence.policies) return;
     state.policies = Array.isArray(rows) ? rows : [];
     renderPolicyEditor(editorPolicy());
-    ui.renderRows("policies-body", state.policies, [
-      (policy) => `v${policy.version_no}`,
-      (policy) => ui.date(policy.effective_date),
-      (policy) => policy.enabled ? "启用" : "关闭",
-      (policy) => policy.checkin_enabled ? `每日 ${policy.checkin_daily_limit || 0} 次` : "关闭",
-      (policy) => policy.mode === "consumer_only" ? "消费用户" : "全部用户",
-      (policy) => policy.basis === "total" ? "总积分" : "昨日积分",
-      (policy) => ui.points(policy.points_per_usd_hundredths),
-      (policy) => refreshTime(policy.refresh_minute),
-      (policy) => ui.money(policy.minimum_checkin_spend_microusd),
-      (policy) => `${policy.tiers?.length || 0} 档`
-    ], "暂无历史策略记录");
     renderOverview();
   }
 
@@ -197,7 +185,7 @@
   function renderPolicyEditor(policy) {
     setPolicyEffectiveDate();
     ui.byId("policy-editor-source").textContent = policy
-      ? `v${policy.version_no}${policyDate(policy) === serviceDate(1) ? "（已排期）" : "（当前生效）"}`
+      ? (policyDate(policy) === serviceDate(1) ? "次日生效配置" : "当前生效配置")
       : "默认配置";
     if (!policy) return;
 

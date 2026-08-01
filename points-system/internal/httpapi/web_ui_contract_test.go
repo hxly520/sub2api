@@ -450,8 +450,7 @@ func TestAdminPolicyEditorUsesSingleNextDayAppendFlow(t *testing.T) {
 		`id="policy-editor-source"`,
 		`id="policy-editor-effective"`,
 		`所有策略变更统一于次日生效`,
-		`保存仅追加审计版本，不改写已经生效的历史策略。`,
-		`历史版本审计`,
+		`保存后仅影响下一自然日；已经结算的消费积分不会被回溯修改。`,
 		`function editorPolicy()`,
 		`renderPolicyEditor(editorPolicy());`,
 		`const effectiveDate = setPolicyEffectiveDate();`,
@@ -465,6 +464,7 @@ func TestAdminPolicyEditorUsesSingleNextDayAppendFlow(t *testing.T) {
 	for _, forbidden := range []string{
 		`id="toggle-policy-form"`, `id="cancel-policy"`, `<span data-button-label>新建策略</span>`, `创建策略版本`,
 		`class="policy-editor hidden"`, `id="policy-date" type="date"`,
+		`历史版本审计`, `id="policies-body"`, `保存仅追加审计版本`,
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("single-policy editor restored ambiguous action %q", forbidden)

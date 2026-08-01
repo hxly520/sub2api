@@ -7,7 +7,7 @@
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
 | Sub2API | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，healthy、restart count `0` | 已由维护者手工切换，含管理员新标签、用户 1 预览授权、主题同步和显式拒绝优先级 | 后续自动化不得替换或重启 |
-| 积分服务 | `0.1.169-e8d73f3e6655`，revision `e8d73f3e665596fc0d9e185d8ce706c45d04438a`，容器 `1166d2ff140c...`，healthy、restart count `0` | Taste 数字工作区、登录邮箱、双记录游标分页和异步恢复已上线；仍为用户 1 预览 | 阶段 B 必须等真实用户/管理员票据验收后执行；不得重跑历史基线 |
+| 积分服务 | `0.1.169-99fbbb5c4c8a`，revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，容器 `1ea80c704f40...`，healthy、restart count `0` | Taste 数字工作区、策略感知访问、登录邮箱、双记录游标分页和异步恢复已上线；全体用户门禁已打开 | 不得重跑历史基线；后续仅按次日策略配置和独立积分镜像边界更新 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -24,6 +24,9 @@
 - `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`：隔离屏幕阅读器趋势数据表的 table layout，消除桌面约 `658px` 无效空白尾部；上一积分生产 revision。
 - `e8d73f3e665596fc0d9e185d8ce706c45d04438a`：Taste 数字工作区增强，固定 `VARIANCE 6 / MOTION 4 / DENSITY 5`，新增主积分焦点、语义同步状态、8 px 面板尺度和 reduced-motion；当前积分生产 revision 和 Sub2API 手工候选 revision。
 - `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 随后已由维护者在 `2026-07-31 23:47 CST` 手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
+- `2026-08-01 22:26 CST` 仅更新积分服务：本机构建 revision `99fbbb5c4c8adcd076ab81c38a30533ec58985d1`，归档 SHA256 为 `67cb30fbc53e8863615d1945b7ec88a65824c3473818dd2c746bd9f9f9ba1658`，服务器完成 SHA256 对账后 `docker load`，仅替换 `points-system` 容器。Sub2API 仍为原 `0.1.169-f79803bb73d6` 镜像。
+- 同一变更将 `/home/api/sub2api-points/bridge-secrets.env` 设为 `POINTS_SYSTEM_ENABLED=true`、清空 `POINTS_SYSTEM_PREVIEW_USER_IDS`，将 `points.env` 设为 `POINTS_USER_ACCESS_MODE=all`、清空 `POINTS_USER_PREVIEW_IDS`；原文件备份位于 `/home/api/sub2api-deploy/backups/points-all-users-20260801-221005`，Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-99fbbb5c4c8a-20260801-222600.yml`。两文件继续保持 `0600 root:root`。
+- 策略控制台改为单一当前配置表单：页面不再显示历史版本列表；每次保存仍由服务端追加不可变内部版本，并强制下一自然日生效。当前 policy v3 的 `enabled=true` 因此对所有有效用户开放，关闭该开关后用户菜单、票据、会话和用户 API 均自动隐藏/拒绝，管理员入口保留。
 
 ## 2. 积分激活与历史基线
 
@@ -38,7 +41,7 @@
 
 ## 3. 用户入口与签到状态
 
-- 分阶段调试配置必须保持 Sub2API `points_system.enabled=false`、`points_system.preview_user_ids: [1]`，同时保持积分服务 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`。只有用户 ID 1 显示积分菜单、通过 `/points` 路由、获得 user ticket 并继续使用积分 user session；其他用户的陈旧公共设置、手工路由、launch 请求和旧积分 cookie 都必须被服务端拒绝。旧的 `enabled=true` ready 文件不得在预览期加载。
+- 历史预览阶段曾保持 Sub2API `points_system.enabled=false`、`points_system.preview_user_ids: [1]` 和积分服务 `POINTS_USER_ACCESS_MODE=preview`、`POINTS_USER_PREVIEW_IDS=1`；该阶段已在 2026-08-01 22:26 CST 结束。当前两端均为全体模式，用户可见性只由当前生效 policy 的 `enabled` 决定。
 - 完整白名单只保存在服务端配置中，浏览器认证状态只返回当前用户专属的 `points_system_access` 布尔值。切换候选前必须核对 configured/active、积分 Origin、Key ID、TTL、时钟偏差以及用户 1/非白名单用户的正反授权；调试无误后再由维护者显式设置 `enabled=true` 开放全体用户，接口始终不得返回密钥或完整白名单。
 - 签到继续关闭。后续启用必须追加最早次日生效的新策略，完整配置每日次数、仅消费用户、昨日/总积分依据、最低昨日消费、固定/百分比阶梯及单次/用户每日/平台每日金额上限。
 - 用户入口和管理员入口都是 Sub2API 内置页面，不得把 `points.52token.org` 配成普通自定义菜单。用户页嵌在 Sub2API 右侧内容区；管理员从设置页打开新浏览器标签。积分域名根路径保持 404，没有一次性 ticket/session 时 `/app/` 和 `/admin/` 必须拒绝。

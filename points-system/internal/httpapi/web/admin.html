@@ -102,7 +102,7 @@
         <div class="admin-section-toolbar">
           <div><h2>积分策略</h2><p>直接修改次日配置，无需选择或新建策略。</p></div>
           <div class="policy-effective-mark" role="status" aria-live="polite">
-            <span>配置基线 <strong id="policy-editor-source">正在读取</strong></span>
+            <span>当前配置 <strong id="policy-editor-source">正在读取</strong></span>
             <span>下次生效 <strong id="policy-editor-effective">-</strong></span>
           </div>
         </div>
@@ -145,22 +145,10 @@
             <div id="tiers" class="tiers"></div>
           </fieldset>
           <div class="form-actions">
-            <p>保存仅追加审计版本，不改写已经生效的历史策略。</p>
+            <p>保存后仅影响下一自然日；已经结算的消费积分不会被回溯修改。</p>
             <button class="button primary" type="submit"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#settings-2"></use></svg><span data-button-label>保存次日策略</span></button>
           </div>
         </form>
-        <div class="policy-audit-heading">
-          <div><h3>历史版本审计</h3><p>以下记录只读，用于追溯每次保存结果，不参与当前策略选择。</p></div>
-        </div>
-        <section class="table-panel admin-table-panel">
-          <div class="table-wrap">
-            <table>
-              <caption class="sr-only">积分策略版本</caption>
-              <thead><tr><th scope="col">版本</th><th scope="col">生效日期</th><th scope="col">积分</th><th scope="col">签到</th><th scope="col">人群</th><th scope="col">阶梯依据</th><th scope="col">积分 / U</th><th scope="col">刷新</th><th scope="col">最低消费</th><th scope="col">阶梯</th></tr></thead>
-              <tbody id="policies-body"></tbody>
-            </table>
-          </div>
-        </section>
       </section>
 
       <section id="view-operations" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-operations" tabindex="0">

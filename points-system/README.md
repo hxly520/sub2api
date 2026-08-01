@@ -55,13 +55,13 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   accounts, 328 daily snapshots/revisions, 322 point-ledger rows, no
   `needs_review` rows, and no check-in or balance-grant rows. This production
   schema must not run another history plan or apply.
-- The staged rollout keeps Sub2API `points_system.enabled=false` with
-  `points_system.preview_user_ids: [1]`, while the deployed points service runs
-  `POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. With the
-  matching Sub2API revision now running, only user ID 1 may see the ordinary
-  user menu, visit `/points`, obtain a user launch ticket, or continue using a
-  points user session. Administrator access remains available, and both gates
-  change to all-users mode only after preview acceptance.
+- Production is now in all-user deployment mode: Sub2API has
+  `POINTS_SYSTEM_ENABLED=true` with an empty preview list, and the points
+  service has `POINTS_USER_ACCESS_MODE=all` with an empty preview list. The
+  current policy's `enabled` field is the user-facing switch: when enabled,
+  every active user may see the menu and open `/points`; when disabled, the
+  menu, launch ticket, session, page resources, and user APIs fail closed.
+  Preview mode remains available only for an explicitly staged rollout.
 - The uploaded Sub2API logo integration, deleted-user session invalidation,
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
@@ -399,17 +399,14 @@ start this operation.
 
 Copy `.env.example` and replace every placeholder. Important details:
 
-User rollout is enforced independently by both services. During preview, keep
-the Sub2API `points_system` block at `enabled: false` with
-`preview_user_ids: [1]`, and set the points service to
-`POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. The lists
-are server-only: browsers receive only the current user's
-`points_system_access` result. After acceptance, set Sub2API `enabled: true`,
-set the points service mode to `all`, and clear its preview list in the same
-maintenance change. Once the bridge is configured, the policy `enabled` toggle
-controls the signed runtime decision: a disabled or not-yet-ready policy hides
-the user menu and rejects user tickets, while the administrator workspace
-remains available. Do not emulate a global rollout by expanding preview lists.
+User rollout is enforced independently by both services. Production uses
+Sub2API `enabled: true` and points service mode `all`, with both preview lists
+empty. The lists are server-only: browsers receive only the current user's
+`points_system_access` result. Once the bridge is configured, the policy
+`enabled` toggle controls the signed runtime decision: a disabled or
+not-yet-ready policy hides the user menu and rejects user tickets, while the
+administrator workspace remains available. Do not emulate a global rollout by
+expanding preview lists.
 
 - `POINTS_DATABASE_URL` connects to the existing Sub2API database with the
   dedicated points application role. `POINTS_DATABASE_SCHEMA` defaults to

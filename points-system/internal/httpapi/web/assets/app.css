@@ -1231,24 +1231,6 @@ tbody tr:hover td {
   line-height: 1.55;
 }
 
-.policy-audit-heading {
-  display: flex;
-  min-height: 54px;
-  align-items: end;
-  padding: 2px 0 10px;
-}
-
-.policy-audit-heading h3 {
-  margin: 0;
-  font-size: 15px;
-}
-
-.policy-audit-heading p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .form-block {
   min-width: 0;
   margin: 0;
