@@ -195,7 +195,7 @@ import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } 
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
-import { FeatureFlags, isFeatureFlagEnabled, makeSidebarFlag } from '@/utils/featureFlags'
+import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 interface NavItem {
@@ -685,12 +685,10 @@ const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
-const flagPointsSystem = () => {
-  const userAccess = authStore.user?.points_system_access
-  return typeof userAccess === 'boolean'
-    ? userAccess
-    : isFeatureFlagEnabled(FeatureFlags.pointsSystem)
-}
+// The points policy can change independently at the next natural-day boundary.
+// Only the authenticated, policy-aware server decision may expose this entry;
+// public settings and persisted user data are not authorization evidence.
+const flagPointsSystem = () => authStore.user?.points_system_access === true
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value

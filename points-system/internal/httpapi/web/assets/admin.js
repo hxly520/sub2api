@@ -12,6 +12,8 @@
     requestSequence: { policies: 0, users: 0, grants: 0 },
     reverseID: "",
     reverseReturnFocus: null,
+    businessDate: "",
+    nextPolicyDate: "",
     view: "overview"
   };
   const viewTitles = {
@@ -41,9 +43,7 @@
   function initializeAdminWorkspace() {
     if (adminInitialized) return;
     bindEvents();
-    const tomorrow = localDate(1);
-    ui.byId("policy-date").min = tomorrow;
-    ui.byId("policy-date").value = tomorrow;
+    setPolicyEffectiveDate();
     addTier();
     syncConsumerOnly();
     syncCheckinControls();
@@ -65,6 +65,39 @@
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
   }
 
+  function setPolicyEffectiveDate() {
+    const tomorrow = serviceDate(1);
+    ui.byId("policy-date").value = tomorrow;
+    ui.byId("policy-editor-effective").textContent = tomorrow;
+    return tomorrow;
+  }
+
+  function serviceDate(daysAhead) {
+    if (daysAhead === 1 && /^\d{4}-\d{2}-\d{2}$/.test(state.nextPolicyDate)) {
+      return state.nextPolicyDate;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(state.businessDate)) return localDate(daysAhead);
+    const value = new Date(`${state.businessDate}T12:00:00Z`);
+    value.setUTCDate(value.getUTCDate() + daysAhead);
+    return value.toISOString().slice(0, 10);
+  }
+
+  function policyDate(policy) {
+    return typeof policy?.effective_date === "string" ? policy.effective_date.slice(0, 10) : "";
+  }
+
+  function policyForDate(date) {
+    return state.policies.reduce((selected, policy) => {
+      const candidateDate = policyDate(policy);
+      if (!candidateDate || candidateDate > date) return selected;
+      if (!selected) return policy;
+      const selectedDate = policyDate(selected);
+      if (candidateDate > selectedDate) return policy;
+      if (candidateDate === selectedDate && ui.number(policy.version_no) > ui.number(selected.version_no)) return policy;
+      return selected;
+    }, null);
+  }
+
   function setView(name) {
     if (!viewTitles[name]) return;
     state.view = name;
@@ -80,10 +113,11 @@
   }
 
   function currentPolicy() {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const effective = state.policies.filter((policy) => new Date(policy.effective_date) <= today);
-    return effective[0] || state.policies[0] || null;
+    return policyForDate(serviceDate(0)) || state.policies[0] || null;
+  }
+
+  function editorPolicy() {
+    return policyForDate(serviceDate(1)) || currentPolicy();
   }
 
   function renderOverview() {
@@ -138,6 +172,7 @@
     const rows = await ui.api("/api/v1/admin/policies?limit=50");
     if (requestSequence !== state.requestSequence.policies) return;
     state.policies = Array.isArray(rows) ? rows : [];
+    renderPolicyEditor(editorPolicy());
     ui.renderRows("policies-body", state.policies, [
       (policy) => `v${policy.version_no}`,
       (policy) => ui.date(policy.effective_date),
@@ -149,8 +184,40 @@
       (policy) => refreshTime(policy.refresh_minute),
       (policy) => ui.money(policy.minimum_checkin_spend_microusd),
       (policy) => `${policy.tiers?.length || 0} 档`
-    ], "尚未创建策略版本");
+    ], "暂无历史策略记录");
     renderOverview();
+  }
+
+  function decimalValue(value, divisor, fallback) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return (numeric / divisor).toFixed(2);
+  }
+
+  function renderPolicyEditor(policy) {
+    setPolicyEffectiveDate();
+    ui.byId("policy-editor-source").textContent = policy
+      ? `v${policy.version_no}${policyDate(policy) === serviceDate(1) ? "（已排期）" : "（当前生效）"}`
+      : "默认配置";
+    if (!policy) return;
+
+    ui.byId("policy-points-rate").value = decimalValue(policy.points_per_usd_hundredths, 100, "10.00");
+    ui.byId("policy-refresh-time").value = refreshTime(policy.refresh_minute);
+    ui.byId("policy-enabled").checked = Boolean(policy.enabled);
+    ui.byId("policy-checkin-enabled").checked = Boolean(policy.checkin_enabled);
+    ui.byId("policy-consumer-only").checked = policy.mode === "consumer_only";
+    ui.byId("policy-basis").value = policy.basis === "total" ? "total" : "yesterday";
+    ui.byId("policy-checkin-limit").value = String(policy.checkin_daily_limit || 1);
+    ui.byId("policy-minimum-spend").value = decimalValue(policy.minimum_checkin_spend_microusd, 1_000_000, "0.00");
+    ui.byId("policy-single-cap").value = decimalValue(policy.checkin_single_award_cap_microusd, 1_000_000, "1.00");
+    ui.byId("policy-user-cap").value = decimalValue(policy.checkin_user_daily_cap_microusd, 1_000_000, "1.00");
+    ui.byId("policy-platform-cap").value = decimalValue(policy.checkin_platform_daily_cap_microusd, 1_000_000, "100.00");
+
+    const tiers = ui.byId("tiers");
+    tiers.replaceChildren();
+    if (Array.isArray(policy.tiers) && policy.tiers.length > 0) policy.tiers.forEach(addTier);
+    else addTier();
+    syncCheckinControls();
   }
 
   function syncAdminUsersPager() {
@@ -361,6 +428,7 @@
         option.textContent = title;
         input.append(option);
       });
+      input.value = value || "fixed_range";
     } else {
       input = document.createElement("input");
       input.type = type;
@@ -383,17 +451,19 @@
     });
   }
 
-  function addTier() {
+  function addTier(tier = null) {
+    const source = tier || {};
+    const mode = source.reward_mode || "fixed_range";
     const row = document.createElement("div");
     row.className = "tier-row";
     row.append(
-      tierField("起始积分", "lower", "number", "0.00"),
-      tierField("结束积分", "upper", "number"),
-      tierField("赠送方式", "mode", "select"),
-      tierField("固定最低（U）", "fixedMin", "number", "0.01", "0.01", "fixed_range"),
-      tierField("固定最高（U）", "fixedMax", "number", "0.01", "0.01", "fixed_range"),
-      tierField("比例最低（%）", "percentageMin", "number", "0.00", "0.01", "percentage_range"),
-      tierField("比例最高（%）", "percentageMax", "number", "5.00", "0.01", "percentage_range")
+      tierField("起始积分", "lower", "number", decimalValue(source.lower_points_hundredths, 100, "0.00")),
+      tierField("结束积分", "upper", "number", source.upper_points_hundredths == null ? "" : decimalValue(source.upper_points_hundredths, 100, "")),
+      tierField("赠送方式", "mode", "select", mode),
+      tierField("固定最低（U）", "fixedMin", "number", decimalValue(source.fixed_reward_min_microusd, 1_000_000, "0.01"), "0.01", "fixed_range"),
+      tierField("固定最高（U）", "fixedMax", "number", decimalValue(source.fixed_reward_max_microusd, 1_000_000, "0.01"), "0.01", "fixed_range"),
+      tierField("比例最低（%）", "percentageMin", "number", decimalValue(source.reward_percentage_min_ppm, 10_000, "0.00"), "0.01", "percentage_range"),
+      tierField("比例最高（%）", "percentageMax", "number", decimalValue(source.reward_percentage_max_ppm, 10_000, "5.00"), "0.01", "percentage_range")
     );
     row.querySelector('[data-field="mode"]').addEventListener("change", () => syncTierMode(row));
     const remove = document.createElement("button");
@@ -616,9 +686,7 @@
       const offset = state.usersPage.offset + state.usersPage.limit;
       loadAdminUsers({ offset }).catch((error) => ui.notice(error.message, true));
     });
-    ui.byId("toggle-policy-form").addEventListener("click", () => ui.byId("policy-form").classList.toggle("hidden"));
-    ui.byId("cancel-policy").addEventListener("click", () => ui.byId("policy-form").classList.add("hidden"));
-    ui.byId("add-tier").addEventListener("click", addTier);
+    ui.byId("add-tier").addEventListener("click", () => addTier());
     ui.byId("policy-consumer-only").addEventListener("change", syncConsumerOnly);
     ui.byId("policy-checkin-enabled").addEventListener("change", syncCheckinControls);
     ui.byId("policy-enabled").addEventListener("change", syncCheckinControls);
@@ -626,15 +694,16 @@
     ui.byId("policy-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = event.currentTarget.querySelector('[type="submit"]');
-      ui.setButtonBusy(button, true, "创建中");
+      ui.setButtonBusy(button, true, "保存中");
       try {
+        const effectiveDate = setPolicyEffectiveDate();
         const checkinEnabled = ui.byId("policy-checkin-enabled").checked;
         const tiers = tiersPayload();
         if (checkinEnabled && tiers.length === 0) throw new Error("启用签到赠送时至少需要一个赠送阶梯");
         await ui.api("/api/v1/admin/policies", {
           method: "POST",
           body: JSON.stringify({
-            effective_date: ui.byId("policy-date").value,
+            effective_date: effectiveDate,
             enabled: ui.byId("policy-enabled").checked,
             mode: ui.byId("policy-consumer-only").checked ? "consumer_only" : "all_users",
             basis: ui.byId("policy-basis").value,
@@ -649,8 +718,7 @@
             tiers
           })
         });
-        ui.byId("policy-form").classList.add("hidden");
-        ui.notice("策略版本已创建");
+        ui.notice(`策略已保存，将于 ${effectiveDate} 生效`);
         await loadPolicies();
       } catch (error) {
         ui.notice(error.message, true);
@@ -703,6 +771,12 @@
         return;
       }
       ui.setSession(data);
+      state.businessDate = typeof data.business_date === "string"
+        ? data.business_date.slice(0, 10)
+        : "";
+      state.nextPolicyDate = typeof data.next_policy_date === "string"
+        ? data.next_policy_date.slice(0, 10)
+        : "";
       ui.byId("admin-login-email").textContent = data.login_email || "未设置登录邮箱";
       initializeAdminWorkspace();
       await refreshAll();

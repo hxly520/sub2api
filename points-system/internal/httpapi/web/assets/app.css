@@ -1167,6 +1167,88 @@ tbody tr:hover td {
   overflow: hidden;
 }
 
+.policy-effective-mark {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, auto));
+  gap: 4px 18px;
+  border-left: 2px solid var(--primary);
+  padding: 5px 0 5px 12px;
+}
+
+.policy-effective-mark span,
+.policy-effective-mark strong {
+  display: block;
+}
+
+.policy-effective-mark span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.policy-effective-mark strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.policy-editor-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 26%, var(--line));
+  padding: 13px 20px;
+  background: color-mix(in srgb, var(--primary-soft) 28%, var(--surface));
+}
+
+.policy-editor-intro .icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  margin-top: 1px;
+  color: var(--primary);
+}
+
+.policy-editor-intro p,
+.policy-editor-intro strong,
+.policy-editor-intro span {
+  display: block;
+}
+
+.policy-editor-intro p {
+  margin: 0;
+}
+
+.policy-editor-intro strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.policy-editor-intro span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.policy-audit-heading {
+  display: flex;
+  min-height: 54px;
+  align-items: end;
+  padding: 2px 0 10px;
+}
+
+.policy-audit-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.policy-audit-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .form-block {
   min-width: 0;
   margin: 0;
@@ -1211,6 +1293,10 @@ tbody tr:hover td {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 13px;
   margin-top: 12px;
+}
+
+.policy-core-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 label {
@@ -1300,9 +1386,16 @@ textarea:disabled {
 
 .form-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 10px;
   padding: 16px 20px;
+}
+
+.form-actions > p {
+  margin: 0 auto 0 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .admin-table-panel {
@@ -1621,6 +1714,10 @@ td.actions {
     flex-direction: column;
   }
 
+  .policy-effective-mark {
+    width: 100%;
+  }
+
   .period-control {
     width: 100%;
   }
@@ -1690,6 +1787,11 @@ td.actions {
 
   .form-actions {
     flex-wrap: wrap;
+  }
+
+  .form-actions > p,
+  .form-actions .button {
+    width: 100%;
   }
 
   .table-wrap table th:first-child,

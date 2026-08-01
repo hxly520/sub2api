@@ -122,6 +122,7 @@ func RegisterUserRoutes(
 
 		points := authenticated.Group("/points")
 		{
+			points.GET("/access", h.Points.AccessUser)
 			points.POST("/launch", h.Points.LaunchUser)
 		}
 

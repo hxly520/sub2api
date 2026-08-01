@@ -70,7 +70,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"login_email": publicLoginEmail(loginEmail), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
-		"business_date": s.Store.BusinessDate(now).Format("2006-01-02"),
+		"business_date": s.businessDate(now).Format("2006-01-02"),
 		"csrf_token":    security.CSRFToken(p.Token, s.Config.SessionSecret), "account": publicAccountFrom(account),
 		"checkin":            map[string]any{"count": count, "awarded_microusd": awarded},
 		"yesterday_snapshot": snapshotValue,
@@ -122,12 +122,13 @@ func publicSnapshot(snapshot store.Snapshot) map[string]any {
 
 func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
+	now := time.Now().UTC()
 	loginEmail, err := s.loginEmail(r.Context(), p.Session.UserID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	policy, err := s.currentPolicy(r.Context(), time.Now())
+	policy, err := s.currentPolicy(r.Context(), now)
 	if errors.Is(err, domain.ErrNotFound) {
 		policy = domain.Policy{}
 		err = nil
@@ -139,7 +140,9 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"login_email": publicLoginEmail(loginEmail), "role": p.Session.Role, "theme": p.Session.Theme,
 		"language": p.Session.Language, "expires_at": p.Session.ExpiresAt,
-		"csrf_token": security.CSRFToken(p.Token, s.Config.SessionSecret),
+		"business_date":    s.businessDate(now).Format("2006-01-02"),
+		"next_policy_date": s.nextPolicyDate(now).Format("2006-01-02"),
+		"csrf_token":       security.CSRFToken(p.Token, s.Config.SessionSecret),
 		"features": map[string]any{
 			"points_enabled":  policyAllowsUserAccess(policy),
 			"checkin_enabled": policy.Enabled && policy.CheckinEnabled,
@@ -291,17 +294,47 @@ func (s *Server) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid policy")
 		return
 	}
-	effectiveDate, err := time.ParseInLocation("2006-01-02", request.EffectiveDate, s.Config.Timezone)
+	now := time.Now().UTC()
+	location := s.Config.Timezone
+	if location == nil {
+		location = time.UTC
+	}
+	effectiveDate, err := time.ParseInLocation("2006-01-02", request.EffectiveDate, location)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_effective_date", "Invalid effective date")
 		return
 	}
-	policy, err := s.Store.CreatePolicy(r.Context(), request.toPolicy(effectiveDate, p.Session.UserID), time.Now())
+	wantedDate := s.nextPolicyDate(now)
+	if !s.policyDateAllowed(effectiveDate, now) {
+		writeError(w, http.StatusBadRequest, "effective_date_must_be_tomorrow", "Policy changes take effect on the next natural day")
+		return
+	}
+	policy, err := s.Store.CreatePolicy(r.Context(), request.toPolicy(wantedDate, p.Session.UserID), now)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, policy)
+}
+
+func (s *Server) nextPolicyDate(now time.Time) time.Time {
+	return s.businessDate(now).AddDate(0, 0, 1)
+}
+
+func (s *Server) businessDate(now time.Time) time.Time {
+	if s.Store != nil && s.Store.Location != nil {
+		return s.Store.BusinessDate(now)
+	}
+	location := s.Config.Timezone
+	if location == nil {
+		location = time.UTC
+	}
+	local := now.In(location)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
+}
+
+func (s *Server) policyDateAllowed(effectiveDate, now time.Time) bool {
+	return effectiveDate.Format("2006-01-02") == s.nextPolicyDate(now).Format("2006-01-02")
 }
 
 func (request policyRequest) toPolicy(effectiveDate time.Time, actorID int64) domain.Policy {

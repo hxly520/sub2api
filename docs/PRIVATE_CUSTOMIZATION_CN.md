@@ -16,6 +16,8 @@
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
 - 当前仓库候选基线：官方 Release `v0.1.169`（release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.169`。本轮只合入该已发布 tag，不合入 tag 之后的官方 `main`。媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护和跨协议终态校验均属于必须保留的二开。
+
+积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，客户端提交的今天或更晚日期会被服务端拒绝。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 截至 `2026-08-01 08:29 CST`，生产 Sub2API 仍为维护者手工切换的 `0.1.169-f79803bb73d6` / revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`；积分服务已独立切换为 `0.1.169-e8d73f3e6655` / revision `e8d73f3e665596fc0d9e185d8ce706c45d04438a`，容器 `1166d2ff140c...`。两者均 healthy、restart count `0`。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。

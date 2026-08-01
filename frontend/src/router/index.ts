@@ -918,7 +918,7 @@ router.beforeEach(async (to, _from, next) => {
   // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
   // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control
   // 误判为“未启用”而错误拦截，故这里先确保设置加载完成。
-  if ((to.meta.requiresPayment || to.meta.requiresRiskControl || to.meta.requiresPointsSystem) && !appStore.publicSettingsLoaded) {
+  if ((to.meta.requiresPayment || to.meta.requiresRiskControl) && !appStore.publicSettingsLoaded) {
     try {
       await appStore.fetchPublicSettings()
     } catch (error) {
@@ -926,18 +926,14 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  // Sessions created by an older frontend do not have the per-user preview
-  // decision in localStorage. Resolve it from the authenticated endpoint before
-  // deciding access to the points route; never infer preview access from an ID.
-  if (
-    to.meta.requiresPointsSystem &&
-    authStore.user &&
-    authStore.user.points_system_access === undefined
-  ) {
+  // The effective points policy can change at the next natural-day boundary.
+  // Re-resolve it on every points navigation so a stale user object cannot
+  // reopen a page that the policy console has just closed.
+  if (to.meta.requiresPointsSystem && authStore.user) {
     try {
       await authStore.refreshUser()
     } catch (error) {
-      console.warn('Failed to refresh points preview access in route guard', error)
+      console.warn('Failed to refresh policy-aware points access in route guard', error)
     }
   }
 
@@ -963,10 +959,7 @@ router.beforeEach(async (to, _from, next) => {
 
   if (
     to.meta.requiresPointsSystem &&
-    (authStore.user?.points_system_access === false ||
-      (authStore.user?.points_system_access !== true &&
-        appStore.publicSettingsLoaded &&
-        appStore.cachedPublicSettings?.points_system_enabled !== true))
+    authStore.user?.points_system_access !== true
   ) {
     next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
     return

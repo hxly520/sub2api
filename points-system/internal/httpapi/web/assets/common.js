@@ -60,6 +60,7 @@
     invalid_request: "提交内容不完整或格式不正确",
     invalid_cursor: "分页状态已失效，请刷新后重试",
     invalid_effective_date: "策略生效日期不正确",
+    effective_date_must_be_tomorrow: "策略只能于下一自然日生效",
     invalid_business_date: "业务日期必须早于今天",
     idempotency_required: "请求标识生成失败，请重试",
     idempotency_conflict: "该操作已提交，请刷新查看结果",

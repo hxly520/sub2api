@@ -34,6 +34,20 @@ func (h *PointsHandler) LaunchAdmin(c *gin.Context) {
 	h.launch(c, "admin")
 }
 
+func (h *PointsHandler) AccessUser(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	allowed, err := h.service.ResolveUserAccess(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"allowed": allowed})
+}
+
 func (h *PointsHandler) StatusAdmin(c *gin.Context) {
 	status := h.service.Status()
 	response.Success(c, gin.H{
@@ -61,6 +75,17 @@ func (h *PointsHandler) launch(c *gin.Context, role string) {
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&request); err != nil {
 			response.BadRequest(c, "Invalid points launch request")
+			return
+		}
+	}
+	if role == "user" {
+		allowed, err := h.service.ResolveUserAccess(c.Request.Context(), subject.UserID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if !allowed {
+			response.ErrorFrom(c, service.ErrPointsSystemUnavailable)
 			return
 		}
 	}

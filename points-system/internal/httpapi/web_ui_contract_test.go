@@ -41,7 +41,7 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 	commonContent := string(commonJS)
 	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,", `"needs_review"].includes(value)`,
 		"sub2api:points-theme", "event.source !== window.parent", "event.origin !== parentOrigin",
-		`let embeddedTheme = "";`, "embeddedTheme = event.data.theme;",
+		`let embeddedTheme = "";`, "embeddedTheme = event.data.theme;", "effective_date_must_be_tomorrow",
 		"embedded && embeddedTheme ? embeddedTheme : sessionTheme"} {
 		if !strings.Contains(commonContent, required) {
 			t.Fatalf("shared embedded UI is missing delayed ready behavior %q", required)
@@ -434,6 +434,41 @@ func TestAdminDashboardUsesCompleteTabsAndLocksInactiveCheckinSettings(t *testin
 	markup := string(adminHTML)
 	if fieldsets, legends := strings.Count(markup, "<fieldset"), strings.Count(markup, "<legend"); fieldsets != 3 || legends != fieldsets {
 		t.Fatalf("policy editor fieldset contract is incomplete: fieldsets=%d legends=%d", fieldsets, legends)
+	}
+}
+
+func TestAdminPolicyEditorUsesSingleNextDayAppendFlow(t *testing.T) {
+	adminHTML, err := webFS.ReadFile("web/admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminJS := adminJSForContract(t)
+	content := string(adminHTML) + string(adminJS)
+	for _, required := range []string{
+		`<form id="policy-form" class="policy-editor">`,
+		`id="policy-date" type="hidden"`,
+		`id="policy-editor-source"`,
+		`id="policy-editor-effective"`,
+		`所有策略变更统一于次日生效`,
+		`保存仅追加审计版本，不改写已经生效的历史策略。`,
+		`历史版本审计`,
+		`function editorPolicy()`,
+		`renderPolicyEditor(editorPolicy());`,
+		`const effectiveDate = setPolicyEffectiveDate();`,
+		`effective_date: effectiveDate,`,
+		`ui.notice(` + "`" + `策略已保存，将于 ${effectiveDate} 生效` + "`" + `);`,
+	} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("single-policy editor is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		`id="toggle-policy-form"`, `id="cancel-policy"`, `<span data-button-label>新建策略</span>`, `创建策略版本`,
+		`class="policy-editor hidden"`, `id="policy-date" type="date"`,
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("single-policy editor restored ambiguous action %q", forbidden)
+		}
 	}
 }
 

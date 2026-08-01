@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,63 @@ func TestDirectRootDoesNotOpenWorkspace(t *testing.T) {
 	server.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("direct root status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestInternalUserAccessRequiresSignatureAndUsesBothGates(t *testing.T) {
+	server := testRoleServer("admin", true)
+	secret := []byte("01234567890123456789012345678901")
+	server.Config.LaunchKeys = map[string][]byte{"launch-v1": secret}
+	server.Config.UserAccessMode = "all"
+
+	body := []byte(`{"user_id":7}`)
+	request := httptest.NewRequest(http.MethodPost, "https://points.example.test/api/v1/internal/user-access", strings.NewReader(string(body)))
+	if err := security.SignRequest(request, body, "launch-v1", secret, time.Now().UTC(), "0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"allowed":true`) {
+		t.Fatalf("signed access request status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	disabledServer := testRoleServer("admin", false)
+	disabledServer.Config.LaunchKeys = map[string][]byte{"launch-v1": secret}
+	disabledServer.Config.UserAccessMode = "all"
+	disabledRequest := httptest.NewRequest(http.MethodPost, "https://points.example.test/api/v1/internal/user-access", strings.NewReader(string(body)))
+	if err := security.SignRequest(disabledRequest, body, "launch-v1", secret, time.Now().UTC(), "fedcba9876543210"); err != nil {
+		t.Fatal(err)
+	}
+	disabledRecorder := httptest.NewRecorder()
+	disabledServer.mux.ServeHTTP(disabledRecorder, disabledRequest)
+	if disabledRecorder.Code != http.StatusOK || !strings.Contains(disabledRecorder.Body.String(), `"allowed":false`) {
+		t.Fatalf("disabled policy access status=%d body=%s", disabledRecorder.Code, disabledRecorder.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "https://points.example.test/api/v1/internal/user-access", strings.NewReader(`{"user_id":8}`))
+	for key, value := range map[string]string{
+		security.HeaderKeyID: "launch-v1", security.HeaderTimestamp: strconv.FormatInt(time.Now().Unix(), 10),
+		security.HeaderNonce: "0123456789abcdef", security.HeaderSignature: "invalid",
+	} {
+		request.Header.Set(key, value)
+	}
+	recorder = httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unsigned access request status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	server.Config.UserAccessMode = "preview"
+	server.Config.UserPreviewIDs = map[int64]struct{}{7: {}}
+	body = []byte(`{"user_id":8}`)
+	request = httptest.NewRequest(http.MethodPost, "https://points.example.test/api/v1/internal/user-access", strings.NewReader(string(body)))
+	if err := security.SignRequest(request, body, "launch-v1", secret, time.Now().UTC(), "0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"allowed":false`) {
+		t.Fatalf("preview-denied access status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -565,6 +623,35 @@ func TestPolicyAccessRequiresEnabledValidPolicy(t *testing.T) {
 	valid.PointsPerUSDHundredths = 0
 	if policyAllowsUserAccess(valid) {
 		t.Fatal("invalid policy allowed user access")
+	}
+}
+
+func TestPolicyRequestIsBoundToNextNaturalDay(t *testing.T) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Config: config.Config{Timezone: location}, Store: &store.Store{Location: location}}
+	now := time.Date(2026, 8, 1, 15, 0, 0, 0, time.UTC)
+	wanted := server.nextPolicyDate(now)
+	if got := wanted.Format("2006-01-02"); got != "2026-08-02" {
+		t.Fatalf("next policy date = %s, want 2026-08-02", got)
+	}
+	for _, test := range []struct {
+		date string
+		want bool
+	}{
+		{date: "2026-08-01", want: false},
+		{date: "2026-08-02", want: true},
+		{date: "2026-08-03", want: false},
+	} {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", test.date, location)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if got := server.policyDateAllowed(parsed, now); got != test.want {
+			t.Fatalf("policyDateAllowed(%s) = %v, want %v", test.date, got, test.want)
+		}
 	}
 }
 

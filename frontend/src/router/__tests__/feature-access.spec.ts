@@ -161,7 +161,11 @@ describe('feature route guard', () => {
 
     expect(appStore.publicSettingsLoaded).toBe(false)
     expect(next).toHaveBeenCalledOnce()
-    expect(next).toHaveBeenCalledWith()
+    if (meta.requiresPointsSystem) {
+      expect(next).toHaveBeenCalledWith('/dashboard')
+    } else {
+      expect(next).toHaveBeenCalledWith()
+    }
   })
 
   it.each([
@@ -270,6 +274,20 @@ describe('feature route guard', () => {
     await navigation
 
     expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('rechecks a stale allow decision before every points navigation', async () => {
+    authStore.user = { id: 2, points_system_access: true }
+    authStore.refreshUser.mockImplementation(async () => {
+      authStore.user = { id: 2, points_system_access: false }
+      return authStore.user
+    })
+
+    const { navigation, next } = runGuard({ requiresPointsSystem: true }, '/points')
+    await navigation
+
+    expect(authStore.refreshUser).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith('/dashboard')
   })
 })

@@ -129,6 +129,7 @@ access log.
 | GET | `/api/v1/balance-grants` | Current user's balance reward delivery history |
 | GET | `/api/v1/admin/users/points` | Paginated per-user total and previous-day consumption points |
 | GET/POST | `/api/v1/admin/policies` | List or append policy versions |
+| POST | `/api/v1/internal/user-access` | Signed Sub2API-only policy-aware user entry decision; returns only `allowed` |
 | GET | `/api/v1/admin/balance-grants` | Inspect check-in reward deliveries only |
 | GET | `/api/v1/admin/balance-grants/summary` | Full status counts for all check-in reward deliveries |
 | POST | `/api/v1/admin/balance-grants/{id}/retry` | Retry a failed check-in reward delivery |
@@ -264,24 +265,49 @@ Sub2API's Points tab in System Settings and the administrator route
 `/admin/settings/points` are always visible to authenticated administrators, including while
 `points_system.enabled=false`, so an administrator can inspect bridge status
 and use step-up authentication to launch the policy workspace in a new tab. The
-ordinary user menu, `/points` route, and user launch ticket share one server-side
-authorization rule: all valid users are allowed when `enabled=true`; while it
-is false, only IDs in `preview_user_ids` are allowed. The preview list remains
-server-side, while `/api/v1/auth/me` exposes only the current user's
-`points_system_access` boolean. The rollout value is `[1]`; non-preview users
-must be rejected by the backend even if they construct the route or launch
-request manually.
+ordinary user menu, `/points` route, and user launch ticket share a signed policy-aware
+authorization rule. Sub2API asks the points service at
+`POST /api/v1/internal/user-access` before exposing the entry; the points
+service then checks its own rollout mode and effective policy. The browser
+receives only the current user's `points_system_access` boolean; neither
+preview list is exposed. A failed status query is fail-closed, and the user
+launch handler repeats the same check before issuing a ticket.
 The points service independently rejects user launch tickets, user pages,
 user assets, and user APIs when the effective points policy is missing,
 disabled, incomplete, or is the initial activation policy whose confirmed
 history baseline has not succeeded. This closes stale-session and direct-URL paths while
 leaving the authenticated administrator workspace available for pre-release
 debugging.
+The administrator policy workspace is a single editor: saving never edits or
+deletes a historical row and always appends a new immutable version for the
+next natural day. The policy `enabled` field is the business switch for the
+user points center. The HTTP handler rejects a client-supplied effective date
+that is not exactly the next service-local natural day, so hiding the date
+input is backed by a server-side invariant.
 The Sub2API status endpoint returns only non-secret state such as
 enabled/configured/active, public URL, key IDs, TTL, and clock skew; it never
 returns launch or credit key material.
 
 ## Trust Contracts
+
+### Policy-aware access query
+
+Sub2API signs the JSON body `{"user_id":N}` with the existing launch-key
+ring. The canonical request is:
+
+```text
+v1
+KEY_ID
+POST
+/api/v1/internal/user-access
+UNIX_TIMESTAMP
+RANDOM_NONCE
+SHA256_HEX_OF_BODY
+```
+
+The points service verifies the timestamp, key, nonce shape, method, path, and
+body before reading the policy. This endpoint is not a browser API; Nginx may
+proxy the path for the Sub2API service, but unsigned requests receive `401`.
 
 ### Launch ticket
 
@@ -373,16 +399,17 @@ start this operation.
 
 Copy `.env.example` and replace every placeholder. Important details:
 
-User rollout is enforced independently by both services. Keep the Sub2API
-`points_system` block at `enabled: false` with `preview_user_ids: [1]`, and set
-the points service to `POINTS_USER_ACCESS_MODE=preview` with
-`POINTS_USER_PREVIEW_IDS=1`. The lists are server-only configuration: browsers
-receive only the current user's `points_system_access` result. The points
-service checks its gate when exchanging a ticket and on every existing user
-session request, so narrowing a rollout revokes older sessions immediately.
-After acceptance, set Sub2API `enabled: true`, set the points service mode to
-`all`, and clear its preview list in the same maintenance change; do not emulate
-a global rollout by continually expanding either preview list.
+User rollout is enforced independently by both services. During preview, keep
+the Sub2API `points_system` block at `enabled: false` with
+`preview_user_ids: [1]`, and set the points service to
+`POINTS_USER_ACCESS_MODE=preview` with `POINTS_USER_PREVIEW_IDS=1`. The lists
+are server-only: browsers receive only the current user's
+`points_system_access` result. After acceptance, set Sub2API `enabled: true`,
+set the points service mode to `all`, and clear its preview list in the same
+maintenance change. Once the bridge is configured, the policy `enabled` toggle
+controls the signed runtime decision: a disabled or not-yet-ready policy hides
+the user menu and rejects user tickets, while the administrator workspace
+remains available. Do not emulate a global rollout by expanding preview lists.
 
 - `POINTS_DATABASE_URL` connects to the existing Sub2API database with the
   dedicated points application role. `POINTS_DATABASE_SCHEMA` defaults to

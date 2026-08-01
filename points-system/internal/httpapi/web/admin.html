@@ -100,15 +100,22 @@
 
       <section id="view-policies" class="admin-view hidden" role="tabpanel" aria-labelledby="tab-policies" tabindex="0">
         <div class="admin-section-toolbar">
-          <div><h2>策略版本</h2><p>创建后按生效日期执行，历史版本保留。</p></div>
-          <button id="toggle-policy-form" class="button primary" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>新建策略</span></button>
+          <div><h2>积分策略</h2><p>直接修改次日配置，无需选择或新建策略。</p></div>
+          <div class="policy-effective-mark" role="status" aria-live="polite">
+            <span>配置基线 <strong id="policy-editor-source">正在读取</strong></span>
+            <span>下次生效 <strong id="policy-editor-effective">-</strong></span>
+          </div>
         </div>
-        <form id="policy-form" class="policy-editor hidden">
+        <form id="policy-form" class="policy-editor">
+          <input id="policy-date" type="hidden">
+          <div class="policy-editor-intro">
+            <svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#history"></use></svg>
+            <p><strong>所有策略变更统一于次日生效</strong><span>积分比例、刷新时间、功能开关和签到赠送规则均按保存后的下一自然日执行，当日用户不受影响。</span></p>
+          </div>
           <fieldset class="form-block">
             <legend class="sr-only">积分与刷新</legend>
             <div class="form-block-title"><h3 aria-hidden="true">积分与刷新</h3></div>
-            <div class="form-grid">
-              <label>生效日期<input id="policy-date" type="date" required></label>
+            <div class="form-grid policy-core-grid">
               <label>每 1 U 积分<input id="policy-points-rate" type="number" min="0.01" step="0.01" value="10.00" required></label>
               <label>每日刷新时间<input id="policy-refresh-time" type="time" value="00:05" required></label>
               <label class="toggle-label"><input id="policy-enabled" type="checkbox"><span>开放用户积分功能</span></label>
@@ -138,10 +145,13 @@
             <div id="tiers" class="tiers"></div>
           </fieldset>
           <div class="form-actions">
-            <button id="cancel-policy" type="button" class="button secondary">取消</button>
-            <button class="button primary" type="submit"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#plus"></use></svg><span data-button-label>创建策略版本</span></button>
+            <p>保存仅追加审计版本，不改写已经生效的历史策略。</p>
+            <button class="button primary" type="submit"><svg class="icon" aria-hidden="true"><use href="/assets/lucide-sprite.svg#settings-2"></use></svg><span data-button-label>保存次日策略</span></button>
           </div>
         </form>
+        <div class="policy-audit-heading">
+          <div><h3>历史版本审计</h3><p>以下记录只读，用于追溯每次保存结果，不参与当前策略选择。</p></div>
+        </div>
         <section class="table-panel admin-table-panel">
           <div class="table-wrap">
             <table>

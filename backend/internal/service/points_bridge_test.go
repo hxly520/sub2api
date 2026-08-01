@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -140,6 +142,68 @@ func TestPointsBridgePreviewUserCanCreateUserLaunchWhileGlobalEntryIsDisabled(t 
 	}
 	if _, err := svc.CreateLaunchURL(2, "user", "light", "zh-CN"); err != ErrPointsSystemUnavailable {
 		t.Fatalf("non-preview user launch error = %v", err)
+	}
+}
+
+func TestPointsBridgeResolvesPolicyAwareUserAccess(t *testing.T) {
+	cfg := testPointsBridgeConfig()
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != pointsUserAccessPath {
+			t.Fatalf("unexpected access request: %s %s", r.Method, r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read access request: %v", err)
+		}
+		var payload struct {
+			UserID int64 `json:"user_id"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil || payload.UserID != 42 {
+			t.Fatalf("unexpected access body: %s", body)
+		}
+		secret, err := cfg.PointsSystem.LaunchKey()
+		if err != nil {
+			t.Fatalf("decode launch key: %v", err)
+		}
+		timestamp := r.Header.Get("X-Points-Timestamp")
+		nonce := r.Header.Get("X-Points-Nonce")
+		provided, err := base64.RawURLEncoding.DecodeString(r.Header.Get("X-Points-Signature"))
+		if err != nil {
+			t.Fatalf("decode signature: %v", err)
+		}
+		bodyHash := sha256.Sum256(body)
+		canonical := strings.Join([]string{"v1", "launch-v1", http.MethodPost, pointsUserAccessPath,
+			timestamp, nonce, hex.EncodeToString(bodyHash[:])}, "\n")
+		mac := hmac.New(sha256.New, secret)
+		_, _ = mac.Write([]byte(canonical))
+		if !hmac.Equal(mac.Sum(nil), provided) {
+			t.Fatal("access request signature did not bind method, path, timestamp, nonce, and body")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"allowed":true}}`))
+	}))
+	defer server.Close()
+	cfg.PointsSystem.PublicURL = server.URL
+	svc := NewPointsBridgeService(&pointsBridgeRepositoryStub{}, nil, cfg)
+	svc.httpClient = server.Client()
+	fixedNow := time.Unix(1_700_000_000, 0).UTC()
+	svc.now = func() time.Time { return fixedNow }
+
+	allowed, err := svc.ResolveUserAccess(context.Background(), 42)
+	if err != nil || !allowed {
+		t.Fatalf("resolved access = %v, err=%v", allowed, err)
+	}
+	allowed, err = svc.ResolveUserAccess(context.Background(), 42)
+	if err != nil || !allowed || calls != 1 {
+		t.Fatalf("cached access = %v, calls=%d, err=%v", allowed, calls, err)
+	}
+
+	cfg.PointsSystem.Enabled = false
+	svc = NewPointsBridgeService(&pointsBridgeRepositoryStub{}, nil, cfg)
+	if allowed, err := svc.ResolveUserAccess(context.Background(), 42); err != nil || allowed {
+		t.Fatalf("disabled bridge access = %v, err=%v", allowed, err)
 	}
 }
 

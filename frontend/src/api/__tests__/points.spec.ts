@@ -7,7 +7,7 @@ vi.mock('@/api/client', () => ({
   apiClient: { get, post },
 }))
 
-import { createPointsLaunch, getPointsBridgeStatus } from '@/api/points'
+import { createPointsLaunch, getPointsBridgeStatus, getPointsUserAccess } from '@/api/points'
 
 describe('points launch API', () => {
   beforeEach(() => {
@@ -45,5 +45,12 @@ describe('points launch API', () => {
 
     await expect(getPointsBridgeStatus()).resolves.toEqual(status)
     expect(get).toHaveBeenCalledWith('/admin/points/status')
+  })
+
+  it('loads the policy-aware access decision for the current user', async () => {
+    get.mockResolvedValue({ data: { allowed: true } })
+
+    await expect(getPointsUserAccess()).resolves.toEqual({ allowed: true })
+    expect(get).toHaveBeenCalledWith('/points/access')
   })
 })

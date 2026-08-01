@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"html"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -47,6 +48,7 @@ const policyKey contextKey = "points-policy"
 const embeddedUIMode = "embedded"
 const brandLogoPlaceholder = "__SUB2API_BRAND_LOGO__"
 const embedParentOriginPlaceholder = "__SUB2API_EMBED_PARENT_ORIGIN__"
+const internalUserAccessBodyLimit = 4 * 1024
 
 func New(cfg config.Config, pointsStore *store.Store, logger *slog.Logger) (*Server, error) {
 	if pointsStore == nil {
@@ -75,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("GET /launch", s.launch)
+	s.mux.HandleFunc("POST /api/v1/internal/user-access", s.internalUserAccess)
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	s.mux.Handle("GET /app/", s.auth("user", false, true, http.HandlerFunc(s.userPage)))
 	s.mux.Handle("GET /admin/", s.auth("admin", false, false, http.HandlerFunc(s.adminPage)))
@@ -101,6 +104,52 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/retry", s.auth("admin", true, false, http.HandlerFunc(s.retryCheckinBalanceGrant)))
 	s.mux.Handle("POST /api/v1/admin/balance-grants/{id}/reverse", s.auth("admin", true, false, http.HandlerFunc(s.reverseCheckinBalanceGrant)))
 
+}
+
+type internalUserAccessRequest struct {
+	UserID int64 `json:"user_id"`
+}
+
+// internalUserAccess gives Sub2API a policy-aware menu decision without
+// exposing either rollout allowlist. The request is authenticated with the
+// existing launch-key ring, and the user launch/session paths still repeat the
+// same checks so this endpoint is never the authorization boundary by itself.
+func (s *Server) internalUserAccess(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, internalUserAccessBodyLimit)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid access request")
+		return
+	}
+	if _, err := security.VerifyRequest(r, body, s.Config.LaunchKeys, time.Now().UTC(), time.Minute); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid request signature")
+		return
+	}
+	var request internalUserAccessRequest
+	if err := decodeBytes(body, &request); err != nil || request.UserID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid access request")
+		return
+	}
+	if !s.Config.UserAccessAllowed(request.UserID) {
+		writeJSON(w, http.StatusOK, map[string]bool{"allowed": false})
+		return
+	}
+
+	policy, err := s.currentPolicy(r.Context(), time.Now().UTC())
+	if errors.Is(err, domain.ErrNotFound) {
+		writeJSON(w, http.StatusOK, map[string]bool{"allowed": false})
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	allowed, err := s.userPolicyAllowsAccess(r.Context(), policy)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"allowed": allowed})
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

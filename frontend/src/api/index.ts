@@ -25,9 +25,11 @@ export { channelMonitorUserAPI } from './channelMonitor'
 export {
   createPointsLaunch,
   getPointsBridgeStatus,
+  getPointsUserAccess,
   type PointsBridgeStatus,
   type PointsLaunchRequest,
   type PointsLaunchResponse,
+  type PointsUserAccess,
 } from './points'
 
 // Admin APIs

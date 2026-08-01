@@ -7,6 +7,7 @@ const mockLogin = vi.fn()
 const mockLogin2FA = vi.fn()
 const mockLogout = vi.fn()
 const mockGetCurrentUser = vi.fn()
+const mockGetPointsUserAccess = vi.fn()
 const mockRegister = vi.fn()
 const mockRefreshToken = vi.fn()
 
@@ -19,6 +20,7 @@ vi.mock('@/api', () => ({
     register: (...args: any[]) => mockRegister(...args),
     refreshToken: (...args: any[]) => mockRefreshToken(...args),
   },
+  getPointsUserAccess: (...args: any[]) => mockGetPointsUserAccess(...args),
   isTotp2FARequired: (response: any) => response?.requires_2fa === true,
 }))
 
@@ -363,6 +365,20 @@ describe('useAuthStore', () => {
     it('未认证时抛出错误', async () => {
       const store = useAuthStore()
       await expect(store.refreshUser()).rejects.toThrow('Not authenticated')
+    })
+
+    it('uses the signed policy-aware decision instead of the stale auth flag', async () => {
+      mockGetCurrentUser.mockResolvedValue({
+        data: { ...fakeUser, points_system_access: true },
+      })
+      mockGetPointsUserAccess.mockResolvedValue({ allowed: false })
+
+      const store = useAuthStore()
+      const result = await store.setToken('saved-token')
+
+      expect(mockGetPointsUserAccess).toHaveBeenCalledOnce()
+      expect(result.points_system_access).toBe(false)
+      expect(store.user?.points_system_access).toBe(false)
     })
   })
 

@@ -5,7 +5,13 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
-import { authAPI, isTotp2FARequired, passkeyAPI, type LoginResponse } from '@/api'
+import {
+  authAPI,
+  getPointsUserAccess,
+  isTotp2FARequired,
+  passkeyAPI,
+  type LoginResponse,
+} from '@/api'
 import type { User, LoginRequest, RegisterRequest, AuthResponse } from '@/types'
 
 const AUTH_TOKEN_KEY = 'auth_token'
@@ -110,7 +116,13 @@ export const useAuthStore = defineStore('auth', () => {
     if (savedToken && savedUser) {
       try {
         token.value = savedToken
-        user.value = JSON.parse(savedUser)
+        const restoredUser = JSON.parse(savedUser) as User
+        // A persisted allow decision may outlive a next-day policy change.
+        // Keep the entry hidden until the signed runtime check completes.
+        if (restoredUser.points_system_access === true) {
+          delete restoredUser.points_system_access
+        }
+        user.value = restoredUser
         refreshTokenValue.value = savedRefreshToken
         tokenExpiresAt.value = savedExpiresAt ? parseInt(savedExpiresAt, 10) : null
 
@@ -304,7 +316,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (response.user.run_mode) {
       runMode.value = response.user.run_mode
     }
+    const shouldResolvePointsAccess = response.user.points_system_access === true
     const { run_mode: _run_mode, ...userData } = response.user
+    if (shouldResolvePointsAccess) {
+      delete userData.points_system_access
+    }
     user.value = userData
 
     // Persist to localStorage
@@ -319,6 +335,14 @@ export const useAuthStore = defineStore('auth', () => {
     // scheduleTokenRefresh will also store the expiry timestamp
     if (response.refresh_token && response.expires_in) {
       scheduleTokenRefresh(response.expires_in)
+    }
+
+    // Resolve the policy-aware decision after the token has been persisted.
+    // Unknown state remains hidden and a failed check resolves to denied.
+    if (shouldResolvePointsAccess) {
+      void refreshUser().catch((error) => {
+        console.warn('Failed to resolve points access after authentication:', error)
+      })
     }
   }
 
@@ -437,6 +461,15 @@ export const useAuthStore = defineStore('auth', () => {
         runMode.value = response.data.run_mode
       }
       const { run_mode: _run_mode, ...userData } = response.data
+      if (userData.points_system_access === true) {
+        try {
+          const access = await getPointsUserAccess()
+          userData.points_system_access = access.allowed === true
+        } catch (error) {
+          console.warn('Failed to resolve current points access:', error)
+          userData.points_system_access = false
+        }
+      }
       user.value = userData
 
       // Update localStorage

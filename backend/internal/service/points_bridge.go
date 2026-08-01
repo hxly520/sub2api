@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -10,10 +11,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -22,9 +25,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
-const pointsCreditPath = "/api/internal/points/credits"
+const (
+	pointsCreditPath     = "/api/internal/points/credits"
+	pointsUserAccessPath = "/api/v1/internal/user-access"
+	pointsAccessBodyMax  = 64 * 1024
+	pointsAccessCacheTTL = 15 * time.Second
+)
 
 var (
 	ErrPointsSystemUnavailable = infraerrors.New(http.StatusServiceUnavailable, "POINTS_SYSTEM_UNAVAILABLE", "points system is not configured")
@@ -86,6 +95,15 @@ type PointsBridgeService struct {
 	billingCache pointsBalanceCache
 	cfg          *config.Config
 	now          func() time.Time
+	httpClient   *http.Client
+	accessMu     sync.Mutex
+	accessCache  map[int64]pointsAccessCacheEntry
+	accessFlight singleflight.Group
+}
+
+type pointsAccessCacheEntry struct {
+	allowed   bool
+	expiresAt time.Time
 }
 
 type PointsBridgeStatus struct {
@@ -103,7 +121,16 @@ type PointsBridgeStatus struct {
 }
 
 func NewPointsBridgeService(repo PointsBridgeRepository, billingCache pointsBalanceCache, cfg *config.Config) *PointsBridgeService {
-	return &PointsBridgeService{repo: repo, billingCache: billingCache, cfg: cfg, now: time.Now}
+	return &PointsBridgeService{
+		repo: repo, billingCache: billingCache, cfg: cfg, now: time.Now,
+		accessCache: make(map[int64]pointsAccessCacheEntry),
+		httpClient: &http.Client{
+			Timeout: 3 * time.Second,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+	}
 }
 
 func (s *PointsBridgeService) Enabled() bool {
@@ -116,6 +143,136 @@ func (s *PointsBridgeService) Enabled() bool {
 // and the public menu remain globally disabled.
 func (s *PointsBridgeService) UserAccessAllowed(userID int64) bool {
 	return s != nil && s.cfg != nil && s.cfg.PointsSystem.UserAccessAllowed(userID)
+}
+
+// ResolveUserAccess combines Sub2API's rollout gate with the points service's
+// current effective policy and independent rollout gate. Any transport or
+// verification failure is returned to the caller and must be treated as a
+// fail-closed user decision; administrator setup remains available separately.
+func (s *PointsBridgeService) ResolveUserAccess(ctx context.Context, userID int64) (bool, error) {
+	if !s.UserAccessAllowed(userID) {
+		return false, nil
+	}
+	now := s.now().UTC()
+	s.accessMu.Lock()
+	if cached, ok := s.accessCache[userID]; ok && now.Before(cached.expiresAt) {
+		s.accessMu.Unlock()
+		return cached.allowed, nil
+	}
+	s.accessMu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	value, err, _ := s.accessFlight.Do(strconv.FormatInt(userID, 10), func() (any, error) {
+		// Recheck after waiting for an in-flight request so concurrent refreshes
+		// share one signed call and one policy/database read.
+		now := s.now().UTC()
+		s.accessMu.Lock()
+		if cached, ok := s.accessCache[userID]; ok && now.Before(cached.expiresAt) {
+			s.accessMu.Unlock()
+			return cached.allowed, nil
+		}
+		s.accessMu.Unlock()
+		allowed, err := s.fetchUserAccess(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+		s.accessMu.Lock()
+		if len(s.accessCache) >= 4096 {
+			for key, cached := range s.accessCache {
+				if !now.Before(cached.expiresAt) {
+					delete(s.accessCache, key)
+				}
+			}
+		}
+		if len(s.accessCache) >= 4096 {
+			for key := range s.accessCache {
+				delete(s.accessCache, key)
+				break
+			}
+		}
+		s.accessCache[userID] = pointsAccessCacheEntry{allowed: allowed, expiresAt: now.Add(pointsAccessCacheTTL)}
+		s.accessMu.Unlock()
+		return allowed, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	allowed, ok := value.(bool)
+	if !ok {
+		return false, ErrPointsSystemUnavailable
+	}
+	return allowed, nil
+}
+
+func (s *PointsBridgeService) fetchUserAccess(ctx context.Context, userID int64) (bool, error) {
+	requestBody, err := json.Marshal(struct {
+		UserID int64 `json:"user_id"`
+	}{UserID: userID})
+	if err != nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	endpoint, err := url.Parse(strings.TrimSpace(s.cfg.PointsSystem.PublicURL))
+	if err != nil || endpoint == nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + pointsUserAccessPath
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	request.Header.Set("Content-Type", "application/json")
+	keyID := strings.TrimSpace(s.cfg.PointsSystem.LaunchKeyID)
+	key, err := s.cfg.PointsSystem.LaunchKey()
+	if err != nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	nonce, err := randomPointsToken(24)
+	if err != nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	signPointsServiceRequest(request, requestBody, keyID, key, s.now().UTC(), nonce)
+
+	client := s.httpClient
+	if client == nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, pointsAccessBodyMax+1))
+	if err != nil || len(body) > pointsAccessBodyMax || response.StatusCode != http.StatusOK {
+		return false, ErrPointsSystemUnavailable
+	}
+	var envelope struct {
+		Data *struct {
+			Allowed bool `json:"allowed"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Data == nil {
+		return false, ErrPointsSystemUnavailable
+	}
+	return envelope.Data.Allowed, nil
+}
+
+func signPointsServiceRequest(request *http.Request, body []byte, keyID string, secret []byte, now time.Time, nonce string) {
+	timestamp := strconv.FormatInt(now.Unix(), 10)
+	bodyHash := sha256.Sum256(body)
+	canonical := strings.Join([]string{
+		"v1", keyID, request.Method, request.URL.EscapedPath(), timestamp, nonce,
+		hex.EncodeToString(bodyHash[:]),
+	}, "\n")
+	signature := signPointsPayload(secret, canonical)
+	request.Header.Set("X-Points-Key-Id", keyID)
+	request.Header.Set("X-Points-Timestamp", timestamp)
+	request.Header.Set("X-Points-Nonce", nonce)
+	request.Header.Set("X-Points-Signature", base64.RawURLEncoding.EncodeToString(signature))
 }
 
 func (s *PointsBridgeService) Status() PointsBridgeStatus {

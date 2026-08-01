@@ -248,4 +248,19 @@ describe('AppSidebar points navigation', () => {
     expect(navigationPaths(wrapper)).not.toContain('/points')
     wrapper.unmount()
   })
+
+  it('does not expose points from public settings before the signed decision arrives', () => {
+    storeState.auth.user = { id: 2 }
+    storeState.auth.refreshUser.mockResolvedValue({ id: 2, points_system_access: false })
+    storeState.app.cachedPublicSettings = {
+      points_system_enabled: true,
+      custom_menu_items: [],
+    }
+
+    const wrapper = mountSidebar()
+
+    expect(navigationPaths(wrapper)).not.toContain('/points')
+    expect(storeState.auth.refreshUser).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
 })

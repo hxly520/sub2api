@@ -23,6 +23,15 @@ export interface PointsBridgeStatus {
   clock_skew_seconds: number
 }
 
+export interface PointsUserAccess {
+  allowed: boolean
+}
+
+export async function getPointsUserAccess(): Promise<PointsUserAccess> {
+  const { data } = await apiClient.get<PointsUserAccess>('/points/access')
+  return data
+}
+
 export async function getPointsBridgeStatus(): Promise<PointsBridgeStatus> {
   const { data } = await apiClient.get<PointsBridgeStatus>('/admin/points/status')
   return data
