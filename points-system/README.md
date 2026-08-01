@@ -62,6 +62,11 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   every active user may see the menu and open `/points`; when disabled, the
   menu, launch ticket, session, page resources, and user APIs fail closed.
   Preview mode remains available only for an explicitly staged rollout.
+- Check-in has a separate deployment gate. `POINTS_CHECKIN_ACCESS_MODE=preview`
+  with `POINTS_CHECKIN_PREVIEW_IDS=1` keeps the points center available to all
+  users while exposing the balance-affecting check-in feature only to user 1.
+  Non-preview users receive `checkin_enabled=false` and direct check-in POSTs
+  are rejected server-side.
 - The uploaded Sub2API logo integration, deleted-user session invalidation,
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
@@ -426,6 +431,11 @@ expanding preview lists.
   one to 10,000 positive comma-separated IDs in `POINTS_USER_PREVIEW_IDS`; all
   mode requires that list to be empty. This is an independent fail-closed gate,
   not a replacement for the Sub2API menu, route, and ticket checks.
+- `POINTS_CHECKIN_ACCESS_MODE` defaults to `all` and is exactly `preview` or
+  `all`. Preview mode requires one to 10,000 positive comma-separated IDs in
+  `POINTS_CHECKIN_PREVIEW_IDS`; all mode requires that list to be empty. This
+  gate affects only check-in availability and POST authorization, never points
+  center visibility.
 
 Generate 32-byte secrets with a CSPRNG. Production points, bridge, and psql
 variable files are root-owned mode `0600`. Never place production secrets in

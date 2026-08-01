@@ -27,6 +27,8 @@ type Config struct {
 	EmbedParentOrigin  string
 	UserAccessMode     string
 	UserPreviewIDs     map[int64]struct{}
+	CheckinAccessMode  string
+	CheckinPreviewIDs  map[int64]struct{}
 	TrustedProxyCIDR   string
 	Timezone           *time.Location
 	SessionTTL         time.Duration
@@ -69,6 +71,7 @@ func Load() (Config, error) {
 		PublicOrigin:       strings.TrimRight(strings.TrimSpace(os.Getenv("POINTS_PUBLIC_ORIGIN")), "/"),
 		EmbedParentOrigin:  strings.TrimSpace(os.Getenv("POINTS_EMBED_PARENT_ORIGIN")),
 		UserAccessMode:     strings.ToLower(strings.TrimSpace(os.Getenv("POINTS_USER_ACCESS_MODE"))),
+		CheckinAccessMode:  strings.ToLower(strings.TrimSpace(env("POINTS_CHECKIN_ACCESS_MODE", "all"))),
 		TrustedProxyCIDR:   strings.TrimSpace(os.Getenv("POINTS_TRUSTED_PROXY_CIDR")),
 		Timezone:           location,
 		SessionTTL:         durationEnv("POINTS_SESSION_TTL", 8*time.Hour),
@@ -88,6 +91,10 @@ func Load() (Config, error) {
 	cfg.UserPreviewIDs, err = parsePositiveIDSet(os.Getenv("POINTS_USER_PREVIEW_IDS"))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse POINTS_USER_PREVIEW_IDS: %w", err)
+	}
+	cfg.CheckinPreviewIDs, err = parsePositiveIDSet(os.Getenv("POINTS_CHECKIN_PREVIEW_IDS"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse POINTS_CHECKIN_PREVIEW_IDS: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -142,6 +149,22 @@ func (c Config) Validate() error {
 		}
 	default:
 		return errors.New("POINTS_USER_ACCESS_MODE must be all or preview")
+	}
+	checkinMode := c.CheckinAccessMode
+	if checkinMode == "" {
+		checkinMode = "all"
+	}
+	switch checkinMode {
+	case "all":
+		if len(c.CheckinPreviewIDs) != 0 {
+			return errors.New("POINTS_CHECKIN_PREVIEW_IDS must be empty when POINTS_CHECKIN_ACCESS_MODE=all")
+		}
+	case "preview":
+		if len(c.CheckinPreviewIDs) == 0 {
+			return errors.New("POINTS_CHECKIN_PREVIEW_IDS requires at least one user when POINTS_CHECKIN_ACCESS_MODE=preview")
+		}
+	default:
+		return errors.New("POINTS_CHECKIN_ACCESS_MODE must be all or preview")
 	}
 	if c.SessionTTL < 5*time.Minute || c.SessionTTL > 24*time.Hour {
 		return errors.New("POINTS_SESSION_TTL must be between 5m and 24h")
@@ -213,6 +236,23 @@ func (c Config) UserAccessAllowed(userID int64) bool {
 		return true
 	case "preview":
 		_, allowed := c.UserPreviewIDs[userID]
+		return allowed
+	default:
+		return false
+	}
+}
+
+// CheckinAccessAllowed is an independent rollout gate for balance-affecting
+// check-in requests. It does not hide the points center from other users.
+func (c Config) CheckinAccessAllowed(userID int64) bool {
+	if userID <= 0 {
+		return false
+	}
+	switch c.CheckinAccessMode {
+	case "", "all":
+		return true
+	case "preview":
+		_, allowed := c.CheckinPreviewIDs[userID]
 		return allowed
 	default:
 		return false

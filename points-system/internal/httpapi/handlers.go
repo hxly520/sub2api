@@ -58,7 +58,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		dailyLimit = *policy.CheckinDailyLimit
 	}
 	pointsEnabled := policyAllowsUserAccess(policy)
-	checkinEnabled := pointsEnabled && policy.CheckinEnabled
+	checkinEnabled := pointsEnabled && policy.CheckinEnabled && s.Config.CheckinAccessAllowed(p.Session.UserID)
 	checkinAvailable := false
 	if checkinEnabled {
 		checkinAvailable, err = s.Store.CheckinAvailable(r.Context(), p.Session.UserID, now)
@@ -207,6 +207,10 @@ func (s *Server) dailyPoints(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkin(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r)
+	if !s.Config.CheckinAccessAllowed(p.Session.UserID) {
+		writeError(w, http.StatusForbidden, "checkin_unavailable", "Check-in is not available")
+		return
+	}
 	eventID, err := idempotencyKey(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "idempotency_required", err.Error())

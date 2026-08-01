@@ -609,6 +609,27 @@ func TestPreviewGateAllowsListedUserAndDoesNotRestrictAdmin(t *testing.T) {
 	}
 }
 
+func TestCheckinPreviewGateRejectsNonListedUserWithoutHidingPointsWorkspace(t *testing.T) {
+	server := testRoleServer("user", true)
+	server.Config.CheckinAccessMode = "preview"
+	server.Config.CheckinPreviewIDs = map[int64]struct{}{1: {}}
+
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("check-in preview hid points workspace: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	request := requestWithSession(http.MethodPost, "/api/v1/checkins")
+	request.Header.Set("Origin", server.Config.PublicOrigin)
+	request.Header.Set("X-CSRF-Token", security.CSRFToken("test-session-token", server.Config.SessionSecret))
+	recorder = httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "checkin_unavailable") {
+		t.Fatalf("non-preview check-in response: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestPolicyAccessRequiresEnabledValidPolicy(t *testing.T) {
 	valid := domain.Policy{Enabled: true, Mode: domain.PolicyModeAllUsers,
 		Basis: domain.PolicyBasisYesterday, PointsPerUSDHundredths: 1_000, RefreshMinute: 5}

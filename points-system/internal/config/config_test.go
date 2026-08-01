@@ -115,6 +115,24 @@ func TestUserAccessRolloutGate(t *testing.T) {
 	}
 }
 
+func TestCheckinAccessRolloutGateDoesNotReusePointsGate(t *testing.T) {
+	cfg := Config{
+		UserAccessMode: "all", CheckinAccessMode: "preview",
+		CheckinPreviewIDs: map[int64]struct{}{1: {}},
+	}
+	if !cfg.UserAccessAllowed(2) {
+		t.Fatal("check-in preview unexpectedly restricted the points center")
+	}
+	if !cfg.CheckinAccessAllowed(1) || cfg.CheckinAccessAllowed(2) || cfg.CheckinAccessAllowed(0) {
+		t.Fatal("check-in preview gate did not isolate the configured user")
+	}
+	cfg.CheckinAccessMode = "all"
+	cfg.CheckinPreviewIDs = nil
+	if !cfg.CheckinAccessAllowed(2) {
+		t.Fatal("all-users check-in mode rejected a positive user")
+	}
+}
+
 func TestConfigRequiresExplicitPreviewUsers(t *testing.T) {
 	base := Config{
 		DatabaseURL: "postgres://points", DatabaseSchema: "points", DatabaseMaxConns: 1,
@@ -139,5 +157,33 @@ func TestConfigRequiresExplicitPreviewUsers(t *testing.T) {
 	ambiguous.UserAccessMode = "all"
 	if err := ambiguous.Validate(); err == nil || !strings.Contains(err.Error(), "must be empty") {
 		t.Fatalf("ambiguous all-users config validation error = %v", err)
+	}
+}
+
+func TestConfigRequiresExplicitCheckinPreviewUsers(t *testing.T) {
+	base := Config{
+		DatabaseURL: "postgres://points", DatabaseSchema: "points", DatabaseMaxConns: 1,
+		UsageDatabaseURL: "postgres://usage", UsageReconcileDays: 1,
+		PublicOrigin: "https://points.example.test", EmbedParentOrigin: "https://sub2api.example.test",
+		UserAccessMode: "all", CheckinAccessMode: "preview",
+		CheckinPreviewIDs: map[int64]struct{}{1: {}},
+		Timezone:          time.UTC, SessionTTL: time.Hour, CookieSecure: true,
+		LaunchKeys:    map[string][]byte{"v1": []byte(strings.Repeat("l", 32))},
+		SessionSecret: []byte(strings.Repeat("s", 32)), Sub2URL: "http://sub2api:8080",
+		Sub2Key:     HMACKey{ID: "v1", Secret: []byte(strings.Repeat("c", 32))},
+		HTTPTimeout: time.Second, WorkerInterval: time.Second,
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid check-in preview config failed validation: %v", err)
+	}
+	missing := base
+	missing.CheckinPreviewIDs = nil
+	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "POINTS_CHECKIN_PREVIEW_IDS") {
+		t.Fatalf("missing check-in preview list validation error = %v", err)
+	}
+	ambiguous := base
+	ambiguous.CheckinAccessMode = "all"
+	if err := ambiguous.Validate(); err == nil || !strings.Contains(err.Error(), "must be empty") {
+		t.Fatalf("ambiguous all-users check-in config validation error = %v", err)
 	}
 }
