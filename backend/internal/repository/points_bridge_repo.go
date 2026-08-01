@@ -153,8 +153,8 @@ func insertPointsCreditAuditLog(ctx context.Context, tx *sql.Tx, input service.P
 			credential_masked, action, method, path, request_id, client_ip,
 			user_agent, request_body, status_code, latency_ms, extra
 		) VALUES ($1, NULL, '', 'points_system', 'hmac', '', 'points.balance_credit',
-			'POST', '/api/internal/points/credits', $2, '', '', NULL, 200, 0, $3::jsonb)
-	`, time.Now().UTC(), requestID, string(extra))
+			'POST', '/api/internal/points/credits', $2, '', '', $3, 200, 0, $4::jsonb)
+	`, time.Now().UTC(), requestID, "", string(extra))
 	return err
 }
 

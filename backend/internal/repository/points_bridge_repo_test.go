@@ -34,7 +34,7 @@ func TestPointsBridgeRepositoryAppliesCreditAtomically(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow("12.34"))
 	mock.ExpectExec("UPDATE points_balance_credits").WithArgs(transactionID, "12.34").
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(sqlmock.AnyArg(), input.RequestID, sqlmock.AnyArg()).
+	mock.ExpectExec("INSERT INTO audit_logs").WithArgs(sqlmock.AnyArg(), input.RequestID, "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
