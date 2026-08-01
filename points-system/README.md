@@ -28,9 +28,11 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `63d320fbf6ca`; the container is healthy with restart count zero. It was
   switched manually by the operator and remains outside automated replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-e39c78bf8f6c`, OCI revision
-  `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`, and is also healthy. Updating the
-  points container did not recreate or restart Sub2API.
+  `ghcr.io/hxly520/sub2api-points:0.1.169-e8d73f3e6655`, OCI revision
+  `e8d73f3e665596fc0d9e185d8ce706c45d04438a`, container prefix
+  `1166d2ff140c`, and is also healthy with restart count zero. The
+  `2026-08-01 08:17 CST` points-only replacement did not recreate or restart
+  Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and three points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
@@ -62,11 +64,17 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   change to all-users mode only after preview acceptance.
 - The uploaded Sub2API logo integration, deleted-user session invalidation,
   per-request preview enforcement, Sub2API-matched light/dark palette,
-  login-email browser identity, compact cards, and paginated records are
-  deployed from points revision `e39c78bf8f6c`. Its immutable GHCR digest is
-  `sha256:502abb9dbffa5237b388f70208ec0e72550b126baa398921aad9c4884048d2eb`.
-  Sub2API remains on `f79803bb73d6`; its `e39c78bf8f6c` image is only a cached
-  manual candidate and was not used to recreate the production container.
+  login-email browser identity, compact cards, paginated records, primary
+  points focus, semantic synchronization status, 8 px panel scale, and reduced
+  motion behavior are deployed from points revision `e8d73f3e6655`. Its GHCR
+  manifest digest is
+  `sha256:4b18317d48783df966cf570e7bf7aa59b8261561d280de161ace137b41509746`,
+  loaded image ID is
+  `sha256:0b8a4732a17bce4ce9ff513f10c0599e736dd8ba69f16d4438f178cf8d96e9a9`,
+  and transferred archive SHA256 is
+  `2947440cfdf4dedd6bea09341969e99d9dfd49ef54c2739269e2831813a66925`.
+  Sub2API remains on `f79803bb73d6`; its `e8d73f3e6655` image is loaded only as
+  a manual candidate and was not used to recreate the production container.
 
 ## Runtime Architecture
 

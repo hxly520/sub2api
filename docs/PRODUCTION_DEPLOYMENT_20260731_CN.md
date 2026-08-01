@@ -7,7 +7,7 @@
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
 | Sub2API | `0.1.169-f79803bb73d6`，revision `f79803bb73d659e36627d6f716aab065ff4d56a6`，容器 `63d320fbf6ca...`，healthy、restart count `0` | 已由维护者手工切换，含管理员新标签、用户 1 预览授权、主题同步和显式拒绝优先级 | 后续自动化不得替换或重启 |
-| 积分服务 | `0.1.169-e39c78bf8f6c`，revision `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`，容器 `11b1f9820fa7...`，healthy、restart count `0` | 登录邮箱、Taste 定向重设计、双记录游标分页和异步恢复已上线；仍为用户 1 预览 | 阶段 B 必须等真实用户/管理员票据验收后执行；不得重跑历史基线 |
+| 积分服务 | `0.1.169-e8d73f3e6655`，revision `e8d73f3e665596fc0d9e185d8ce706c45d04438a`，容器 `1166d2ff140c...`，healthy、restart count `0` | Taste 数字工作区、登录邮箱、双记录游标分页和异步恢复已上线；仍为用户 1 预览 | 阶段 B 必须等真实用户/管理员票据验收后执行；不得重跑历史基线 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -21,7 +21,8 @@
 - `5b27f0b80337c0d33435322a9307d84a9edac110`：管理员积分配置改为隔离新标签，增加 Sub2API 用户 1 预览名单和 iframe 实时主题同步。
 - `f79803bb73d659e36627d6f716aab065ff4d56a6`：最终预览修复；用户级显式拒绝覆盖陈旧公共设置，积分服务在 ticket 交换和每次既有 user session 请求双重执行预览门禁。
 - `7e50f9aa9f395f00f235365376d33f859ae7d16f`：积分用户/管理员工作区按 `design-taste-frontend` 定向重设计，补齐登录邮箱、业务发放时间、稳定游标分页、请求超时和邮箱 ACL 四阶段迁移。
-- `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`：隔离屏幕阅读器趋势数据表的 table layout，消除桌面约 `658px` 无效空白尾部；当前积分生产 revision 和 Sub2API 手工候选 revision。
+- `e39c78bf8f6c00230d2756493b9c951a2c39d4fa`：隔离屏幕阅读器趋势数据表的 table layout，消除桌面约 `658px` 无效空白尾部；上一积分生产 revision。
+- `e8d73f3e665596fc0d9e185d8ce706c45d04438a`：Taste 数字工作区增强，固定 `VARIANCE 6 / MOTION 4 / DENSITY 5`，新增主积分焦点、语义同步状态、8 px 面板尺度和 reduced-motion；当前积分生产 revision 和 Sub2API 手工候选 revision。
 - `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 随后已由维护者在 `2026-07-31 23:47 CST` 手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
 
 ## 2. 积分激活与历史基线
@@ -238,16 +239,26 @@ docker compose up -d --no-deps sub2api
 - 浏览器没有可复用登录态，`/points` 被正确重定向到登录页，因此本轮没有伪造真实用户或管理员票据。阶段 B 明确保留为待办：维护者需登录后验证用户 1 嵌入页 `login_email`、浅/深主题、两表分页、刷新恢复、管理员用户明细和发放记录，并验证非预览用户拒绝；全部通过后才能执行 `shared-database-users-email-finalize.sql.example` 撤销 `username`。签到和全站开放继续关闭。
 - `2026-08-01 05:20 CST` 延迟只读复查确认积分容器仍为 `11b1f9820fa7...`、revision `e39c78bf8f6c...`、healthy、restart count `0`；Sub2API 仍为 `63d320fbf6ca...`、revision `f79803bb73d6...`、healthy、restart count `0`。积分启动后无 ERROR/WARN，`04:59` 启动对账仍为 `changed_users=0`；187 用户、29 账户、328 快照、328 修订和 322 账本未变化，签到及余额发放表仍为空。Sub2API 在 `05:12:43` 有一条上游 WebSocket `close 1006 (abnormal closure): unexpected EOF` 告警；上游已开始写流，访问日志最终为 `200` 且未写兜底错误，能解释无标准错误码的会话突然中断，不属于积分服务故障。该复查只执行容器、HTTP、日志和只读事务查询。
 
-### 11.10 下一轮 Taste 状态与响应式候选（未构建、未部署）
+### 11.10 中间 Taste 状态与响应式节点（已并入 11.11）
 
-- 本地后续候选在 `e39c78bf8f6c` 之上按 Taste 参数 `VARIANCE 4 / MOTION 3 / DENSITY 6` 继续收口视觉和完整状态循环：移动 Canvas 使用真实宽度并按约 `88px` 间距动态减少日期；表格 hover 降为轻量提示，签到赠送表缩小独立最小宽度；管理员待处理卡使用 amber 告警层级，策略阶梯改为表单内分隔行。候选继续使用现有 CSS token、Lucide sprite 和原生 Canvas，没有引入第二套组件运行时。
+- 中间源码节点在 `e39c78bf8f6c` 之上按 Taste 参数 `VARIANCE 4 / MOTION 3 / DENSITY 6` 收口视觉和完整状态循环：移动 Canvas 使用真实宽度并按约 `88px` 间距动态减少日期；表格 hover 降为轻量提示，签到赠送表缩小独立最小宽度；管理员待处理卡使用 amber 告警层级，策略阶梯改为表单内分隔行。该节点继续使用现有 CSS token、Lucide sprite 和原生 Canvas，没有引入第二套组件运行时。
 - 用户首轮必需请求失败时显示持久错误面板与重试，不再把默认零值当作真实数据；管理员策略台等首轮汇总完成后才揭示。管理员新标签的 `about:blank` 等待页按 Sub2API 浅深主题渲染，带 `color-scheme`、主题色、语言、无障碍忙碌状态和 reduced-motion 降级，同时保持 opener/referrer 隔离。
 - 历史积分账本在业务日期早于首个策略生效日时，改用账本固定的 `policy_version` 回退刷新分钟，确保发放时间仍为业务日期次日 `00:05`，不修改账本或重跑历史作业。用户明细失效游标自动回第一页；管理员首轮失败保留原地重试。签到待确认意图使用服务端业务日期、登录邮箱、签到前次数和原幂等键绑定到当前浏览器会话，POST 成功后也要等权威次数增加再清理；行为夹具已验证连续重试与页面重载均复用同一幂等键。
-- 当前源码已用真实 Sub2API production build 与积分 iframe 双服务夹具完成桌面浅色、桌面深色、`390px` 嵌入和持久错误态截图；父页与 iframe 均无横向溢出，嵌入页隐藏自身 topbar，上传 Logo 与父主题保持权威。该候选尚未生成或上传镜像，生产仍精确为第 11.9 节记录的两个 revision；后续构建、上传或切换不得据本节推断已经发生。
+- 该中间节点已用真实 Sub2API production build 与积分 iframe 双服务夹具完成桌面浅色、桌面深色、`390px` 嵌入和持久错误态截图；父页与 iframe 均无横向溢出，嵌入页隐藏自身 topbar，上传 Logo 与父主题保持权威。全部改动随后并入第 11.11 节的 `e8d73f3e6655` 并重新构建；任何较早的 `94b417597017` 制品均不是当前生产制品。
 
-### 11.11 Taste 数字工作区增强候选（源码完成、未构建、未部署）
+### 11.11 Taste 数字工作区增强（已构建、积分已独立上线）
 
 - `2026-08-01` 在 `94b417597017831c651cfda342afcec4a7d0291b` 之上把积分视觉基线调整为 `VARIANCE 6 / MOTION 4 / DENSITY 5`。积分 iframe 内新增低对比精密网格、主积分焦点、真实同步状态、统一 8px 面板尺度和紧凑结算说明；管理员策略台使用同一视觉语言。改动只作用于积分子页面，Sub2API 左侧导航和 Header 继续完全由父页控制，浅色/深色主题通过原有严格 Origin/source 消息同步。
 - 本轮继续使用现有 CSS token、许可 Lucide sprite 和原生 Canvas，没有新增组件运行时或前端依赖。悬停位移最多 2px，`prefers-reduced-motion` 下全部取消；独立用户页 sticky 顶栏、嵌入隐藏顶栏、父页 Logo 和角色权限边界均保留。
 - 浏览器夹具确认桌面浅色、桌面深色、`390px` 和持久错误态均无横向溢出，四卡高度差为 `0`，Canvas 非空，深色表格和悬停文字可读。积分服务全量 test/vet/build、前端全量 Vitest、ESLint、typecheck 和 production build 均通过；新增行为测试实际执行用户脚本，确认签到资料连续失败时仍只重放原幂等键。
-- 第 11.10 节记录的 `94b417597017` 本地/registry 候选制品不包含本节视觉改动，不能作为本节源码的发布制品。提交后必须以新完整 revision 重新构建并核对 OCI label/digest；本节本身不表示已上传、已导入或已切换，生产事实仍以第 11.9 节为准。
+- 完整源码 revision 为 `e8d73f3e665596fc0d9e185d8ce706c45d04438a`。本地 `linux/amd64` 制品通过 OCI 架构、label、healthcheck、entrypoint、UID/GID、权限、payload SHA256 和 `crane validate`；registry digest、服务器加载后的 image ID 与传输 archive SHA256 分开记录如下，不能互相替代：
+
+| 制品 | 标签 | registry digest | image ID | archive SHA256 | bytes |
+| --- | --- | --- | --- | --- | ---: |
+| Sub2API 手工候选 | `ghcr.io/hxly520/sub2api:0.1.169-e8d73f3e6655` | `sha256:235add58b97e2f3c6bf06a65be86018dee4fac13769c280f1a508096f3bac78b` | `sha256:d5b2fa2b40d60550d6747a837eb517d691278ffc756c479db998edd0ccda3a66` | `c614b3d2eaca6963410ec9419188e6855fb2be58a860f56ab0d37b5666111346` | 208,714,240 |
+| 积分服务 | `ghcr.io/hxly520/sub2api-points:0.1.169-e8d73f3e6655`、`sha-e8d73f3e6655` | `sha256:4b18317d48783df966cf570e7bf7aa59b8261561d280de161ace137b41509746` | `sha256:0b8a4732a17bce4ce9ff513f10c0599e736dd8ba69f16d4438f178cf8d96e9a9` | `2947440cfdf4dedd6bea09341969e99d9dfd49ef54c2739269e2831813a66925` | 47,331,840 |
+
+- 两个 `0600 root:root` archive 已上传至 `/home/api/releases/` 并在服务器复核 SHA256 后执行 `docker load`；服务器没有编译或构建。Sub2API 新镜像只完成导入，运行容器继续是 `63d320fbf6ca...` / `f79803bb73d6`，启动时间和 restart count 均未变化，仍由维护者手工切换。
+- 积分切换前全库 custom backup 为 `/home/api/backups/points-release-e8d73f3e6655-20260801-081507/sub2api-full.dump`，SHA256 `843ff7734791e92517c9bb02b56eb7b033c1e0662b50936d0cf44ea4d4c76df7`，大小 `99,384,093` 字节，`pg_restore -l` 共 1,291 行；同目录保留原 Compose、切换前后计数、容器身份和启动日志。服务器未登录 GHCR，故 Compose 以 commit 标签、`pull_policy: never` 和加载后 image ID 三重约束本地制品，未把 registry digest 冒充为 daemon `RepoDigest`。
+- `2026-08-01 08:17 CST` 仅执行 `docker compose up -d --no-deps --pull never points-system`。新积分容器 `1166d2ff140c...` 使用预期 image ID，healthy、restart count `0`；启动对账 run `0144d6a3-3158-4e73-ad94-e03de54dcb9a` 读取 30,078 行、12 个来源用户，`changed_users=0`，启动日志无 error/fatal。29 账户、328 快照、328 修订、322 账本、187 个 Sub2API 用户均未变化，`needs_review=0`，签到、签到尝试、余额发放和发放尝试仍为 0，policy v3 的 `10.00:1`、`00:05` 和签到关闭均未变化。
+- 本地服务 health 为 `200`，本地/公网根与公网 health 为 `404`，未认证 `/app/` 为 `401`，`nginx -t` 与 Compose config 均通过。生产继续只开放用户 1 预览；本轮未伪造认证票据，真实用户 1 与管理员工作区验收及 ACL 阶段 B 仍由维护者登录后完成。
