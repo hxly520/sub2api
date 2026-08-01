@@ -27,6 +27,30 @@ func TestCalculateRewardPercentageUsesRawSpendAndFloorsToCent(t *testing.T) {
 	}
 }
 
+func TestCalculateRewardPercentageMatchesHundredUSDCheckinRange(t *testing.T) {
+	minimum, maximum := int64(1_000), int64(50_000) // 0.10% through 5.00%
+	tier := Tier{
+		LowerPointsHundredths:  0,
+		RewardMode:             RewardModePercentageRange,
+		RewardPercentageMinPPM: &minimum,
+		RewardPercentageMaxPPM: &maximum,
+	}
+
+	minimumResult, err := CalculateReward(tier, 100_000_000, minimum) // 100 U
+	if err != nil {
+		t.Fatal(err)
+	}
+	maximumResult, err := CalculateReward(tier, 100_000_000, maximum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if minimumResult.CalculatedRewardMicroUSD != 100_000 ||
+		maximumResult.CalculatedRewardMicroUSD != 5_000_000 {
+		t.Fatalf("100 U reward range = %d..%d, want 100000..5000000",
+			minimumResult.CalculatedRewardMicroUSD, maximumResult.CalculatedRewardMicroUSD)
+	}
+}
+
 func TestCalculateRewardPercentageDoesNotDeriveSpendFromPoints(t *testing.T) {
 	minimum, maximum := int64(0), int64(50_000)
 	tier := Tier{
