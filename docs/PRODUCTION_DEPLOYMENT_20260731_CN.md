@@ -12,6 +12,7 @@
 - 同一幂等键重放返回 `201`，仍复用上述 `3.08 U` settled 结果且没有重复加款；更换幂等键再次签到返回 `409 daily check-in limit reached`。用户 2 积分中心仍可访问，但签到能力为关闭并返回 `403 checkin_unavailable`；非用户 1 的签到、签到尝试和每日签到计数均为 `0`。
 - 首次 credit 返回 `500` 的根因是当前旧 Sub2API 在写入 `audit_logs` 时给 `request_body` 传入 `NULL`，违反该字段约束；积分服务随后使用原交易 UUID 安全重试并成功，没有生成第二笔 credit。生产暂时保留精确兼容触发器/函数 `points_credit_audit_request_body_compat`，只对 `action='points.balance_credit' AND request_body IS NULL` 的审计行填入兼容值，不放宽列约束，也不处理其他 action。
 - 本次操作前备份位于 `/home/api/backups/points-checkin-user1-20260801-232458`。全库 dump SHA256 为 `2bfca513c1d7f0be7db1aaecf31f5e3004a43eb8c150d1d5e7a2dce4e5e9df98`，`pg_restore -l` 目录共 `1,291` 行；同目录保留积分 Compose/env 以及 Sub2API、积分容器切换前 inspect。
+- 新策略候选源码为 `1d8d50522429b5d943766ad1d1b4a14b82e31d80`，积分候选镜像为 `ghcr.io/hxly520/sub2api-points:0.1.169-1d8d50522429`，manifest digest `sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`，本机归档 SHA256 `e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`，linux/amd64、10 层、OCI revision 标签为完整 commit。它包含迁移 `004_checkin_spend_tiers_and_optional_caps.sql`；当前生产仍运行 `ca18cf77a86a`，候选尚未上传、`docker load` 或启动，policy v4 仍是生产事实。
 
 ## 1. 版本边界
 

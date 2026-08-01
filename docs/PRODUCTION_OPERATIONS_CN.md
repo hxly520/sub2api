@@ -12,6 +12,7 @@
 - 用户 1 的 `2026-08-02 00:05` 快照为昨日消费 `86.890694 U`、昨日积分 `868.90`；签到范围 `0.08-4.34 U`，抽中 `35537 PPM`，实发 `3.08 U`。交易 `8e20f4f9-d3ab-4d16-95be-0b186c96da97` 为 `settled`，credit 唯一，`balance_after=8993.5808432400`；同幂等键重放没有重复加款，新键第二次签到返回 `409`。用户 2 积分中心可用但签到返回 `403 checkin_unavailable`，非用户 1 的签到相关记录为 0。
 - 首次发放的 `500` 来自旧 Sub2API 把 points credit 审计的 `request_body` 写成 `NULL`，不是签到随机计算或重复赠送故障；原 UUID 重试后只成功一次。当前精确兼容触发器 `points_credit_audit_request_body_compat` 仅兜底 `points.balance_credit` 的空审计正文，手工切换 `1a4a690dd999` 并验收后必须删除。
 - 操作前备份为 `/home/api/backups/points-checkin-user1-20260801-232458`；全库 dump SHA256 `2bfca513c1d7f0be7db1aaecf31f5e3004a43eb8c150d1d5e7a2dce4e5e9df98`，`pg_restore -l` 共 `1,291` 行。
+- 最终签到候选已在 GHCR 推送：源码 revision `1d8d50522429b5d943766ad1d1b4a14b82e31d80`，镜像 `ghcr.io/hxly520/sub2api-points:0.1.169-1d8d50522429`，manifest digest `sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`，本机归档 SHA256 `e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`。服务器 SSH 当前不可达，故候选尚未上传、加载或启动，生产仍是 `ca18cf77a86a`；迁移 `004_checkin_spend_tiers_and_optional_caps.sql` 必须在备份后由积分容器启动时执行并核对。
 
 ## 1. 权威来源
 

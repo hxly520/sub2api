@@ -128,6 +128,23 @@ DROP TRIGGER IF EXISTS points_credit_audit_request_body_compat ON public.audit_l
 DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 ```
 
+### Final spend-tier candidate (not active in production)
+
+The source revision `1d8d50522429b5d943766ad1d1b4a14b82e31d80` adds raw-spend
+tiers, nullable monetary caps, migration `004_checkin_spend_tiers_and_optional_caps.sql`,
+and the final private rule set: `1-<10 U` at `1%-5%`, `10-<50 U` at `2%-5%`,
+`50-<100 U` at `3%-5%`, and `100 U+` at `4%-5%`, with a `1 U` minimum and one
+check-in per natural day. The GHCR image is
+`ghcr.io/hxly520/sub2api-points:0.1.169-1d8d50522429`, manifest digest
+`sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`,
+and the locally verified archive SHA256 is
+`e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`.
+Production remains on `ca18cf77a86a` until the archive is uploaded, loaded,
+migration `004` is verified, and the next-day policy is saved. The three
+monetary caps are intentionally `NULL` (unlimited); the daily count limit,
+idempotency, serializable transaction, overflow guard, and user-1-only check-in
+gate remain mandatory.
+
 ## Runtime Architecture
 
 1. Sub2API creates a short-lived HMAC launch ticket for the current user.
