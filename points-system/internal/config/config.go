@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -25,6 +26,7 @@ type Config struct {
 	UsageReconcileDays int
 	PublicOrigin       string
 	EmbedParentOrigin  string
+	EmbedParentOrigins []string
 	UserAccessMode     string
 	UserPreviewIDs     map[int64]struct{}
 	CheckinAccessMode  string
@@ -70,6 +72,7 @@ func Load() (Config, error) {
 		UsageReconcileDays: intEnv("POINTS_USAGE_RECONCILE_DAYS", 7),
 		PublicOrigin:       strings.TrimRight(strings.TrimSpace(os.Getenv("POINTS_PUBLIC_ORIGIN")), "/"),
 		EmbedParentOrigin:  strings.TrimSpace(os.Getenv("POINTS_EMBED_PARENT_ORIGIN")),
+		EmbedParentOrigins: splitCommaList(os.Getenv("POINTS_EMBED_PARENT_ORIGINS")),
 		UserAccessMode:     strings.ToLower(strings.TrimSpace(os.Getenv("POINTS_USER_ACCESS_MODE"))),
 		CheckinAccessMode:  strings.ToLower(strings.TrimSpace(env("POINTS_CHECKIN_ACCESS_MODE", "all"))),
 		TrustedProxyCIDR:   strings.TrimSpace(os.Getenv("POINTS_TRUSTED_PROXY_CIDR")),
@@ -131,12 +134,8 @@ func (c Config) Validate() error {
 	if c.CookieSecure && u.Scheme != "https" {
 		return errors.New("secure cookies require an HTTPS POINTS_PUBLIC_ORIGIN")
 	}
-	if c.EmbedParentOrigin == "" {
-		return errors.New("POINTS_EMBED_PARENT_ORIGIN is required")
-	}
-	embedParent, err := url.Parse(c.EmbedParentOrigin)
-	if err != nil || !validHTTPOrigin(c.EmbedParentOrigin, embedParent) {
-		return errors.New("POINTS_EMBED_PARENT_ORIGIN must be one exact HTTP(S) origin without a path or wildcard")
+	if _, err := c.embedParentOrigins(); err != nil {
+		return err
 	}
 	switch c.UserAccessMode {
 	case "all":
@@ -184,16 +183,90 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// AllowedEmbedParentOrigins returns the validated, de-duplicated exact
+// browser origins allowed to embed the points workspace. Invalid configuration
+// fails closed; callers only receive origins after Config.Validate succeeds.
+func (c Config) AllowedEmbedParentOrigins() []string {
+	origins, err := c.embedParentOrigins()
+	if err != nil {
+		return nil
+	}
+	return origins
+}
+
+// PrimaryEmbedParentOrigin is the exact Sub2API origin used for uploaded logo
+// retrieval. The legacy singular setting remains primary when configured;
+// otherwise the first list item is used.
+func (c Config) PrimaryEmbedParentOrigin() string {
+	origins := c.AllowedEmbedParentOrigins()
+	if len(origins) == 0 {
+		return ""
+	}
+	return origins[0]
+}
+
+func (c Config) embedParentOrigins() ([]string, error) {
+	candidates := make([]string, 0, 1+len(c.EmbedParentOrigins))
+	if c.EmbedParentOrigin != "" {
+		candidates = append(candidates, c.EmbedParentOrigin)
+	}
+	candidates = append(candidates, c.EmbedParentOrigins...)
+	if len(candidates) == 0 {
+		return nil, errors.New("POINTS_EMBED_PARENT_ORIGIN or POINTS_EMBED_PARENT_ORIGINS is required")
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	origins := make([]string, 0, len(candidates))
+	for _, origin := range candidates {
+		parsed, err := url.Parse(origin)
+		if err != nil || !validHTTPOrigin(origin, parsed) {
+			return nil, errors.New("POINTS_EMBED_PARENT_ORIGIN and POINTS_EMBED_PARENT_ORIGINS must contain only exact HTTP(S) origins without paths or wildcards")
+		}
+		if _, exists := seen[origin]; exists {
+			continue
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+		if len(origins) > maxEmbedParentOrigins {
+			return nil, fmt.Errorf("POINTS_EMBED_PARENT_ORIGINS allows at most %d origins", maxEmbedParentOrigins)
+		}
+	}
+	return origins, nil
+}
+
+const maxEmbedParentOrigins = 16
+
 func validHTTPOrigin(raw string, parsed *url.URL) bool {
 	if parsed == nil || strings.TrimSpace(raw) != raw || parsed.Scheme == "" || parsed.Host == "" ||
 		(parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil || parsed.Opaque != "" ||
 		parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
-		parsed.Hostname() == "" || strings.Contains(parsed.Host, "*") || strings.HasSuffix(parsed.Host, ":") {
+		parsed.Hostname() == "" || !validOriginHostname(parsed.Hostname()) || strings.Contains(parsed.Host, "*") || strings.HasSuffix(parsed.Host, ":") {
 		return false
 	}
 	if port := parsed.Port(); port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
+			return false
+		}
+	}
+	return true
+}
+
+func validOriginHostname(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if len(host) == 0 || len(host) > 253 || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+				(char >= '0' && char <= '9') || char == '-' {
+				continue
+			}
 			return false
 		}
 	}
@@ -278,6 +351,17 @@ func parsePositiveIDSet(raw string) (map[int64]struct{}, error) {
 		}
 	}
 	return result, nil
+}
+
+func splitCommaList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	items := strings.Split(raw, ",")
+	for index := range items {
+		items[index] = strings.TrimSpace(items[index])
+	}
+	return items
 }
 
 func parseKeyring(raw string) (map[string][]byte, error) {

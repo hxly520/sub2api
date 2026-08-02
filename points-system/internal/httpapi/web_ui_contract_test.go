@@ -40,11 +40,34 @@ func TestUserDashboardKeepsCoreMetricsAndDelaysEmbeddedReady(t *testing.T) {
 	}
 	commonContent := string(commonJS)
 	for _, required := range []string{"function notifyReady()", "readySent", "window.parent.postMessage", "notifyReady,", `"needs_review"].includes(value)`,
-		"sub2api:points-theme", "event.source !== window.parent", "event.origin !== parentOrigin",
+		"sub2api:points-theme", "event.source !== window.parent", "!parentOrigins.includes(event.origin)",
+		"function configuredParentOrigins()", `meta[name="sub2api-parent-origins"]`, "JSON.parse", "Array.isArray(values)",
+		"parentOrigins.forEach((origin) => window.parent.postMessage(message, origin))",
 		`let embeddedTheme = "";`, "embeddedTheme = event.data.theme;", "effective_date_must_be_tomorrow",
 		"embedded && embeddedTheme ? embeddedTheme : sessionTheme"} {
 		if !strings.Contains(commonContent, required) {
 			t.Fatalf("shared embedded UI is missing delayed ready behavior %q", required)
+		}
+	}
+	for _, forbidden := range []string{`parentOrigin || "*"`, `postMessage(message, "*")`, `meta[name="sub2api-parent-origin"]`} {
+		if strings.Contains(commonContent, forbidden) {
+			t.Fatalf("shared embedded UI restored an unsafe parent-origin contract %q", forbidden)
+		}
+	}
+}
+
+func TestPointsHTMLCarriesTheExactParentOriginListContract(t *testing.T) {
+	for _, name := range []string{"web/user.html", "web/admin.html"} {
+		markup, err := webFS.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(markup)
+		if !strings.Contains(content, `<meta name="sub2api-parent-origins" content="__SUB2API_EMBED_PARENT_ORIGINS__">`) {
+			t.Fatalf("%s is missing the exact parent-origin list metadata", name)
+		}
+		if strings.Contains(content, "__SUB2API_EMBED_PARENT_ORIGIN__") || strings.Contains(content, `name="sub2api-parent-origin"`) {
+			t.Fatalf("%s retained the obsolete single-origin HTML contract", name)
 		}
 	}
 }

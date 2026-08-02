@@ -2,7 +2,7 @@ services:
   points-system:
     image: "${POINTS_IMAGE:?POINTS_IMAGE must reference an immutable GHCR digest}"
     restart: unless-stopped
-    # The env file must set both the points public origin and the one exact
+    # The env file must set the points public origin and at least one exact
     # Sub2API parent origin permitted by CSP frame-ancestors.
     env_file: ${POINTS_ENV_FILE:-.env}
     ports:

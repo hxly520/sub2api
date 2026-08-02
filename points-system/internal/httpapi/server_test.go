@@ -51,7 +51,10 @@ func TestSpendTierPolicyRequestForcesYesterdayBasis(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	server := &Server{Config: config.Config{EmbedParentOrigin: "https://sub2api.example.test"}}
+	server := &Server{Config: config.Config{
+		EmbedParentOrigin:  "https://sub2api.example.test",
+		EmbedParentOrigins: []string{"https://sub2api.example.test", "https://www.example.test"},
+	}}
 	handler := server.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -63,11 +66,11 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 	}
 	csp := recorder.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "frame-ancestors https://sub2api.example.test;") ||
+	if !strings.Contains(csp, "frame-ancestors https://sub2api.example.test https://www.example.test;") ||
 		strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Fatalf("unexpected frame-ancestors policy: %q", csp)
 	}
-	if !strings.Contains(csp, "img-src 'self' data: https://sub2api.example.test;") {
+	if !strings.Contains(csp, "img-src 'self' data: https://sub2api.example.test https://www.example.test;") {
 		t.Fatalf("uploaded logo origin is missing from img-src: %q", csp)
 	}
 	if value := recorder.Header().Get("X-Frame-Options"); value != "" {
@@ -84,6 +87,22 @@ func TestSecurityHeadersFailClosedWithoutEmbedParent(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/app/", nil))
 	if csp := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none';") {
 		t.Fatalf("missing fail-closed frame-ancestors: %q", csp)
+	}
+}
+
+func TestSecurityHeadersFailClosedForPartiallyInvalidEmbedParentList(t *testing.T) {
+	server := &Server{Config: config.Config{
+		EmbedParentOrigin:  "https://sub2api.example.test",
+		EmbedParentOrigins: []string{"https://*.example.test"},
+	}}
+	handler := server.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://points.example.test/app/", nil))
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors 'none';") || strings.Contains(csp, "sub2api.example.test") || strings.Contains(csp, "*.example.test") {
+		t.Fatalf("partially invalid parent list did not fail closed: %q", csp)
 	}
 }
 
@@ -188,6 +207,7 @@ func TestInternalUserAccessRequiresSignatureAndUsesBothGates(t *testing.T) {
 
 func TestPointsPagesUseUploadedSub2APILogoAndLocalFallback(t *testing.T) {
 	server := testRoleServer("user", true)
+	server.Config.EmbedParentOrigins = []string{"https://sub2api.example.test", "https://www.example.test"}
 	recorder := httptest.NewRecorder()
 	server.mux.ServeHTTP(recorder, requestWithSession(http.MethodGet, "/app/"))
 	if recorder.Code != http.StatusOK {
@@ -195,8 +215,8 @@ func TestPointsPagesUseUploadedSub2APILogoAndLocalFallback(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	if !strings.Contains(body, `src="https://sub2api.example.test/api/v1/settings/logo"`) ||
-		!strings.Contains(body, `name="sub2api-parent-origin" content="https://sub2api.example.test"`) ||
-		strings.Contains(body, brandLogoPlaceholder) || strings.Contains(body, embedParentOriginPlaceholder) ||
+		!strings.Contains(body, `name="sub2api-parent-origins" content="[&#34;https://sub2api.example.test&#34;,&#34;https://www.example.test&#34;]"`) ||
+		strings.Contains(body, brandLogoPlaceholder) || strings.Contains(body, embedParentOriginsPlaceholder) ||
 		strings.Contains(body, `aria-hidden="true">积`) {
 		t.Fatalf("user page did not receive uploaded logo URL: %s", body)
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -47,6 +48,7 @@ func TestValidHTTPOriginRequiresOneExactOrigin(t *testing.T) {
 		"https://sub2api.example.test",
 		"https://sub2api.example.test:8443",
 		"http://localhost:5173",
+		"https://[::1]:8443",
 	} {
 		parsed, err := url.Parse(value)
 		if err != nil || !validHTTPOrigin(value, parsed) {
@@ -58,7 +60,8 @@ func TestValidHTTPOriginRequiresOneExactOrigin(t *testing.T) {
 		"https://sub2api.example.test/path", "https://sub2api.example.test?mode=embedded",
 		"https://sub2api.example.test#fragment", "https://user@sub2api.example.test",
 		"https://sub2api.example.test:", "https://sub2api.example.test:0",
-		"https://sub2api.example.test:65536", "javascript:alert(1)",
+		"https://sub2api.example.test:65536", "https://bad_host.example.test",
+		"https://bad,host.example.test", "https://bad;host.example.test", "javascript:alert(1)",
 	} {
 		parsed, _ := url.Parse(value)
 		if validHTTPOrigin(value, parsed) {
@@ -82,12 +85,60 @@ func TestConfigRequiresExactEmbedParentOrigin(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid config failed validation: %v", err)
 	}
+	listOnly := base
+	listOnly.EmbedParentOrigin = ""
+	listOnly.EmbedParentOrigins = []string{"https://api.example.test", "https://www.example.test"}
+	if err := listOnly.Validate(); err != nil {
+		t.Fatalf("valid list-only config failed validation: %v", err)
+	}
+	if got := strings.Join(listOnly.AllowedEmbedParentOrigins(), ","); got != "https://api.example.test,https://www.example.test" {
+		t.Fatalf("list-only parent origins = %q", got)
+	}
+	if got := listOnly.PrimaryEmbedParentOrigin(); got != "https://api.example.test" {
+		t.Fatalf("list-only primary parent origin = %q", got)
+	}
+
+	multiple := base
+	multiple.EmbedParentOrigins = []string{"https://sub2api.example.test", "https://www.example.test"}
+	if err := multiple.Validate(); err != nil {
+		t.Fatalf("valid multi-origin config failed validation: %v", err)
+	}
+	if got := strings.Join(multiple.AllowedEmbedParentOrigins(), ","); got != "https://sub2api.example.test,https://www.example.test" {
+		t.Fatalf("allowed parent origins = %q", got)
+	}
+	if got := multiple.PrimaryEmbedParentOrigin(); got != "https://sub2api.example.test" {
+		t.Fatalf("primary parent origin = %q", got)
+	}
 	for _, value := range []string{"", "https://*.example.test", "https://sub2api.example.test/path"} {
 		candidate := base
 		candidate.EmbedParentOrigin = value
+		candidate.EmbedParentOrigins = nil
 		if err := candidate.Validate(); err == nil || !strings.Contains(err.Error(), "POINTS_EMBED_PARENT_ORIGIN") {
 			t.Fatalf("embed parent %q validation error = %v", value, err)
 		}
+	}
+	invalidList := base
+	invalidList.EmbedParentOrigin = ""
+	invalidList.EmbedParentOrigins = []string{"https://www.example.test", "https://*.example.test"}
+	if err := invalidList.Validate(); err == nil || !strings.Contains(err.Error(), "POINTS_EMBED_PARENT_ORIGIN") {
+		t.Fatalf("unsafe origin list validation error = %v", err)
+	}
+	tooMany := base
+	tooMany.EmbedParentOrigin = ""
+	for index := 0; index <= maxEmbedParentOrigins; index++ {
+		tooMany.EmbedParentOrigins = append(tooMany.EmbedParentOrigins, fmt.Sprintf("https://parent-%d.example.test", index))
+	}
+	if err := tooMany.Validate(); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("oversized origin list validation error = %v", err)
+	}
+}
+
+func TestSplitCommaListTrimsButPreservesInvalidEmptyEntries(t *testing.T) {
+	if got := strings.Join(splitCommaList(" https://api.example.test,https://www.example.test "), ","); got != "https://api.example.test,https://www.example.test" {
+		t.Fatalf("parsed origin list = %q", got)
+	}
+	if got := splitCommaList("https://api.example.test,"); len(got) != 2 || got[1] != "" {
+		t.Fatalf("empty origin entry was silently discarded: %#v", got)
 	}
 }
 

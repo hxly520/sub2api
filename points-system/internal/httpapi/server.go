@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"html"
 	"io"
@@ -47,7 +48,7 @@ const policyKey contextKey = "points-policy"
 
 const embeddedUIMode = "embedded"
 const brandLogoPlaceholder = "__SUB2API_BRAND_LOGO__"
-const embedParentOriginPlaceholder = "__SUB2API_EMBED_PARENT_ORIGIN__"
+const embedParentOriginsPlaceholder = "__SUB2API_EMBED_PARENT_ORIGINS__"
 const internalUserAccessBodyLimit = 4 * 1024
 
 func New(cfg config.Config, pointsStore *store.Store, logger *slog.Logger) (*Server, error) {
@@ -177,7 +178,12 @@ func (s *Server) servePage(w http.ResponseWriter, name string) {
 		return
 	}
 	body = bytes.ReplaceAll(body, []byte(brandLogoPlaceholder), []byte(html.EscapeString(s.brandLogoURL())))
-	body = bytes.ReplaceAll(body, []byte(embedParentOriginPlaceholder), []byte(html.EscapeString(s.Config.EmbedParentOrigin)))
+	parentOrigins, err := json.Marshal(s.Config.AllowedEmbedParentOrigins())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "asset_error", "Internal server error")
+		return
+	}
+	body = bytes.ReplaceAll(body, []byte(embedParentOriginsPlaceholder), []byte(html.EscapeString(string(parentOrigins))))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -185,7 +191,7 @@ func (s *Server) servePage(w http.ResponseWriter, name string) {
 }
 
 func (s *Server) brandLogoURL() string {
-	origin := strings.TrimRight(strings.TrimSpace(s.Config.EmbedParentOrigin), "/")
+	origin := strings.TrimRight(s.Config.PrimaryEmbedParentOrigin(), "/")
 	if origin == "" {
 		return "/assets/logo.svg"
 	}
@@ -445,13 +451,12 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		frameAncestor := s.Config.EmbedParentOrigin
-		if frameAncestor == "" {
-			frameAncestor = "'none'"
-		}
+		origins := s.Config.AllowedEmbedParentOrigins()
+		frameAncestor := "'none'"
 		imageSource := ""
-		if s.Config.EmbedParentOrigin != "" {
-			imageSource = " " + s.Config.EmbedParentOrigin
+		if len(origins) != 0 {
+			frameAncestor = strings.Join(origins, " ")
+			imageSource = " " + frameAncestor
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:"+imageSource+"; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+frameAncestor+"; form-action 'self'")
 		w.Header().Set("Referrer-Policy", "no-referrer")

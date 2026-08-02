@@ -346,9 +346,11 @@ reduced-motion-aware progress line. This waiting document keeps the existing
 
 Direct standalone access keeps the original layouts.
 Standalone brand slots on both pages receive the exact Sub2API logo URL from
-the server: `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`. Letter placeholders
+the server. `POINTS_EMBED_PARENT_ORIGIN` remains the primary logo origin; when
+only `POINTS_EMBED_PARENT_ORIGINS` is configured, its first entry is primary.
+The resulting URL is `PRIMARY_PARENT_ORIGIN/api/v1/settings/logo`. Letter placeholders
 such as the former user/admin marks are not part of the contract. The CSP adds
-only the exact configured parent origin to `img-src`; if that image cannot load,
+only the exact configured parent-origin allowlist to `img-src`; if that image cannot load,
 the shared script applies `/assets/logo.svg` once as the image-bundled,
 authenticated fallback. Logo loading does not select a role or relax launch,
 session, Origin, or administrator API checks.
@@ -516,12 +518,16 @@ expanding preview lists.
   only the grants in `deploy/usage-reader.sql.example`.
 - `POINTS_PUBLIC_ORIGIN` is an origin without a path and must be HTTPS when
   secure cookies are enabled.
-- `POINTS_EMBED_PARENT_ORIGIN` is the one exact Sub2API browser origin permitted
-  by CSP `frame-ancestors`. It is required and rejects paths, queries, fragments,
-  credentials, and wildcard hosts. The same exact origin is the only additional
-  CSP `img-src` and is used to construct the uploaded-logo URL; no independent
-  arbitrary image origin is accepted. Do not add `X-Frame-Options` at Nginx
-  because it would conflict with the exact cross-origin embedding policy.
+- `POINTS_EMBED_PARENT_ORIGIN` remains the backward-compatible primary Sub2API
+  browser origin. `POINTS_EMBED_PARENT_ORIGINS` optionally adds comma-separated
+  exact origins. When the legacy setting is omitted, the first list item becomes
+  primary. Duplicates are removed, and at most 16 total origins are accepted.
+  Every value rejects paths, queries, fragments, credentials, and wildcard
+  hosts. CSP `frame-ancestors`
+  and the additional `img-src` sources contain only this exact allowlist. The
+  primary origin constructs the uploaded-logo URL; no independent arbitrary
+  image origin is accepted. Do not add `X-Frame-Options` at Nginx because it
+  would conflict with the exact cross-origin embedding policy.
 - `POINTS_USER_ACCESS_MODE` is required and is exactly `preview` or `all`. Preview mode requires
   one to 10,000 positive comma-separated IDs in `POINTS_USER_PREVIEW_IDS`; all
   mode requires that list to be empty. This is an independent fail-closed gate,
@@ -590,8 +596,9 @@ source. Only the Nginx `/launch` location disables access logging so one-time
 tickets are not persisted in query-string logs. `/app/`, `/admin/`, assets,
 APIs, denials, authorization failures, and rate limits retain access logs.
 The user launch URL used by the Sub2API iframe must include `ui_mode=embedded`, and
-its browser origin must exactly match `POINTS_EMBED_PARENT_ORIGIN` including any
-non-default port.
+its browser parent origin must exactly match one configured parent origin,
+including any non-default port. The iframe sends its ready message separately
+to each exact configured target Origin; it never uses a wildcard target.
 Verify both authenticated workspaces with an uploaded Sub2API logo and with a
 forced parent-logo load failure. The first case must display the uploaded raster
 logo; the second must display `/assets/logo.svg` without a CSP violation loop.

@@ -8,7 +8,26 @@
   const embedded = new URLSearchParams(window.location.search).get("ui_mode") === "embedded";
   document.body.dataset.uiMode = embedded ? "embedded" : "standalone";
   document.documentElement.dataset.uiMode = document.body.dataset.uiMode;
-  const parentOrigin = document.querySelector('meta[name="sub2api-parent-origin"]')?.content || "";
+  function configuredParentOrigins() {
+    try {
+      const values = JSON.parse(document.querySelector('meta[name="sub2api-parent-origins"]')?.content || "[]");
+      if (!Array.isArray(values)) return [];
+      return [...new Set(values.flatMap((value) => {
+        if (typeof value !== "string") return [];
+        try {
+          const parsed = new URL(value);
+          if ((parsed.protocol !== "https:" && parsed.protocol !== "http:") || parsed.username || parsed.password) return [];
+          return [parsed.origin];
+        } catch {
+          return [];
+        }
+      }))];
+    } catch {
+      return [];
+    }
+  }
+
+  const parentOrigins = configuredParentOrigins();
   let readySent = false;
   let embeddedTheme = "";
 
@@ -22,8 +41,8 @@
   }
 
   function applyEmbeddedTheme(event) {
-    if (!embedded || window.parent === window || !parentOrigin) return;
-    if (event.source !== window.parent || event.origin !== parentOrigin) return;
+    if (!embedded || window.parent === window || !parentOrigins.length) return;
+    if (event.source !== window.parent || !parentOrigins.includes(event.origin)) return;
     if (event.data?.type !== "sub2api:points-theme") return;
     if (event.data.theme !== "light" && event.data.theme !== "dark") return;
     embeddedTheme = event.data.theme;
@@ -43,10 +62,11 @@
   function notifyReady() {
     if (readySent || !embedded || window.parent === window) return;
     readySent = true;
-    window.parent.postMessage({
+    const message = {
       type: "sub2api:points-ready",
       role: document.body.classList.contains("admin-shell") ? "admin" : "user"
-    }, parentOrigin || "*");
+    };
+    parentOrigins.forEach((origin) => window.parent.postMessage(message, origin));
   }
 
   const errorMessages = {
