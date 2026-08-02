@@ -52,7 +52,7 @@ func (s *Store) CheckinAvailable(ctx context.Context, userID int64, now time.Tim
 		return false, nil
 	}
 
-	count, userAwardedMicroUSD, err := s.CheckinStatus(ctx, userID, now)
+	count, userAwardedMicroUSD, err := s.checkinDailyUsage(ctx, userID, now)
 	if err != nil {
 		return false, err
 	}
@@ -488,8 +488,23 @@ func checkinErrorForReason(reason string) error {
 func (s *Store) CheckinStatus(ctx context.Context, userID int64, now time.Time) (count int, amountMicroUSD int64, err error) {
 	err = s.DB.QueryRow(ctx, `SELECT d.checkin_count,COALESCE((
 		SELECT SUM(c.reward_microusd) FROM points_checkins c
+		JOIN points_balance_grants g ON g.id=c.balance_grant_id
 		WHERE c.user_id=d.user_id AND c.business_date=d.business_date
+			AND g.settled_at IS NOT NULL AND g.reversed_at IS NULL
 	),0)::bigint FROM points_checkin_daily d WHERE d.user_id=$1 AND d.business_date=$2`,
+		userID, dateString(s.BusinessDate(now))).Scan(&count, &amountMicroUSD)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, nil
+	}
+	return count, amountMicroUSD, err
+}
+
+// checkinDailyUsage retains accepted awards as reservations until the natural
+// day ends. User-facing totals may exclude reversed or unsettled grants, but
+// eligibility checks must not let pending delivery bypass monetary caps.
+func (s *Store) checkinDailyUsage(ctx context.Context, userID int64, now time.Time) (count int, amountMicroUSD int64, err error) {
+	err = s.DB.QueryRow(ctx, `SELECT checkin_count,awarded_microusd
+		FROM points_checkin_daily WHERE user_id=$1 AND business_date=$2`,
 		userID, dateString(s.BusinessDate(now))).Scan(&count, &amountMicroUSD)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, nil

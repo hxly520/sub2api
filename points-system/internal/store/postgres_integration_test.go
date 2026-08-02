@@ -692,6 +692,69 @@ func TestPostgresAccountCountsOnlySettledUnreversedCheckinRewards(t *testing.T) 
 	}
 }
 
+func TestPostgresCheckinStatusCountsOnlySettledUnreversedRewards(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	version := seedCheckinPolicy(t, fixture, 3, 10_000_000, 10_000_000, 100_000, 100_000)
+	ctx := context.Background()
+	const userID int64 = 2102
+	seedReadySnapshots(t, fixture, version, userID)
+
+	results := make([]pointsstore.CheckinResult, 0, 3)
+	for range 3 {
+		result, err := fixture.store.CheckIn(ctx, userID, uuid.NewString(), fixture.now)
+		if err != nil {
+			t.Fatalf("check in: %v", err)
+		}
+		results = append(results, result)
+	}
+	now := fixture.now.UTC()
+	if _, err := fixture.db.Exec(ctx, `UPDATE points_balance_grants
+		SET status='settled',settled_at=$1 WHERE id=$2`, now, results[0].TransactionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(ctx, `UPDATE points_balance_grants
+		SET status='reversed',settled_at=$1,reversed_at=$2 WHERE id=$3`,
+		now, now.Add(time.Minute), results[1].TransactionID); err != nil {
+		t.Fatal(err)
+	}
+
+	count, amount, err := fixture.store.CheckinStatus(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 || amount != 100_000 {
+		t.Fatalf("check-in status count=%d amount=%d, want count=3 amount=100000", count, amount)
+	}
+}
+
+func TestPostgresCheckinAvailabilityRetainsPendingAwardsForCapEnforcement(t *testing.T) {
+	fixture := newPostgresFixture(t)
+	version := seedCheckinPolicy(t, fixture, 4, 10_000_000, 300_000, 100_000, 100_000)
+	ctx := context.Background()
+	const userID int64 = 2103
+	seedReadySnapshots(t, fixture, version, userID)
+
+	for range 3 {
+		if _, err := fixture.store.CheckIn(ctx, userID, uuid.NewString(), fixture.now); err != nil {
+			t.Fatalf("check in: %v", err)
+		}
+	}
+	available, err := fixture.store.CheckinAvailable(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available {
+		t.Fatal("check-in remained available after pending awards exhausted the user cap")
+	}
+	count, displayed, err := fixture.store.CheckinStatus(ctx, userID, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 || displayed != 0 {
+		t.Fatalf("check-in status count=%d amount=%d, want count=3 amount=0", count, displayed)
+	}
+}
+
 func TestPostgresSnapshotNotReadyDoesNotConsumeCheckinIdempotency(t *testing.T) {
 	fixture := newPostgresFixture(t)
 	version := seedCheckinPolicy(t, fixture, 1, 1_000_000, 1_000_000, 100_000, 100_000)
