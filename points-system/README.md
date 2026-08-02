@@ -28,17 +28,17 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `dee0f8efd24d`; the container is healthy with restart count zero. It was
   switched manually by the operator and remains outside automated replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-ca18cf77a86a`, OCI revision
-  `ca18cf77a86a921600e7324a75d09188e1e4fed7`, container prefix
-  `c7d819ea0ea9`, and is healthy with restart count zero. Its GHCR digest is
-  `sha256:b9f9b0c4924d73fb84a8a52ff6551b08cad3fb03c3c2797b705e55553118a6d2`,
+  `ghcr.io/hxly520/sub2api-points:0.1.169-1d8d50522429`, OCI revision
+  `1d8d50522429b5d943766ad1d1b4a14b82e31d80`, container prefix
+  `1e5ed38b81da`, and is healthy with restart count zero. Its GHCR digest is
+  `sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`,
   the transferred archive SHA256 is
-  `34bc3495c1b5f1811af539f82fdb1e899055a171a665690bb140db3a5b679e40`,
+  `e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`,
   and the loaded image ID is
-  `sha256:f77aabccae46c02549775b242ddfd42002d1aff2a114ef4c131837adf691c64d`.
+  `sha256:5d4edb7822499e7c2953f7aa1f4889d88fbd9ac630fce69742d0a4f694e192dd`.
   This points-only replacement did not recreate or restart Sub2API.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
-  `points` schema contains 21 tables and three points migrations. `points_app`
+  `points` schema contains 21 tables and four points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
   `points_usage_reader` has a four-connection limit.
 - The running production `points_app` role completed stage A in transaction
@@ -58,11 +58,15 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   balance spend), and its per-grant, per-user daily, and platform daily safety
   caps are each `100 U`. Historical job
   `5174eef7-5f0a-4a17-b4f1-f50840940f64` remains the only successful baseline.
-  The `2026-08-01 00:05 CST` scheduled run settled business date `2026-07-31`
-  for 12 users and completed successfully; production then had 29 point
-  accounts, 328 daily snapshots/revisions, 322 point-ledger rows, no
-  `needs_review` rows, and no check-in or balance-grant rows. This production
-  schema must not run another history plan or apply.
+  Policy version 5 was appended through the administrator API on `2026-08-02`
+  and becomes effective on `2026-08-03`. It keeps `10.00 points/U`, `00:05`,
+  `consumer_only/yesterday`, and one daily check-in, but uses raw-spend tiers:
+  `[1,10) U` at `1%-5%`, `[10,50) U` at `2%-5%`, `[50,100) U` at `3%-5%`,
+  and `[100,+inf) U` at `4%-5%`. The minimum prior-day spend is `1 U`; all
+  three monetary caps are `NULL` (unlimited). Until that date, version 4 is
+  still authoritative. Production has 29 point accounts, 339 daily snapshots,
+  333 point-ledger rows, one accepted check-in, and one settled balance grant.
+  This production schema must not run another history plan or apply.
 - Production is now in all-user deployment mode: Sub2API has
   `POINTS_SYSTEM_ENABLED=true` with an empty preview list, and the points
   service has `POINTS_USER_ACCESS_MODE=all` with an empty preview list. The
@@ -79,7 +83,7 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
   points focus, semantic synchronization status, 8 px panel scale, and reduced
-  motion behavior are deployed from points revision `ca18cf77a86a`.
+  motion behavior are retained in points revision `1d8d50522429`.
   Sub2API remains on `f79803bb73d6` and was not recreated by the points image
   replacement.
 
@@ -128,7 +132,7 @@ DROP TRIGGER IF EXISTS points_credit_audit_request_body_compat ON public.audit_l
 DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 ```
 
-### Final spend-tier candidate (not active in production)
+### Final spend-tier production release
 
 The source revision `1d8d50522429b5d943766ad1d1b4a14b82e31d80` adds raw-spend
 tiers, nullable monetary caps, migration `004_checkin_spend_tiers_and_optional_caps.sql`,
@@ -139,11 +143,16 @@ check-in per natural day. The GHCR image is
 `sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`,
 and the locally verified archive SHA256 is
 `e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`.
-Production remains on `ca18cf77a86a` until the archive is uploaded, loaded,
-migration `004` is verified, and the next-day policy is saved. The three
-monetary caps are intentionally `NULL` (unlimited); the daily count limit,
-idempotency, serializable transaction, overflow guard, and user-1-only check-in
-gate remain mandatory.
+The archive is deployed at
+`/home/api/sub2api-points/releases/sub2api-points-0.1.169-1d8d50522429-linux-amd64.tar`.
+Migration `004` was applied at `2026-08-02 09:19 CST`; the startup reconciliation
+reported `changed_users=0`. Policy version 5 was then saved through the
+administrator API for `2026-08-03`. The pre-change full-database backup is
+`/home/api/backups/points-spend-tiers-20260802-091604` with dump SHA256
+`dae794a05a1d43bd13e2c9baab55969b35d4fb7f08420899d9cddb8ad0634e24`.
+The three monetary caps are intentionally `NULL` (unlimited); the daily count
+limit, idempotency, serializable transaction, overflow guard, and user-1-only
+check-in gate remain mandatory.
 
 ## Runtime Architecture
 
