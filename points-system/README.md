@@ -23,20 +23,21 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
 ## Production Baseline (2026-08-02)
 
-- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-f79803bb73d6`, OCI revision
-  `f79803bb73d659e36627d6f716aab065ff4d56a6`, container prefix
-  `dee0f8efd24d`; the container is healthy with restart count zero. It was
-  switched manually by the operator and remains outside automated replacement.
+- Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999`, OCI revision
+  `1a4a690dd999b669e2ce09522854ea157d7af984`, container prefix
+  `69a710a1ad0c`; the container is healthy with restart count zero and remains
+  outside automated points-service replacement.
 - The points service runs
-  `ghcr.io/hxly520/sub2api-points:0.1.169-1d8d50522429`, OCI revision
-  `1d8d50522429b5d943766ad1d1b4a14b82e31d80`, container prefix
-  `1e5ed38b81da`, and is healthy with restart count zero. Its GHCR digest is
-  `sha256:cc798629371d94898fbd3b049f4f454166b9e79f2893cee1e0a643344bacb2c2`,
+  `ghcr.io/hxly520/sub2api-points:0.1.169-fc7ea1fe59c0`, OCI revision
+  `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`, container prefix
+  `82623a6cc8a0`, and is healthy with restart count zero. Its GHCR digest is
+  `sha256:cf0daf901d5d039d3c9442885fac8f0dedb3766f98804073490c7db89b942943`,
   the transferred archive SHA256 is
-  `e33e80c5b28307120881ccf269ebd7b5cae46c447173cc136182643ef56d960b`,
+  `1263b00c94c8f492d6b66825ad5850961aa466871f6f5a4f23ea7c80c73a8468`,
   and the loaded image ID is
-  `sha256:5d4edb7822499e7c2953f7aa1f4889d88fbd9ac630fce69742d0a4f694e192dd`.
-  This points-only replacement did not recreate or restart Sub2API.
+  `sha256:8232a67d8be787f6ea8693a25a0943cbf1e7d8e467afacce116b044fb53d832c`.
+  This points-only replacement did not recreate or restart Sub2API, PostgreSQL,
+  or Redis.
 - Both services use the same PostgreSQL 17.8 `sub2api` database. The isolated
   `points` schema contains 21 tables and four points migrations. `points_app`
   has an eight-connection limit; the column-restricted, read-only
@@ -51,22 +52,16 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   `192_media_balance_hold_reconciliation_index_notx.sql` and
   `193_points_balance_credit_ledger.sql` are applied; points migrations remain
   separate in `points.points_schema_migrations`.
-- Policy version 4 has been effective since `2026-08-02`. It is enabled at
-  `10.00 points/U`, refreshes at `00:05`, permits one check-in per natural day,
-  and uses `consumer_only` with the `yesterday` basis. Its percentage reward
-  range is `1,000-50,000 PPM` (`0.1%-5%` of the prior natural day's successful
-  balance spend), and its per-grant, per-user daily, and platform daily safety
-  caps are each `100 U`. Historical job
-  `5174eef7-5f0a-4a17-b4f1-f50840940f64` remains the only successful baseline.
-  Policy version 5 was appended through the administrator API on `2026-08-02`
-  and becomes effective on `2026-08-03`. It keeps `10.00 points/U`, `00:05`,
-  `consumer_only/yesterday`, and one daily check-in, but uses raw-spend tiers:
-  `[1,10) U` at `1%-5%`, `[10,50) U` at `2%-5%`, `[50,100) U` at `3%-5%`,
-  and `[100,+inf) U` at `4%-5%`. The minimum prior-day spend is `1 U`; all
-  three monetary caps are `NULL` (unlimited). Until that date, version 4 is
-  still authoritative. Production has 29 point accounts, 339 daily snapshots,
-  333 point-ledger rows, one accepted check-in, and one settled balance grant.
-  This production schema must not run another history plan or apply.
+- Policy version 7 is effective on `2026-08-02`. It is an audited same-day clone
+  of version 5, authorized for the all-user rollout. It keeps `10.00 points/U`,
+  `00:05`, `consumer_only/yesterday`, a `1 U` minimum, and one daily check-in.
+  Raw-spend tiers are `[1,10) U` at `1%-5%`, `[10,50) U` at `2%-5%`,
+  `[50,100) U` at `3%-5%`, and `[100,+inf) U` at `4%-5%`; all three monetary
+  caps are `NULL`. Version 5 remains immutable and takes over on `2026-08-03`.
+  Version 6 has no row because its sequence value was consumed by a rolled-back
+  transaction. Historical job `5174eef7-5f0a-4a17-b4f1-f50840940f64` remains
+  the only successful baseline; this schema must not run another history plan
+  or apply.
 - Production is now in all-user deployment mode: Sub2API has
   `POINTS_SYSTEM_ENABLED=true` with an empty preview list, and the points
   service has `POINTS_USER_ACCESS_MODE=all` with an empty preview list. The
@@ -74,35 +69,40 @@ dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
   every active user may see the menu and open `/points`; when disabled, the
   menu, launch ticket, session, page resources, and user APIs fail closed.
   Preview mode remains available only for an explicitly staged rollout.
-- Check-in has a separate deployment gate. `POINTS_CHECKIN_ACCESS_MODE=preview`
-  with `POINTS_CHECKIN_PREVIEW_IDS=1` keeps the points center available to all
-  users while exposing the balance-affecting check-in feature only to user 1.
-  Non-preview users receive `checkin_enabled=false` and direct check-in POSTs
-  are rejected server-side.
+- Check-in has a separate deployment gate. It is now
+  `POINTS_CHECKIN_ACCESS_MODE=all` with an empty preview list. Every active user
+  receives the check-in feature, but availability remains server-authoritative:
+  the prior-day snapshot, `1 U` minimum, spend tier, and daily limit must pass.
 - The uploaded Sub2API logo integration, deleted-user session invalidation,
   per-request preview enforcement, Sub2API-matched light/dark palette,
   login-email browser identity, compact cards, paginated records, primary
   points focus, semantic synchronization status, 8 px panel scale, and reduced
-  motion behavior are retained in points revision `1d8d50522429`.
-  Sub2API remains on `f79803bb73d6` and was not recreated by the points image
-  replacement.
+  motion behavior are retained in points revision `fc7ea1fe59c0`.
 
 ### Production check-in acceptance (user 1, 2026-08-02)
 
 - The `00:05` scheduler successfully settled business date `2026-08-01` for
   user 1: successful prior-day spend was `86.890694 U` and the resulting prior-
   day points were `868.90`.
-- The configured percentage tier produced a quantized theoretical reward range
-  of `0.08-4.34 U`. Cryptographic sampling selected `35,537 PPM` (`3.5537%`),
-  resulting in an actual `3.08 U` reward.
-- Grant UUID `8e20f4f9-d3ab-4d16-95be-0b186c96da97` reached `settled`. Sub2API
-  contains exactly one matching credit row. Replaying the same idempotency key
-  returned the original settled `3.08 U` result without another credit; a new
-  key for a second same-day check-in returned `409 daily check-in limit reached`.
-- User 2 retained points-center access but received `checkin_enabled=false`, and
-  a direct check-in POST returned `403 checkin_unavailable`. All users other
-  than user 1 still have zero check-ins, check-in attempts, and daily check-in
-  counters for this test.
+- The original version-4 grant `8e20f4f9-d3ab-4d16-95be-0b186c96da97`
+  credited `3.08 U`, then reversal
+  `12c061b4-380c-5119-8aec-26a500ef6590` debited the same amount. The original
+  immutable grant now has status `reversed`.
+- A controlled version-5 retest matched the `[50,100) U` spend tier. Its
+  quantized range was `2.60-4.34 U`; cryptographic sampling selected
+  `35,820 PPM` (`3.582%`) and grant
+  `7d779e12-d5dd-4f09-a944-ff0eac93cf18` settled `3.11 U`. Replaying the same
+  idempotency key returned that grant without another credit, and a new key was
+  rejected with `409 daily check-in limit reached`.
+- The deployed net-display fix returns `3.11 U` for both today's effective
+  reward and the cumulative settled reward. The original `3.08 U` remains in
+  history as `reversed`; the daily count remains consumed and user 1 cannot
+  check in again.
+- After the all-user gate opened, a non-user-1 account above the `1 U` minimum
+  returned `checkin_enabled=true/checkin_available=true`; an account below the
+  minimum returned `checkin_enabled=true/checkin_available=false`.
+  Unauthenticated access returned `401`; an invalid-CSRF POST returned `403`
+  without creating a check-in attempt.
 
 ### Sub2API credit compatibility boundary
 
@@ -116,16 +116,16 @@ substitutes an empty string only when `action='points.balance_credit'` and
 `request_body IS NULL`. It does not relax the column constraint or affect other
 audit actions. The retry settled once and did not duplicate the balance credit.
 
-The permanent source fix is prepared and already loaded on the server as
+The permanent source fix is running in production as
 `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999` (GHCR digest
 `sha256:d9646464040e846999f960e3050646fcfe7cac38695834ba85df21385ae5c3ef`,
 archive SHA256
 `302f996c047c09919e8af53455851f0e18d7fd53d9c06640f8b2e3de7398c477`,
 image ID
 `sha256:07303dd1787d08a3038ba347a3fdaf0f78296f5f7a01aaf67ccce31edcd4ab16`).
-The Compose service still points to `0.1.169-f79803bb73d6`; only the operator may
-perform the manual Sub2API switch. After `1a4a690dd999` is running and its credit
-path is verified, remove the temporary compatibility objects:
+Its credit and reversal audit bodies are non-null, and the temporary
+compatibility objects have already been removed. The following SQL is retained
+only as the executed historical cleanup:
 
 ```sql
 DROP TRIGGER IF EXISTS points_credit_audit_request_body_compat ON public.audit_logs;
@@ -152,7 +152,24 @@ administrator API for `2026-08-03`. The pre-change full-database backup is
 `dae794a05a1d43bd13e2c9baab55969b35d4fb7f08420899d9cddb8ad0634e24`.
 The three monetary caps are intentionally `NULL` (unlimited); the daily count
 limit, idempotency, serializable transaction, overflow guard, and user-1-only
-check-in gate remain mandatory.
+check-in gate were mandatory during preview. The current production gate is
+all-user; the other safety controls remain mandatory.
+
+### Net-reward display and all-user release
+
+Revision `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8` separates presentation from
+fund reservation. `CheckinStatus` includes only grants with a known settlement
+and no completed reversal, while eligibility continues to use the accepted
+daily reservation amount so pending delivery cannot bypass a monetary cap.
+The GHCR digest is
+`sha256:cf0daf901d5d039d3c9442885fac8f0dedb3766f98804073490c7db89b942943`;
+the server archive SHA256 is
+`1263b00c94c8f492d6b66825ad5850961aa466871f6f5a4f23ea7c80c73a8468`;
+the loaded image ID is
+`sha256:8232a67d8be787f6ea8693a25a0943cbf1e7d8e467afacce116b044fb53d832c`.
+The release backup is `/home/api/backups/points-all-checkin-20260802-103531`
+with dump SHA256
+`bb4c1779eec572811aadefcab7d1c736486c9d12f979637d4a757e84873157df`.
 
 ## Runtime Architecture
 
