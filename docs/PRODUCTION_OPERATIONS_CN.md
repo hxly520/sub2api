@@ -45,6 +45,17 @@
 
 上述文件层清理上限约 2.11 GiB；再显式清理废弃 Docker 镜像后总计约 3 GiB。由于当前磁盘仍有约 22 GiB 可用，本次只记录清单，实际删除应作为单独变更执行并在前后复核 `df`、运行容器 ID、健康状态和回滚文件 SHA256。
 
+### 0.2 2026-08-02 残留备份清理执行
+
+维护者随后明确授权只删除上述残留备份和发布归档，不允许清理 Docker 镜像、日志、数据库/Redis/Sub2API 运行数据、Nginx 配置或旧 `images` 目录。执行前后均按精确路径和保留白名单校验，未使用通配符或任何 prune 命令。
+
+- 删除门禁精确命中 37 个旧归档/备份路径，删除前占用 `2,220,195,840` 字节（约 2.07 GiB）。净文件系统占用从 `11,121,172,480` 降至 `8,901,169,152` 字节，可用空间从 `22,875,725,824` 增至 `25,095,729,152` 字节，根盘使用率由 33% 降至 27%；净释放 `2,220,003,328` 字节，差量与操作期间活动日志/数据库写入有关。
+- 当前 Sub2API `1a4a690dd999`、回滚 `f79803bb73d6`、当前积分 `b64a0110ab2c`、回滚 `fc7ea1fe59c0` 四个归档在删除前后均通过已记录 SHA256 校验。
+- 只保留 `/home/api/backups/points-dual-origin-20260802-123509` 与 `/home/api/backups/points-all-checkin-20260802-103531` 两个完整恢复点；两份 dump 在删除前后通过 SHA256，删除前另通过 `pg_restore -l` 目录可读性检查。
+- Docker 仍为 17 个镜像、5 个活动镜像、0 本地 volume、0 build cache；未删除任何 daemon 镜像，923.7 MB 的未使用镜像空间仍保留。
+- Sub2API、积分服务、PostgreSQL、Redis 和 `infinite-canvas` 容器 ID、镜像和启动时间未变化，restart count 均为 0。Sub2API `/health`、积分 `/healthz` 和工作台根路径均返回 200，PostgreSQL `pg_isready`、Redis PING 和 `nginx -t` 通过；Nginx PID 仍为 `1814246`，未 reload。
+- `postgres_data`、`redis_data`、Sub2API `data`、旧 `images`、`image-reference-tests` 和 `ui-reference-20260731` 均确认仍在原路径。空的发布/传入目录继续保留，未扩大删除范围。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
