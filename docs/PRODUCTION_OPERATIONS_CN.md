@@ -16,6 +16,35 @@
 - 当前 `https://api.52token.org/points` 与 `https://52token.org/points` 都是有效父页面。生产以 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org` 保留 Logo 主来源，并以 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org` 增加第二精确父 Origin；CSP 和 ready/theme 消息只使用合并后的有限列表，不允许通配符。只配置其中一个会使另一个父站超时显示“积分中心暂时未就绪”。
 - 用户 1 已在 `390x844` 移动视口从根域完成真实 iframe 验收：无未就绪遮罩、资源和用户 API 全部成功、`clientWidth=scrollWidth=367` 且无控制台 WARN/ERROR。两个父站 `/points` 均为 `200`，积分 CSP 同时精确允许两个 Origin；后续任一父域、Nginx 或前端入口变更都必须重复桌面和移动验收。
 
+### 0.1 2026-08-02 服务器空间只读盘点
+
+`2026-08-02 13:32 CST` 对生产主机执行只读空间、Compose 引用、运行容器、镜像、日志和备份盘点；未删除文件、未执行 Docker prune、未修改数据库或配置，也未重启任何服务。
+
+- 根文件系统为 34 GiB，已用约 11 GiB（33%），可用约 22 GiB，当前不存在容量告警。
+- `/home/api` 共约 4.25 GiB：`sub2api-deploy` 约 2.82 GiB、`sub2api-points` 约 627 MiB、顶层 `backups` 约 588 MiB、顶层 `releases` 约 244 MiB。
+- `sub2api-deploy` 的主要有效数据为 PostgreSQL 约 1.50 GiB、Sub2API `data` 约 98 MiB 和 Redis 数据约 432 KiB；这三处均被运行容器 bind mount，禁止直接删除。当前 Sub2API 主日志约 75 MiB，历史压缩应用日志约 23 MiB。
+- Docker 数据根约 1.44 GiB。共有 17 个镜像、5 个运行镜像、无 dangling 镜像、无本地 volume、build cache 为 0；Docker 报告 923.7 MB 未使用镜像空间。当前运行引用仍为 Sub2API `1a4a690dd999`、积分 `b64a0110ab2c`、`infinite-canvas` `sha-24f7826`、PostgreSQL 17.8 和 Redis 8。
+- Docker `json-file` 日志合计约 18.8 MiB；只有积分容器设置 `10m x 3` 轮转，Sub2API、PostgreSQL、Redis 和工作台仍未设置 Docker 日志上限。宿主 journal 约 409.6 MiB，Nginx 日志约 13.3 MiB且已有轮转。
+
+清理必须按以下边界执行，不能把“占空间”等同于“无用”：
+
+| 分类 | 内容 | 预计释放 | 条件 |
+| --- | --- | ---: | --- |
+| 可直接清理 | 无配置/容器引用的旧 `/home/api/releases` 两个 `e8d73f3e6655` 归档、`sub2api-cachecompat` 的 v0.1.139/v0.1.142 遗留、积分 `incoming/28e760bc8c6d`、`image-reference-tests`、空 `ui-reference-20260731` 和 `.incomplete` 目录 | 约 403 MiB | 删除前再次核对路径和当前引用；这些文件不属于当前或指定回滚版本 |
+| 保留当前及一个回滚版本后可清理 | 旧 Sub2API/积分镜像 tar 约 977 MiB；早期数据库备份与旧运行基底约 778 MiB | 约 1.72 GiB | 至少保留下述四个镜像归档和两个完整恢复点；旧数据库备份应先转存到服务器外并校验 SHA256/目录清单 |
+| Docker 显式清理 | 除当前与下述回滚镜像外的已停止版本镜像 | 最多约 923.7 MB | 按精确 tag/image ID 删除；禁止使用 `docker image prune -a` 或 `docker system prune -a`，它们会同时删除未运行的回滚镜像 |
+| 条件清理 | `/home/api/sub2api-deploy/images` 旧工作台源码约 3 MiB | 约 3 MiB | 活动 Nginx 配置仍保留该 `root` 指令；先备份并移除残留指令、`nginx -t` 和平滑 reload 后再删。真实工作台仍由 15731 `infinite-canvas` 容器提供 |
+| 可选系统清理 | APT 包归档约 250 MiB；journal 超出最终保留上限的历史段；约 23 MiB 压缩应用旧日志 | 取决于保留策略 | 不属于 Sub2API 发布物；先确定审计和故障排查保留周期，不得截断活动日志 |
+
+执行任何发布物或备份清理时必须保留：
+
+1. 当前 Sub2API 归档 `/home/api/sub2api-deploy/releases/sub2api-0.1.169-1a4a690dd999-linux-amd64.tar`，回滚归档 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.169-f79803bb73d6-linux-amd64.tar`。
+2. 当前积分归档 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-b64a0110ab2c-linux-amd64.tar`，回滚归档 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-fc7ea1fe59c0-linux-amd64.tar`。
+3. 最新完整恢复点 `/home/api/backups/points-dual-origin-20260802-123509` 和前一恢复点 `/home/api/backups/points-all-checkin-20260802-103531`。在服务器外备份尚未验证前，不应删除其他数据库 dump。
+4. 运行中的 `postgres_data`、`redis_data`、Sub2API `data`、当前 Compose/env、Nginx 配置和证书。任何情况下都不得手工删除 `/var/lib/docker/overlay2` 或容器日志路径。
+
+上述文件层清理上限约 2.11 GiB；再显式清理废弃 Docker 镜像后总计约 3 GiB。由于当前磁盘仍有约 22 GiB 可用，本次只记录清单，实际删除应作为单独变更执行并在前后复核 `df`、运行容器 ID、健康状态和回滚文件 SHA256。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
