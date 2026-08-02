@@ -18,7 +18,7 @@
 - 当前仓库候选基线：官方 Release `v0.1.169`（release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.169`。本轮只合入该已发布 tag，不合入 tag 之后的官方 `main`。媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护和跨协议终态校验均属于必须保留的二开。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
-- 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-fc7ea1fe59c0` / revision `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`，容器 `82623a6cc8a0...`。两者均 healthy、restart count `0`。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
+- 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
@@ -52,7 +52,8 @@
 | `7c62dd1a8` | 用户 1 签到比例灰度收口 | 锁定仅昨日消费、每日一次、昨日消费原额 `0.1%-5%` 和三层 `100 U` 上限的真实验收口径 |
 | `1a4a690dd` | 积分余额审计兼容修复 | Sub2API 余额 credit/reversal 审计为 `request_body` 写入非空值；当前生产 Sub2API，临时兼容触发器已删除 |
 | `1d8d50522` | 最终昨日消费阶梯签到 | 增加 `spend` 四档、可空金额上限、迁移 004 和完整安全回归；历史积分发布 revision，创建 policy v5 |
-| `fc7ea1fe5` | 冲正净额展示与安全预留分离 | 今日/累计赠送只显示已到账未冲正净额，待发放金额仍占用次数与 cap；当前积分生产 revision |
+| `fc7ea1fe5` | 冲正净额展示与安全预留分离 | 今日/累计赠送只显示已到账未冲正净额，待发放金额仍占用次数与 cap；双 Origin 发布前生产 revision |
+| `b64a0110a` | 双精确 iframe 父 Origin | CSP、Logo 来源和 ready/theme 消息使用有限精确 Origin 列表，禁止通配符；当前积分生产 revision |
 
 完整提交历史和 tag 是正式合并的前置条件。浅克隆、`blob:none` 或 sparse checkout 只可用于阅读，不得用于正式版本合并和发布。
 
@@ -186,7 +187,7 @@ Cloudflare 橙云兼容分两类：OpenAI Images 同步 JSON 可通过 `gateway.
 - Sub2API 与积分服务使用 Base64 编码的版本化 HMAC 密钥。启动票据为 `key_id.payload.signature` 三段格式并绑定 `aud=points-system`；余额请求签名绑定 key ID、方法、路径、时间戳、交易 UUID 和请求体摘要，同一交易只能入账一次。
 - 用户入口：Sub2API `/points`；管理员入口：系统设置内的“积分系统”标签及独立路由 `/admin/settings/points`。这两个入口是内置菜单，不得再把积分域名配置成普通自定义菜单。用户页继续在 Sub2API 右侧内容区加载受票据保护的 iframe，左侧导航、Header、主题状态和上传的 `site_logo` 始终由 Sub2API 提供；父子页通过校验 `source` 与精确 Origin 的消息实时同步明暗主题，积分内页在 `ui_mode=embedded` 下隐藏重复品牌和退出入口，且不得给官方导航附加积分主题类。管理员页不再嵌入设置页底部：管理员经 step-up 点击“打开积分配置”后，以隔离 opener/referrer 的新浏览器标签页打开一次性票据保护的独立策略台，原 Sub2API 页面和状态保持不变；浏览器拦截新窗口时必须显示明确失败状态。管理员入口不依赖用户开关或预览白名单。积分域名根路径不提供工作台，直接访问 `/app/` 或 `/admin/` 没有积分会话时必须拒绝。
 - 历史预览阶段采用双服务白名单：Sub2API `points_system.enabled=false` 且 `preview_user_ids: [1]`，积分服务 `POINTS_USER_ACCESS_MODE=preview` 且 `POINTS_USER_PREVIEW_IDS=1` 时，仅用户 ID 1 显示积分菜单、通过 `/points` 路由、获得 user ticket 并继续使用积分 user session；其余用户即使依赖陈旧公共设置、手工构造路由/launch 请求或持有收窄前旧 cookie，也必须被拒绝并清除积分 cookie。当前生产已切换为两端全体模式，用户可见性只由当前生效策略的 `enabled` 控制。两份完整白名单不得下发浏览器，认证接口只返回当前用户专属的 `points_system_access` 布尔值。
-- 积分独立页和管理页的品牌位必须加载 `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`，不得再显示“积”或“管”等文字占位。服务端只把精确父站 Origin 加入 CSP `img-src`；父站 Logo 请求失败时前端仅回退到积分镜像内、受积分会话保护的 `/assets/logo.svg`。该图片来源规则不改变 iframe Origin、启动票据、session 或角色权限。
+- 积分独立页和管理页的品牌位必须加载主 `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`，不得再显示“积”或“管”等文字占位。服务端只把主值与 `POINTS_EMBED_PARENT_ORIGINS` 合并后的有限精确父站列表加入 CSP `img-src`；父站 Logo 请求失败时前端仅回退到积分镜像内、受积分会话保护的 `/assets/logo.svg`。该图片来源规则不改变 iframe Origin、启动票据、session 或角色权限。
 - 普通用户开放必须同时满足 Sub2API 部署授权、积分服务门禁和当前策略完整启用。当前积分中心与签到门禁均为 `all` 且两份 preview ID 为空；关闭策略 `enabled` 后，普通用户入口和 API 仍自动隐藏/拒绝。签到是否可用继续由昨日成功余额消费、最低 `1 U`、快照、阶梯和每日一次共同判断，不能因门禁全体开放而跳过任何资金规则。
 - 当前 policy v7 是经明确授权从 v5 原子复制的 `2026-08-02` 当日策略，四个互斥半开区间为 `[1,10) U -> 1%-5%`、`[10,50) U -> 2%-5%`、`[50,100) U -> 3%-5%`、`[100,+∞) U -> 4%-5%`，三个金额 cap 为 `NULL`。原 v5 保持不可变并于 `2026-08-03` 接管；后续管理员修改仍一律次日生效。
 - 用户 1 原 `3.08 U` grant 已真实冲正并保留为 `reversed`；v5 重测按昨日消费 `86.890694 U` 命中 `[50,100) U` 档，抽中 `35820 PPM`，新 grant 实发 `3.11 U` 且为 `settled`。`fc7ea1fe5` 上线后真实 `/me` 的今日赠送和累计赠送均为净 `3.11 U`；每日计数仍为 2，冲正不恢复签到次数。冲正不得删除或改写原签到行，净额以已到账且未冲正 grant 计算。
@@ -246,7 +247,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 图片流超时、keepalive、图片并发和媒体任务设置。
 - `gateway.video_proxy` 模式、公开地址、令牌时效和加密密钥。
 - URL allowlist、CORS、请求体大小和错误切换边界。
-- `points_system` 启用状态、仅服务端保存的 `preview_user_ids`、公开启动 URL、启动/余额 HMAC key ID 与 Base64 secret、票据 TTL 和时钟偏差；积分服务还必须配置一个无路径、无通配符的 `POINTS_EMBED_PARENT_ORIGIN`，只允许实际 Sub2API 浏览器 Origin 通过 CSP `frame-ancestors` 嵌入用户页。真实密钥和完整预览白名单只在部署环境保存。
+- `points_system` 启用状态、仅服务端保存的 `preview_user_ids`、公开启动 URL、启动/余额 HMAC key ID 与 Base64 secret、票据 TTL 和时钟偏差；积分服务必须通过 `POINTS_EMBED_PARENT_ORIGIN` 与可选 `POINTS_EMBED_PARENT_ORIGINS` 配置全部实际 Sub2API 浏览器父 Origin。每项都必须从对应 `/points` 地址栏提取 `scheme://host[:port]`，且无路径、尾斜杠、凭证、查询、片段和通配符；当前生产为主值 `https://api.52token.org` 加附加值 `https://52token.org`。同一有限列表同时控制 CSP `frame-ancestors`、`img-src` 和 ready/theme `postMessage`，任一实际父站遗漏时，即使 access、launch 和 app HTTP 响应均正常，该父页仍会超时显示未就绪。真实密钥和完整预览白名单只在部署环境保存。
 - 积分服务的同库 `points` schema、最大 8 条写连接、Sub2API `usage_logs` 最多 4 条只读连接、可信 Nginx CIDR、公开 origin、会话密钥和服务间 HMAC keyring；消费数据账号只授予所需列的 `SELECT` 权限。
 
 仓库只提交字段说明和占位值。真实密钥、账号地址、数据库连接、支付私钥、Worker Secret、SSH/GitHub 凭据不得提交。
@@ -271,8 +272,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 文本只有明确未受理的 `401/402/403/404/429` 可执行既有有界切号；5xx、超时、断流和一般失败终态不自动重放。精确容量拒绝文案是唯一额外例外，按 3.2 节的原文匹配、未输出正文、最多两次及 `100ms/200ms` 退避执行。图片和视频创建继续严格一次提交。
 - Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 都不得把 HTTP 200、EOF 或 framing 哨兵当成成功终态；缺正式终态时按 3.2 节区分“未输出正文进入安全故障切换判断”“已输出正文发送协议显式错误”和“客户端已断开继续 drain usage、禁止重放”。升级合并必须保留三条路径及其测试。
 - Composite 公开模型、路由模型和上游实际模型必须分离：用户计费与任务查询使用公开模型，账号选择使用路由模型，转发使用创建时保存的上游模型；图片异步和视频所有查询/内容路径都必须遵守这条边界。
-- 当前生产 Sub2API 为 `0.1.169-1a4a690dd999`，积分服务为 `0.1.169-fc7ea1fe59c0`；自动化仍不得替换或重启 Sub2API。积分 ACL 当前为 `id/email/username/deleted_at` 双读兼容态，历史作业仍为唯一成功基线；积分中心和签到均全体开放，policy v7 今日生效、v5 明日接管。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md) 第 0、11.14、11.15 节。
-- 当前生产积分 registry digest 为 `sha256:cf0daf901d5d039d3c9442885fac8f0dedb3766f98804073490c7db89b942943`，loaded image ID 为 `sha256:8232a67d8be787f6ea8693a25a0943cbf1e7d8e467afacce116b044fb53d832c`，服务器 archive SHA256 为 `1263b00c94c8f492d6b66825ad5850961aa466871f6f5a4f23ea7c80c73a8468`，路径为 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-fc7ea1fe59c0-linux-amd64.tar`。Sub2API `1a4a690dd999` 的既有 GHCR digest 为 `sha256:d9646464040e846999f960e3050646fcfe7cac38695834ba85df21385ae5c3ef`；image ID、archive SHA256、registry digest 与运行容器 revision 必须继续分别核对。
+- 当前生产 Sub2API 为 `0.1.169-1a4a690dd999`，积分服务为 `0.1.169-b64a0110ab2c`；自动化仍不得替换或重启 Sub2API。积分 ACL 当前为 `id/email/username/deleted_at` 双读兼容态，历史作业仍为唯一成功基线；积分中心和签到均全体开放，policy v7 今日生效、v5 明日接管。当前事实见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md) 第 0、11.14、11.15、11.16 节。
+- 当前生产积分 registry digest 为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`，loaded image ID 为 `sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`，服务器 archive SHA256 为 `592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`，路径为 `/home/api/sub2api-points/releases/sub2api-points-0.1.169-b64a0110ab2c-linux-amd64.tar`。Sub2API `1a4a690dd999` 的既有 GHCR digest 为 `sha256:d9646464040e846999f960e3050646fcfe7cac38695834ba85df21385ae5c3ef`；image ID、archive SHA256、registry digest 与运行容器 revision 必须继续分别核对。
 - 后端全量测试、vet、编译，积分服务单元/vet/integration-tag 编译，前端 lint/typecheck/全量测试/生产构建和 Compose 解析已通过。官方纳秒 TTL 测试已在 `d83ea1bb` 改为显式过期快照，Windows 连续 20 次验证通过；真实 PostgreSQL 事务和并发用例必须由 GitHub PostgreSQL 16 CI 最终确认。
 
 ### 5.1 升级前盘点

@@ -4,21 +4,22 @@
 
 ## 0. 2026-08-02 最新生产状态（优先于后文历史快照）
 
-- 当前积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-fc7ea1fe59c0`，OCI revision `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`，容器 `82623a6cc8a0...`，healthy、restart count `0`。registry digest 为 `sha256:cf0daf901d5d039d3c9442885fac8f0dedb3766f98804073490c7db89b942943`，image ID 为 `sha256:8232a67d8be787f6ea8693a25a0943cbf1e7d8e467afacce116b044fb53d832c`，传输 archive SHA256 为 `1263b00c94c8f492d6b66825ad5850961aa466871f6f5a4f23ea7c80c73a8468`，镜像创建时间为 `2026-08-02T02:26:18Z`。后文旧积分镜像均为历史证据，不代表当前运行态。
+- 当前积分服务为 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，OCI revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest 为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`，image ID 为 `sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`，传输 archive SHA256 为 `592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`，镜像创建时间为 `2026-08-02T04:29:14Z`。该版本在 `fc7ea1fe59c0` 的冲正净额修复之上增加双精确父 Origin；后文旧积分镜像和容器均为历史证据，不代表当前运行态。
 - 当前生产 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999`，OCI revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`，healthy、restart count `0`。points credit/reversal 审计修复已上线，临时兼容触发器与函数均已删除，`audit_logs.request_body` 继续保持 `NOT NULL`。
 - 积分中心和签到均已全体开放：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。积分中心仍由当前策略的 `enabled` 控制；签到还必须满足昨日消费、快照、阶梯和每日次数等服务端规则，开放门禁不等于无条件发放。
 - `2026-08-02` 当前生效策略为 policy v7，它是经用户授权从 v5 原子复制的当日启用版本：最低昨日消费 `1 U`、每日 1 次，严格按昨日原始成功余额消费使用 `[1,10) U -> 1%-5%`、`[10,50) U -> 2%-5%`、`[50,100) U -> 3%-5%`、`[100,+∞) U -> 4%-5%` 四档，三个金额上限均为 `NULL`。原 policy v5 保持不可变并于 `2026-08-03` 自然接管；v6 仅为首次回滚事务消耗的序列号，不存在策略行。
 - 用户 1 原 `3.08 U` grant `8e20f4f9-d3ab-4d16-95be-0b186c96da97` 已真实冲正为 `reversed`，reversal `12c061b4-380c-5119-8aec-26a500ef6590` 实际扣回 `-3.08 U`。v5 真实重测命中 `[50,100) U` 档，抽中 `35820 PPM`，新 grant `7d779e12-d5dd-4f09-a944-ff0eac93cf18` 实发 `3.11 U` 且为 `settled`；同幂等键重放不重复入账，新键再次签到返回 `409`。
 - `fc7ea1fe59c0` 修复“今日签到赠送”展示口径：只累计已到账且未冲正金额，但每日次数及安全 cap 仍按已接受签到的预留金额计算。用户 1 的真实 `/me` 现返回今日赠送与累计赠送均为 `3.11 U`、签到计数 `2` 且不可再次签到；旧 `3.08 U` 行继续以“已冲正”保留，不删除不可变审计记录。
 - 全体开放验收确认：昨日消费达标的非用户 1 返回 `checkin_enabled=true/checkin_available=true`，低于 `1 U` 的用户返回 `checkin_enabled=true/checkin_available=false`；未认证请求为 `401`，错误 CSRF 为 `403` 且没有创建签到尝试。验收结束时 nonterminal/failed grant 为 `0`，Sub2API、PostgreSQL、Redis 未重启。
-- 当前发布前备份位于 `/home/api/backups/points-all-checkin-20260802-103531`。全库 dump 为 `103,431,901` 字节，SHA256 `bb4c1779eec572811aadefcab7d1c736486c9d12f979637d4a757e84873157df`，catalog 共 `1,284` 行；同目录保存 Compose、env、容器 inspect、资金基线和逐文件 SHA256。积分镜像回滚点为 `/home/api/sub2api-points/backups/compose.pre-fc7ea1fe59c0-20260802-103856.yml`，签到门禁回滚点为 `/home/api/sub2api-points/backups/points.env.pre-all-checkin-20260802-104648`。
+- 当前发布前备份位于 `/home/api/backups/points-dual-origin-20260802-123509`。全库 dump 为 `104,197,299` 字节，SHA256 `6b0263241fc0d2f7596b0c98a7d1f7966de40d7c928523f5589dd313099e1e18`，catalog 共 `1,294` 行；同目录保存原 Compose/env、四容器 inspect、资金基线和最终验收，目录为 `0700`、文件为 `0600 root:root`。前一单 Origin 恢复点仍保存在 `/home/api/sub2api-points/backups/embed-parent-origin-api-20260802-113358+0800`，只作为故障演进证据。
+- 当前积分 iframe 同时允许 `https://api.52token.org` 与 `https://52token.org` 两个精确父 Origin。运行配置保留 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org` 作为 Logo 主来源，并以 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org` 增加第二父站；不使用通配符。
 
 ## 1. 版本边界
 
 | 对象 | 当前生产 | 当前源码/下一候选 | 允许的动作 |
 | --- | --- | --- | --- |
 | Sub2API | `0.1.169-1a4a690dd999`，revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`，healthy、restart count `0` | points credit/reversal 审计修复已验收，临时兼容对象已删除 | 后续仍只由维护者手工切换；积分发布不得替换或重启 |
-| 积分服务 | `0.1.169-fc7ea1fe59c0`，revision `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`，容器 `82623a6cc8a0...`，healthy、restart count `0` | 冲正净额展示已修复；policy v7 今日生效、v5 明日接管；积分中心与签到均全体开放 | 不得重跑历史基线；继续按不可变策略、备份和积分独立镜像边界更新 |
+| 积分服务 | `0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0` | 冲正净额展示已修复；policy v7 今日生效、v5 明日接管；积分中心与签到均全体开放；iframe 精确允许 `api.52token.org` 与 `52token.org` | 不得重跑历史基线；继续按不可变策略、备份和积分独立镜像边界更新 |
 | exact-root 首页 | 宿主文件与仓库 `deploy/public-landing/index.html` 已同步，SHA256 `09cd27dda14f1810c58fc0e774cc36cfb6b17cfaa209bdc72db1db6748df88a0` | 冷灰/电蓝、左文右图的数据化首页已上线 | 后续仍按备份、原子替换和三方 SHA256 对账发布；不 reload Nginx |
 
 仓库候选版本为 `backend/cmd/server/VERSION=0.1.169`，本轮合并目标为官方 Release `v0.1.169` commit `26d894ef4f50645a4bf1030e378ac892f17d0223`；合并提交的第二父节点必须精确指向该 release。本轮重要私有节点：
@@ -38,7 +39,8 @@
 - `1d8d50522429b5d943766ad1d1b4a14b82e31d80`：增加昨日原始消费四阶梯、可空金额上限和迁移 004；历史阶梯发布 revision，policy v5 由此版本创建。
 - `7c62dd1a8b4449b57eb5a929002906d72b3eabf1`：补齐 `100 U` 昨日消费对应 `0.10-5.00 U` 的百分比签到精确回归边界。
 - `1a4a690dd999b669e2ce09522854ea157d7af984`：修复 Sub2API points credit 审计不得写入 `request_body=NULL`；当前生产 Sub2API revision，真实 credit/reversal 已验收。
-- `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`：冲正后的今日赠送仅显示净已结算金额，同时保留 pending 奖励的安全 cap 预留；当前积分生产 revision。
+- `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`：冲正后的今日赠送仅显示净已结算金额，同时保留 pending 奖励的安全 cap 预留；双 Origin 发布前的积分生产 revision。
+- `b64a0110ab2cb0fcf247b94be8f743ac770e8475`：新增多个精确 iframe 父 Origin 的有限允许列表、CSP 和 ready/theme 消息校验；当前积分生产 revision。
 - `f79803bb73d6` 的两个镜像已由受控本机构建、推送 GHCR、上传并加载服务器；积分先独立切换，Sub2API 随后已由维护者在 `2026-07-31 23:47 CST` 手工切换。registry digest、image ID 与 archive SHA256 分别记录在第 11.7 节，不得互相替代。
 - `2026-08-01 22:34 CST` 仅更新积分服务：本机构建 revision `bee059a1cec5d0eb1a6d022d766670489dcf484d`，归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器完成 SHA256 对账后 `docker load`，仅替换 `points-system` 容器。Sub2API 仍为原 `0.1.169-f79803bb73d6` 镜像；前一候选 `99fbbb5c4c8a` 仅作为同次配置切换的回滚点。
 - 同一变更将 `/home/api/sub2api-points/bridge-secrets.env` 设为 `POINTS_SYSTEM_ENABLED=true`、清空 `POINTS_SYSTEM_PREVIEW_USER_IDS`，将 `points.env` 设为 `POINTS_USER_ACCESS_MODE=all`、清空 `POINTS_USER_PREVIEW_IDS`；原文件备份位于 `/home/api/sub2api-deploy/backups/points-all-users-20260801-221005`，最终 Compose 回滚点为 `/home/api/sub2api-points/backups/compose.pre-bee059a1-20260801-223426.yml`。两文件继续保持 `0600 root:root`。
@@ -73,7 +75,7 @@
 - 积分服务不提供手工余额赠送；直接调余额继续使用 Sub2API 原有管理能力。积分服务不提供手工快照刷新；快照是自动调度生成的内部幂等结算记录。发放任务只列出 `checkin` 类型，可对失败任务审计重试，对已结算任务按安全状态审计冲正。
 - 用户和管理员页面使用独立 HTML/脚本并执行双向精确角色校验。普通用户不得下载管理员脚本、打开管理员页面或调用 `/api/v1/admin/*`；管理员也不得调用用户账户、积分、签到或个人发放 API。
 - `empty`、`needs_review`、`disabled` 在界面中分别显示为“无消费”“待复核”“未启用”，不得直接向用户展示内部英文状态；`needs_review` 使用告警样式，不能与普通中性状态混淆。
-- 两个积分工作区的品牌图均由服务端注入精确父站 `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`，只把该父站 Origin 加入 CSP `img-src`。加载失败时由页面一次性回退到积分镜像内、受积分会话保护的 `/assets/logo.svg`；不得再使用“积”或“管”文字占位，也不得为 Logo 放宽 iframe、ticket、session 或角色边界。
+- 两个积分工作区的品牌图均由服务端注入主父站 `POINTS_EMBED_PARENT_ORIGIN/api/v1/settings/logo`；CSP `img-src` 和 `frame-ancestors` 只加入单值与 `POINTS_EMBED_PARENT_ORIGINS` 合并后的有限精确 Origin 列表。加载失败时由页面一次性回退到积分镜像内、受积分会话保护的 `/assets/logo.svg`；不得再使用“积”或“管”文字占位，也不得为 Logo 放宽 iframe、ticket、session 或角色边界。
 
 ## 5. 未登录首页与 Logo
 
@@ -326,3 +328,14 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 经用户明确授权，服务在 SERIALIZABLE 事务和历史作业 advisory lock 下从 v5 原子复制 policy v7，并写入唯一审计 `request_id=rollout-20260802-all-checkin-v5`。v7 于 `2026-08-02` 当日生效，四档、最低消费、每日一次和三个 `NULL` cap 与 v5 完全一致；原 v5 未修改并于 `2026-08-03` 接管。首次尝试在事务内回滚但消耗了序列号，因此没有 policy v6 行。
 - 签到门禁已改为 `POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。达标非用户 1 的真实资料为可签到，低于 `1 U` 的用户不可签到；未认证请求为 `401`，错误 CSRF 为 `403` 且没有新增签到尝试。最终 nonterminal/failed grant 为 0，用户 1 净赠送仍为 `3.11 U`。
 - 发布前恢复点为 `/home/api/backups/points-all-checkin-20260802-103531`，dump `103,431,901` 字节、SHA256 `bb4c1779eec572811aadefcab7d1c736486c9d12f979637d4a757e84873157df`、catalog `1,284` 行。Compose 回滚文件为 `/home/api/sub2api-points/backups/compose.pre-fc7ea1fe59c0-20260802-103856.yml`，门禁 env 回滚文件为 `/home/api/sub2api-points/backups/points.env.pre-all-checkin-20260802-104648`。
+
+### 11.16 积分 iframe 双父站 Origin 修复
+
+- 用户报告积分中心显示“积分中心暂时未就绪”时，全体门禁实际已正常：Sub2API points 开关已开启，Sub2API 预览名单为空，积分服务 `POINTS_USER_ACCESS_MODE=all` 且预览名单为空；签名 user-access 返回 `200/allowed=true`，因此故障不是用户白名单。
+- `https://api.52token.org/points` 与 `https://52token.org/points` 都是有效父页面，但旧积分服务只能配置一个 `POINTS_EMBED_PARENT_ORIGIN`。只允许根域会阻断 API 域，只允许 API 域又会阻断根域；浏览器在 CSP `frame-ancestors` 阶段终止 iframe，子页 ready/theme `postMessage` 目标也不匹配，父页最终等待 20 秒后显示未就绪。`11:33 CST` 的单值 API 域修正保存在 `/home/api/sub2api-points/backups/embed-parent-origin-api-20260802-113358+0800`，它只是中间态。
+- 提交 `b64a0110ab2cb0fcf247b94be8f743ac770e8475` 新增 `POINTS_EMBED_PARENT_ORIGINS`：与旧单值合并、去重且最多 16 个，每项必须是无路径、凭证、查询、片段和通配符的精确 HTTP(S) Origin；任一项非法则 CSP 整体 fail-close 为 `frame-ancestors 'none'`。HTML 注入安全转义的 JSON 列表，ready 只逐一发送到允许 Origin，theme 仍要求消息来自真实 `window.parent` 且精确命中列表，禁止 `*`。
+- 本机全量 `go test ./... -count=1`、`go vet ./...`、两个 Go 二进制构建和 `node --check common.js` 通过。本机构建并推送 `0.1.169-b64a0110ab2c` 与 `sha-b64a0110ab2c`，两标签 registry digest 均为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`；服务器 archive 为 `82,869,760` 字节、SHA256 `592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`，loaded image ID 为 `sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`。服务器未编译或构建。
+- 切换前恢复点 `/home/api/backups/points-dual-origin-20260802-123509` 包含全库 custom dump、catalog、原 Compose/env、四容器 inspect 和前后验收。dump 为 `104,197,299` 字节、SHA256 `6b0263241fc0d2f7596b0c98a7d1f7966de40d7c928523f5589dd313099e1e18`、catalog `1,294` 行；所有预置 SHA256 复核通过，最终验收文件 SHA256 为 `4fe3c3a21570795cc5aba07cb51452d384afb3f24ddcc93f04e3aef00e4409e7`。
+- 生产保留 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org`，新增 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org`。Compose 解析通过后只 force-recreate `points-system`；新积分容器 `85b668577d27...` healthy、restart count `0`。Sub2API `69a710a1ad0c...`、PostgreSQL `e31c7e773771...`、Redis `2a25f3796ce7...` 的容器 ID 和启动时间未变；Nginx PID `1814246`、启动时间和 restart count 未变。
+- 新 CSP 同时精确包含 `frame-ancestors https://api.52token.org https://52token.org` 和同一 `img-src` 列表，没有冲突的 `X-Frame-Options`。本地 health 为 `200`，公网根和 health 为 `404`，无会话 app 为 `401`，两个父站 `/points` 均为 `200`。用户 1 在 `390x844` 移动视口从根域真实进入嵌入页，iframe ready 后无加载/错误遮罩，积分、曲线、账本和赠送 API 均为 `200`；iframe `clientWidth=367`、`scrollWidth=367`，无横向溢出，控制台无 WARN/ERROR。
+- 切换前后均为 30 个账户、339 个快照、333 条账本、5 条签到和 5 条赠送；nonterminal/failed grant 为 0，当前 policy 仍为 v7。启动对账 `source_users=11`、`source_rows=14319`、`changed_users=0`，消费和积分差量为 0，容器 WARN/ERROR 为 0。
