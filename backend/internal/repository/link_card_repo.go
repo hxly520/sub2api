@@ -260,7 +260,7 @@ func (r *linkCardRepository) CreateCards(ctx context.Context, cmd service.Create
 				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,
 				reason,metadata)
 			VALUES($1,$2,$3,'issue',$4,-($4::numeric),0,$4,0,0,$3,'initial prepaid issue',
-				jsonb_build_object('group_id',$5,'rate_multiplier',$6,'batch_quantity',$7)) RETURNING id
+				jsonb_build_object('group_id',$5::bigint,'rate_multiplier',$6::numeric,'batch_quantity',$7::integer)) RETURNING id
 		`, opID, id, cmd.CreatorUserID, cmd.AmountPerCard.StringFixed(8), group.GroupID, group.RateMultiplier, cmd.Quantity).Scan(&ledgerID)
 		if err != nil {
 			return nil, err
