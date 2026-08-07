@@ -41,6 +41,27 @@ func TestUsageBillingRepositoryApply_ConcurrentLinkCardSettlementsChargeFullDebt
 		SetQuotaUsed(0).
 		Save(ctx)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		cleanupTx, cleanupErr := integrationDB.BeginTx(cleanupCtx, nil)
+		require.NoError(t, cleanupErr)
+		defer func() { _ = cleanupTx.Rollback() }()
+
+		// Only the ephemeral integration database may bypass the append-only ledger trigger for fixture cleanup.
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "ALTER TABLE link_card_ledger DISABLE TRIGGER trg_link_card_ledger_immutable")
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "DELETE FROM link_card_ledger WHERE api_key_id=$1", key.ID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "DELETE FROM usage_billing_dedup WHERE api_key_id=$1", key.ID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "DELETE FROM api_keys WHERE id=$1", key.ID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "DELETE FROM users WHERE id=$1", user.ID)
+		require.NoError(t, cleanupErr)
+		_, cleanupErr = cleanupTx.ExecContext(cleanupCtx, "ALTER TABLE link_card_ledger ENABLE TRIGGER trg_link_card_ledger_immutable")
+		require.NoError(t, cleanupErr)
+		require.NoError(t, cleanupTx.Commit())
+	})
 
 	commands := []*service.UsageBillingCommand{
 		{RequestID: "link-concurrent-" + uuid.NewString(), APIKeyID: key.ID, UserID: user.ID, PrepaidLinkCost: 0.75},
