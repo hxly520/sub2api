@@ -559,6 +559,23 @@ func TestBillingEligibilityUsesLinkReserveInsteadOfCreatorBalance(t *testing.T) 
 		nil,
 		"",
 	), ErrLinkCardPrepaidExhausted)
+
+	// Link cards never use the standard-key convention where quota=0 means
+	// unlimited. An active zero-quota row must fail closed before forwarding.
+	loader.state = &LinkCardBillingState{
+		Status:    StatusAPIKeyActive,
+		LinkState: LinkCardStateActive,
+		Quota:     0,
+		QuotaUsed: 0,
+	}
+	require.ErrorIs(t, svc.CheckBillingEligibility(
+		context.Background(),
+		&User{ID: 1, Balance: 0},
+		active,
+		nil,
+		nil,
+		"",
+	), ErrLinkCardPrepaidExhausted)
 }
 
 func TestLinkCardEligibilityFailsClosedWithoutAuthoritativeStateLoader(t *testing.T) {

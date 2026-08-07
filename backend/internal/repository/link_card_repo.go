@@ -480,6 +480,10 @@ func (r *linkCardRepository) SetState(ctx context.Context, cmd service.LinkCardM
 			if card.ActivatedAt == nil {
 				return nil, service.ErrLinkCardOperationNotAllowed
 			}
+			available := card.TotalDepositAmount.Sub(card.UsedActualAmount()).Sub(card.ReservedActualAmount())
+			if !available.IsPositive() {
+				return nil, service.ErrLinkCardPrepaidExhausted
+			}
 			apiStatus = service.StatusActive
 		case service.LinkCardStateFrozen:
 		case service.LinkCardStateRevoked:

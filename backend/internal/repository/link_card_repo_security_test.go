@@ -294,6 +294,39 @@ func TestLinkCardRechargeKeepsDebtCardDepletedUntilCovered(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestLinkCardUnfreezeRejectsCardWithoutAvailableQuota(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT ak\.id,ak\.user_id.*FOR UPDATE OF ak`).
+		WithArgs(service.APIKeyTypeLink, int64(93)).
+		WillReturnRows(linkCardSecurityRows().AddRow(
+			int64(93), int64(1), "owner@example.test", "sk-card-frozen-debt",
+			int64(8), "group-8", service.PlatformOpenAI, 0.08,
+			service.LinkCardStateFrozen, "10.00000000", "10.00000000",
+			"0.00000000", "10.50000000", "0.00000000", 5, 0, now, nil, "manual review", now, now, int64(1),
+		))
+	mock.ExpectQuery(`(?s)INSERT INTO link_card_operations.*ON CONFLICT.*RETURNING id`).
+		WithArgs("unfreeze", int64(1), int64(1), int64(93), "unfreeze-idem", "unfreeze-fingerprint").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(3201)))
+	mock.ExpectRollback()
+
+	repo := NewLinkCardRepository(nil, db)
+	_, err = repo.SetState(context.Background(), service.LinkCardMutationCommand{
+		APIKeyID:           93,
+		ActorUserID:        1,
+		Admin:              true,
+		Scope:              "unfreeze",
+		IdempotencyKeyHash: "unfreeze-idem",
+		RequestFingerprint: "unfreeze-fingerprint",
+	}, service.LinkCardStateActive)
+	require.ErrorIs(t, err, service.ErrLinkCardPrepaidExhausted)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func linkCardSecurityRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
 		"id", "user_id", "email", "key", "group_id", "group_name", "platform",

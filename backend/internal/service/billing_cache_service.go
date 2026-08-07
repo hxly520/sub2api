@@ -821,7 +821,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 // asynchronous media or batch task owns the reserved amount.
 func linkCardQuotaUnavailable(quota, used, reserved float64) bool {
 	if quota <= 0 {
-		return false
+		return true
 	}
 	return used+reserved >= quota-0.00000001
 }
