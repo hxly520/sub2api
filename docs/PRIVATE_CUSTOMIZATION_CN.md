@@ -207,7 +207,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-07` 该功能仍是尚未完成完整验证、构建或部署的开发候选，不得写成生产已启用能力。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-07`，代码及默认关闭的开发候选镜像已经构建，候选尚未上传服务器、切换容器、执行迁移或完成真实资金验收，不得写成生产已启用能力。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key，激活后才显示 1x 额度、使用记录和接入教程。
 - 默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`。非名单用户必须同时被菜单、前端路由和全部用户/公共 API 拒绝；管理员控制台始终受管理员认证保护，不依赖普通用户开关。
