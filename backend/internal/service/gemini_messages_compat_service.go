@@ -2863,13 +2863,14 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 					payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 					// [DONE] is only a framing sentinel; finishReason is Gemini's
 					// formal terminal signal.
-					if payload == "" {
+					switch payload {
+					case "":
 						writeDownstream("keepalive_write", line)
-					} else if payload == "[DONE]" {
+					case "[DONE]":
 						if finishReason != "" {
 							writeDownstream("done_write", line)
 						}
-					} else {
+					default:
 						var rawToWrite string
 						rawToWrite = payload
 

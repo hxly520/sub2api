@@ -245,7 +245,7 @@ func (s *PointsBridgeService) fetchUserAccess(ctx context.Context, userID int64)
 	if err != nil {
 		return false, ErrPointsSystemUnavailable
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, pointsAccessBodyMax+1))
 	if err != nil || len(body) > pointsAccessBodyMax || response.StatusCode != http.StatusOK {
 		return false, ErrPointsSystemUnavailable

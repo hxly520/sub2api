@@ -192,15 +192,6 @@ func (c *LinkCard) SetReservedAmount(reserved decimal.Decimal) {
 	c.internalReserved = reserved
 }
 
-// These fields are deliberately kept at the end so copies preserve them.
-// They are not serialized.
-func linkCardFinancialState(c *LinkCard) (decimal.Decimal, decimal.Decimal) {
-	if c == nil {
-		return decimal.Zero, decimal.Zero
-	}
-	return c.internalActualUsed, c.internalTotalRefunded
-}
-
 type LinkCardListFilters struct {
 	Search        string
 	Status        string

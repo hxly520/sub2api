@@ -310,14 +310,10 @@ func (r *usageBillingRepository) captureMediaBalanceHold(ctx context.Context, tx
 			}
 			return 0, err
 		}
-		result, err := r.captureLinkCardHoldTx(ctx, tx, cmd.MediaBalanceHoldRequestID, cmd.APIKeyID, cmd.UserID,
+		_, err := r.captureLinkCardHoldTx(ctx, tx, cmd.MediaBalanceHoldRequestID, cmd.APIKeyID, cmd.UserID,
 			"", storedAmount, actual)
 		if err != nil {
 			return 0, err
-		}
-		if result != nil && result.LinkCardQuotaExhausted {
-			// UsageBillingApplyResult has no separate hold-state field; the
-			// authoritative cache/middleware check reads the updated card row.
 		}
 		return 0, nil
 	}

@@ -137,8 +137,8 @@ func (g *relayCompletionGate) close() {
 	if g == nil {
 		return
 	}
-	g.closed.Store(true)
 	g.callbackMu.Lock()
+	g.closed.Store(true)
 	g.callbackMu.Unlock()
 }
 

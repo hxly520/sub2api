@@ -309,7 +309,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	clientToolMapping apicompat.ResponsesClientToolMapping,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(nil, c), resp.Body, s.cfg)
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(context.Background(), c), resp.Body, s.cfg)
 	defer drainGuard.Stop()
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -456,7 +456,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	clientToolMapping apicompat.ResponsesClientToolMapping,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(nil, c), resp.Body, s.cfg)
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(context.Background(), c), resp.Body, s.cfg)
 	defer drainGuard.Stop()
 
 	if s.responseHeaderFilter != nil {

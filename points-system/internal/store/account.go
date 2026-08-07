@@ -33,7 +33,7 @@ func (s *Store) LedgerPage(ctx context.Context, userID int64, limit int, beforeI
 	query := `SELECT ledger.id,ledger.user_id,ledger.kind,
 		ledger.delta_points_hundredths,ledger.total_after_hundredths,ledger.source,
 		ledger.external_event_id,ledger.policy_version,ledger.business_date,
-		ledger.reference_id,ledger.metadata,ledger.created_at,
+		COALESCE(ledger.reference_id,''),ledger.metadata,ledger.created_at,
 		COALESCE(schedule_policy.refresh_minute,ledger_policy.refresh_minute)
 		FROM points_ledger ledger
 		LEFT JOIN points_policy_versions ledger_policy

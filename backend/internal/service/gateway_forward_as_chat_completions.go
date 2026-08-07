@@ -227,7 +227,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	startTime time.Time,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(nil, c), resp.Body, s.cfg)
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(context.Background(), c), resp.Body, s.cfg)
 	defer drainGuard.Stop()
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -387,7 +387,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	includeUsage bool,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(nil, c), resp.Body, s.cfg)
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(context.Background(), c), resp.Body, s.cfg)
 	defer drainGuard.Stop()
 
 	// Use Anthropic→Responses state machine, then convert Responses→CC
@@ -595,7 +595,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		}
 		return failStream(fmt.Errorf("anthropic upstream stream read error: %w", scanErr))
 	}
-	return failStream(errors.New("Upstream stream ended before a terminal response event"))
+	return failStream(errors.New("upstream stream ended before a terminal response event"))
 }
 
 func gatewayCCAnthropicEventIsTerminal(eventName string, event *apicompat.AnthropicStreamEvent) bool {

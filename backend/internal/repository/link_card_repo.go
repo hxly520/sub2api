@@ -39,7 +39,7 @@ func (r *linkCardRepository) ListAuthorizedGroups(ctx context.Context, includeDi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]service.LinkCardGroup, 0)
 	for rows.Next() {
 		var item service.LinkCardGroup
@@ -297,7 +297,7 @@ func (r *linkCardRepository) ListCards(ctx context.Context, creatorUserID *int64
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]service.LinkCard, 0)
 	for rows.Next() {
 		card, err := scanLinkCard(rows)
@@ -634,7 +634,7 @@ func (r *linkCardRepository) ListUsage(ctx context.Context, creatorUserID *int64
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]service.LinkCardUsageLog, 0)
 	for rows.Next() {
 		item, err := scanLinkCardUsage(rows)

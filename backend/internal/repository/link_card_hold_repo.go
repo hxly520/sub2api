@@ -349,13 +349,11 @@ func (r *usageBillingRepository) captureLinkCardHoldTx(ctx context.Context, tx *
 	}
 	newReserved := reserved.Sub(holdAmount)
 	exhausted := quota.IsPositive() && newUsed.GreaterThanOrEqual(quota)
-	newState := service.LinkCardStateActive
-	newStatus := service.StatusAPIKeyActive
-	var currentState string
+	var currentState, newStatus string
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(link_state,''),status FROM api_keys WHERE id=$1 FOR UPDATE`, apiKeyID).Scan(&currentState, &newStatus); err != nil {
 		return nil, err
 	}
-	newState = currentState
+	newState := currentState
 	if exhausted {
 		newState = service.LinkCardStateDepleted
 		newStatus = service.StatusAPIKeyQuotaExhausted
@@ -533,7 +531,7 @@ func (r *usageBillingRepository) settleExpiredLinkCardHoldsTx(ctx context.Contex
 	var reservedTotal, capturedTotal decimal.Decimal
 	for i := range expired {
 		item := &expired[i]
-		actual := decimal.Zero
+		var actual decimal.Decimal
 		captureSuccess := item.status == "capture_pending" && item.captureValid
 		if !captureSuccess {
 			var taskErr error
@@ -673,48 +671,6 @@ func (r *usageBillingRepository) ReconcileExpiredLinkCardHolds(ctx context.Conte
 		}
 	}
 	return userIDs, nil
-}
-
-func (r *usageBillingRepository) reconcileExpiredLinkCardHoldsForUser(ctx context.Context, tx *sql.Tx, userID int64) (bool, error) {
-	if tx == nil || userID <= 0 {
-		return false, nil
-	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT DISTINCT api_key_id
-		FROM media_balance_holds
-		WHERE user_id=$1 AND funding_source=$2
-		  AND status IN ('reserved','dispatched','capture_pending')
-		  AND expires_at <= NOW()
-		ORDER BY api_key_id
-	`, userID, linkCardHoldFundingSource)
-	if err != nil {
-		return false, err
-	}
-	var cardIDs []int64
-	for rows.Next() {
-		var cardID int64
-		if err := rows.Scan(&cardID); err != nil {
-			_ = rows.Close()
-			return false, err
-		}
-		cardIDs = append(cardIDs, cardID)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return false, err
-	}
-	if err := rows.Close(); err != nil {
-		return false, err
-	}
-	for _, cardID := range cardIDs {
-		if err := lockLinkCardForHold(ctx, tx, cardID, userID); err != nil {
-			return false, err
-		}
-		if err := r.settleExpiredLinkCardHoldsTx(ctx, tx, cardID, userID); err != nil {
-			return false, err
-		}
-	}
-	return len(cardIDs) > 0, nil
 }
 
 func (r *usageBillingRepository) linkHoldSuccessfulTaskCost(ctx context.Context, tx *sql.Tx, apiKeyID int64, requestID string) (decimal.Decimal, bool, error) {
