@@ -75,6 +75,13 @@
 - 自动 PostgreSQL 资金竞态测试已经完成；在用户 `1` 最小金额逐笔对账、非名单服务端拒绝和三端桌面/移动真实验收前，仍不得应用生产迁移、切换生产容器或开启全体功能。
 - 候选构建仍按现有边界只把 Sub2API 镜像上传、导入或缓存到服务器，由维护者手工切换；自动化不得替换运行容器、执行生产迁移、修改 Nginx 或开启 `link_cards_enabled`。
 
+### 0.4 2026-08-08 提链候选与用户 1 真实验收
+
+- 当前运行 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-daa7cb3fb460`，容器 `157eaffa7973`，healthy，restart `0`；PostgreSQL、Redis、积分服务和生图工作台均未因本次操作重启或替换。
+- UI 修复提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 已通过 GitHub CI；候选镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`、GHCR digest `sha256:39baee21d5cfb259d5d903f5a8d54678b58a87345798539bb8a0246681110f81` 已由 GitHub 构建并只载入服务器缓存。归档路径、SHA256 与验收证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。
+- 用户 1 使用 `0.08x` 分组 ID `9` 完成提链 Key 创建、幂等重放、公共激活、`/v1/models` `200` 鉴权冒烟、充值、冻结/解冻、管理员退款和未激活用户退款。提链账本净 `creator_balance_delta=0`，活动提链 Key 为 `0`；临时分组授权已撤销，标准 Key 未受影响。
+- `link_cards_enabled=false`、开发模式和名单 `[1]` 保持不变。候选镜像不得由自动化替换运行容器；维护者手动切换前继续保留全局关闭和审计记录。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。

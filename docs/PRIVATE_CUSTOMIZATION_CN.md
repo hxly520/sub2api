@@ -208,7 +208,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-07`，最终代码提交为 `daa7cb3fb4601a9f5d6bbf38b7c6f225c3c98676`，默认关闭的不可变候选镜像 `0.1.169-daa7cb3fb460` 已由 GitHub 构建并载入服务器缓存，额度卡专用 Nginx 入口已经启用；候选 Sub2API 容器仍待维护者手工切换，迁移尚未执行且未完成真实资金验收，不得写成生产已启用能力。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-08`，最新 UI 修复提交为 `b3e230220a9dd023d133b4184a0c0a164ea95d51`，候选镜像 `0.1.169-b3e230220a9d` 已由 GitHub 构建并载入服务器缓存；用户 1 的 0.08x 真实资金验收已完成，证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。候选 Sub2API 容器仍由维护者手工切换，生产全局开关继续关闭，不得写成全体用户已开放。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key，激活后才显示 1x 额度、使用记录和接入教程。
 - 默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`。非名单用户必须同时被菜单、前端路由和全部用户/公共 API 拒绝；管理员控制台始终受管理员认证保护，不依赖普通用户开关。

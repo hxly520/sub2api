@@ -2,7 +2,7 @@
 
 本文记录私有 Sub2API 的“提链/额度卡中心”产品、数据、计费、安全和升级契约，供后续官方版本兼容合并与生产交接使用。本文不保存真实 API Key、用户余额、数据库连接、会话令牌或服务器凭据。
 
-> 状态说明：截至 `2026-08-07`，最终开发候选代码为私有 `main` 提交 `daa7cb3fb4601a9f5d6bbf38b7c6f225c3c98676`。GitHub CI 已通过完整单元、lint、前端、积分及 PostgreSQL 并发/集成套件；不可变 Linux/amd64 镜像 `ghcr.io/hxly520/sub2api:0.1.169-daa7cb3fb460` 已构建、发布并载入生产服务器镜像缓存，`key.52token.org` 专用 Nginx 虚拟主机也已启用。运行中的 Sub2API 仍是维护者手工控制的旧镜像，候选容器尚未切换，迁移 `194_link_cards.sql` 尚未执行，也未接入真实资金验收。生产运行态仍以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；以下内容是必须继续验证的候选契约。
+> 状态说明：截至 `2026-08-08`，最新 UI 修复提交为私有 `main` 提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51`。GitHub CI 和 Cachecompat Image 已通过；不可变候选镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d` 已载入服务器缓存，但运行中的 Sub2API 仍由维护者手工控制，未自动切换。`194_link_cards.sql` 已在当前运行候选环境应用，用户 1 的 0.08x 真实验收、激活/充值/冻结/退款和账本对账已完成；临时授权已撤销、活动提链 Key 为 `0`。完整证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)，生产开放开关仍保持关闭。
 
 ## 1. 产品边界
 
