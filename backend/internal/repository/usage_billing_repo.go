@@ -305,7 +305,7 @@ func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.U
 			INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,
 				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,
 				request_id,reason,metadata)
-			VALUES($1,$2,'usage',-$3,0,$4,$4,$5,$6,$7,'gateway usage settlement',
+			VALUES($1,$2,'usage',-($3::numeric),0,$4,$4,$5,$6,$7,'gateway usage settlement',
 				jsonb_build_object('requested_cost',$8,'charged_cost',$3,'available_before',$9,'overdraft_cost',$10))
 	`, cmd.APIKeyID, ownerID, charged.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), cmd.RequestID, requested.StringFixed(8), availableBefore.StringFixed(8), overdraftCost.StringFixed(8))
 	if err != nil {

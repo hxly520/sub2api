@@ -374,7 +374,7 @@ func (r *usageBillingRepository) captureLinkCardHoldTx(ctx context.Context, tx *
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,
 				quota_before,quota_after,quota_used_before,quota_used_after,request_id,reason,metadata)
-			VALUES($1,$2,'usage',-$3,0,$4,$4,$5,$6,$7,'media hold settlement',
+			VALUES($1,$2,'usage',-($3::numeric),0,$4,$4,$5,$6,$7,'media hold settlement',
 				jsonb_build_object('hold_amount',$8,'actual_cost',$3))
 		`, apiKeyID, userID, actual.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), requestID, holdAmount.StringFixed(8)); err != nil {
 			return nil, err
@@ -573,7 +573,7 @@ func (r *usageBillingRepository) settleExpiredLinkCardHoldsTx(ctx context.Contex
 				if _, err := tx.ExecContext(ctx, `
 					INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,
 						quota_before,quota_after,quota_used_before,quota_used_after,request_id,reason,metadata)
-					VALUES($1,$2,'usage',-$3,0,$4,$4,$5,$6,$7,'expired media hold capture',
+					VALUES($1,$2,'usage',-($3::numeric),0,$4,$4,$5,$6,$7,'expired media hold capture',
 						jsonb_build_object('hold_amount',$8,'actual_cost',$3))
 				`, apiKeyID, userID, item.actual.StringFixed(8), quota.StringFixed(8), before.StringFixed(8), runningUsed.StringFixed(8), item.requestID, item.hold.StringFixed(8)); err != nil {
 					return err

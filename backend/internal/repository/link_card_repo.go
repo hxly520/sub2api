@@ -259,7 +259,7 @@ func (r *linkCardRepository) CreateCards(ctx context.Context, cmd service.Create
 			INSERT INTO link_card_ledger(operation_id,api_key_id,creator_user_id,entry_type,reserve_delta,
 				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,
 				reason,metadata)
-			VALUES($1,$2,$3,'issue',$4,-$4,0,$4,0,0,$3,'initial prepaid issue',
+			VALUES($1,$2,$3,'issue',$4,-($4::numeric),0,$4,0,0,$3,'initial prepaid issue',
 				jsonb_build_object('group_id',$5,'rate_multiplier',$6,'batch_quantity',$7)) RETURNING id
 		`, opID, id, cmd.CreatorUserID, cmd.AmountPerCard.StringFixed(8), group.GroupID, group.RateMultiplier, cmd.Quantity).Scan(&ledgerID)
 		if err != nil {
@@ -417,7 +417,7 @@ func (r *linkCardRepository) Recharge(ctx context.Context, cmd service.LinkCardM
 			return nil, err
 		}
 		var ledgerID int64
-		err = tx.QueryRowContext(ctx, `INSERT INTO link_card_ledger(operation_id,api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,reason) VALUES($1,$2,$3,'recharge',$4,-$4,$5,$6,$7,$7,$8,$9) RETURNING id`, opID, card.APIKeyID, card.CreatorUserID, cmd.Amount.StringFixed(8), oldQuota.StringFixed(8), newQuota.StringFixed(8), card.UsedActualAmount().StringFixed(8), cmd.ActorUserID, cmd.Reason).Scan(&ledgerID)
+		err = tx.QueryRowContext(ctx, `INSERT INTO link_card_ledger(operation_id,api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,reason) VALUES($1,$2,$3,'recharge',$4,-($4::numeric),$5,$6,$7,$7,$8,$9) RETURNING id`, opID, card.APIKeyID, card.CreatorUserID, cmd.Amount.StringFixed(8), oldQuota.StringFixed(8), newQuota.StringFixed(8), card.UsedActualAmount().StringFixed(8), cmd.ActorUserID, cmd.Reason).Scan(&ledgerID)
 		if err != nil {
 			return nil, err
 		}
@@ -455,7 +455,7 @@ func (r *linkCardRepository) Refund(ctx context.Context, cmd service.LinkCardMut
 			return nil, err
 		}
 		var ledgerID int64
-		err = tx.QueryRowContext(ctx, `INSERT INTO link_card_ledger(operation_id,api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,reason) VALUES($1,$2,$3,'refund',-$4,$4,$5,$5,$6,$6,$7,$8) RETURNING id`, opID, card.APIKeyID, card.CreatorUserID, refundable.StringFixed(8), card.TotalDepositAmount.StringFixed(8), card.UsedActualAmount().StringFixed(8), cmd.ActorUserID, cmd.Reason).Scan(&ledgerID)
+		err = tx.QueryRowContext(ctx, `INSERT INTO link_card_ledger(operation_id,api_key_id,creator_user_id,entry_type,reserve_delta,creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,actor_user_id,reason) VALUES($1,$2,$3,'refund',-($4::numeric),$4,$5,$5,$6,$6,$7,$8) RETURNING id`, opID, card.APIKeyID, card.CreatorUserID, refundable.StringFixed(8), card.TotalDepositAmount.StringFixed(8), card.UsedActualAmount().StringFixed(8), cmd.ActorUserID, cmd.Reason).Scan(&ledgerID)
 		if err != nil {
 			return nil, err
 		}
