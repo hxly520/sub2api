@@ -82,6 +82,17 @@
 - 用户 1 使用 `0.08x` 分组 ID `9` 完成提链 Key 创建、幂等重放、公共激活、`/v1/models` `200` 鉴权冒烟、充值、冻结/解冻、管理员退款和未激活用户退款。提链账本净 `creator_balance_delta=0`，活动提链 Key 为 `0`；临时分组授权已撤销，标准 Key 未受影响。
 - `link_cards_enabled=false`、开发模式和名单 `[1]` 保持不变。候选镜像不得由自动化替换运行容器；维护者手动切换前继续保留全局关闭和审计记录。
 
+### 0.5 2026-08-08 维护者手工切换后的只读验收
+
+- 维护者已手工把 Sub2API 切换为 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`。运行容器为 `d028e112b509...`，OCI revision 为完整提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51`，启动时间为 `2026-08-08 06:43:51 CST`；复核时为 running、healthy、restart count `0`，本机 `/health=200`。PostgreSQL、Redis、积分服务和生图工作台没有随本次 Sub2API 切换而替换或重启。
+- `194_link_cards.sql` 已进入生产，checksum 固定为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`，应用时间为 `2026-08-08 00:27:33 CST`。后续只能追加迁移，禁止修改、重命名或删除该文件。
+- 只读资金复核：标准 Key 为 `152` 个 active；提链测试 Key 为 `3` 个且全部 `refunded`，活动提链 Key 为 `0`，授权分组为 `0`。操作记录共 `9` 条；资金账本为 `issue=3`、`recharge=1`、`refund=3`，`creator_balance_delta` 合计为 `0`，用户 1 的 `frozen_balance=0`。测试卡和不可变流水继续保留作审计证据。
+- 运行配置保持 `link_cards_enabled=false`、`link_cards_development_mode=true`、开发名单 `[1]`、默认并发 `5`、RPM `0`、批量上限 `100`、公共地址 `https://key.52token.org`、API Base `https://api.52token.org/v1`。没有开放全体用户，也没有恢复 0.08x 临时授权。
+- 使用服务器内临时、未持久化的只读会话复核接口：用户 1 的 `/auth/me`、提链 access/settings/groups/cards 和管理员 settings/groups/cards 均返回 `200`；用户 1 access 为 `allowed=true`，用户 2 access 为 `allowed=false`，用户 2 直接访问 settings/groups/cards 均以 `404 LINK_CARDS_NOT_AVAILABLE` 失败关闭。未认证用户与管理员接口返回 `401`，无公共会话访问 `/me`、`/usage` 也返回 `401`。
+- 公共入口保持 `/ -> 302 /card`，`/card`、`/link-card`、`/quota-card` 均为 `200`，`/health=404`。浏览器实测默认页只显示完整 Key 输入和“验证并激活”；桌面 1280px 与移动 390px 的 `documentElement.scrollWidth` 均等于视口宽度，输入和按钮完整显示、无横向溢出。
+- 前端复核 `LinkCardsView` 与 `LinkCardsConsoleView` 共 `6/6` 个 Vitest 用例通过，`vue-tsc --noEmit` 通过；用户页继续由标准 `AppLayout` 承载，不再隐藏 Sub2API 左侧导航。切换后日志共检查 3,384 行，未发现 panic/fatal、提链错误或迁移错误。
+- 日志中另有 `gpt-5.6`、`gpt-5.6-luna` 的 `no available accounts supporting model (... channel pricing restriction)` 503，同时其他请求仍有 200 成功记录；这是上游账号池/渠道定价可用性问题，不是本次镜像、迁移或提链资金链路异常，应按账号池单独排查。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
@@ -90,7 +101,7 @@
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
-- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置开发候选，不是独立数据库或第二套网关；是否已部署只能由第 0 节后续明确生产记录确认。
+- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前已按第 0.5 节部署但仍保持全局关闭和用户 1 开发灰度，不能写成全体用户已开放。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
@@ -211,7 +222,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 私有迁移 `173_media_generation_tasks.sql` 至 `179_media_balance_hold_dispatch_state.sql` 已进入生产，禁止改名、删除或修改内容。
 - 私有迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 已进入生产并提供全站到期冻结扫描索引；继续按 `_notx` 语义执行，禁止修改 checksum。
 - 私有迁移 `193_points_balance_credit_ledger.sql` 已进入生产，为积分服务向 Sub2API 幂等发放余额。积分服务自己的 4 条迁移位于同一数据库的独立 `points` schema，共 21 张表，并记录在 `points_schema_migrations`；不得写入或混入 Sub2API `public.schema_migrations`。第三条迁移保存一次性历史作业及逐日游标，当前生产作业已成功且不得重跑；第四条迁移增加原始消费阶梯与可空金额上限，不增加新表。
-- 私有迁移 `194_link_cards.sql` 仅存在于 `2026-08-07` 开发候选，尚未进入生产。它计划扩展 `api_keys` 并创建提链分组授权、永久幂等和不可修改资金流水表；首次在任一共享环境应用后即纳入 checksum 不可变清单，只能用后续新迁移修正。生产盘点发现 `194` 记录前不得宣称提链数据表已上线。
+- 私有迁移 `194_link_cards.sql` 已于 `2026-08-08` 进入生产，扩展 `api_keys` 并创建提链分组授权、永久幂等和不可修改资金流水表；生产 checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它已纳入不可变清单，后续只能用新迁移修正，禁止改名、改号、删除或修改 checksum。
 - PostgreSQL实际 `max_connections=100`；当前应用连接池配置为 `max_open=256`、`max_idle=128`，存在连接上限不匹配。
 - 升级前必须备份数据库并记录备份校验、恢复命令和保存位置。积分首次部署备份及 SHA256 已记录在 2.2 节；这不替代后续版本升级的独立新备份，也不代表已建立定时备份或完成隔离恢复演练。
 

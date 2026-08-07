@@ -208,7 +208,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-08`，最新 UI 修复提交为 `b3e230220a9dd023d133b4184a0c0a164ea95d51`，候选镜像 `0.1.169-b3e230220a9d` 已由 GitHub 构建并载入服务器缓存；用户 1 的 0.08x 真实资金验收已完成，证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。候选 Sub2API 容器仍由维护者手工切换，生产全局开关继续关闭，不得写成全体用户已开放。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-08`，维护者已手工切换到 UI 修复提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 对应的不可变镜像 `0.1.169-b3e230220a9d`；用户 1 的 0.08x 真实资金验收及切换后只读验收已完成，证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。生产全局开关继续关闭，开发名单仅 `[1]`，不得写成全体用户已开放。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key，激活后才显示 1x 额度、使用记录和接入教程。
 - 默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`。非名单用户必须同时被菜单、前端路由和全部用户/公共 API 拒绝；管理员控制台始终受管理员认证保护，不依赖普通用户开关。
@@ -246,7 +246,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 新增的非事务并发索引迁移，服务于全站到期冻结扫描，当前已进入生产。后续发布必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本，当前已进入生产；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
-- `194_link_cards.sql` 是提链/额度卡中心的 forward-only 开发候选，当前未进入生产。它扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；首次在共享环境应用前必须完成资金并发设计和迁移审查，应用后禁止改名、改号或修改 checksum，只能追加后续迁移。
+- `194_link_cards.sql` 是提链/额度卡中心的 forward-only 私有迁移，已于 `2026-08-08` 进入生产，checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；应用后禁止改名、改号、删除或修改 checksum，只能追加后续迁移。
 - 积分角色读取 Sub2API 用户表必须保持列级 allowlist：内部关联用 `id`、界面登录邮箱用 `email`、过滤软删除用 `deleted_at`。阶段 A 允许短期精确双读 `id/email/username/deleted_at`，仅用于新旧积分镜像兼容切换；新镜像验收后必须由阶段 B 收敛为 `id/email/deleted_at`。任何新增展示字段都必须先经过数据最小化审查，禁止把用户表整表授权给积分角色。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
@@ -372,7 +372,7 @@ go build ./cmd/server
 2. 构建带 commit 的不可变镜像标签，并记录 digest；浮动版本标签不能作为唯一回滚点。
 3. Sub2API 镜像按运维约定只上传/导入服务器，是否切换由维护窗口决定。
 4. 积分镜像可在备份 `points` schema 并记录旧镜像后独立更新，但必须断言 Sub2API 容器 ID、启动时间和镜像引用未变；一次性历史回算不得随更新重跑。
-5. 提链首次候选只允许保持全局关闭和用户 `1` 开发灰度；完成 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md) 的资金、并发、迁移和三端门禁前，不构建或切换生产镜像。
+5. 提链首次生产切换已保持全局关闭和用户 `1` 开发灰度；后续开放或升级仍须按 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md) 复核资金、并发、迁移和三端门禁，不得因镜像已运行而跳过。
 6. 切换前备份 compose 和数据库；只修改目标服务的镜像 tag，不顺带改账号、渠道价格或网关配置。
 7. 切换后检查版本、health、restart、migration、关键路由和错误日志。
 8. 回滚时恢复旧不可变镜像；如果新迁移不向后兼容，按预先准备的数据回滚方案处理，不能只改镜像。存在提链 Key 时先关闭入口、冻结和禁用全部提链 Key、清空在途并对账，禁止让不识别 `key_type` 的旧镜像接管活动 Key。

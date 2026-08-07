@@ -2,7 +2,7 @@
 
 本文记录私有 Sub2API 的“提链/额度卡中心”产品、数据、计费、安全和升级契约，供后续官方版本兼容合并与生产交接使用。本文不保存真实 API Key、用户余额、数据库连接、会话令牌或服务器凭据。
 
-> 状态说明：截至 `2026-08-08`，最新 UI 修复提交为私有 `main` 提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51`。GitHub CI 和 Cachecompat Image 已通过；不可变候选镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d` 已载入服务器缓存，但运行中的 Sub2API 仍由维护者手工控制，未自动切换。`194_link_cards.sql` 已在当前运行候选环境应用，用户 1 的 0.08x 真实验收、激活/充值/冻结/退款和账本对账已完成；临时授权已撤销、活动提链 Key 为 `0`。完整证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)，生产开放开关仍保持关闭。
+> 状态说明：截至 `2026-08-08`，维护者已手工把生产 Sub2API 切换到私有 `main` 提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 对应的不可变镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`。容器 healthy、restart count `0`；`194_link_cards.sql` 已按固定 checksum 进入生产。用户 1 的 0.08x 创建、激活、充值、冻结/解冻、退款和账本对账已完成；临时授权已撤销，3 个测试 Key 全部 `refunded`，活动提链 Key 为 `0`。全局开关仍为关闭，开发名单仅 `[1]`，没有开放全体用户。完整证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。
 
 ## 1. 产品边界
 
@@ -191,7 +191,7 @@ Nginx/Cloudflare 只允许 `52token.org` 系列活动域名。上线前必须验
 
 ## 8. 迁移 194
 
-`backend/migrations/194_link_cards.sql` 是 forward-only 候选迁移，当前设计包括：
+`backend/migrations/194_link_cards.sql` 是已进入生产的 forward-only 私有迁移，当前结构包括：
 
 - 给 `api_keys` 增加 `key_type`、状态、倍率快照、预充值/退款、并发/RPM 和激活/撤销字段；已有行回填并保持 `standard`。
 - 创建管理员分组授权表 `link_card_group_authorizations`。
@@ -199,7 +199,7 @@ Nginx/Cloudflare 只允许 `52token.org` 系列活动域名。上线前必须验
 - 创建不可修改的资金流水表 `link_card_ledger` 及 usage/request 唯一约束。
 - 写入关闭状态和用户 `1` 开发灰度的默认设置。
 
-该文件一旦在任一共享环境应用就禁止改名、重编号或修改 checksum。当前候选完成前若还需要在途额度、退款收口或其他资金字段，应在首次共享环境应用前完成设计审查；若 `194` 已被应用，则只能新增后续迁移，禁止原地改写。
+生产记录中的 checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。该文件已经应用，禁止改名、重编号、删除或修改 checksum；后续在途额度、退款收口或其他资金字段只能新增迁移，禁止原地改写 `194`。
 
 迁移前必须做一致性数据库备份、记录 SHA256 和恢复命令，在隔离数据库验证从当前生产迁移总数升级、重复启动、标准 Key 回填、约束、索引、触发器、Ent schema 和旧版本只读兼容。不得在生产数据库试恢复。
 
