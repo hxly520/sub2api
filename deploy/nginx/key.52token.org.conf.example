@@ -1,0 +1,99 @@
+# Public quota-card portal. The UI and API are served by the same Sub2API
+# process; this virtual host only exposes the portal's minimum route surface.
+# Install cloudflare-real-ip.conf.example before enabling this file.
+
+limit_req_zone $binary_remote_addr zone=sub2api_key_activate:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=sub2api_key_read:10m rate=120r/m;
+
+server {
+    listen 80;
+    server_name key.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+
+    location = / { return 301 https://$host/card; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name key.52token.org;
+
+    if ($sub2api_cloudflare_peer = 0) { return 444; }
+
+    ssl_certificate     /etc/nginx/cert/52token.org.pem;
+    ssl_certificate_key /etc/nginx/cert/52token.org.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 16k;
+    client_body_timeout 15s;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 35s;
+    proxy_send_timeout 35s;
+    limit_req_status 429;
+
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    location = / {
+        limit_except GET { deny all; }
+        return 302 /card;
+    }
+
+    location ~ ^/(card|link-card|quota-card)$ {
+        limit_except GET { deny all; }
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "no-store, max-age=0" always;
+    }
+
+    location ^~ /assets/ {
+        limit_except GET { deny all; }
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "public, max-age=604800, immutable" always;
+    }
+
+    location = /logo.svg {
+        limit_except GET { deny all; }
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "public, max-age=3600" always;
+    }
+
+    location = /api/v1/settings/public {
+        limit_except GET { deny all; }
+        limit_req zone=sub2api_key_read burst=30 nodelay;
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "no-store, max-age=0" always;
+    }
+
+    location = /api/v1/settings/logo {
+        limit_except GET { deny all; }
+        limit_req zone=sub2api_key_read burst=30 nodelay;
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "no-store, max-age=0" always;
+    }
+
+    # A full key is accepted only in the POST body. Disable access logging for
+    # this endpoint so future log formats cannot accidentally capture it.
+    location = /api/v1/public/link-cards/activate {
+        limit_except POST OPTIONS { deny all; }
+        access_log off;
+        limit_req zone=sub2api_key_activate burst=5 nodelay;
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "no-store, max-age=0" always;
+    }
+
+    # These requests carry the short-lived X-Link-Card-Session header. Keep
+    # their request metadata out of the origin access log as well.
+    location ^~ /api/v1/public/link-cards/ {
+        limit_except GET OPTIONS { deny all; }
+        access_log off;
+        limit_req zone=sub2api_key_read burst=30 nodelay;
+        include /etc/nginx/snippets/sub2api-key-proxy.inc;
+        add_header Cache-Control "no-store, max-age=0" always;
+    }
+
+    location = /health { return 404; }
+    location / { return 404; }
+}

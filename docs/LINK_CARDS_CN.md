@@ -166,6 +166,8 @@ pending_activation -> active -> depleted
 
 Nginx/Cloudflare 只允许 `52token.org` 系列活动域名。上线前必须验证 `key.52token.org` 的证书、CSP、CORS、API 反代、真实客户端 IP 和移动端，不得恢复淘汰域名或使用通配父 Origin。
 
+权威 Nginx 模板为 `deploy/nginx/key.52token.org.conf.example` 和 `deploy/nginx/sub2api-key-proxy.inc.example`。额度卡不是第二个后端容器：两个模板把最小公共路由集合反代到现有 `127.0.0.1:8080`，根路径跳转 `/card`，其余未知页面/API 返回 `404`。激活接口与会话查询关闭 origin access log，并叠加独立 IP 限流；模板只能在备份现状、确认 CF 真实 IP、执行 `nginx -t` 后原子安装并平滑 reload。
+
 ## 7. 设置键
 
 | 设置键 | 候选默认值 | 含义 |
