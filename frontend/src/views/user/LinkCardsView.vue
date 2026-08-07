@@ -1,5 +1,5 @@
 <template>
-  <AppLayout :hide-sidebar="true">
+  <AppLayout>
     <div class="mx-auto max-w-[1500px] space-y-5" data-testid="link-cards-view">
       <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>

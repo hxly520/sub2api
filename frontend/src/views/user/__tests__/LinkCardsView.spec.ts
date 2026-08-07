@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import LinkCardsView from '../LinkCardsView.vue'
 
 const { getAccess, getSettings, listGroups, listCards, listUsage, createCards, showSuccess, showError, authStore } = vi.hoisted(() => ({
@@ -21,7 +22,11 @@ vi.mock('vue-i18n', async () => {
   return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
 })
 
-const simpleStub = { template: '<div><slot /></div>' }
+const appLayoutStub = defineComponent({
+  name: 'AppLayout',
+  props: { hideSidebar: { type: Boolean, default: false } },
+  template: '<div><slot /></div>',
+})
 
 describe('LinkCardsView', () => {
   beforeEach(() => {
@@ -39,12 +44,19 @@ describe('LinkCardsView', () => {
     return mount(LinkCardsView, {
       global: {
         stubs: {
-          AppLayout: simpleStub, Icon: true, SearchInput: true, Pagination: true,
+          AppLayout: appLayoutStub, Icon: true, SearchInput: true, Pagination: true,
           BaseDialog: true, ConfirmDialog: true, LinkCardUsageTable: true,
         },
       },
     })
   }
+
+  it('keeps the standard user layout so the sidebar and header remain visible', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findComponent(appLayoutStub).props('hideSidebar')).toBe(false)
+  })
 
   it('submits per-card amount and quantity while the server owns total debit', async () => {
     const wrapper = mountView()
