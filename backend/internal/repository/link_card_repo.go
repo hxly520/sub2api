@@ -398,7 +398,16 @@ func (r *linkCardRepository) Recharge(ctx context.Context, cmd service.LinkCardM
 		state := card.Status
 		apiStatus := service.StatusAPIKeyDisabled
 		if state == service.LinkCardStateDepleted {
-			state = service.LinkCardStateActive
+			// A text request can finish after the last funded amount and records
+			// its complete actual cost, so quota_used may temporarily exceed the
+			// funded quota.  Recharge must clear that debt before the key is
+			// admitted again; a partial recharge remains depleted.
+			availableAfterRecharge := newQuota.Sub(card.UsedActualAmount()).Sub(card.ReservedActualAmount())
+			if availableAfterRecharge.IsPositive() {
+				state = service.LinkCardStateActive
+			} else {
+				apiStatus = service.StatusAPIKeyQuotaExhausted
+			}
 		}
 		if state == service.LinkCardStateActive {
 			apiStatus = service.StatusActive

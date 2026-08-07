@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,83 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+func TestUsageBillingRepositoryApply_ConcurrentLinkCardSettlementsChargeFullDebt(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("link-card-concurrent-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	key, err := client.APIKey.Create().
+		SetUserID(user.ID).
+		SetKey("sk-link-concurrent-" + uuid.NewString()).
+		SetName("link-card-concurrent").
+		SetStatus(service.StatusAPIKeyActive).
+		SetKeyType(service.APIKeyTypeLink).
+		SetLinkState(service.LinkCardStateActive).
+		SetLinkRateMultiplier(0.08).
+		SetLinkOriginalDebit(1).
+		SetLinkTotalFunded(1).
+		SetLinkReservedAmount(0).
+		SetQuota(1).
+		SetQuotaUsed(0).
+		Save(ctx)
+	require.NoError(t, err)
+
+	commands := []*service.UsageBillingCommand{
+		{RequestID: "link-concurrent-" + uuid.NewString(), APIKeyID: key.ID, UserID: user.ID, PrepaidLinkCost: 0.75},
+		{RequestID: "link-concurrent-" + uuid.NewString(), APIKeyID: key.ID, UserID: user.ID, PrepaidLinkCost: 0.75},
+	}
+	type outcome struct {
+		result *service.UsageBillingApplyResult
+		err    error
+	}
+	outcomes := make([]outcome, len(commands))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range commands {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			outcomes[index].result, outcomes[index].err = repo.Apply(ctx, commands[index])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for _, got := range outcomes {
+		require.NoError(t, got.err)
+		require.NotNil(t, got.result)
+		require.True(t, got.result.Applied)
+	}
+
+	var quotaUsed float64
+	var state, status string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT quota_used,COALESCE(link_state,''),status FROM api_keys WHERE id=$1
+	`, key.ID).Scan(&quotaUsed, &state, &status))
+	require.InDelta(t, 1.5, quotaUsed, 0.00000001)
+	require.Equal(t, service.LinkCardStateDepleted, state)
+	require.Equal(t, service.StatusAPIKeyQuotaExhausted, status)
+
+	var charged float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT COALESCE(-SUM(reserve_delta),0) FROM link_card_ledger
+		WHERE api_key_id=$1 AND entry_type='usage'
+	`, key.ID).Scan(&charged))
+	require.InDelta(t, 1.5, charged, 0.00000001, "both in-flight requests must be charged in full")
+
+	replayed, err := repo.Apply(ctx, commands[0])
+	require.NoError(t, err)
+	require.NotNil(t, replayed)
+	require.False(t, replayed.Applied)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT quota_used FROM api_keys WHERE id=$1", key.ID).Scan(&quotaUsed))
+	require.InDelta(t, 1.5, quotaUsed, 0.00000001, "billing retries must remain idempotent")
+}
 
 func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	ctx := context.Background()

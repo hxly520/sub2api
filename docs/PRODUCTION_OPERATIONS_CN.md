@@ -58,15 +58,16 @@
 
 ### 0.3 2026-08-07 提链/额度卡开发候选边界
 
-- 提链/额度卡中心已形成默认关闭的开发候选镜像，但尚未上传服务器、切换容器、执行迁移或修改生产 Nginx。生产第 0 节所列 Sub2API、积分服务、容器和迁移事实不因该候选改变。
+- 提链/额度卡中心已形成默认关闭的开发候选镜像，镜像已载入生产服务器缓存并启用专用 Nginx 入口；运行中的 Sub2API 尚未切换候选容器，迁移仍未执行。生产第 0 节所列 Sub2API、积分服务、容器和迁移事实除本节明确记录的 Nginx 平滑 reload 外不因该候选改变。
 - 产品与资金契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
 - 候选默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`；管理员控制台受管理员认证保护。该默认值只是开发门禁，不是生产已验证状态，也不得据此推断用户 `1` 当前生产可访问。
-- `194_link_cards.sql` 仍是未应用候选迁移。当前生产 `public.schema_migrations` 仍以第 5 节已核验基线为准；在共享或生产数据库首次应用 `194` 前，必须完成数据库备份、隔离迁移、标准 Key 零回归、并发额度预留、末笔超额拒绝、退款在途收口和旧镜像回滚审查。
+- `194_link_cards.sql` 仍是未应用候选迁移。当前生产 `public.schema_migrations` 仍以第 5 节已核验基线为准；在共享或生产数据库首次应用 `194` 前，必须完成数据库备份、隔离迁移、标准 Key 零回归、文本后扣超额完整入账、欠费禁用、媒体并发额度预留、退款在途收口和旧镜像回滚审查。
 - `2026-08-07` 本地已完成后端 `-tags=unit ./internal/...` 全量测试（并补齐既有 points `/auth/me` 契约字段）、提链定向 Go vet、Ent/Wire 重新生成、迁移测试、前端完整 Vitest、Vue TypeScript 检查和前端生产构建；覆盖原生分组交集、专属倍率覆盖、专属分组运行时撤权、发行/当前倍率换算、欠费充值自动恢复和普通 Key 隔离。`0.06x`、`0.07x`、`0.08x`、`0.09x` 的双向换算矩阵固定向上取一位小数，内部结算倍率不低于当前原生倍率。该记录不代表迁移或生产验收完成。
 - 私有 `main` 提交 `71dff449192f982008bc333940636827a9f88786` 已由 Cachecompat Image [run 31174082161](https://github.com/hxly520/sub2api/actions/runs/31174082161) 构建、容器内 `-version` 冒烟并发布。不可变镜像为 `ghcr.io/hxly520/sub2api:0.1.169-71dff449192f`，registry digest 为 `sha256:9790db6362f924bbc55770e6f8b2f51b15559ad176708a589e0ad500503e5551`，OCI 创建时间为 `2026-08-07T11:32:42.3618001Z`；`latest` 与 DockerHub 均未发布。工作流同时刷新了可变标签 `0.1.169`，部署和回滚只能使用前述 commit 不可变标签或 digest。
-- 本地回读归档位于仓库外 `C:\Users\Mr.O\Documents\sub2api\_build\image-71dff449192f\sub2api-0.1.169-71dff449192f-linux-amd64.tar`，大小 `42,720,256` bytes，SHA256 为 `1be64c1bd42b294cf690c2c5d9038a72c9d3ee0bee628316e3e370a5e2ecbeb4`。服务器 SSH 在 banner 前超时，本轮没有建立认证会话、上传归档、执行 `docker load` 或运行任何远程命令；服务器镜像缓存状态仍待后续确认。
-- `key.52token.org` 的 Cloudflare DNS/HTTPS 映射已经生效；只读公网检查时 `/` 仍返回旧通用静态首页、`/card` 进入当前 Sub2API SPA、`/health` 返回 `200`，因此不能写成额度卡入口已完成。权威候选配置为 `deploy/nginx/key.52token.org.conf.example` 与 `sub2api-key-proxy.inc.example`：根路径只转 `/card`、健康和未知路由返回 `404`、公共接口关闭 access log 并叠加独立限流。实际安装必须等待 SSH 恢复，先备份现状并通过 `nginx -t`，再平滑 reload；不得借此切换 Sub2API 容器。
-- 文本请求最后一笔成功消费超过提链剩余额度时，当前结算会扣尽剩余额度并记录 `shortfall`；媒体和批量生图已有请求前冻结，不受该问题影响。文本链路完成请求前最大费用预留及 PostgreSQL 并发验证前，该候选只用于默认关闭的开发审查，不得开放真实下游调用。
+- 本地回读归档位于仓库外 `C:\Users\Mr.O\Documents\sub2api\_build\image-71dff449192f\sub2api-0.1.169-71dff449192f-linux-amd64.tar`，大小 `42,720,256` bytes，SHA256 为 `1be64c1bd42b294cf690c2c5d9038a72c9d3ee0bee628316e3e370a5e2ecbeb4`。同一归档已上传为 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.169-71dff449192f-linux-amd64.tar`，远端 SHA256 完全一致、权限 `0600 root:root`；`docker load` 后候选 image ID 为 `sha256:5e449fa9c3927f2f9f3d22c678d117285c7fc873db1e68670f89cd84c0050217`，OCI revision 与创建时间分别为完整 `71dff449192f982008bc333940636827a9f88786` 和 `2026-08-07T11:32:42.3618001Z`，远程 `-version` 冒烟通过。
+- `key.52token.org` 的 Cloudflare DNS/HTTPS 映射已经生效。服务器备份位于 `/home/api/sub2api-deploy/backups/link-card-nginx-20260807-203936`；`/etc/nginx/conf.d/key.52token.org.conf` 与 `/etc/nginx/snippets/sub2api-key-proxy.inc` 的 SHA256 分别为 `4f1b063b932f6c8c5ee0d8661c2ee09b3bc30e451c0405ec8d0d46ba258e816a`、`ccccec93f3dc82d4386a321fc3f6077c30d3cd2a6355d965d743859e20931f32`，与仓库模板一致。`nginx -t`、平滑 reload、源站和 CF 外部检查通过：`/` 返回 `302 /card`、`/card=200`、`/health=404`、未知路径 `404`；Nginx 仍为 PID `1814246`、restart `0`。
+- Nginx 与镜像缓存操作前后，运行中的 Sub2API 始终为容器 `69a710a1ad0c`、镜像 `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999`、healthy；Compose 未修改，未执行 `up`。数据库只读核对确认 `public.schema_migrations` 中 `194_link_cards.sql` 计数为 `0`，`public.api_keys.key_type` 列计数为 `0`，因此候选迁移尚未提前应用。
+- `2026-08-07` 需求再次确认文本请求完全沿用 Sub2API 后扣：准入时有可用额度即可执行，最后一笔和已经准入的并发请求允许形成欠费；候选已改为按完整实际费用增加 `quota_used`，结算后标记 `depleted` 并拒绝后续请求，禁止把费用截断成剩余额度。欠费充值只有覆盖已用额度和在途预留后才恢复；媒体与批量生图仍保持请求前预留。该行为仍需在维护者手工切换候选后用用户 `1` 做最小金额逐笔对账。
 - 可以构建保持全局关闭且仅用户 `1` 开发名单的测试候选；未完成 PostgreSQL 资金竞态测试、用户 `1` 最小金额逐笔对账、非名单服务端拒绝和三端桌面/移动验收前，不得应用生产迁移、切换生产容器或开启全体功能。
 - 候选构建仍按现有边界只把 Sub2API 镜像上传、导入或缓存到服务器，由维护者手工切换；自动化不得替换运行容器、执行生产迁移、修改 Nginx 或开启 `link_cards_enabled`。
 

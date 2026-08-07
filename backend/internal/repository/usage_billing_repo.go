@@ -261,19 +261,20 @@ func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.U
 	if quota.IsNegative() || quota.IsZero() || used.IsNegative() || reserved.IsNegative() {
 		return false, service.ErrLinkCardPrepaidExhausted
 	}
-	// The row lock serializes all settlements for this card.  Charge only the
-	// unreserved remainder so a late or concurrent response can never push a
-	// prepaid card beyond its funded quota.  A partial charge is recorded with
-	// its shortfall for reconciliation. A zero-charge late settlement is still
-	// persisted, then the card is depleted so no subsequent request is admitted.
+	// The row lock serializes all settlements for this card.  Link-card text
+	// requests intentionally use Sub2API's normal post-request billing timing:
+	// the upstream request may finish after the last available amount has been
+	// consumed.  In that case charge the *complete* actual cost and let
+	// quota_used exceed quota.  The card is immediately marked depleted and the
+	// preflight check rejects all subsequent requests until a recharge clears
+	// the debt.  Truncating the charge to the remaining amount would make the
+	// overrun free and leave the platform to absorb the upstream cost.
 	available := quota.Sub(used).Sub(reserved)
-	if available.IsNegative() {
-		available = decimal.Zero
+	availableBefore := available
+	if availableBefore.IsNegative() {
+		availableBefore = decimal.Zero
 	}
 	charged := requested
-	if available.LessThan(charged) {
-		charged = available
-	}
 	newUsed := used.Add(charged)
 	exhausted := !quota.Sub(newUsed).Sub(reserved).IsPositive()
 	newState := state
@@ -287,8 +288,7 @@ func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.U
 	updated, err := tx.ExecContext(ctx, `
 		UPDATE api_keys SET quota_used=$1,status=$2,link_state=$3,updated_at=NOW()
 		WHERE id=$4 AND key_type=$5 AND deleted_at IS NULL
-	  AND quota - quota_used - COALESCE(link_reserved_amount,0) >= $6
-	`, newUsed.StringFixed(8), newStatus, newState, cmd.APIKeyID, service.APIKeyTypeLink, charged.StringFixed(8))
+	`, newUsed.StringFixed(8), newStatus, newState, cmd.APIKeyID, service.APIKeyTypeLink)
 	if err != nil {
 		return false, err
 	}
@@ -297,14 +297,17 @@ func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.U
 	} else if affected != 1 {
 		return false, service.ErrLinkCardPrepaidExhausted
 	}
-	shortfall := requested.Sub(charged)
+	overdraftCost := requested.Sub(availableBefore)
+	if overdraftCost.IsNegative() {
+		overdraftCost = decimal.Zero
+	}
 	_, err = tx.ExecContext(ctx, `
 			INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,
 				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,
 				request_id,reason,metadata)
 			VALUES($1,$2,'usage',-$3,0,$4,$4,$5,$6,$7,'gateway usage settlement',
-				jsonb_build_object('requested_cost',$8,'charged_cost',$3,'shortfall',$9))
-	`, cmd.APIKeyID, ownerID, charged.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), cmd.RequestID, requested.StringFixed(8), shortfall.StringFixed(8))
+				jsonb_build_object('requested_cost',$8,'charged_cost',$3,'available_before',$9,'overdraft_cost',$10))
+	`, cmd.APIKeyID, ownerID, charged.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), cmd.RequestID, requested.StringFixed(8), availableBefore.StringFixed(8), overdraftCost.StringFixed(8))
 	if err != nil {
 		return false, err
 	}

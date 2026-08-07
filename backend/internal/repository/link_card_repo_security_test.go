@@ -243,6 +243,57 @@ func TestLinkCardRechargeRestoresDepletedCardAtomically(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestLinkCardRechargeKeepsDebtCardDepletedUntilCovered(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT ak\.id,ak\.user_id.*FOR UPDATE OF ak`).
+		WithArgs(service.APIKeyTypeLink, int64(92)).
+		WillReturnRows(linkCardSecurityRows().AddRow(
+			int64(92), int64(1), "owner@example.test", "sk-card-debt",
+			int64(8), "group-8", service.PlatformOpenAI, 0.08,
+			service.LinkCardStateDepleted, "10.00000000", "10.00000000",
+			"0.00000000", "12.00000000", "0.00000000", 5, 0, now, nil, "", now, now, int64(1),
+		))
+	mock.ExpectQuery(`(?s)INSERT INTO link_card_operations.*ON CONFLICT.*RETURNING id`).
+		WithArgs("recharge", int64(1), int64(1), int64(92), "debt-recharge-idem", "debt-recharge-fingerprint").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(2201)))
+	mock.ExpectQuery(`UPDATE users SET balance=balance-\$1.*RETURNING balance`).
+		WithArgs("1.00000000", int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow("19.00000000"))
+	mock.ExpectExec(`UPDATE api_keys SET quota=quota\+\$1,link_total_funded=link_total_funded\+\$1,link_state=\$2,status=\$3`).
+		WithArgs("1.00000000", service.LinkCardStateDepleted, service.StatusAPIKeyQuotaExhausted, int64(92), service.APIKeyTypeLink).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)INSERT INTO link_card_ledger.*'recharge'.*RETURNING id`).
+		WithArgs(
+			int64(2201), int64(92), int64(1), "1.00000000", "10.00000000",
+			"11.00000000", "12.00000000", int64(1), "partial debt top up",
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(2301)))
+	mock.ExpectExec(`UPDATE link_card_operations SET response_body=\$1::jsonb WHERE id=\$2`).
+		WithArgs(sqlmock.AnyArg(), int64(2201)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	repo := NewLinkCardRepository(nil, db)
+	result, err := repo.Recharge(context.Background(), service.LinkCardMutationCommand{
+		APIKeyID:           92,
+		ActorUserID:        1,
+		Scope:              "recharge",
+		Amount:             decimal.NewFromInt(1),
+		Reason:             "partial debt top up",
+		IdempotencyKeyHash: "debt-recharge-idem",
+		RequestFingerprint: "debt-recharge-fingerprint",
+	})
+	require.NoError(t, err)
+	require.Equal(t, service.LinkCardStateDepleted, result.Card.Status)
+	require.True(t, result.Card.TotalDepositAmount.Equal(decimal.NewFromInt(11)))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func linkCardSecurityRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
 		"id", "user_id", "email", "key", "group_id", "group_name", "platform",
@@ -311,14 +362,14 @@ func TestConsumeLinkCardPreservesExactDecimalBoundary(t *testing.T) {
 		WithArgs(int64(91), service.APIKeyTypeLink).
 		WillReturnRows(sqlmock.NewRows([]string{"quota", "quota_used", "link_reserved_amount", "user_id", "link_state", "status"}).
 			AddRow("0.3000000000", "0.2000000000", "0.0000000000", int64(1), service.LinkCardStateActive, service.StatusAPIKeyActive))
-	mock.ExpectExec(`(?s)UPDATE api_keys SET quota_used=\$1,status=\$2,link_state=\$3.*COALESCE\(link_reserved_amount,0\) >= \$6`).
-		WithArgs(exactDecimalSQLArg("0.30000000"), service.StatusAPIKeyQuotaExhausted, service.LinkCardStateDepleted, int64(91), service.APIKeyTypeLink, exactDecimalSQLArg("0.10000000")).
+	mock.ExpectExec(`(?s)UPDATE api_keys SET quota_used=\$1,status=\$2,link_state=\$3.*WHERE id=\$4 AND key_type=\$5 AND deleted_at IS NULL`).
+		WithArgs(exactDecimalSQLArg("0.30000000"), service.StatusAPIKeyQuotaExhausted, service.LinkCardStateDepleted, int64(91), service.APIKeyTypeLink).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`(?s)INSERT INTO link_card_ledger.*jsonb_build_object`).
 		WithArgs(
 			int64(91), int64(1), exactDecimalSQLArg("0.10000000"), exactDecimalSQLArg("0.30000000"),
 			exactDecimalSQLArg("0.20000000"), exactDecimalSQLArg("0.30000000"), "request-decimal-boundary",
-			exactDecimalSQLArg("0.10000000"), exactDecimalSQLArg("0.00000000"),
+			exactDecimalSQLArg("0.10000000"), exactDecimalSQLArg("0.10000000"), exactDecimalSQLArg("0.00000000"),
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

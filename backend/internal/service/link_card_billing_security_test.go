@@ -144,6 +144,20 @@ func TestLinkCardQuotaKeepsIssuanceValueAndAppliesCurrentRateRatio(t *testing.T)
 	require.True(t, card.RemainingQuota.Equal(decimal.RequireFromString("98.5")))
 }
 
+func TestLinkCardQuotaProjectsDebtWithoutNegativeAvailableQuota(t *testing.T) {
+	card := &LinkCard{
+		IssueRateMultiplier: 0.10,
+		TotalDepositAmount:  decimal.NewFromInt(10),
+		Status:              LinkCardStateDepleted,
+	}
+	card.SetFinancialState(decimal.RequireFromString("10.5"), decimal.Zero)
+	card.NormalizeDerivedFields()
+
+	require.True(t, card.IssuedQuota.Equal(decimal.NewFromInt(100)))
+	require.True(t, card.UsedQuota.Equal(decimal.NewFromInt(105)))
+	require.True(t, card.RemainingQuota.IsZero())
+}
+
 func TestLinkCardExternalUsageUsesCurrentToIssuanceRateRatio(t *testing.T) {
 	items := []LinkCardUsageLog{{
 		TotalCost:      decimal.NewFromInt(1),
@@ -524,6 +538,23 @@ func TestBillingEligibilityUsesLinkReserveInsteadOfCreatorBalance(t *testing.T) 
 		context.Background(),
 		&User{ID: 1, Balance: 0},
 		&depleted,
+		nil,
+		nil,
+		"",
+	), ErrLinkCardPrepaidExhausted)
+
+	// The quota check independently rejects debt even if a stale status writer
+	// left the state marked active.  This is the final guard before forwarding.
+	loader.state = &LinkCardBillingState{
+		Status:    StatusAPIKeyActive,
+		LinkState: LinkCardStateActive,
+		Quota:     100,
+		QuotaUsed: 100.25,
+	}
+	require.ErrorIs(t, svc.CheckBillingEligibility(
+		context.Background(),
+		&User{ID: 1, Balance: 0},
+		active,
 		nil,
 		nil,
 		"",
