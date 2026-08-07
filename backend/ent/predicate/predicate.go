@@ -63,6 +63,15 @@ type IdempotencyRecord func(*sql.Selector)
 // IdentityAdoptionDecision is the predicate function for identityadoptiondecision builders.
 type IdentityAdoptionDecision func(*sql.Selector)
 
+// LinkCardGroupAuthorization is the predicate function for linkcardgroupauthorization builders.
+type LinkCardGroupAuthorization func(*sql.Selector)
+
+// LinkCardLedger is the predicate function for linkcardledger builders.
+type LinkCardLedger func(*sql.Selector)
+
+// LinkCardOperation is the predicate function for linkcardoperation builders.
+type LinkCardOperation func(*sql.Selector)
+
 // PaymentAuditLog is the predicate function for paymentauditlog builders.
 type PaymentAuditLog func(*sql.Selector)
 

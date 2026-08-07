@@ -31,6 +31,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardgroupauthorization"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardledger"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardoperation"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -83,6 +86,9 @@ const (
 	TypeGroup                         = "Group"
 	TypeIdempotencyRecord             = "IdempotencyRecord"
 	TypeIdentityAdoptionDecision      = "IdentityAdoptionDecision"
+	TypeLinkCardGroupAuthorization    = "LinkCardGroupAuthorization"
+	TypeLinkCardLedger                = "LinkCardLedger"
+	TypeLinkCardOperation             = "LinkCardOperation"
 	TypePaymentAuditLog               = "PaymentAuditLog"
 	TypePaymentOrder                  = "PaymentOrder"
 	TypePaymentProviderInstance       = "PaymentProviderInstance"
@@ -108,51 +114,70 @@ const (
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
 type APIKeyMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *int64
-	created_at         *time.Time
-	updated_at         *time.Time
-	deleted_at         *time.Time
-	key                *string
-	name               *string
-	status             *string
-	last_used_at       *time.Time
-	ip_whitelist       *[]string
-	appendip_whitelist []string
-	ip_blacklist       *[]string
-	appendip_blacklist []string
-	quota              *float64
-	addquota           *float64
-	quota_used         *float64
-	addquota_used      *float64
-	expires_at         *time.Time
-	rate_limit_5h      *float64
-	addrate_limit_5h   *float64
-	rate_limit_1d      *float64
-	addrate_limit_1d   *float64
-	rate_limit_7d      *float64
-	addrate_limit_7d   *float64
-	usage_5h           *float64
-	addusage_5h        *float64
-	usage_1d           *float64
-	addusage_1d        *float64
-	usage_7d           *float64
-	addusage_7d        *float64
-	window_5h_start    *time.Time
-	window_1d_start    *time.Time
-	window_7d_start    *time.Time
-	clearedFields      map[string]struct{}
-	user               *int64
-	cleareduser        bool
-	group              *int64
-	clearedgroup       bool
-	usage_logs         map[int64]struct{}
-	removedusage_logs  map[int64]struct{}
-	clearedusage_logs  bool
-	done               bool
-	oldValue           func(context.Context) (*APIKey, error)
-	predicates         []predicate.APIKey
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	deleted_at              *time.Time
+	key                     *string
+	name                    *string
+	status                  *string
+	key_type                *string
+	link_state              *string
+	link_rate_multiplier    *float64
+	addlink_rate_multiplier *float64
+	link_original_debit     *float64
+	addlink_original_debit  *float64
+	link_total_funded       *float64
+	addlink_total_funded    *float64
+	link_total_refunded     *float64
+	addlink_total_refunded  *float64
+	link_reserved_amount    *float64
+	addlink_reserved_amount *float64
+	link_concurrency        *int
+	addlink_concurrency     *int
+	link_rpm_limit          *int
+	addlink_rpm_limit       *int
+	link_activated_at       *time.Time
+	link_revoked_at         *time.Time
+	link_frozen_reason      *string
+	last_used_at            *time.Time
+	ip_whitelist            *[]string
+	appendip_whitelist      []string
+	ip_blacklist            *[]string
+	appendip_blacklist      []string
+	quota                   *float64
+	addquota                *float64
+	quota_used              *float64
+	addquota_used           *float64
+	expires_at              *time.Time
+	rate_limit_5h           *float64
+	addrate_limit_5h        *float64
+	rate_limit_1d           *float64
+	addrate_limit_1d        *float64
+	rate_limit_7d           *float64
+	addrate_limit_7d        *float64
+	usage_5h                *float64
+	addusage_5h             *float64
+	usage_1d                *float64
+	addusage_1d             *float64
+	usage_7d                *float64
+	addusage_7d             *float64
+	window_5h_start         *time.Time
+	window_1d_start         *time.Time
+	window_7d_start         *time.Time
+	clearedFields           map[string]struct{}
+	user                    *int64
+	cleareduser             bool
+	group                   *int64
+	clearedgroup            bool
+	usage_logs              map[int64]struct{}
+	removedusage_logs       map[int64]struct{}
+	clearedusage_logs       bool
+	done                    bool
+	oldValue                func(context.Context) (*APIKey, error)
+	predicates              []predicate.APIKey
 }
 
 var _ ent.Mutation = (*APIKeyMutation)(nil)
@@ -565,6 +590,686 @@ func (m *APIKeyMutation) OldStatus(ctx context.Context) (v string, err error) {
 // ResetStatus resets all changes to the "status" field.
 func (m *APIKeyMutation) ResetStatus() {
 	m.status = nil
+}
+
+// SetKeyType sets the "key_type" field.
+func (m *APIKeyMutation) SetKeyType(s string) {
+	m.key_type = &s
+}
+
+// KeyType returns the value of the "key_type" field in the mutation.
+func (m *APIKeyMutation) KeyType() (r string, exists bool) {
+	v := m.key_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeyType returns the old "key_type" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldKeyType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeyType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeyType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeyType: %w", err)
+	}
+	return oldValue.KeyType, nil
+}
+
+// ResetKeyType resets all changes to the "key_type" field.
+func (m *APIKeyMutation) ResetKeyType() {
+	m.key_type = nil
+}
+
+// SetLinkState sets the "link_state" field.
+func (m *APIKeyMutation) SetLinkState(s string) {
+	m.link_state = &s
+}
+
+// LinkState returns the value of the "link_state" field in the mutation.
+func (m *APIKeyMutation) LinkState() (r string, exists bool) {
+	v := m.link_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkState returns the old "link_state" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkState(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkState: %w", err)
+	}
+	return oldValue.LinkState, nil
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (m *APIKeyMutation) ClearLinkState() {
+	m.link_state = nil
+	m.clearedFields[apikey.FieldLinkState] = struct{}{}
+}
+
+// LinkStateCleared returns if the "link_state" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkStateCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkState]
+	return ok
+}
+
+// ResetLinkState resets all changes to the "link_state" field.
+func (m *APIKeyMutation) ResetLinkState() {
+	m.link_state = nil
+	delete(m.clearedFields, apikey.FieldLinkState)
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (m *APIKeyMutation) SetLinkRateMultiplier(f float64) {
+	m.link_rate_multiplier = &f
+	m.addlink_rate_multiplier = nil
+}
+
+// LinkRateMultiplier returns the value of the "link_rate_multiplier" field in the mutation.
+func (m *APIKeyMutation) LinkRateMultiplier() (r float64, exists bool) {
+	v := m.link_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkRateMultiplier returns the old "link_rate_multiplier" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkRateMultiplier(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkRateMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkRateMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkRateMultiplier: %w", err)
+	}
+	return oldValue.LinkRateMultiplier, nil
+}
+
+// AddLinkRateMultiplier adds f to the "link_rate_multiplier" field.
+func (m *APIKeyMutation) AddLinkRateMultiplier(f float64) {
+	if m.addlink_rate_multiplier != nil {
+		*m.addlink_rate_multiplier += f
+	} else {
+		m.addlink_rate_multiplier = &f
+	}
+}
+
+// AddedLinkRateMultiplier returns the value that was added to the "link_rate_multiplier" field in this mutation.
+func (m *APIKeyMutation) AddedLinkRateMultiplier() (r float64, exists bool) {
+	v := m.addlink_rate_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (m *APIKeyMutation) ClearLinkRateMultiplier() {
+	m.link_rate_multiplier = nil
+	m.addlink_rate_multiplier = nil
+	m.clearedFields[apikey.FieldLinkRateMultiplier] = struct{}{}
+}
+
+// LinkRateMultiplierCleared returns if the "link_rate_multiplier" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkRateMultiplierCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkRateMultiplier]
+	return ok
+}
+
+// ResetLinkRateMultiplier resets all changes to the "link_rate_multiplier" field.
+func (m *APIKeyMutation) ResetLinkRateMultiplier() {
+	m.link_rate_multiplier = nil
+	m.addlink_rate_multiplier = nil
+	delete(m.clearedFields, apikey.FieldLinkRateMultiplier)
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (m *APIKeyMutation) SetLinkOriginalDebit(f float64) {
+	m.link_original_debit = &f
+	m.addlink_original_debit = nil
+}
+
+// LinkOriginalDebit returns the value of the "link_original_debit" field in the mutation.
+func (m *APIKeyMutation) LinkOriginalDebit() (r float64, exists bool) {
+	v := m.link_original_debit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkOriginalDebit returns the old "link_original_debit" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkOriginalDebit(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkOriginalDebit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkOriginalDebit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkOriginalDebit: %w", err)
+	}
+	return oldValue.LinkOriginalDebit, nil
+}
+
+// AddLinkOriginalDebit adds f to the "link_original_debit" field.
+func (m *APIKeyMutation) AddLinkOriginalDebit(f float64) {
+	if m.addlink_original_debit != nil {
+		*m.addlink_original_debit += f
+	} else {
+		m.addlink_original_debit = &f
+	}
+}
+
+// AddedLinkOriginalDebit returns the value that was added to the "link_original_debit" field in this mutation.
+func (m *APIKeyMutation) AddedLinkOriginalDebit() (r float64, exists bool) {
+	v := m.addlink_original_debit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (m *APIKeyMutation) ClearLinkOriginalDebit() {
+	m.link_original_debit = nil
+	m.addlink_original_debit = nil
+	m.clearedFields[apikey.FieldLinkOriginalDebit] = struct{}{}
+}
+
+// LinkOriginalDebitCleared returns if the "link_original_debit" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkOriginalDebitCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkOriginalDebit]
+	return ok
+}
+
+// ResetLinkOriginalDebit resets all changes to the "link_original_debit" field.
+func (m *APIKeyMutation) ResetLinkOriginalDebit() {
+	m.link_original_debit = nil
+	m.addlink_original_debit = nil
+	delete(m.clearedFields, apikey.FieldLinkOriginalDebit)
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (m *APIKeyMutation) SetLinkTotalFunded(f float64) {
+	m.link_total_funded = &f
+	m.addlink_total_funded = nil
+}
+
+// LinkTotalFunded returns the value of the "link_total_funded" field in the mutation.
+func (m *APIKeyMutation) LinkTotalFunded() (r float64, exists bool) {
+	v := m.link_total_funded
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkTotalFunded returns the old "link_total_funded" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkTotalFunded(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkTotalFunded is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkTotalFunded requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkTotalFunded: %w", err)
+	}
+	return oldValue.LinkTotalFunded, nil
+}
+
+// AddLinkTotalFunded adds f to the "link_total_funded" field.
+func (m *APIKeyMutation) AddLinkTotalFunded(f float64) {
+	if m.addlink_total_funded != nil {
+		*m.addlink_total_funded += f
+	} else {
+		m.addlink_total_funded = &f
+	}
+}
+
+// AddedLinkTotalFunded returns the value that was added to the "link_total_funded" field in this mutation.
+func (m *APIKeyMutation) AddedLinkTotalFunded() (r float64, exists bool) {
+	v := m.addlink_total_funded
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLinkTotalFunded resets all changes to the "link_total_funded" field.
+func (m *APIKeyMutation) ResetLinkTotalFunded() {
+	m.link_total_funded = nil
+	m.addlink_total_funded = nil
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (m *APIKeyMutation) SetLinkTotalRefunded(f float64) {
+	m.link_total_refunded = &f
+	m.addlink_total_refunded = nil
+}
+
+// LinkTotalRefunded returns the value of the "link_total_refunded" field in the mutation.
+func (m *APIKeyMutation) LinkTotalRefunded() (r float64, exists bool) {
+	v := m.link_total_refunded
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkTotalRefunded returns the old "link_total_refunded" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkTotalRefunded(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkTotalRefunded is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkTotalRefunded requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkTotalRefunded: %w", err)
+	}
+	return oldValue.LinkTotalRefunded, nil
+}
+
+// AddLinkTotalRefunded adds f to the "link_total_refunded" field.
+func (m *APIKeyMutation) AddLinkTotalRefunded(f float64) {
+	if m.addlink_total_refunded != nil {
+		*m.addlink_total_refunded += f
+	} else {
+		m.addlink_total_refunded = &f
+	}
+}
+
+// AddedLinkTotalRefunded returns the value that was added to the "link_total_refunded" field in this mutation.
+func (m *APIKeyMutation) AddedLinkTotalRefunded() (r float64, exists bool) {
+	v := m.addlink_total_refunded
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLinkTotalRefunded resets all changes to the "link_total_refunded" field.
+func (m *APIKeyMutation) ResetLinkTotalRefunded() {
+	m.link_total_refunded = nil
+	m.addlink_total_refunded = nil
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (m *APIKeyMutation) SetLinkReservedAmount(f float64) {
+	m.link_reserved_amount = &f
+	m.addlink_reserved_amount = nil
+}
+
+// LinkReservedAmount returns the value of the "link_reserved_amount" field in the mutation.
+func (m *APIKeyMutation) LinkReservedAmount() (r float64, exists bool) {
+	v := m.link_reserved_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkReservedAmount returns the old "link_reserved_amount" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkReservedAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkReservedAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkReservedAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkReservedAmount: %w", err)
+	}
+	return oldValue.LinkReservedAmount, nil
+}
+
+// AddLinkReservedAmount adds f to the "link_reserved_amount" field.
+func (m *APIKeyMutation) AddLinkReservedAmount(f float64) {
+	if m.addlink_reserved_amount != nil {
+		*m.addlink_reserved_amount += f
+	} else {
+		m.addlink_reserved_amount = &f
+	}
+}
+
+// AddedLinkReservedAmount returns the value that was added to the "link_reserved_amount" field in this mutation.
+func (m *APIKeyMutation) AddedLinkReservedAmount() (r float64, exists bool) {
+	v := m.addlink_reserved_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLinkReservedAmount resets all changes to the "link_reserved_amount" field.
+func (m *APIKeyMutation) ResetLinkReservedAmount() {
+	m.link_reserved_amount = nil
+	m.addlink_reserved_amount = nil
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (m *APIKeyMutation) SetLinkConcurrency(i int) {
+	m.link_concurrency = &i
+	m.addlink_concurrency = nil
+}
+
+// LinkConcurrency returns the value of the "link_concurrency" field in the mutation.
+func (m *APIKeyMutation) LinkConcurrency() (r int, exists bool) {
+	v := m.link_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkConcurrency returns the old "link_concurrency" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkConcurrency(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkConcurrency: %w", err)
+	}
+	return oldValue.LinkConcurrency, nil
+}
+
+// AddLinkConcurrency adds i to the "link_concurrency" field.
+func (m *APIKeyMutation) AddLinkConcurrency(i int) {
+	if m.addlink_concurrency != nil {
+		*m.addlink_concurrency += i
+	} else {
+		m.addlink_concurrency = &i
+	}
+}
+
+// AddedLinkConcurrency returns the value that was added to the "link_concurrency" field in this mutation.
+func (m *APIKeyMutation) AddedLinkConcurrency() (r int, exists bool) {
+	v := m.addlink_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (m *APIKeyMutation) ClearLinkConcurrency() {
+	m.link_concurrency = nil
+	m.addlink_concurrency = nil
+	m.clearedFields[apikey.FieldLinkConcurrency] = struct{}{}
+}
+
+// LinkConcurrencyCleared returns if the "link_concurrency" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkConcurrencyCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkConcurrency]
+	return ok
+}
+
+// ResetLinkConcurrency resets all changes to the "link_concurrency" field.
+func (m *APIKeyMutation) ResetLinkConcurrency() {
+	m.link_concurrency = nil
+	m.addlink_concurrency = nil
+	delete(m.clearedFields, apikey.FieldLinkConcurrency)
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (m *APIKeyMutation) SetLinkRpmLimit(i int) {
+	m.link_rpm_limit = &i
+	m.addlink_rpm_limit = nil
+}
+
+// LinkRpmLimit returns the value of the "link_rpm_limit" field in the mutation.
+func (m *APIKeyMutation) LinkRpmLimit() (r int, exists bool) {
+	v := m.link_rpm_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkRpmLimit returns the old "link_rpm_limit" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkRpmLimit(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkRpmLimit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkRpmLimit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkRpmLimit: %w", err)
+	}
+	return oldValue.LinkRpmLimit, nil
+}
+
+// AddLinkRpmLimit adds i to the "link_rpm_limit" field.
+func (m *APIKeyMutation) AddLinkRpmLimit(i int) {
+	if m.addlink_rpm_limit != nil {
+		*m.addlink_rpm_limit += i
+	} else {
+		m.addlink_rpm_limit = &i
+	}
+}
+
+// AddedLinkRpmLimit returns the value that was added to the "link_rpm_limit" field in this mutation.
+func (m *APIKeyMutation) AddedLinkRpmLimit() (r int, exists bool) {
+	v := m.addlink_rpm_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (m *APIKeyMutation) ClearLinkRpmLimit() {
+	m.link_rpm_limit = nil
+	m.addlink_rpm_limit = nil
+	m.clearedFields[apikey.FieldLinkRpmLimit] = struct{}{}
+}
+
+// LinkRpmLimitCleared returns if the "link_rpm_limit" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkRpmLimitCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkRpmLimit]
+	return ok
+}
+
+// ResetLinkRpmLimit resets all changes to the "link_rpm_limit" field.
+func (m *APIKeyMutation) ResetLinkRpmLimit() {
+	m.link_rpm_limit = nil
+	m.addlink_rpm_limit = nil
+	delete(m.clearedFields, apikey.FieldLinkRpmLimit)
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (m *APIKeyMutation) SetLinkActivatedAt(t time.Time) {
+	m.link_activated_at = &t
+}
+
+// LinkActivatedAt returns the value of the "link_activated_at" field in the mutation.
+func (m *APIKeyMutation) LinkActivatedAt() (r time.Time, exists bool) {
+	v := m.link_activated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkActivatedAt returns the old "link_activated_at" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkActivatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkActivatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkActivatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkActivatedAt: %w", err)
+	}
+	return oldValue.LinkActivatedAt, nil
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (m *APIKeyMutation) ClearLinkActivatedAt() {
+	m.link_activated_at = nil
+	m.clearedFields[apikey.FieldLinkActivatedAt] = struct{}{}
+}
+
+// LinkActivatedAtCleared returns if the "link_activated_at" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkActivatedAtCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkActivatedAt]
+	return ok
+}
+
+// ResetLinkActivatedAt resets all changes to the "link_activated_at" field.
+func (m *APIKeyMutation) ResetLinkActivatedAt() {
+	m.link_activated_at = nil
+	delete(m.clearedFields, apikey.FieldLinkActivatedAt)
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (m *APIKeyMutation) SetLinkRevokedAt(t time.Time) {
+	m.link_revoked_at = &t
+}
+
+// LinkRevokedAt returns the value of the "link_revoked_at" field in the mutation.
+func (m *APIKeyMutation) LinkRevokedAt() (r time.Time, exists bool) {
+	v := m.link_revoked_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkRevokedAt returns the old "link_revoked_at" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkRevokedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkRevokedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkRevokedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkRevokedAt: %w", err)
+	}
+	return oldValue.LinkRevokedAt, nil
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (m *APIKeyMutation) ClearLinkRevokedAt() {
+	m.link_revoked_at = nil
+	m.clearedFields[apikey.FieldLinkRevokedAt] = struct{}{}
+}
+
+// LinkRevokedAtCleared returns if the "link_revoked_at" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkRevokedAtCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkRevokedAt]
+	return ok
+}
+
+// ResetLinkRevokedAt resets all changes to the "link_revoked_at" field.
+func (m *APIKeyMutation) ResetLinkRevokedAt() {
+	m.link_revoked_at = nil
+	delete(m.clearedFields, apikey.FieldLinkRevokedAt)
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (m *APIKeyMutation) SetLinkFrozenReason(s string) {
+	m.link_frozen_reason = &s
+}
+
+// LinkFrozenReason returns the value of the "link_frozen_reason" field in the mutation.
+func (m *APIKeyMutation) LinkFrozenReason() (r string, exists bool) {
+	v := m.link_frozen_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkFrozenReason returns the old "link_frozen_reason" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLinkFrozenReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkFrozenReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkFrozenReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkFrozenReason: %w", err)
+	}
+	return oldValue.LinkFrozenReason, nil
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (m *APIKeyMutation) ClearLinkFrozenReason() {
+	m.link_frozen_reason = nil
+	m.clearedFields[apikey.FieldLinkFrozenReason] = struct{}{}
+}
+
+// LinkFrozenReasonCleared returns if the "link_frozen_reason" field was cleared in this mutation.
+func (m *APIKeyMutation) LinkFrozenReasonCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLinkFrozenReason]
+	return ok
+}
+
+// ResetLinkFrozenReason resets all changes to the "link_frozen_reason" field.
+func (m *APIKeyMutation) ResetLinkFrozenReason() {
+	m.link_frozen_reason = nil
+	delete(m.clearedFields, apikey.FieldLinkFrozenReason)
 }
 
 // SetLastUsedAt sets the "last_used_at" field.
@@ -1532,7 +2237,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 35)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1556,6 +2261,42 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, apikey.FieldStatus)
+	}
+	if m.key_type != nil {
+		fields = append(fields, apikey.FieldKeyType)
+	}
+	if m.link_state != nil {
+		fields = append(fields, apikey.FieldLinkState)
+	}
+	if m.link_rate_multiplier != nil {
+		fields = append(fields, apikey.FieldLinkRateMultiplier)
+	}
+	if m.link_original_debit != nil {
+		fields = append(fields, apikey.FieldLinkOriginalDebit)
+	}
+	if m.link_total_funded != nil {
+		fields = append(fields, apikey.FieldLinkTotalFunded)
+	}
+	if m.link_total_refunded != nil {
+		fields = append(fields, apikey.FieldLinkTotalRefunded)
+	}
+	if m.link_reserved_amount != nil {
+		fields = append(fields, apikey.FieldLinkReservedAmount)
+	}
+	if m.link_concurrency != nil {
+		fields = append(fields, apikey.FieldLinkConcurrency)
+	}
+	if m.link_rpm_limit != nil {
+		fields = append(fields, apikey.FieldLinkRpmLimit)
+	}
+	if m.link_activated_at != nil {
+		fields = append(fields, apikey.FieldLinkActivatedAt)
+	}
+	if m.link_revoked_at != nil {
+		fields = append(fields, apikey.FieldLinkRevokedAt)
+	}
+	if m.link_frozen_reason != nil {
+		fields = append(fields, apikey.FieldLinkFrozenReason)
 	}
 	if m.last_used_at != nil {
 		fields = append(fields, apikey.FieldLastUsedAt)
@@ -1626,6 +2367,30 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case apikey.FieldStatus:
 		return m.Status()
+	case apikey.FieldKeyType:
+		return m.KeyType()
+	case apikey.FieldLinkState:
+		return m.LinkState()
+	case apikey.FieldLinkRateMultiplier:
+		return m.LinkRateMultiplier()
+	case apikey.FieldLinkOriginalDebit:
+		return m.LinkOriginalDebit()
+	case apikey.FieldLinkTotalFunded:
+		return m.LinkTotalFunded()
+	case apikey.FieldLinkTotalRefunded:
+		return m.LinkTotalRefunded()
+	case apikey.FieldLinkReservedAmount:
+		return m.LinkReservedAmount()
+	case apikey.FieldLinkConcurrency:
+		return m.LinkConcurrency()
+	case apikey.FieldLinkRpmLimit:
+		return m.LinkRpmLimit()
+	case apikey.FieldLinkActivatedAt:
+		return m.LinkActivatedAt()
+	case apikey.FieldLinkRevokedAt:
+		return m.LinkRevokedAt()
+	case apikey.FieldLinkFrozenReason:
+		return m.LinkFrozenReason()
 	case apikey.FieldLastUsedAt:
 		return m.LastUsedAt()
 	case apikey.FieldIPWhitelist:
@@ -1681,6 +2446,30 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldGroupID(ctx)
 	case apikey.FieldStatus:
 		return m.OldStatus(ctx)
+	case apikey.FieldKeyType:
+		return m.OldKeyType(ctx)
+	case apikey.FieldLinkState:
+		return m.OldLinkState(ctx)
+	case apikey.FieldLinkRateMultiplier:
+		return m.OldLinkRateMultiplier(ctx)
+	case apikey.FieldLinkOriginalDebit:
+		return m.OldLinkOriginalDebit(ctx)
+	case apikey.FieldLinkTotalFunded:
+		return m.OldLinkTotalFunded(ctx)
+	case apikey.FieldLinkTotalRefunded:
+		return m.OldLinkTotalRefunded(ctx)
+	case apikey.FieldLinkReservedAmount:
+		return m.OldLinkReservedAmount(ctx)
+	case apikey.FieldLinkConcurrency:
+		return m.OldLinkConcurrency(ctx)
+	case apikey.FieldLinkRpmLimit:
+		return m.OldLinkRpmLimit(ctx)
+	case apikey.FieldLinkActivatedAt:
+		return m.OldLinkActivatedAt(ctx)
+	case apikey.FieldLinkRevokedAt:
+		return m.OldLinkRevokedAt(ctx)
+	case apikey.FieldLinkFrozenReason:
+		return m.OldLinkFrozenReason(ctx)
 	case apikey.FieldLastUsedAt:
 		return m.OldLastUsedAt(ctx)
 	case apikey.FieldIPWhitelist:
@@ -1775,6 +2564,90 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case apikey.FieldKeyType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeyType(v)
+		return nil
+	case apikey.FieldLinkState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkState(v)
+		return nil
+	case apikey.FieldLinkRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkRateMultiplier(v)
+		return nil
+	case apikey.FieldLinkOriginalDebit:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkOriginalDebit(v)
+		return nil
+	case apikey.FieldLinkTotalFunded:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkTotalFunded(v)
+		return nil
+	case apikey.FieldLinkTotalRefunded:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkTotalRefunded(v)
+		return nil
+	case apikey.FieldLinkReservedAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkReservedAmount(v)
+		return nil
+	case apikey.FieldLinkConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkConcurrency(v)
+		return nil
+	case apikey.FieldLinkRpmLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkRpmLimit(v)
+		return nil
+	case apikey.FieldLinkActivatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkActivatedAt(v)
+		return nil
+	case apikey.FieldLinkRevokedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkRevokedAt(v)
+		return nil
+	case apikey.FieldLinkFrozenReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkFrozenReason(v)
 		return nil
 	case apikey.FieldLastUsedAt:
 		v, ok := value.(time.Time)
@@ -1889,6 +2762,27 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *APIKeyMutation) AddedFields() []string {
 	var fields []string
+	if m.addlink_rate_multiplier != nil {
+		fields = append(fields, apikey.FieldLinkRateMultiplier)
+	}
+	if m.addlink_original_debit != nil {
+		fields = append(fields, apikey.FieldLinkOriginalDebit)
+	}
+	if m.addlink_total_funded != nil {
+		fields = append(fields, apikey.FieldLinkTotalFunded)
+	}
+	if m.addlink_total_refunded != nil {
+		fields = append(fields, apikey.FieldLinkTotalRefunded)
+	}
+	if m.addlink_reserved_amount != nil {
+		fields = append(fields, apikey.FieldLinkReservedAmount)
+	}
+	if m.addlink_concurrency != nil {
+		fields = append(fields, apikey.FieldLinkConcurrency)
+	}
+	if m.addlink_rpm_limit != nil {
+		fields = append(fields, apikey.FieldLinkRpmLimit)
+	}
 	if m.addquota != nil {
 		fields = append(fields, apikey.FieldQuota)
 	}
@@ -1921,6 +2815,20 @@ func (m *APIKeyMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *APIKeyMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case apikey.FieldLinkRateMultiplier:
+		return m.AddedLinkRateMultiplier()
+	case apikey.FieldLinkOriginalDebit:
+		return m.AddedLinkOriginalDebit()
+	case apikey.FieldLinkTotalFunded:
+		return m.AddedLinkTotalFunded()
+	case apikey.FieldLinkTotalRefunded:
+		return m.AddedLinkTotalRefunded()
+	case apikey.FieldLinkReservedAmount:
+		return m.AddedLinkReservedAmount()
+	case apikey.FieldLinkConcurrency:
+		return m.AddedLinkConcurrency()
+	case apikey.FieldLinkRpmLimit:
+		return m.AddedLinkRpmLimit()
 	case apikey.FieldQuota:
 		return m.AddedQuota()
 	case apikey.FieldQuotaUsed:
@@ -1946,6 +2854,55 @@ func (m *APIKeyMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *APIKeyMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case apikey.FieldLinkRateMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkRateMultiplier(v)
+		return nil
+	case apikey.FieldLinkOriginalDebit:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkOriginalDebit(v)
+		return nil
+	case apikey.FieldLinkTotalFunded:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkTotalFunded(v)
+		return nil
+	case apikey.FieldLinkTotalRefunded:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkTotalRefunded(v)
+		return nil
+	case apikey.FieldLinkReservedAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkReservedAmount(v)
+		return nil
+	case apikey.FieldLinkConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkConcurrency(v)
+		return nil
+	case apikey.FieldLinkRpmLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLinkRpmLimit(v)
+		return nil
 	case apikey.FieldQuota:
 		v, ok := value.(float64)
 		if !ok {
@@ -2016,6 +2973,30 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldGroupID) {
 		fields = append(fields, apikey.FieldGroupID)
 	}
+	if m.FieldCleared(apikey.FieldLinkState) {
+		fields = append(fields, apikey.FieldLinkState)
+	}
+	if m.FieldCleared(apikey.FieldLinkRateMultiplier) {
+		fields = append(fields, apikey.FieldLinkRateMultiplier)
+	}
+	if m.FieldCleared(apikey.FieldLinkOriginalDebit) {
+		fields = append(fields, apikey.FieldLinkOriginalDebit)
+	}
+	if m.FieldCleared(apikey.FieldLinkConcurrency) {
+		fields = append(fields, apikey.FieldLinkConcurrency)
+	}
+	if m.FieldCleared(apikey.FieldLinkRpmLimit) {
+		fields = append(fields, apikey.FieldLinkRpmLimit)
+	}
+	if m.FieldCleared(apikey.FieldLinkActivatedAt) {
+		fields = append(fields, apikey.FieldLinkActivatedAt)
+	}
+	if m.FieldCleared(apikey.FieldLinkRevokedAt) {
+		fields = append(fields, apikey.FieldLinkRevokedAt)
+	}
+	if m.FieldCleared(apikey.FieldLinkFrozenReason) {
+		fields = append(fields, apikey.FieldLinkFrozenReason)
+	}
 	if m.FieldCleared(apikey.FieldLastUsedAt) {
 		fields = append(fields, apikey.FieldLastUsedAt)
 	}
@@ -2056,6 +3037,30 @@ func (m *APIKeyMutation) ClearField(name string) error {
 		return nil
 	case apikey.FieldGroupID:
 		m.ClearGroupID()
+		return nil
+	case apikey.FieldLinkState:
+		m.ClearLinkState()
+		return nil
+	case apikey.FieldLinkRateMultiplier:
+		m.ClearLinkRateMultiplier()
+		return nil
+	case apikey.FieldLinkOriginalDebit:
+		m.ClearLinkOriginalDebit()
+		return nil
+	case apikey.FieldLinkConcurrency:
+		m.ClearLinkConcurrency()
+		return nil
+	case apikey.FieldLinkRpmLimit:
+		m.ClearLinkRpmLimit()
+		return nil
+	case apikey.FieldLinkActivatedAt:
+		m.ClearLinkActivatedAt()
+		return nil
+	case apikey.FieldLinkRevokedAt:
+		m.ClearLinkRevokedAt()
+		return nil
+	case apikey.FieldLinkFrozenReason:
+		m.ClearLinkFrozenReason()
 		return nil
 	case apikey.FieldLastUsedAt:
 		m.ClearLastUsedAt()
@@ -2109,6 +3114,42 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case apikey.FieldKeyType:
+		m.ResetKeyType()
+		return nil
+	case apikey.FieldLinkState:
+		m.ResetLinkState()
+		return nil
+	case apikey.FieldLinkRateMultiplier:
+		m.ResetLinkRateMultiplier()
+		return nil
+	case apikey.FieldLinkOriginalDebit:
+		m.ResetLinkOriginalDebit()
+		return nil
+	case apikey.FieldLinkTotalFunded:
+		m.ResetLinkTotalFunded()
+		return nil
+	case apikey.FieldLinkTotalRefunded:
+		m.ResetLinkTotalRefunded()
+		return nil
+	case apikey.FieldLinkReservedAmount:
+		m.ResetLinkReservedAmount()
+		return nil
+	case apikey.FieldLinkConcurrency:
+		m.ResetLinkConcurrency()
+		return nil
+	case apikey.FieldLinkRpmLimit:
+		m.ResetLinkRpmLimit()
+		return nil
+	case apikey.FieldLinkActivatedAt:
+		m.ResetLinkActivatedAt()
+		return nil
+	case apikey.FieldLinkRevokedAt:
+		m.ResetLinkRevokedAt()
+		return nil
+	case apikey.FieldLinkFrozenReason:
+		m.ResetLinkFrozenReason()
 		return nil
 	case apikey.FieldLastUsedAt:
 		m.ResetLastUsedAt()
@@ -28231,6 +29272,3071 @@ func (m *IdentityAdoptionDecisionMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown IdentityAdoptionDecision edge %s", name)
+}
+
+// LinkCardGroupAuthorizationMutation represents an operation that mutates the LinkCardGroupAuthorization nodes in the graph.
+type LinkCardGroupAuthorizationMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int64
+	group_id      *int64
+	addgroup_id   *int64
+	enabled       *bool
+	sort_order    *int
+	addsort_order *int
+	created_by    *int64
+	addcreated_by *int64
+	created_at    *time.Time
+	updated_at    *time.Time
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*LinkCardGroupAuthorization, error)
+	predicates    []predicate.LinkCardGroupAuthorization
+}
+
+var _ ent.Mutation = (*LinkCardGroupAuthorizationMutation)(nil)
+
+// linkcardgroupauthorizationOption allows management of the mutation configuration using functional options.
+type linkcardgroupauthorizationOption func(*LinkCardGroupAuthorizationMutation)
+
+// newLinkCardGroupAuthorizationMutation creates new mutation for the LinkCardGroupAuthorization entity.
+func newLinkCardGroupAuthorizationMutation(c config, op Op, opts ...linkcardgroupauthorizationOption) *LinkCardGroupAuthorizationMutation {
+	m := &LinkCardGroupAuthorizationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeLinkCardGroupAuthorization,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withLinkCardGroupAuthorizationID sets the ID field of the mutation.
+func withLinkCardGroupAuthorizationID(id int64) linkcardgroupauthorizationOption {
+	return func(m *LinkCardGroupAuthorizationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *LinkCardGroupAuthorization
+		)
+		m.oldValue = func(ctx context.Context) (*LinkCardGroupAuthorization, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().LinkCardGroupAuthorization.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withLinkCardGroupAuthorization sets the old LinkCardGroupAuthorization of the mutation.
+func withLinkCardGroupAuthorization(node *LinkCardGroupAuthorization) linkcardgroupauthorizationOption {
+	return func(m *LinkCardGroupAuthorizationMutation) {
+		m.oldValue = func(context.Context) (*LinkCardGroupAuthorization, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m LinkCardGroupAuthorizationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m LinkCardGroupAuthorizationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *LinkCardGroupAuthorizationMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *LinkCardGroupAuthorizationMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().LinkCardGroupAuthorization.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *LinkCardGroupAuthorizationMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *LinkCardGroupAuthorizationMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *LinkCardGroupAuthorizationMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *LinkCardGroupAuthorizationMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *LinkCardGroupAuthorizationMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *LinkCardGroupAuthorizationMutation) SetCreatedBy(i int64) {
+	m.created_by = &i
+	m.addcreated_by = nil
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) CreatedBy() (r int64, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldCreatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// AddCreatedBy adds i to the "created_by" field.
+func (m *LinkCardGroupAuthorizationMutation) AddCreatedBy(i int64) {
+	if m.addcreated_by != nil {
+		*m.addcreated_by += i
+	} else {
+		m.addcreated_by = &i
+	}
+}
+
+// AddedCreatedBy returns the value that was added to the "created_by" field in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedCreatedBy() (r int64, exists bool) {
+	v := m.addcreated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *LinkCardGroupAuthorizationMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	m.clearedFields[linkcardgroupauthorization.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[linkcardgroupauthorization.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	delete(m.clearedFields, linkcardgroupauthorization.FieldCreatedBy)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *LinkCardGroupAuthorizationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *LinkCardGroupAuthorizationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *LinkCardGroupAuthorizationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the LinkCardGroupAuthorization entity.
+// If the LinkCardGroupAuthorization object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardGroupAuthorizationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *LinkCardGroupAuthorizationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the LinkCardGroupAuthorizationMutation builder.
+func (m *LinkCardGroupAuthorizationMutation) Where(ps ...predicate.LinkCardGroupAuthorization) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the LinkCardGroupAuthorizationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *LinkCardGroupAuthorizationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.LinkCardGroupAuthorization, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *LinkCardGroupAuthorizationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *LinkCardGroupAuthorizationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (LinkCardGroupAuthorization).
+func (m *LinkCardGroupAuthorizationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *LinkCardGroupAuthorizationMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.group_id != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldGroupID)
+	}
+	if m.enabled != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldEnabled)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldSortOrder)
+	}
+	if m.created_by != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldCreatedBy)
+	}
+	if m.created_at != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *LinkCardGroupAuthorizationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		return m.GroupID()
+	case linkcardgroupauthorization.FieldEnabled:
+		return m.Enabled()
+	case linkcardgroupauthorization.FieldSortOrder:
+		return m.SortOrder()
+	case linkcardgroupauthorization.FieldCreatedBy:
+		return m.CreatedBy()
+	case linkcardgroupauthorization.FieldCreatedAt:
+		return m.CreatedAt()
+	case linkcardgroupauthorization.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *LinkCardGroupAuthorizationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case linkcardgroupauthorization.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case linkcardgroupauthorization.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case linkcardgroupauthorization.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case linkcardgroupauthorization.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case linkcardgroupauthorization.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown LinkCardGroupAuthorization field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardGroupAuthorizationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case linkcardgroupauthorization.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case linkcardgroupauthorization.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case linkcardgroupauthorization.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case linkcardgroupauthorization.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case linkcardgroupauthorization.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardGroupAuthorization field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedFields() []string {
+	var fields []string
+	if m.addgroup_id != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldGroupID)
+	}
+	if m.addsort_order != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldSortOrder)
+	}
+	if m.addcreated_by != nil {
+		fields = append(fields, linkcardgroupauthorization.FieldCreatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *LinkCardGroupAuthorizationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		return m.AddedGroupID()
+	case linkcardgroupauthorization.FieldSortOrder:
+		return m.AddedSortOrder()
+	case linkcardgroupauthorization.FieldCreatedBy:
+		return m.AddedCreatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardGroupAuthorizationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	case linkcardgroupauthorization.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	case linkcardgroupauthorization.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardGroupAuthorization numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *LinkCardGroupAuthorizationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(linkcardgroupauthorization.FieldCreatedBy) {
+		fields = append(fields, linkcardgroupauthorization.FieldCreatedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *LinkCardGroupAuthorizationMutation) ClearField(name string) error {
+	switch name {
+	case linkcardgroupauthorization.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardGroupAuthorization nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *LinkCardGroupAuthorizationMutation) ResetField(name string) error {
+	switch name {
+	case linkcardgroupauthorization.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case linkcardgroupauthorization.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case linkcardgroupauthorization.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case linkcardgroupauthorization.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case linkcardgroupauthorization.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case linkcardgroupauthorization.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardGroupAuthorization field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *LinkCardGroupAuthorizationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *LinkCardGroupAuthorizationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardGroupAuthorization unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *LinkCardGroupAuthorizationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardGroupAuthorization edge %s", name)
+}
+
+// LinkCardLedgerMutation represents an operation that mutates the LinkCardLedger nodes in the graph.
+type LinkCardLedgerMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int64
+	operation_id             *int64
+	addoperation_id          *int64
+	api_key_id               *int64
+	addapi_key_id            *int64
+	creator_user_id          *int64
+	addcreator_user_id       *int64
+	entry_type               *string
+	reserve_delta            *float64
+	addreserve_delta         *float64
+	creator_balance_delta    *float64
+	addcreator_balance_delta *float64
+	quota_before             *float64
+	addquota_before          *float64
+	quota_after              *float64
+	addquota_after           *float64
+	quota_used_before        *float64
+	addquota_used_before     *float64
+	quota_used_after         *float64
+	addquota_used_after      *float64
+	request_id               *string
+	actor_user_id            *int64
+	addactor_user_id         *int64
+	reason                   *string
+	metadata                 *map[string]interface{}
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*LinkCardLedger, error)
+	predicates               []predicate.LinkCardLedger
+}
+
+var _ ent.Mutation = (*LinkCardLedgerMutation)(nil)
+
+// linkcardledgerOption allows management of the mutation configuration using functional options.
+type linkcardledgerOption func(*LinkCardLedgerMutation)
+
+// newLinkCardLedgerMutation creates new mutation for the LinkCardLedger entity.
+func newLinkCardLedgerMutation(c config, op Op, opts ...linkcardledgerOption) *LinkCardLedgerMutation {
+	m := &LinkCardLedgerMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeLinkCardLedger,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withLinkCardLedgerID sets the ID field of the mutation.
+func withLinkCardLedgerID(id int64) linkcardledgerOption {
+	return func(m *LinkCardLedgerMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *LinkCardLedger
+		)
+		m.oldValue = func(ctx context.Context) (*LinkCardLedger, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().LinkCardLedger.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withLinkCardLedger sets the old LinkCardLedger of the mutation.
+func withLinkCardLedger(node *LinkCardLedger) linkcardledgerOption {
+	return func(m *LinkCardLedgerMutation) {
+		m.oldValue = func(context.Context) (*LinkCardLedger, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m LinkCardLedgerMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m LinkCardLedgerMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *LinkCardLedgerMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *LinkCardLedgerMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().LinkCardLedger.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetOperationID sets the "operation_id" field.
+func (m *LinkCardLedgerMutation) SetOperationID(i int64) {
+	m.operation_id = &i
+	m.addoperation_id = nil
+}
+
+// OperationID returns the value of the "operation_id" field in the mutation.
+func (m *LinkCardLedgerMutation) OperationID() (r int64, exists bool) {
+	v := m.operation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationID returns the old "operation_id" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldOperationID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationID: %w", err)
+	}
+	return oldValue.OperationID, nil
+}
+
+// AddOperationID adds i to the "operation_id" field.
+func (m *LinkCardLedgerMutation) AddOperationID(i int64) {
+	if m.addoperation_id != nil {
+		*m.addoperation_id += i
+	} else {
+		m.addoperation_id = &i
+	}
+}
+
+// AddedOperationID returns the value that was added to the "operation_id" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedOperationID() (r int64, exists bool) {
+	v := m.addoperation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOperationID clears the value of the "operation_id" field.
+func (m *LinkCardLedgerMutation) ClearOperationID() {
+	m.operation_id = nil
+	m.addoperation_id = nil
+	m.clearedFields[linkcardledger.FieldOperationID] = struct{}{}
+}
+
+// OperationIDCleared returns if the "operation_id" field was cleared in this mutation.
+func (m *LinkCardLedgerMutation) OperationIDCleared() bool {
+	_, ok := m.clearedFields[linkcardledger.FieldOperationID]
+	return ok
+}
+
+// ResetOperationID resets all changes to the "operation_id" field.
+func (m *LinkCardLedgerMutation) ResetOperationID() {
+	m.operation_id = nil
+	m.addoperation_id = nil
+	delete(m.clearedFields, linkcardledger.FieldOperationID)
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *LinkCardLedgerMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *LinkCardLedgerMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldAPIKeyID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *LinkCardLedgerMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *LinkCardLedgerMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+}
+
+// SetCreatorUserID sets the "creator_user_id" field.
+func (m *LinkCardLedgerMutation) SetCreatorUserID(i int64) {
+	m.creator_user_id = &i
+	m.addcreator_user_id = nil
+}
+
+// CreatorUserID returns the value of the "creator_user_id" field in the mutation.
+func (m *LinkCardLedgerMutation) CreatorUserID() (r int64, exists bool) {
+	v := m.creator_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatorUserID returns the old "creator_user_id" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldCreatorUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatorUserID: %w", err)
+	}
+	return oldValue.CreatorUserID, nil
+}
+
+// AddCreatorUserID adds i to the "creator_user_id" field.
+func (m *LinkCardLedgerMutation) AddCreatorUserID(i int64) {
+	if m.addcreator_user_id != nil {
+		*m.addcreator_user_id += i
+	} else {
+		m.addcreator_user_id = &i
+	}
+}
+
+// AddedCreatorUserID returns the value that was added to the "creator_user_id" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedCreatorUserID() (r int64, exists bool) {
+	v := m.addcreator_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatorUserID resets all changes to the "creator_user_id" field.
+func (m *LinkCardLedgerMutation) ResetCreatorUserID() {
+	m.creator_user_id = nil
+	m.addcreator_user_id = nil
+}
+
+// SetEntryType sets the "entry_type" field.
+func (m *LinkCardLedgerMutation) SetEntryType(s string) {
+	m.entry_type = &s
+}
+
+// EntryType returns the value of the "entry_type" field in the mutation.
+func (m *LinkCardLedgerMutation) EntryType() (r string, exists bool) {
+	v := m.entry_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEntryType returns the old "entry_type" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldEntryType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEntryType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEntryType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEntryType: %w", err)
+	}
+	return oldValue.EntryType, nil
+}
+
+// ResetEntryType resets all changes to the "entry_type" field.
+func (m *LinkCardLedgerMutation) ResetEntryType() {
+	m.entry_type = nil
+}
+
+// SetReserveDelta sets the "reserve_delta" field.
+func (m *LinkCardLedgerMutation) SetReserveDelta(f float64) {
+	m.reserve_delta = &f
+	m.addreserve_delta = nil
+}
+
+// ReserveDelta returns the value of the "reserve_delta" field in the mutation.
+func (m *LinkCardLedgerMutation) ReserveDelta() (r float64, exists bool) {
+	v := m.reserve_delta
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReserveDelta returns the old "reserve_delta" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldReserveDelta(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReserveDelta is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReserveDelta requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReserveDelta: %w", err)
+	}
+	return oldValue.ReserveDelta, nil
+}
+
+// AddReserveDelta adds f to the "reserve_delta" field.
+func (m *LinkCardLedgerMutation) AddReserveDelta(f float64) {
+	if m.addreserve_delta != nil {
+		*m.addreserve_delta += f
+	} else {
+		m.addreserve_delta = &f
+	}
+}
+
+// AddedReserveDelta returns the value that was added to the "reserve_delta" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedReserveDelta() (r float64, exists bool) {
+	v := m.addreserve_delta
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetReserveDelta resets all changes to the "reserve_delta" field.
+func (m *LinkCardLedgerMutation) ResetReserveDelta() {
+	m.reserve_delta = nil
+	m.addreserve_delta = nil
+}
+
+// SetCreatorBalanceDelta sets the "creator_balance_delta" field.
+func (m *LinkCardLedgerMutation) SetCreatorBalanceDelta(f float64) {
+	m.creator_balance_delta = &f
+	m.addcreator_balance_delta = nil
+}
+
+// CreatorBalanceDelta returns the value of the "creator_balance_delta" field in the mutation.
+func (m *LinkCardLedgerMutation) CreatorBalanceDelta() (r float64, exists bool) {
+	v := m.creator_balance_delta
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatorBalanceDelta returns the old "creator_balance_delta" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldCreatorBalanceDelta(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatorBalanceDelta is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatorBalanceDelta requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatorBalanceDelta: %w", err)
+	}
+	return oldValue.CreatorBalanceDelta, nil
+}
+
+// AddCreatorBalanceDelta adds f to the "creator_balance_delta" field.
+func (m *LinkCardLedgerMutation) AddCreatorBalanceDelta(f float64) {
+	if m.addcreator_balance_delta != nil {
+		*m.addcreator_balance_delta += f
+	} else {
+		m.addcreator_balance_delta = &f
+	}
+}
+
+// AddedCreatorBalanceDelta returns the value that was added to the "creator_balance_delta" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedCreatorBalanceDelta() (r float64, exists bool) {
+	v := m.addcreator_balance_delta
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatorBalanceDelta resets all changes to the "creator_balance_delta" field.
+func (m *LinkCardLedgerMutation) ResetCreatorBalanceDelta() {
+	m.creator_balance_delta = nil
+	m.addcreator_balance_delta = nil
+}
+
+// SetQuotaBefore sets the "quota_before" field.
+func (m *LinkCardLedgerMutation) SetQuotaBefore(f float64) {
+	m.quota_before = &f
+	m.addquota_before = nil
+}
+
+// QuotaBefore returns the value of the "quota_before" field in the mutation.
+func (m *LinkCardLedgerMutation) QuotaBefore() (r float64, exists bool) {
+	v := m.quota_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaBefore returns the old "quota_before" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldQuotaBefore(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaBefore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaBefore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaBefore: %w", err)
+	}
+	return oldValue.QuotaBefore, nil
+}
+
+// AddQuotaBefore adds f to the "quota_before" field.
+func (m *LinkCardLedgerMutation) AddQuotaBefore(f float64) {
+	if m.addquota_before != nil {
+		*m.addquota_before += f
+	} else {
+		m.addquota_before = &f
+	}
+}
+
+// AddedQuotaBefore returns the value that was added to the "quota_before" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedQuotaBefore() (r float64, exists bool) {
+	v := m.addquota_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetQuotaBefore resets all changes to the "quota_before" field.
+func (m *LinkCardLedgerMutation) ResetQuotaBefore() {
+	m.quota_before = nil
+	m.addquota_before = nil
+}
+
+// SetQuotaAfter sets the "quota_after" field.
+func (m *LinkCardLedgerMutation) SetQuotaAfter(f float64) {
+	m.quota_after = &f
+	m.addquota_after = nil
+}
+
+// QuotaAfter returns the value of the "quota_after" field in the mutation.
+func (m *LinkCardLedgerMutation) QuotaAfter() (r float64, exists bool) {
+	v := m.quota_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaAfter returns the old "quota_after" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldQuotaAfter(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaAfter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaAfter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaAfter: %w", err)
+	}
+	return oldValue.QuotaAfter, nil
+}
+
+// AddQuotaAfter adds f to the "quota_after" field.
+func (m *LinkCardLedgerMutation) AddQuotaAfter(f float64) {
+	if m.addquota_after != nil {
+		*m.addquota_after += f
+	} else {
+		m.addquota_after = &f
+	}
+}
+
+// AddedQuotaAfter returns the value that was added to the "quota_after" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedQuotaAfter() (r float64, exists bool) {
+	v := m.addquota_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetQuotaAfter resets all changes to the "quota_after" field.
+func (m *LinkCardLedgerMutation) ResetQuotaAfter() {
+	m.quota_after = nil
+	m.addquota_after = nil
+}
+
+// SetQuotaUsedBefore sets the "quota_used_before" field.
+func (m *LinkCardLedgerMutation) SetQuotaUsedBefore(f float64) {
+	m.quota_used_before = &f
+	m.addquota_used_before = nil
+}
+
+// QuotaUsedBefore returns the value of the "quota_used_before" field in the mutation.
+func (m *LinkCardLedgerMutation) QuotaUsedBefore() (r float64, exists bool) {
+	v := m.quota_used_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaUsedBefore returns the old "quota_used_before" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldQuotaUsedBefore(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaUsedBefore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaUsedBefore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaUsedBefore: %w", err)
+	}
+	return oldValue.QuotaUsedBefore, nil
+}
+
+// AddQuotaUsedBefore adds f to the "quota_used_before" field.
+func (m *LinkCardLedgerMutation) AddQuotaUsedBefore(f float64) {
+	if m.addquota_used_before != nil {
+		*m.addquota_used_before += f
+	} else {
+		m.addquota_used_before = &f
+	}
+}
+
+// AddedQuotaUsedBefore returns the value that was added to the "quota_used_before" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedQuotaUsedBefore() (r float64, exists bool) {
+	v := m.addquota_used_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetQuotaUsedBefore resets all changes to the "quota_used_before" field.
+func (m *LinkCardLedgerMutation) ResetQuotaUsedBefore() {
+	m.quota_used_before = nil
+	m.addquota_used_before = nil
+}
+
+// SetQuotaUsedAfter sets the "quota_used_after" field.
+func (m *LinkCardLedgerMutation) SetQuotaUsedAfter(f float64) {
+	m.quota_used_after = &f
+	m.addquota_used_after = nil
+}
+
+// QuotaUsedAfter returns the value of the "quota_used_after" field in the mutation.
+func (m *LinkCardLedgerMutation) QuotaUsedAfter() (r float64, exists bool) {
+	v := m.quota_used_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaUsedAfter returns the old "quota_used_after" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldQuotaUsedAfter(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaUsedAfter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaUsedAfter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaUsedAfter: %w", err)
+	}
+	return oldValue.QuotaUsedAfter, nil
+}
+
+// AddQuotaUsedAfter adds f to the "quota_used_after" field.
+func (m *LinkCardLedgerMutation) AddQuotaUsedAfter(f float64) {
+	if m.addquota_used_after != nil {
+		*m.addquota_used_after += f
+	} else {
+		m.addquota_used_after = &f
+	}
+}
+
+// AddedQuotaUsedAfter returns the value that was added to the "quota_used_after" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedQuotaUsedAfter() (r float64, exists bool) {
+	v := m.addquota_used_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetQuotaUsedAfter resets all changes to the "quota_used_after" field.
+func (m *LinkCardLedgerMutation) ResetQuotaUsedAfter() {
+	m.quota_used_after = nil
+	m.addquota_used_after = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *LinkCardLedgerMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *LinkCardLedgerMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *LinkCardLedgerMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[linkcardledger.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *LinkCardLedgerMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[linkcardledger.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *LinkCardLedgerMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, linkcardledger.FieldRequestID)
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *LinkCardLedgerMutation) SetActorUserID(i int64) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *LinkCardLedgerMutation) ActorUserID() (r int64, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldActorUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *LinkCardLedgerMutation) AddActorUserID(i int64) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *LinkCardLedgerMutation) AddedActorUserID() (r int64, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (m *LinkCardLedgerMutation) ClearActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+	m.clearedFields[linkcardledger.FieldActorUserID] = struct{}{}
+}
+
+// ActorUserIDCleared returns if the "actor_user_id" field was cleared in this mutation.
+func (m *LinkCardLedgerMutation) ActorUserIDCleared() bool {
+	_, ok := m.clearedFields[linkcardledger.FieldActorUserID]
+	return ok
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *LinkCardLedgerMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+	delete(m.clearedFields, linkcardledger.FieldActorUserID)
+}
+
+// SetReason sets the "reason" field.
+func (m *LinkCardLedgerMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *LinkCardLedgerMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *LinkCardLedgerMutation) ResetReason() {
+	m.reason = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *LinkCardLedgerMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *LinkCardLedgerMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *LinkCardLedgerMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[linkcardledger.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *LinkCardLedgerMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[linkcardledger.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *LinkCardLedgerMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, linkcardledger.FieldMetadata)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *LinkCardLedgerMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *LinkCardLedgerMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the LinkCardLedger entity.
+// If the LinkCardLedger object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardLedgerMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *LinkCardLedgerMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the LinkCardLedgerMutation builder.
+func (m *LinkCardLedgerMutation) Where(ps ...predicate.LinkCardLedger) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the LinkCardLedgerMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *LinkCardLedgerMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.LinkCardLedger, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *LinkCardLedgerMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *LinkCardLedgerMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (LinkCardLedger).
+func (m *LinkCardLedgerMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *LinkCardLedgerMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.operation_id != nil {
+		fields = append(fields, linkcardledger.FieldOperationID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, linkcardledger.FieldAPIKeyID)
+	}
+	if m.creator_user_id != nil {
+		fields = append(fields, linkcardledger.FieldCreatorUserID)
+	}
+	if m.entry_type != nil {
+		fields = append(fields, linkcardledger.FieldEntryType)
+	}
+	if m.reserve_delta != nil {
+		fields = append(fields, linkcardledger.FieldReserveDelta)
+	}
+	if m.creator_balance_delta != nil {
+		fields = append(fields, linkcardledger.FieldCreatorBalanceDelta)
+	}
+	if m.quota_before != nil {
+		fields = append(fields, linkcardledger.FieldQuotaBefore)
+	}
+	if m.quota_after != nil {
+		fields = append(fields, linkcardledger.FieldQuotaAfter)
+	}
+	if m.quota_used_before != nil {
+		fields = append(fields, linkcardledger.FieldQuotaUsedBefore)
+	}
+	if m.quota_used_after != nil {
+		fields = append(fields, linkcardledger.FieldQuotaUsedAfter)
+	}
+	if m.request_id != nil {
+		fields = append(fields, linkcardledger.FieldRequestID)
+	}
+	if m.actor_user_id != nil {
+		fields = append(fields, linkcardledger.FieldActorUserID)
+	}
+	if m.reason != nil {
+		fields = append(fields, linkcardledger.FieldReason)
+	}
+	if m.metadata != nil {
+		fields = append(fields, linkcardledger.FieldMetadata)
+	}
+	if m.created_at != nil {
+		fields = append(fields, linkcardledger.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *LinkCardLedgerMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		return m.OperationID()
+	case linkcardledger.FieldAPIKeyID:
+		return m.APIKeyID()
+	case linkcardledger.FieldCreatorUserID:
+		return m.CreatorUserID()
+	case linkcardledger.FieldEntryType:
+		return m.EntryType()
+	case linkcardledger.FieldReserveDelta:
+		return m.ReserveDelta()
+	case linkcardledger.FieldCreatorBalanceDelta:
+		return m.CreatorBalanceDelta()
+	case linkcardledger.FieldQuotaBefore:
+		return m.QuotaBefore()
+	case linkcardledger.FieldQuotaAfter:
+		return m.QuotaAfter()
+	case linkcardledger.FieldQuotaUsedBefore:
+		return m.QuotaUsedBefore()
+	case linkcardledger.FieldQuotaUsedAfter:
+		return m.QuotaUsedAfter()
+	case linkcardledger.FieldRequestID:
+		return m.RequestID()
+	case linkcardledger.FieldActorUserID:
+		return m.ActorUserID()
+	case linkcardledger.FieldReason:
+		return m.Reason()
+	case linkcardledger.FieldMetadata:
+		return m.Metadata()
+	case linkcardledger.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *LinkCardLedgerMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		return m.OldOperationID(ctx)
+	case linkcardledger.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case linkcardledger.FieldCreatorUserID:
+		return m.OldCreatorUserID(ctx)
+	case linkcardledger.FieldEntryType:
+		return m.OldEntryType(ctx)
+	case linkcardledger.FieldReserveDelta:
+		return m.OldReserveDelta(ctx)
+	case linkcardledger.FieldCreatorBalanceDelta:
+		return m.OldCreatorBalanceDelta(ctx)
+	case linkcardledger.FieldQuotaBefore:
+		return m.OldQuotaBefore(ctx)
+	case linkcardledger.FieldQuotaAfter:
+		return m.OldQuotaAfter(ctx)
+	case linkcardledger.FieldQuotaUsedBefore:
+		return m.OldQuotaUsedBefore(ctx)
+	case linkcardledger.FieldQuotaUsedAfter:
+		return m.OldQuotaUsedAfter(ctx)
+	case linkcardledger.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case linkcardledger.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case linkcardledger.FieldReason:
+		return m.OldReason(ctx)
+	case linkcardledger.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case linkcardledger.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown LinkCardLedger field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardLedgerMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationID(v)
+		return nil
+	case linkcardledger.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case linkcardledger.FieldCreatorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatorUserID(v)
+		return nil
+	case linkcardledger.FieldEntryType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEntryType(v)
+		return nil
+	case linkcardledger.FieldReserveDelta:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReserveDelta(v)
+		return nil
+	case linkcardledger.FieldCreatorBalanceDelta:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatorBalanceDelta(v)
+		return nil
+	case linkcardledger.FieldQuotaBefore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaBefore(v)
+		return nil
+	case linkcardledger.FieldQuotaAfter:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaAfter(v)
+		return nil
+	case linkcardledger.FieldQuotaUsedBefore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaUsedBefore(v)
+		return nil
+	case linkcardledger.FieldQuotaUsedAfter:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaUsedAfter(v)
+		return nil
+	case linkcardledger.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case linkcardledger.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case linkcardledger.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case linkcardledger.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case linkcardledger.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardLedger field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *LinkCardLedgerMutation) AddedFields() []string {
+	var fields []string
+	if m.addoperation_id != nil {
+		fields = append(fields, linkcardledger.FieldOperationID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, linkcardledger.FieldAPIKeyID)
+	}
+	if m.addcreator_user_id != nil {
+		fields = append(fields, linkcardledger.FieldCreatorUserID)
+	}
+	if m.addreserve_delta != nil {
+		fields = append(fields, linkcardledger.FieldReserveDelta)
+	}
+	if m.addcreator_balance_delta != nil {
+		fields = append(fields, linkcardledger.FieldCreatorBalanceDelta)
+	}
+	if m.addquota_before != nil {
+		fields = append(fields, linkcardledger.FieldQuotaBefore)
+	}
+	if m.addquota_after != nil {
+		fields = append(fields, linkcardledger.FieldQuotaAfter)
+	}
+	if m.addquota_used_before != nil {
+		fields = append(fields, linkcardledger.FieldQuotaUsedBefore)
+	}
+	if m.addquota_used_after != nil {
+		fields = append(fields, linkcardledger.FieldQuotaUsedAfter)
+	}
+	if m.addactor_user_id != nil {
+		fields = append(fields, linkcardledger.FieldActorUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *LinkCardLedgerMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		return m.AddedOperationID()
+	case linkcardledger.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case linkcardledger.FieldCreatorUserID:
+		return m.AddedCreatorUserID()
+	case linkcardledger.FieldReserveDelta:
+		return m.AddedReserveDelta()
+	case linkcardledger.FieldCreatorBalanceDelta:
+		return m.AddedCreatorBalanceDelta()
+	case linkcardledger.FieldQuotaBefore:
+		return m.AddedQuotaBefore()
+	case linkcardledger.FieldQuotaAfter:
+		return m.AddedQuotaAfter()
+	case linkcardledger.FieldQuotaUsedBefore:
+		return m.AddedQuotaUsedBefore()
+	case linkcardledger.FieldQuotaUsedAfter:
+		return m.AddedQuotaUsedAfter()
+	case linkcardledger.FieldActorUserID:
+		return m.AddedActorUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardLedgerMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOperationID(v)
+		return nil
+	case linkcardledger.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case linkcardledger.FieldCreatorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatorUserID(v)
+		return nil
+	case linkcardledger.FieldReserveDelta:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReserveDelta(v)
+		return nil
+	case linkcardledger.FieldCreatorBalanceDelta:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatorBalanceDelta(v)
+		return nil
+	case linkcardledger.FieldQuotaBefore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddQuotaBefore(v)
+		return nil
+	case linkcardledger.FieldQuotaAfter:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddQuotaAfter(v)
+		return nil
+	case linkcardledger.FieldQuotaUsedBefore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddQuotaUsedBefore(v)
+		return nil
+	case linkcardledger.FieldQuotaUsedAfter:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddQuotaUsedAfter(v)
+		return nil
+	case linkcardledger.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardLedger numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *LinkCardLedgerMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(linkcardledger.FieldOperationID) {
+		fields = append(fields, linkcardledger.FieldOperationID)
+	}
+	if m.FieldCleared(linkcardledger.FieldRequestID) {
+		fields = append(fields, linkcardledger.FieldRequestID)
+	}
+	if m.FieldCleared(linkcardledger.FieldActorUserID) {
+		fields = append(fields, linkcardledger.FieldActorUserID)
+	}
+	if m.FieldCleared(linkcardledger.FieldMetadata) {
+		fields = append(fields, linkcardledger.FieldMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *LinkCardLedgerMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *LinkCardLedgerMutation) ClearField(name string) error {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		m.ClearOperationID()
+		return nil
+	case linkcardledger.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case linkcardledger.FieldActorUserID:
+		m.ClearActorUserID()
+		return nil
+	case linkcardledger.FieldMetadata:
+		m.ClearMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardLedger nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *LinkCardLedgerMutation) ResetField(name string) error {
+	switch name {
+	case linkcardledger.FieldOperationID:
+		m.ResetOperationID()
+		return nil
+	case linkcardledger.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case linkcardledger.FieldCreatorUserID:
+		m.ResetCreatorUserID()
+		return nil
+	case linkcardledger.FieldEntryType:
+		m.ResetEntryType()
+		return nil
+	case linkcardledger.FieldReserveDelta:
+		m.ResetReserveDelta()
+		return nil
+	case linkcardledger.FieldCreatorBalanceDelta:
+		m.ResetCreatorBalanceDelta()
+		return nil
+	case linkcardledger.FieldQuotaBefore:
+		m.ResetQuotaBefore()
+		return nil
+	case linkcardledger.FieldQuotaAfter:
+		m.ResetQuotaAfter()
+		return nil
+	case linkcardledger.FieldQuotaUsedBefore:
+		m.ResetQuotaUsedBefore()
+		return nil
+	case linkcardledger.FieldQuotaUsedAfter:
+		m.ResetQuotaUsedAfter()
+		return nil
+	case linkcardledger.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case linkcardledger.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case linkcardledger.FieldReason:
+		m.ResetReason()
+		return nil
+	case linkcardledger.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case linkcardledger.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardLedger field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *LinkCardLedgerMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *LinkCardLedgerMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *LinkCardLedgerMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *LinkCardLedgerMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *LinkCardLedgerMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *LinkCardLedgerMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *LinkCardLedgerMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardLedger unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *LinkCardLedgerMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardLedger edge %s", name)
+}
+
+// LinkCardOperationMutation represents an operation that mutates the LinkCardOperation nodes in the graph.
+type LinkCardOperationMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	scope                *string
+	actor_user_id        *int64
+	addactor_user_id     *int64
+	creator_user_id      *int64
+	addcreator_user_id   *int64
+	api_key_id           *int64
+	addapi_key_id        *int64
+	idempotency_key_hash *string
+	request_fingerprint  *string
+	response_body        *map[string]interface{}
+	created_at           *time.Time
+	clearedFields        map[string]struct{}
+	done                 bool
+	oldValue             func(context.Context) (*LinkCardOperation, error)
+	predicates           []predicate.LinkCardOperation
+}
+
+var _ ent.Mutation = (*LinkCardOperationMutation)(nil)
+
+// linkcardoperationOption allows management of the mutation configuration using functional options.
+type linkcardoperationOption func(*LinkCardOperationMutation)
+
+// newLinkCardOperationMutation creates new mutation for the LinkCardOperation entity.
+func newLinkCardOperationMutation(c config, op Op, opts ...linkcardoperationOption) *LinkCardOperationMutation {
+	m := &LinkCardOperationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeLinkCardOperation,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withLinkCardOperationID sets the ID field of the mutation.
+func withLinkCardOperationID(id int64) linkcardoperationOption {
+	return func(m *LinkCardOperationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *LinkCardOperation
+		)
+		m.oldValue = func(ctx context.Context) (*LinkCardOperation, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().LinkCardOperation.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withLinkCardOperation sets the old LinkCardOperation of the mutation.
+func withLinkCardOperation(node *LinkCardOperation) linkcardoperationOption {
+	return func(m *LinkCardOperationMutation) {
+		m.oldValue = func(context.Context) (*LinkCardOperation, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m LinkCardOperationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m LinkCardOperationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *LinkCardOperationMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *LinkCardOperationMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().LinkCardOperation.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetScope sets the "scope" field.
+func (m *LinkCardOperationMutation) SetScope(s string) {
+	m.scope = &s
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *LinkCardOperationMutation) Scope() (r string, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldScope(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *LinkCardOperationMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *LinkCardOperationMutation) SetActorUserID(i int64) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *LinkCardOperationMutation) ActorUserID() (r int64, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldActorUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *LinkCardOperationMutation) AddActorUserID(i int64) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *LinkCardOperationMutation) AddedActorUserID() (r int64, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *LinkCardOperationMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+}
+
+// SetCreatorUserID sets the "creator_user_id" field.
+func (m *LinkCardOperationMutation) SetCreatorUserID(i int64) {
+	m.creator_user_id = &i
+	m.addcreator_user_id = nil
+}
+
+// CreatorUserID returns the value of the "creator_user_id" field in the mutation.
+func (m *LinkCardOperationMutation) CreatorUserID() (r int64, exists bool) {
+	v := m.creator_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatorUserID returns the old "creator_user_id" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldCreatorUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatorUserID: %w", err)
+	}
+	return oldValue.CreatorUserID, nil
+}
+
+// AddCreatorUserID adds i to the "creator_user_id" field.
+func (m *LinkCardOperationMutation) AddCreatorUserID(i int64) {
+	if m.addcreator_user_id != nil {
+		*m.addcreator_user_id += i
+	} else {
+		m.addcreator_user_id = &i
+	}
+}
+
+// AddedCreatorUserID returns the value that was added to the "creator_user_id" field in this mutation.
+func (m *LinkCardOperationMutation) AddedCreatorUserID() (r int64, exists bool) {
+	v := m.addcreator_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatorUserID resets all changes to the "creator_user_id" field.
+func (m *LinkCardOperationMutation) ResetCreatorUserID() {
+	m.creator_user_id = nil
+	m.addcreator_user_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *LinkCardOperationMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *LinkCardOperationMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *LinkCardOperationMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *LinkCardOperationMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *LinkCardOperationMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[linkcardoperation.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *LinkCardOperationMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[linkcardoperation.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *LinkCardOperationMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, linkcardoperation.FieldAPIKeyID)
+}
+
+// SetIdempotencyKeyHash sets the "idempotency_key_hash" field.
+func (m *LinkCardOperationMutation) SetIdempotencyKeyHash(s string) {
+	m.idempotency_key_hash = &s
+}
+
+// IdempotencyKeyHash returns the value of the "idempotency_key_hash" field in the mutation.
+func (m *LinkCardOperationMutation) IdempotencyKeyHash() (r string, exists bool) {
+	v := m.idempotency_key_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKeyHash returns the old "idempotency_key_hash" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldIdempotencyKeyHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKeyHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKeyHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKeyHash: %w", err)
+	}
+	return oldValue.IdempotencyKeyHash, nil
+}
+
+// ResetIdempotencyKeyHash resets all changes to the "idempotency_key_hash" field.
+func (m *LinkCardOperationMutation) ResetIdempotencyKeyHash() {
+	m.idempotency_key_hash = nil
+}
+
+// SetRequestFingerprint sets the "request_fingerprint" field.
+func (m *LinkCardOperationMutation) SetRequestFingerprint(s string) {
+	m.request_fingerprint = &s
+}
+
+// RequestFingerprint returns the value of the "request_fingerprint" field in the mutation.
+func (m *LinkCardOperationMutation) RequestFingerprint() (r string, exists bool) {
+	v := m.request_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestFingerprint returns the old "request_fingerprint" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldRequestFingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestFingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestFingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestFingerprint: %w", err)
+	}
+	return oldValue.RequestFingerprint, nil
+}
+
+// ResetRequestFingerprint resets all changes to the "request_fingerprint" field.
+func (m *LinkCardOperationMutation) ResetRequestFingerprint() {
+	m.request_fingerprint = nil
+}
+
+// SetResponseBody sets the "response_body" field.
+func (m *LinkCardOperationMutation) SetResponseBody(value map[string]interface{}) {
+	m.response_body = &value
+}
+
+// ResponseBody returns the value of the "response_body" field in the mutation.
+func (m *LinkCardOperationMutation) ResponseBody() (r map[string]interface{}, exists bool) {
+	v := m.response_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseBody returns the old "response_body" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldResponseBody(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseBody: %w", err)
+	}
+	return oldValue.ResponseBody, nil
+}
+
+// ClearResponseBody clears the value of the "response_body" field.
+func (m *LinkCardOperationMutation) ClearResponseBody() {
+	m.response_body = nil
+	m.clearedFields[linkcardoperation.FieldResponseBody] = struct{}{}
+}
+
+// ResponseBodyCleared returns if the "response_body" field was cleared in this mutation.
+func (m *LinkCardOperationMutation) ResponseBodyCleared() bool {
+	_, ok := m.clearedFields[linkcardoperation.FieldResponseBody]
+	return ok
+}
+
+// ResetResponseBody resets all changes to the "response_body" field.
+func (m *LinkCardOperationMutation) ResetResponseBody() {
+	m.response_body = nil
+	delete(m.clearedFields, linkcardoperation.FieldResponseBody)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *LinkCardOperationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *LinkCardOperationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the LinkCardOperation entity.
+// If the LinkCardOperation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *LinkCardOperationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *LinkCardOperationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the LinkCardOperationMutation builder.
+func (m *LinkCardOperationMutation) Where(ps ...predicate.LinkCardOperation) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the LinkCardOperationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *LinkCardOperationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.LinkCardOperation, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *LinkCardOperationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *LinkCardOperationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (LinkCardOperation).
+func (m *LinkCardOperationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *LinkCardOperationMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.scope != nil {
+		fields = append(fields, linkcardoperation.FieldScope)
+	}
+	if m.actor_user_id != nil {
+		fields = append(fields, linkcardoperation.FieldActorUserID)
+	}
+	if m.creator_user_id != nil {
+		fields = append(fields, linkcardoperation.FieldCreatorUserID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, linkcardoperation.FieldAPIKeyID)
+	}
+	if m.idempotency_key_hash != nil {
+		fields = append(fields, linkcardoperation.FieldIdempotencyKeyHash)
+	}
+	if m.request_fingerprint != nil {
+		fields = append(fields, linkcardoperation.FieldRequestFingerprint)
+	}
+	if m.response_body != nil {
+		fields = append(fields, linkcardoperation.FieldResponseBody)
+	}
+	if m.created_at != nil {
+		fields = append(fields, linkcardoperation.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *LinkCardOperationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardoperation.FieldScope:
+		return m.Scope()
+	case linkcardoperation.FieldActorUserID:
+		return m.ActorUserID()
+	case linkcardoperation.FieldCreatorUserID:
+		return m.CreatorUserID()
+	case linkcardoperation.FieldAPIKeyID:
+		return m.APIKeyID()
+	case linkcardoperation.FieldIdempotencyKeyHash:
+		return m.IdempotencyKeyHash()
+	case linkcardoperation.FieldRequestFingerprint:
+		return m.RequestFingerprint()
+	case linkcardoperation.FieldResponseBody:
+		return m.ResponseBody()
+	case linkcardoperation.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *LinkCardOperationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case linkcardoperation.FieldScope:
+		return m.OldScope(ctx)
+	case linkcardoperation.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case linkcardoperation.FieldCreatorUserID:
+		return m.OldCreatorUserID(ctx)
+	case linkcardoperation.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case linkcardoperation.FieldIdempotencyKeyHash:
+		return m.OldIdempotencyKeyHash(ctx)
+	case linkcardoperation.FieldRequestFingerprint:
+		return m.OldRequestFingerprint(ctx)
+	case linkcardoperation.FieldResponseBody:
+		return m.OldResponseBody(ctx)
+	case linkcardoperation.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown LinkCardOperation field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardOperationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case linkcardoperation.FieldScope:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case linkcardoperation.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case linkcardoperation.FieldCreatorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatorUserID(v)
+		return nil
+	case linkcardoperation.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case linkcardoperation.FieldIdempotencyKeyHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKeyHash(v)
+		return nil
+	case linkcardoperation.FieldRequestFingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestFingerprint(v)
+		return nil
+	case linkcardoperation.FieldResponseBody:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseBody(v)
+		return nil
+	case linkcardoperation.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardOperation field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *LinkCardOperationMutation) AddedFields() []string {
+	var fields []string
+	if m.addactor_user_id != nil {
+		fields = append(fields, linkcardoperation.FieldActorUserID)
+	}
+	if m.addcreator_user_id != nil {
+		fields = append(fields, linkcardoperation.FieldCreatorUserID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, linkcardoperation.FieldAPIKeyID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *LinkCardOperationMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case linkcardoperation.FieldActorUserID:
+		return m.AddedActorUserID()
+	case linkcardoperation.FieldCreatorUserID:
+		return m.AddedCreatorUserID()
+	case linkcardoperation.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *LinkCardOperationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case linkcardoperation.FieldActorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	case linkcardoperation.FieldCreatorUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatorUserID(v)
+		return nil
+	case linkcardoperation.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardOperation numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *LinkCardOperationMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(linkcardoperation.FieldAPIKeyID) {
+		fields = append(fields, linkcardoperation.FieldAPIKeyID)
+	}
+	if m.FieldCleared(linkcardoperation.FieldResponseBody) {
+		fields = append(fields, linkcardoperation.FieldResponseBody)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *LinkCardOperationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *LinkCardOperationMutation) ClearField(name string) error {
+	switch name {
+	case linkcardoperation.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case linkcardoperation.FieldResponseBody:
+		m.ClearResponseBody()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardOperation nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *LinkCardOperationMutation) ResetField(name string) error {
+	switch name {
+	case linkcardoperation.FieldScope:
+		m.ResetScope()
+		return nil
+	case linkcardoperation.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case linkcardoperation.FieldCreatorUserID:
+		m.ResetCreatorUserID()
+		return nil
+	case linkcardoperation.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case linkcardoperation.FieldIdempotencyKeyHash:
+		m.ResetIdempotencyKeyHash()
+		return nil
+	case linkcardoperation.FieldRequestFingerprint:
+		m.ResetRequestFingerprint()
+		return nil
+	case linkcardoperation.FieldResponseBody:
+		m.ResetResponseBody()
+		return nil
+	case linkcardoperation.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown LinkCardOperation field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *LinkCardOperationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *LinkCardOperationMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *LinkCardOperationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *LinkCardOperationMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *LinkCardOperationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *LinkCardOperationMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *LinkCardOperationMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardOperation unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *LinkCardOperationMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown LinkCardOperation edge %s", name)
 }
 
 // PaymentAuditLogMutation represents an operation that mutates the PaymentAuditLog nodes in the graph.

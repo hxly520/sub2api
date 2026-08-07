@@ -4,12 +4,12 @@
     <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
 
     <!-- Sidebar -->
-    <AppSidebar />
+    <AppSidebar v-if="!hideSidebar" />
 
     <!-- Main Content Area -->
     <div
       class="relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
+      :class="hideSidebar ? '' : (sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64')"
     >
       <!-- Header -->
       <AppHeader />
@@ -32,6 +32,8 @@ import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 
+const props = withDefaults(defineProps<{ hideSidebar?: boolean }>(), { hideSidebar: false })
+const hideSidebar = computed(() => props.hideSidebar)
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)

@@ -47,6 +47,48 @@ func (APIKey) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.String("key_type").
+			MaxLen(16).
+			Default("standard").
+			Comment("Credential scope: standard or prepaid link"),
+		field.String("link_state").
+			MaxLen(32).
+			Optional().
+			Nillable(),
+		field.Float("link_rate_multiplier").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Optional().
+			Nillable(),
+		field.Float("link_original_debit").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Optional().
+			Nillable(),
+		field.Float("link_total_funded").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
+		field.Float("link_total_refunded").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
+		field.Float("link_reserved_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0).
+			Comment("Actual prepaid amount reserved by in-flight link requests"),
+		field.Int("link_concurrency").
+			Optional().
+			Nillable(),
+		field.Int("link_rpm_limit").
+			Optional().
+			Nillable(),
+		field.Time("link_activated_at").
+			Optional().
+			Nillable(),
+		field.Time("link_revoked_at").
+			Optional().
+			Nillable(),
+		field.String("link_frozen_reason").
+			MaxLen(500).
+			Optional().
+			Nillable(),
 		field.Time("last_used_at").
 			Optional().
 			Nillable().
@@ -139,6 +181,8 @@ func (APIKey) Indexes() []ent.Index {
 		index.Fields("user_id"),
 		index.Fields("group_id"),
 		index.Fields("status"),
+		index.Fields("key_type", "user_id", "created_at"),
+		index.Fields("key_type", "link_state", "created_at"),
 		index.Fields("deleted_at"),
 		index.Fields("last_used_at"),
 		// Index for quota queries

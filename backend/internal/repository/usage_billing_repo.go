@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 type usageBillingRepository struct {
@@ -178,6 +180,14 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		}
 	}
 
+	if cmd.PrepaidLinkCost > 0 {
+		exhausted, err := consumeUsageBillingLinkCard(ctx, tx, cmd)
+		if err != nil {
+			return err
+		}
+		result.APIKeyQuotaExhausted = exhausted
+	}
+
 	if cmd.MediaBalanceHoldRequestID != "" {
 		newBalance, err := r.captureMediaBalanceHold(ctx, tx, cmd)
 		if err != nil {
@@ -216,6 +226,89 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	return nil
+}
+
+func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
+	if cmd == nil || cmd.APIKeyID <= 0 || cmd.UserID <= 0 || cmd.PrepaidLinkCost <= 0 {
+		return false, service.ErrLinkCardOperationNotAllowed
+	}
+	requested := decimal.NewFromFloat(cmd.PrepaidLinkCost).Round(8)
+	if !requested.IsPositive() {
+		return false, service.ErrLinkCardPrepaidExhausted
+	}
+	var quota, used, reserved decimal.Decimal
+	var ownerID int64
+	var state, apiStatus string
+	err := tx.QueryRowContext(ctx, `
+		SELECT quota, quota_used, COALESCE(link_reserved_amount, 0), user_id,
+		       COALESCE(link_state, ''), status
+		FROM api_keys
+		WHERE id=$1 AND key_type=$2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, cmd.APIKeyID, service.APIKeyTypeLink).Scan(&quota, &used, &reserved, &ownerID, &state, &apiStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, service.ErrAPIKeyNotFound
+	}
+	if err != nil {
+		return false, err
+	}
+	if ownerID != cmd.UserID {
+		return false, service.ErrLinkCardOperationNotAllowed
+	}
+	if state == service.LinkCardStateRefunded || state == service.LinkCardStateRevoked || state == service.LinkCardStatePendingActivation {
+		return false, service.ErrLinkCardOperationNotAllowed
+	}
+	if quota.IsNegative() || quota.IsZero() || used.IsNegative() || reserved.IsNegative() {
+		return false, service.ErrLinkCardPrepaidExhausted
+	}
+	// The row lock serializes all settlements for this card.  Charge only the
+	// unreserved remainder so a late or concurrent response can never push a
+	// prepaid card beyond its funded quota.  A partial charge is recorded with
+	// its shortfall for reconciliation. A zero-charge late settlement is still
+	// persisted, then the card is depleted so no subsequent request is admitted.
+	available := quota.Sub(used).Sub(reserved)
+	if available.IsNegative() {
+		available = decimal.Zero
+	}
+	charged := requested
+	if available.LessThan(charged) {
+		charged = available
+	}
+	newUsed := used.Add(charged)
+	exhausted := !quota.Sub(newUsed).Sub(reserved).IsPositive()
+	newState := state
+	newStatus := apiStatus
+	if state == service.LinkCardStateActive && !exhausted {
+		newStatus = service.StatusActive
+	} else if state != service.LinkCardStateFrozen && exhausted {
+		newState = service.LinkCardStateDepleted
+		newStatus = service.StatusAPIKeyQuotaExhausted
+	}
+	updated, err := tx.ExecContext(ctx, `
+		UPDATE api_keys SET quota_used=$1,status=$2,link_state=$3,updated_at=NOW()
+		WHERE id=$4 AND key_type=$5 AND deleted_at IS NULL
+	  AND quota - quota_used - COALESCE(link_reserved_amount,0) >= $6
+	`, newUsed.StringFixed(8), newStatus, newState, cmd.APIKeyID, service.APIKeyTypeLink, charged.StringFixed(8))
+	if err != nil {
+		return false, err
+	}
+	if affected, err := updated.RowsAffected(); err != nil {
+		return false, err
+	} else if affected != 1 {
+		return false, service.ErrLinkCardPrepaidExhausted
+	}
+	shortfall := requested.Sub(charged)
+	_, err = tx.ExecContext(ctx, `
+			INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,
+				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,
+				request_id,reason,metadata)
+			VALUES($1,$2,'usage',-$3,0,$4,$4,$5,$6,$7,'gateway usage settlement',
+				jsonb_build_object('requested_cost',$8,'charged_cost',$3,'shortfall',$9))
+	`, cmd.APIKeyID, ownerID, charged.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), cmd.RequestID, requested.StringFixed(8), shortfall.StringFixed(8))
+	if err != nil {
+		return false, err
+	}
+	return exhausted, nil
 }
 
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
@@ -279,6 +372,22 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 }
 
 func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+	if cmd != nil && cmd.LinkCard {
+		amount, ok := linkCardHoldAmount(cmd.HoldAmount)
+		if !ok {
+			return &service.BatchImageBalanceHoldResult{}, nil
+		}
+		requestID := service.BatchImageHoldRequestID(cmd.BatchID)
+		result, err := (&usageBillingRepository{}).reserveLinkCardHoldTx(ctx, tx, requestID, cmd.APIKeyID, cmd.UserID,
+			cmd.RequestFingerprint, amount, int64((24*time.Hour)/time.Second))
+		if err != nil {
+			if errors.Is(err, service.ErrLinkCardPrepaidExhausted) {
+				return nil, service.ErrBatchImageInsufficientBalance
+			}
+			return nil, err
+		}
+		return &service.BatchImageBalanceHoldResult{NewBalance: nil, FrozenBalance: nil, Applied: result != nil && result.Applied}, nil
+	}
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
@@ -306,6 +415,24 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 }
 
 func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+	if cmd != nil && cmd.LinkCard {
+		holdAmount, ok := linkCardHoldAmount(cmd.HoldAmount)
+		actual, actualOK := linkCardHoldAmount(cmd.ActualAmount)
+		if !ok {
+			return &service.BatchImageBalanceHoldResult{}, nil
+		}
+		if cmd.ActualAmount <= 0 {
+			actual = decimal.Zero
+		} else if !actualOK || actual.GreaterThan(holdAmount) {
+			return nil, service.ErrBatchImageSettlementCostExceedsHold
+		}
+		result, err := (&usageBillingRepository{}).captureLinkCardHoldTx(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID, cmd.UserID,
+			"", holdAmount, actual)
+		if err != nil {
+			return nil, err
+		}
+		return &service.BatchImageBalanceHoldResult{Applied: result != nil && result.Applied}, nil
+	}
 	if cmd.HoldAmount <= 0 && cmd.ActualAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
@@ -338,6 +465,18 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 }
 
 func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+	if cmd != nil && cmd.LinkCard {
+		holdAmount, ok := linkCardHoldAmount(cmd.HoldAmount)
+		if !ok {
+			return &service.BatchImageBalanceHoldResult{}, nil
+		}
+		result, err := (&usageBillingRepository{}).releaseLinkCardHoldTx(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID, cmd.UserID,
+			"", holdAmount)
+		if err != nil {
+			return nil, err
+		}
+		return &service.BatchImageBalanceHoldResult{Applied: result != nil && result.Applied}, nil
+	}
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}

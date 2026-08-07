@@ -24,6 +24,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardgroupauthorization"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardledger"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardoperation"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -113,36 +116,62 @@ func init() {
 	apikey.DefaultStatus = apikeyDescStatus.Default.(string)
 	// apikey.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	apikey.StatusValidator = apikeyDescStatus.Validators[0].(func(string) error)
+	// apikeyDescKeyType is the schema descriptor for key_type field.
+	apikeyDescKeyType := apikeyFields[5].Descriptor()
+	// apikey.DefaultKeyType holds the default value on creation for the key_type field.
+	apikey.DefaultKeyType = apikeyDescKeyType.Default.(string)
+	// apikey.KeyTypeValidator is a validator for the "key_type" field. It is called by the builders before save.
+	apikey.KeyTypeValidator = apikeyDescKeyType.Validators[0].(func(string) error)
+	// apikeyDescLinkState is the schema descriptor for link_state field.
+	apikeyDescLinkState := apikeyFields[6].Descriptor()
+	// apikey.LinkStateValidator is a validator for the "link_state" field. It is called by the builders before save.
+	apikey.LinkStateValidator = apikeyDescLinkState.Validators[0].(func(string) error)
+	// apikeyDescLinkTotalFunded is the schema descriptor for link_total_funded field.
+	apikeyDescLinkTotalFunded := apikeyFields[9].Descriptor()
+	// apikey.DefaultLinkTotalFunded holds the default value on creation for the link_total_funded field.
+	apikey.DefaultLinkTotalFunded = apikeyDescLinkTotalFunded.Default.(float64)
+	// apikeyDescLinkTotalRefunded is the schema descriptor for link_total_refunded field.
+	apikeyDescLinkTotalRefunded := apikeyFields[10].Descriptor()
+	// apikey.DefaultLinkTotalRefunded holds the default value on creation for the link_total_refunded field.
+	apikey.DefaultLinkTotalRefunded = apikeyDescLinkTotalRefunded.Default.(float64)
+	// apikeyDescLinkReservedAmount is the schema descriptor for link_reserved_amount field.
+	apikeyDescLinkReservedAmount := apikeyFields[11].Descriptor()
+	// apikey.DefaultLinkReservedAmount holds the default value on creation for the link_reserved_amount field.
+	apikey.DefaultLinkReservedAmount = apikeyDescLinkReservedAmount.Default.(float64)
+	// apikeyDescLinkFrozenReason is the schema descriptor for link_frozen_reason field.
+	apikeyDescLinkFrozenReason := apikeyFields[16].Descriptor()
+	// apikey.LinkFrozenReasonValidator is a validator for the "link_frozen_reason" field. It is called by the builders before save.
+	apikey.LinkFrozenReasonValidator = apikeyDescLinkFrozenReason.Validators[0].(func(string) error)
 	// apikeyDescQuota is the schema descriptor for quota field.
-	apikeyDescQuota := apikeyFields[8].Descriptor()
+	apikeyDescQuota := apikeyFields[20].Descriptor()
 	// apikey.DefaultQuota holds the default value on creation for the quota field.
 	apikey.DefaultQuota = apikeyDescQuota.Default.(float64)
 	// apikeyDescQuotaUsed is the schema descriptor for quota_used field.
-	apikeyDescQuotaUsed := apikeyFields[9].Descriptor()
+	apikeyDescQuotaUsed := apikeyFields[21].Descriptor()
 	// apikey.DefaultQuotaUsed holds the default value on creation for the quota_used field.
 	apikey.DefaultQuotaUsed = apikeyDescQuotaUsed.Default.(float64)
 	// apikeyDescRateLimit5h is the schema descriptor for rate_limit_5h field.
-	apikeyDescRateLimit5h := apikeyFields[11].Descriptor()
+	apikeyDescRateLimit5h := apikeyFields[23].Descriptor()
 	// apikey.DefaultRateLimit5h holds the default value on creation for the rate_limit_5h field.
 	apikey.DefaultRateLimit5h = apikeyDescRateLimit5h.Default.(float64)
 	// apikeyDescRateLimit1d is the schema descriptor for rate_limit_1d field.
-	apikeyDescRateLimit1d := apikeyFields[12].Descriptor()
+	apikeyDescRateLimit1d := apikeyFields[24].Descriptor()
 	// apikey.DefaultRateLimit1d holds the default value on creation for the rate_limit_1d field.
 	apikey.DefaultRateLimit1d = apikeyDescRateLimit1d.Default.(float64)
 	// apikeyDescRateLimit7d is the schema descriptor for rate_limit_7d field.
-	apikeyDescRateLimit7d := apikeyFields[13].Descriptor()
+	apikeyDescRateLimit7d := apikeyFields[25].Descriptor()
 	// apikey.DefaultRateLimit7d holds the default value on creation for the rate_limit_7d field.
 	apikey.DefaultRateLimit7d = apikeyDescRateLimit7d.Default.(float64)
 	// apikeyDescUsage5h is the schema descriptor for usage_5h field.
-	apikeyDescUsage5h := apikeyFields[14].Descriptor()
+	apikeyDescUsage5h := apikeyFields[26].Descriptor()
 	// apikey.DefaultUsage5h holds the default value on creation for the usage_5h field.
 	apikey.DefaultUsage5h = apikeyDescUsage5h.Default.(float64)
 	// apikeyDescUsage1d is the schema descriptor for usage_1d field.
-	apikeyDescUsage1d := apikeyFields[15].Descriptor()
+	apikeyDescUsage1d := apikeyFields[27].Descriptor()
 	// apikey.DefaultUsage1d holds the default value on creation for the usage_1d field.
 	apikey.DefaultUsage1d = apikeyDescUsage1d.Default.(float64)
 	// apikeyDescUsage7d is the schema descriptor for usage_7d field.
-	apikeyDescUsage7d := apikeyFields[16].Descriptor()
+	apikeyDescUsage7d := apikeyFields[28].Descriptor()
 	// apikey.DefaultUsage7d holds the default value on creation for the usage_7d field.
 	apikey.DefaultUsage7d = apikeyDescUsage7d.Default.(float64)
 	accountMixin := schema.Account{}.Mixin()
@@ -1243,6 +1272,68 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	linkcardgroupauthorizationFields := schema.LinkCardGroupAuthorization{}.Fields()
+	_ = linkcardgroupauthorizationFields
+	// linkcardgroupauthorizationDescEnabled is the schema descriptor for enabled field.
+	linkcardgroupauthorizationDescEnabled := linkcardgroupauthorizationFields[1].Descriptor()
+	// linkcardgroupauthorization.DefaultEnabled holds the default value on creation for the enabled field.
+	linkcardgroupauthorization.DefaultEnabled = linkcardgroupauthorizationDescEnabled.Default.(bool)
+	// linkcardgroupauthorizationDescSortOrder is the schema descriptor for sort_order field.
+	linkcardgroupauthorizationDescSortOrder := linkcardgroupauthorizationFields[2].Descriptor()
+	// linkcardgroupauthorization.DefaultSortOrder holds the default value on creation for the sort_order field.
+	linkcardgroupauthorization.DefaultSortOrder = linkcardgroupauthorizationDescSortOrder.Default.(int)
+	// linkcardgroupauthorizationDescCreatedAt is the schema descriptor for created_at field.
+	linkcardgroupauthorizationDescCreatedAt := linkcardgroupauthorizationFields[4].Descriptor()
+	// linkcardgroupauthorization.DefaultCreatedAt holds the default value on creation for the created_at field.
+	linkcardgroupauthorization.DefaultCreatedAt = linkcardgroupauthorizationDescCreatedAt.Default.(func() time.Time)
+	// linkcardgroupauthorizationDescUpdatedAt is the schema descriptor for updated_at field.
+	linkcardgroupauthorizationDescUpdatedAt := linkcardgroupauthorizationFields[5].Descriptor()
+	// linkcardgroupauthorization.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	linkcardgroupauthorization.DefaultUpdatedAt = linkcardgroupauthorizationDescUpdatedAt.Default.(func() time.Time)
+	// linkcardgroupauthorization.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	linkcardgroupauthorization.UpdateDefaultUpdatedAt = linkcardgroupauthorizationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	linkcardledgerFields := schema.LinkCardLedger{}.Fields()
+	_ = linkcardledgerFields
+	// linkcardledgerDescEntryType is the schema descriptor for entry_type field.
+	linkcardledgerDescEntryType := linkcardledgerFields[3].Descriptor()
+	// linkcardledger.EntryTypeValidator is a validator for the "entry_type" field. It is called by the builders before save.
+	linkcardledger.EntryTypeValidator = linkcardledgerDescEntryType.Validators[0].(func(string) error)
+	// linkcardledgerDescCreatorBalanceDelta is the schema descriptor for creator_balance_delta field.
+	linkcardledgerDescCreatorBalanceDelta := linkcardledgerFields[5].Descriptor()
+	// linkcardledger.DefaultCreatorBalanceDelta holds the default value on creation for the creator_balance_delta field.
+	linkcardledger.DefaultCreatorBalanceDelta = linkcardledgerDescCreatorBalanceDelta.Default.(float64)
+	// linkcardledgerDescRequestID is the schema descriptor for request_id field.
+	linkcardledgerDescRequestID := linkcardledgerFields[10].Descriptor()
+	// linkcardledger.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	linkcardledger.RequestIDValidator = linkcardledgerDescRequestID.Validators[0].(func(string) error)
+	// linkcardledgerDescReason is the schema descriptor for reason field.
+	linkcardledgerDescReason := linkcardledgerFields[12].Descriptor()
+	// linkcardledger.DefaultReason holds the default value on creation for the reason field.
+	linkcardledger.DefaultReason = linkcardledgerDescReason.Default.(string)
+	// linkcardledger.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
+	linkcardledger.ReasonValidator = linkcardledgerDescReason.Validators[0].(func(string) error)
+	// linkcardledgerDescCreatedAt is the schema descriptor for created_at field.
+	linkcardledgerDescCreatedAt := linkcardledgerFields[14].Descriptor()
+	// linkcardledger.DefaultCreatedAt holds the default value on creation for the created_at field.
+	linkcardledger.DefaultCreatedAt = linkcardledgerDescCreatedAt.Default.(func() time.Time)
+	linkcardoperationFields := schema.LinkCardOperation{}.Fields()
+	_ = linkcardoperationFields
+	// linkcardoperationDescScope is the schema descriptor for scope field.
+	linkcardoperationDescScope := linkcardoperationFields[0].Descriptor()
+	// linkcardoperation.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	linkcardoperation.ScopeValidator = linkcardoperationDescScope.Validators[0].(func(string) error)
+	// linkcardoperationDescIdempotencyKeyHash is the schema descriptor for idempotency_key_hash field.
+	linkcardoperationDescIdempotencyKeyHash := linkcardoperationFields[4].Descriptor()
+	// linkcardoperation.IdempotencyKeyHashValidator is a validator for the "idempotency_key_hash" field. It is called by the builders before save.
+	linkcardoperation.IdempotencyKeyHashValidator = linkcardoperationDescIdempotencyKeyHash.Validators[0].(func(string) error)
+	// linkcardoperationDescRequestFingerprint is the schema descriptor for request_fingerprint field.
+	linkcardoperationDescRequestFingerprint := linkcardoperationFields[5].Descriptor()
+	// linkcardoperation.RequestFingerprintValidator is a validator for the "request_fingerprint" field. It is called by the builders before save.
+	linkcardoperation.RequestFingerprintValidator = linkcardoperationDescRequestFingerprint.Validators[0].(func(string) error)
+	// linkcardoperationDescCreatedAt is the schema descriptor for created_at field.
+	linkcardoperationDescCreatedAt := linkcardoperationFields[7].Descriptor()
+	// linkcardoperation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	linkcardoperation.DefaultCreatedAt = linkcardoperationDescCreatedAt.Default.(func() time.Time)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.

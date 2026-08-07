@@ -113,6 +113,174 @@ func (_c *APIKeyCreate) SetNillableStatus(v *string) *APIKeyCreate {
 	return _c
 }
 
+// SetKeyType sets the "key_type" field.
+func (_c *APIKeyCreate) SetKeyType(v string) *APIKeyCreate {
+	_c.mutation.SetKeyType(v)
+	return _c
+}
+
+// SetNillableKeyType sets the "key_type" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableKeyType(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetKeyType(*v)
+	}
+	return _c
+}
+
+// SetLinkState sets the "link_state" field.
+func (_c *APIKeyCreate) SetLinkState(v string) *APIKeyCreate {
+	_c.mutation.SetLinkState(v)
+	return _c
+}
+
+// SetNillableLinkState sets the "link_state" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkState(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkState(*v)
+	}
+	return _c
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (_c *APIKeyCreate) SetLinkRateMultiplier(v float64) *APIKeyCreate {
+	_c.mutation.SetLinkRateMultiplier(v)
+	return _c
+}
+
+// SetNillableLinkRateMultiplier sets the "link_rate_multiplier" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkRateMultiplier(v *float64) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkRateMultiplier(*v)
+	}
+	return _c
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (_c *APIKeyCreate) SetLinkOriginalDebit(v float64) *APIKeyCreate {
+	_c.mutation.SetLinkOriginalDebit(v)
+	return _c
+}
+
+// SetNillableLinkOriginalDebit sets the "link_original_debit" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkOriginalDebit(v *float64) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkOriginalDebit(*v)
+	}
+	return _c
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (_c *APIKeyCreate) SetLinkTotalFunded(v float64) *APIKeyCreate {
+	_c.mutation.SetLinkTotalFunded(v)
+	return _c
+}
+
+// SetNillableLinkTotalFunded sets the "link_total_funded" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkTotalFunded(v *float64) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkTotalFunded(*v)
+	}
+	return _c
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (_c *APIKeyCreate) SetLinkTotalRefunded(v float64) *APIKeyCreate {
+	_c.mutation.SetLinkTotalRefunded(v)
+	return _c
+}
+
+// SetNillableLinkTotalRefunded sets the "link_total_refunded" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkTotalRefunded(v *float64) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkTotalRefunded(*v)
+	}
+	return _c
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (_c *APIKeyCreate) SetLinkReservedAmount(v float64) *APIKeyCreate {
+	_c.mutation.SetLinkReservedAmount(v)
+	return _c
+}
+
+// SetNillableLinkReservedAmount sets the "link_reserved_amount" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkReservedAmount(v *float64) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkReservedAmount(*v)
+	}
+	return _c
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (_c *APIKeyCreate) SetLinkConcurrency(v int) *APIKeyCreate {
+	_c.mutation.SetLinkConcurrency(v)
+	return _c
+}
+
+// SetNillableLinkConcurrency sets the "link_concurrency" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkConcurrency(v *int) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkConcurrency(*v)
+	}
+	return _c
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (_c *APIKeyCreate) SetLinkRpmLimit(v int) *APIKeyCreate {
+	_c.mutation.SetLinkRpmLimit(v)
+	return _c
+}
+
+// SetNillableLinkRpmLimit sets the "link_rpm_limit" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkRpmLimit(v *int) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkRpmLimit(*v)
+	}
+	return _c
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (_c *APIKeyCreate) SetLinkActivatedAt(v time.Time) *APIKeyCreate {
+	_c.mutation.SetLinkActivatedAt(v)
+	return _c
+}
+
+// SetNillableLinkActivatedAt sets the "link_activated_at" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkActivatedAt(v *time.Time) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkActivatedAt(*v)
+	}
+	return _c
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (_c *APIKeyCreate) SetLinkRevokedAt(v time.Time) *APIKeyCreate {
+	_c.mutation.SetLinkRevokedAt(v)
+	return _c
+}
+
+// SetNillableLinkRevokedAt sets the "link_revoked_at" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkRevokedAt(v *time.Time) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkRevokedAt(*v)
+	}
+	return _c
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (_c *APIKeyCreate) SetLinkFrozenReason(v string) *APIKeyCreate {
+	_c.mutation.SetLinkFrozenReason(v)
+	return _c
+}
+
+// SetNillableLinkFrozenReason sets the "link_frozen_reason" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLinkFrozenReason(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetLinkFrozenReason(*v)
+	}
+	return _c
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_c *APIKeyCreate) SetLastUsedAt(v time.Time) *APIKeyCreate {
 	_c.mutation.SetLastUsedAt(v)
@@ -387,6 +555,22 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.KeyType(); !ok {
+		v := apikey.DefaultKeyType
+		_c.mutation.SetKeyType(v)
+	}
+	if _, ok := _c.mutation.LinkTotalFunded(); !ok {
+		v := apikey.DefaultLinkTotalFunded
+		_c.mutation.SetLinkTotalFunded(v)
+	}
+	if _, ok := _c.mutation.LinkTotalRefunded(); !ok {
+		v := apikey.DefaultLinkTotalRefunded
+		_c.mutation.SetLinkTotalRefunded(v)
+	}
+	if _, ok := _c.mutation.LinkReservedAmount(); !ok {
+		v := apikey.DefaultLinkReservedAmount
+		_c.mutation.SetLinkReservedAmount(v)
+	}
 	if _, ok := _c.mutation.Quota(); !ok {
 		v := apikey.DefaultQuota
 		_c.mutation.SetQuota(v)
@@ -455,6 +639,33 @@ func (_c *APIKeyCreate) check() error {
 	if v, ok := _c.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.KeyType(); !ok {
+		return &ValidationError{Name: "key_type", err: errors.New(`ent: missing required field "APIKey.key_type"`)}
+	}
+	if v, ok := _c.mutation.KeyType(); ok {
+		if err := apikey.KeyTypeValidator(v); err != nil {
+			return &ValidationError{Name: "key_type", err: fmt.Errorf(`ent: validator failed for field "APIKey.key_type": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.LinkState(); ok {
+		if err := apikey.LinkStateValidator(v); err != nil {
+			return &ValidationError{Name: "link_state", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_state": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.LinkTotalFunded(); !ok {
+		return &ValidationError{Name: "link_total_funded", err: errors.New(`ent: missing required field "APIKey.link_total_funded"`)}
+	}
+	if _, ok := _c.mutation.LinkTotalRefunded(); !ok {
+		return &ValidationError{Name: "link_total_refunded", err: errors.New(`ent: missing required field "APIKey.link_total_refunded"`)}
+	}
+	if _, ok := _c.mutation.LinkReservedAmount(); !ok {
+		return &ValidationError{Name: "link_reserved_amount", err: errors.New(`ent: missing required field "APIKey.link_reserved_amount"`)}
+	}
+	if v, ok := _c.mutation.LinkFrozenReason(); ok {
+		if err := apikey.LinkFrozenReasonValidator(v); err != nil {
+			return &ValidationError{Name: "link_frozen_reason", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_frozen_reason": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Quota(); !ok {
@@ -534,6 +745,54 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.KeyType(); ok {
+		_spec.SetField(apikey.FieldKeyType, field.TypeString, value)
+		_node.KeyType = value
+	}
+	if value, ok := _c.mutation.LinkState(); ok {
+		_spec.SetField(apikey.FieldLinkState, field.TypeString, value)
+		_node.LinkState = &value
+	}
+	if value, ok := _c.mutation.LinkRateMultiplier(); ok {
+		_spec.SetField(apikey.FieldLinkRateMultiplier, field.TypeFloat64, value)
+		_node.LinkRateMultiplier = &value
+	}
+	if value, ok := _c.mutation.LinkOriginalDebit(); ok {
+		_spec.SetField(apikey.FieldLinkOriginalDebit, field.TypeFloat64, value)
+		_node.LinkOriginalDebit = &value
+	}
+	if value, ok := _c.mutation.LinkTotalFunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalFunded, field.TypeFloat64, value)
+		_node.LinkTotalFunded = value
+	}
+	if value, ok := _c.mutation.LinkTotalRefunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalRefunded, field.TypeFloat64, value)
+		_node.LinkTotalRefunded = value
+	}
+	if value, ok := _c.mutation.LinkReservedAmount(); ok {
+		_spec.SetField(apikey.FieldLinkReservedAmount, field.TypeFloat64, value)
+		_node.LinkReservedAmount = value
+	}
+	if value, ok := _c.mutation.LinkConcurrency(); ok {
+		_spec.SetField(apikey.FieldLinkConcurrency, field.TypeInt, value)
+		_node.LinkConcurrency = &value
+	}
+	if value, ok := _c.mutation.LinkRpmLimit(); ok {
+		_spec.SetField(apikey.FieldLinkRpmLimit, field.TypeInt, value)
+		_node.LinkRpmLimit = &value
+	}
+	if value, ok := _c.mutation.LinkActivatedAt(); ok {
+		_spec.SetField(apikey.FieldLinkActivatedAt, field.TypeTime, value)
+		_node.LinkActivatedAt = &value
+	}
+	if value, ok := _c.mutation.LinkRevokedAt(); ok {
+		_spec.SetField(apikey.FieldLinkRevokedAt, field.TypeTime, value)
+		_node.LinkRevokedAt = &value
+	}
+	if value, ok := _c.mutation.LinkFrozenReason(); ok {
+		_spec.SetField(apikey.FieldLinkFrozenReason, field.TypeString, value)
+		_node.LinkFrozenReason = &value
 	}
 	if value, ok := _c.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
@@ -790,6 +1049,240 @@ func (u *APIKeyUpsert) SetStatus(v string) *APIKeyUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *APIKeyUpsert) UpdateStatus() *APIKeyUpsert {
 	u.SetExcluded(apikey.FieldStatus)
+	return u
+}
+
+// SetKeyType sets the "key_type" field.
+func (u *APIKeyUpsert) SetKeyType(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldKeyType, v)
+	return u
+}
+
+// UpdateKeyType sets the "key_type" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateKeyType() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldKeyType)
+	return u
+}
+
+// SetLinkState sets the "link_state" field.
+func (u *APIKeyUpsert) SetLinkState(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkState, v)
+	return u
+}
+
+// UpdateLinkState sets the "link_state" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkState() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkState)
+	return u
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (u *APIKeyUpsert) ClearLinkState() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkState)
+	return u
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (u *APIKeyUpsert) SetLinkRateMultiplier(v float64) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkRateMultiplier, v)
+	return u
+}
+
+// UpdateLinkRateMultiplier sets the "link_rate_multiplier" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkRateMultiplier() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkRateMultiplier)
+	return u
+}
+
+// AddLinkRateMultiplier adds v to the "link_rate_multiplier" field.
+func (u *APIKeyUpsert) AddLinkRateMultiplier(v float64) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkRateMultiplier, v)
+	return u
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (u *APIKeyUpsert) ClearLinkRateMultiplier() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkRateMultiplier)
+	return u
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (u *APIKeyUpsert) SetLinkOriginalDebit(v float64) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkOriginalDebit, v)
+	return u
+}
+
+// UpdateLinkOriginalDebit sets the "link_original_debit" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkOriginalDebit() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkOriginalDebit)
+	return u
+}
+
+// AddLinkOriginalDebit adds v to the "link_original_debit" field.
+func (u *APIKeyUpsert) AddLinkOriginalDebit(v float64) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkOriginalDebit, v)
+	return u
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (u *APIKeyUpsert) ClearLinkOriginalDebit() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkOriginalDebit)
+	return u
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (u *APIKeyUpsert) SetLinkTotalFunded(v float64) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkTotalFunded, v)
+	return u
+}
+
+// UpdateLinkTotalFunded sets the "link_total_funded" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkTotalFunded() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkTotalFunded)
+	return u
+}
+
+// AddLinkTotalFunded adds v to the "link_total_funded" field.
+func (u *APIKeyUpsert) AddLinkTotalFunded(v float64) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkTotalFunded, v)
+	return u
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (u *APIKeyUpsert) SetLinkTotalRefunded(v float64) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkTotalRefunded, v)
+	return u
+}
+
+// UpdateLinkTotalRefunded sets the "link_total_refunded" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkTotalRefunded() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkTotalRefunded)
+	return u
+}
+
+// AddLinkTotalRefunded adds v to the "link_total_refunded" field.
+func (u *APIKeyUpsert) AddLinkTotalRefunded(v float64) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkTotalRefunded, v)
+	return u
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (u *APIKeyUpsert) SetLinkReservedAmount(v float64) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkReservedAmount, v)
+	return u
+}
+
+// UpdateLinkReservedAmount sets the "link_reserved_amount" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkReservedAmount() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkReservedAmount)
+	return u
+}
+
+// AddLinkReservedAmount adds v to the "link_reserved_amount" field.
+func (u *APIKeyUpsert) AddLinkReservedAmount(v float64) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkReservedAmount, v)
+	return u
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (u *APIKeyUpsert) SetLinkConcurrency(v int) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkConcurrency, v)
+	return u
+}
+
+// UpdateLinkConcurrency sets the "link_concurrency" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkConcurrency() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkConcurrency)
+	return u
+}
+
+// AddLinkConcurrency adds v to the "link_concurrency" field.
+func (u *APIKeyUpsert) AddLinkConcurrency(v int) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkConcurrency, v)
+	return u
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (u *APIKeyUpsert) ClearLinkConcurrency() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkConcurrency)
+	return u
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (u *APIKeyUpsert) SetLinkRpmLimit(v int) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkRpmLimit, v)
+	return u
+}
+
+// UpdateLinkRpmLimit sets the "link_rpm_limit" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkRpmLimit() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkRpmLimit)
+	return u
+}
+
+// AddLinkRpmLimit adds v to the "link_rpm_limit" field.
+func (u *APIKeyUpsert) AddLinkRpmLimit(v int) *APIKeyUpsert {
+	u.Add(apikey.FieldLinkRpmLimit, v)
+	return u
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (u *APIKeyUpsert) ClearLinkRpmLimit() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkRpmLimit)
+	return u
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (u *APIKeyUpsert) SetLinkActivatedAt(v time.Time) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkActivatedAt, v)
+	return u
+}
+
+// UpdateLinkActivatedAt sets the "link_activated_at" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkActivatedAt() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkActivatedAt)
+	return u
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (u *APIKeyUpsert) ClearLinkActivatedAt() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkActivatedAt)
+	return u
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (u *APIKeyUpsert) SetLinkRevokedAt(v time.Time) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkRevokedAt, v)
+	return u
+}
+
+// UpdateLinkRevokedAt sets the "link_revoked_at" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkRevokedAt() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkRevokedAt)
+	return u
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (u *APIKeyUpsert) ClearLinkRevokedAt() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkRevokedAt)
+	return u
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (u *APIKeyUpsert) SetLinkFrozenReason(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldLinkFrozenReason, v)
+	return u
+}
+
+// UpdateLinkFrozenReason sets the "link_frozen_reason" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLinkFrozenReason() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLinkFrozenReason)
+	return u
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (u *APIKeyUpsert) ClearLinkFrozenReason() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLinkFrozenReason)
 	return u
 }
 
@@ -1217,6 +1710,279 @@ func (u *APIKeyUpsertOne) SetStatus(v string) *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) UpdateStatus() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetKeyType sets the "key_type" field.
+func (u *APIKeyUpsertOne) SetKeyType(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetKeyType(v)
+	})
+}
+
+// UpdateKeyType sets the "key_type" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateKeyType() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateKeyType()
+	})
+}
+
+// SetLinkState sets the "link_state" field.
+func (u *APIKeyUpsertOne) SetLinkState(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkState(v)
+	})
+}
+
+// UpdateLinkState sets the "link_state" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkState() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkState()
+	})
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (u *APIKeyUpsertOne) ClearLinkState() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkState()
+	})
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (u *APIKeyUpsertOne) SetLinkRateMultiplier(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRateMultiplier(v)
+	})
+}
+
+// AddLinkRateMultiplier adds v to the "link_rate_multiplier" field.
+func (u *APIKeyUpsertOne) AddLinkRateMultiplier(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkRateMultiplier(v)
+	})
+}
+
+// UpdateLinkRateMultiplier sets the "link_rate_multiplier" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkRateMultiplier() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRateMultiplier()
+	})
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (u *APIKeyUpsertOne) ClearLinkRateMultiplier() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRateMultiplier()
+	})
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (u *APIKeyUpsertOne) SetLinkOriginalDebit(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkOriginalDebit(v)
+	})
+}
+
+// AddLinkOriginalDebit adds v to the "link_original_debit" field.
+func (u *APIKeyUpsertOne) AddLinkOriginalDebit(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkOriginalDebit(v)
+	})
+}
+
+// UpdateLinkOriginalDebit sets the "link_original_debit" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkOriginalDebit() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkOriginalDebit()
+	})
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (u *APIKeyUpsertOne) ClearLinkOriginalDebit() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkOriginalDebit()
+	})
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (u *APIKeyUpsertOne) SetLinkTotalFunded(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkTotalFunded(v)
+	})
+}
+
+// AddLinkTotalFunded adds v to the "link_total_funded" field.
+func (u *APIKeyUpsertOne) AddLinkTotalFunded(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkTotalFunded(v)
+	})
+}
+
+// UpdateLinkTotalFunded sets the "link_total_funded" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkTotalFunded() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkTotalFunded()
+	})
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (u *APIKeyUpsertOne) SetLinkTotalRefunded(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkTotalRefunded(v)
+	})
+}
+
+// AddLinkTotalRefunded adds v to the "link_total_refunded" field.
+func (u *APIKeyUpsertOne) AddLinkTotalRefunded(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkTotalRefunded(v)
+	})
+}
+
+// UpdateLinkTotalRefunded sets the "link_total_refunded" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkTotalRefunded() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkTotalRefunded()
+	})
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (u *APIKeyUpsertOne) SetLinkReservedAmount(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkReservedAmount(v)
+	})
+}
+
+// AddLinkReservedAmount adds v to the "link_reserved_amount" field.
+func (u *APIKeyUpsertOne) AddLinkReservedAmount(v float64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkReservedAmount(v)
+	})
+}
+
+// UpdateLinkReservedAmount sets the "link_reserved_amount" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkReservedAmount() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkReservedAmount()
+	})
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (u *APIKeyUpsertOne) SetLinkConcurrency(v int) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkConcurrency(v)
+	})
+}
+
+// AddLinkConcurrency adds v to the "link_concurrency" field.
+func (u *APIKeyUpsertOne) AddLinkConcurrency(v int) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkConcurrency(v)
+	})
+}
+
+// UpdateLinkConcurrency sets the "link_concurrency" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkConcurrency() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkConcurrency()
+	})
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (u *APIKeyUpsertOne) ClearLinkConcurrency() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkConcurrency()
+	})
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (u *APIKeyUpsertOne) SetLinkRpmLimit(v int) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRpmLimit(v)
+	})
+}
+
+// AddLinkRpmLimit adds v to the "link_rpm_limit" field.
+func (u *APIKeyUpsertOne) AddLinkRpmLimit(v int) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkRpmLimit(v)
+	})
+}
+
+// UpdateLinkRpmLimit sets the "link_rpm_limit" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkRpmLimit() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRpmLimit()
+	})
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (u *APIKeyUpsertOne) ClearLinkRpmLimit() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRpmLimit()
+	})
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (u *APIKeyUpsertOne) SetLinkActivatedAt(v time.Time) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkActivatedAt(v)
+	})
+}
+
+// UpdateLinkActivatedAt sets the "link_activated_at" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkActivatedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkActivatedAt()
+	})
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (u *APIKeyUpsertOne) ClearLinkActivatedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkActivatedAt()
+	})
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (u *APIKeyUpsertOne) SetLinkRevokedAt(v time.Time) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRevokedAt(v)
+	})
+}
+
+// UpdateLinkRevokedAt sets the "link_revoked_at" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkRevokedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRevokedAt()
+	})
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (u *APIKeyUpsertOne) ClearLinkRevokedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRevokedAt()
+	})
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (u *APIKeyUpsertOne) SetLinkFrozenReason(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkFrozenReason(v)
+	})
+}
+
+// UpdateLinkFrozenReason sets the "link_frozen_reason" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLinkFrozenReason() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkFrozenReason()
+	})
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (u *APIKeyUpsertOne) ClearLinkFrozenReason() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkFrozenReason()
 	})
 }
 
@@ -1855,6 +2621,279 @@ func (u *APIKeyUpsertBulk) SetStatus(v string) *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) UpdateStatus() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetKeyType sets the "key_type" field.
+func (u *APIKeyUpsertBulk) SetKeyType(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetKeyType(v)
+	})
+}
+
+// UpdateKeyType sets the "key_type" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateKeyType() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateKeyType()
+	})
+}
+
+// SetLinkState sets the "link_state" field.
+func (u *APIKeyUpsertBulk) SetLinkState(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkState(v)
+	})
+}
+
+// UpdateLinkState sets the "link_state" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkState() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkState()
+	})
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (u *APIKeyUpsertBulk) ClearLinkState() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkState()
+	})
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (u *APIKeyUpsertBulk) SetLinkRateMultiplier(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRateMultiplier(v)
+	})
+}
+
+// AddLinkRateMultiplier adds v to the "link_rate_multiplier" field.
+func (u *APIKeyUpsertBulk) AddLinkRateMultiplier(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkRateMultiplier(v)
+	})
+}
+
+// UpdateLinkRateMultiplier sets the "link_rate_multiplier" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkRateMultiplier() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRateMultiplier()
+	})
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (u *APIKeyUpsertBulk) ClearLinkRateMultiplier() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRateMultiplier()
+	})
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (u *APIKeyUpsertBulk) SetLinkOriginalDebit(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkOriginalDebit(v)
+	})
+}
+
+// AddLinkOriginalDebit adds v to the "link_original_debit" field.
+func (u *APIKeyUpsertBulk) AddLinkOriginalDebit(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkOriginalDebit(v)
+	})
+}
+
+// UpdateLinkOriginalDebit sets the "link_original_debit" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkOriginalDebit() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkOriginalDebit()
+	})
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (u *APIKeyUpsertBulk) ClearLinkOriginalDebit() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkOriginalDebit()
+	})
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (u *APIKeyUpsertBulk) SetLinkTotalFunded(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkTotalFunded(v)
+	})
+}
+
+// AddLinkTotalFunded adds v to the "link_total_funded" field.
+func (u *APIKeyUpsertBulk) AddLinkTotalFunded(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkTotalFunded(v)
+	})
+}
+
+// UpdateLinkTotalFunded sets the "link_total_funded" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkTotalFunded() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkTotalFunded()
+	})
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (u *APIKeyUpsertBulk) SetLinkTotalRefunded(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkTotalRefunded(v)
+	})
+}
+
+// AddLinkTotalRefunded adds v to the "link_total_refunded" field.
+func (u *APIKeyUpsertBulk) AddLinkTotalRefunded(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkTotalRefunded(v)
+	})
+}
+
+// UpdateLinkTotalRefunded sets the "link_total_refunded" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkTotalRefunded() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkTotalRefunded()
+	})
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (u *APIKeyUpsertBulk) SetLinkReservedAmount(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkReservedAmount(v)
+	})
+}
+
+// AddLinkReservedAmount adds v to the "link_reserved_amount" field.
+func (u *APIKeyUpsertBulk) AddLinkReservedAmount(v float64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkReservedAmount(v)
+	})
+}
+
+// UpdateLinkReservedAmount sets the "link_reserved_amount" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkReservedAmount() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkReservedAmount()
+	})
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (u *APIKeyUpsertBulk) SetLinkConcurrency(v int) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkConcurrency(v)
+	})
+}
+
+// AddLinkConcurrency adds v to the "link_concurrency" field.
+func (u *APIKeyUpsertBulk) AddLinkConcurrency(v int) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkConcurrency(v)
+	})
+}
+
+// UpdateLinkConcurrency sets the "link_concurrency" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkConcurrency() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkConcurrency()
+	})
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (u *APIKeyUpsertBulk) ClearLinkConcurrency() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkConcurrency()
+	})
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (u *APIKeyUpsertBulk) SetLinkRpmLimit(v int) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRpmLimit(v)
+	})
+}
+
+// AddLinkRpmLimit adds v to the "link_rpm_limit" field.
+func (u *APIKeyUpsertBulk) AddLinkRpmLimit(v int) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddLinkRpmLimit(v)
+	})
+}
+
+// UpdateLinkRpmLimit sets the "link_rpm_limit" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkRpmLimit() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRpmLimit()
+	})
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (u *APIKeyUpsertBulk) ClearLinkRpmLimit() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRpmLimit()
+	})
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (u *APIKeyUpsertBulk) SetLinkActivatedAt(v time.Time) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkActivatedAt(v)
+	})
+}
+
+// UpdateLinkActivatedAt sets the "link_activated_at" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkActivatedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkActivatedAt()
+	})
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (u *APIKeyUpsertBulk) ClearLinkActivatedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkActivatedAt()
+	})
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (u *APIKeyUpsertBulk) SetLinkRevokedAt(v time.Time) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkRevokedAt(v)
+	})
+}
+
+// UpdateLinkRevokedAt sets the "link_revoked_at" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkRevokedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkRevokedAt()
+	})
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (u *APIKeyUpsertBulk) ClearLinkRevokedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkRevokedAt()
+	})
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (u *APIKeyUpsertBulk) SetLinkFrozenReason(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLinkFrozenReason(v)
+	})
+}
+
+// UpdateLinkFrozenReason sets the "link_frozen_reason" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLinkFrozenReason() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLinkFrozenReason()
+	})
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (u *APIKeyUpsertBulk) ClearLinkFrozenReason() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLinkFrozenReason()
 	})
 }
 

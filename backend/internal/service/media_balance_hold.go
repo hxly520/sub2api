@@ -43,6 +43,9 @@ type MediaBalanceHoldCommand struct {
 	RequestPayloadHash string
 	HoldAmount         float64
 	ExpiresAfter       time.Duration
+	// LinkCard selects the prepaid-card hold implementation. The repository
+	// revalidates the key type before mutating any monetary state.
+	LinkCard bool
 }
 
 func (c *MediaBalanceHoldCommand) Normalize() {
@@ -83,6 +86,9 @@ type MediaBalanceHoldResult struct {
 	Applied       bool
 	NewBalance    *float64
 	FrozenBalance *float64
+	// LinkCardQuotaExhausted is populated when a prepaid card capture crosses
+	// its quota. The normal user-balance hold path leaves it false.
+	LinkCardQuotaExhausted bool
 }
 
 // NewMediaBalanceHoldRequestID creates a unique hold ID for synchronous media
@@ -104,6 +110,9 @@ func (s *OpenAIGatewayService) MediaGenerationBalanceHoldRequired(apiKey *APIKey
 	if s == nil || s.cfg == nil || s.cfg.RunMode == config.RunModeSimple || apiKey == nil || apiKey.User == nil {
 		return false
 	}
+	// Link keys use the same hold lifecycle, but the repository routes the hold
+	// to the card's prepaid reserve instead of the creator's user balance.
+	// Keeping the hold here is what closes the async media admission race.
 	if subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
 		return false
 	}
@@ -111,6 +120,14 @@ func (s *OpenAIGatewayService) MediaGenerationBalanceHoldRequired(apiKey *APIKey
 }
 
 func (s *OpenAIGatewayService) ReserveMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) error {
+	if cmd != nil && cmd.LinkCard {
+		repo, ok := s.usageBillingRepo.(LinkCardMediaBalanceHoldRepository)
+		if !ok || repo == nil {
+			return ErrMediaBalanceHoldUnavailable
+		}
+		_, err := repo.ReserveLinkCardMediaBalance(ctx, cmd)
+		return err
+	}
 	repo, ok := s.usageBillingRepo.(MediaBalanceHoldRepository)
 	if !ok || repo == nil {
 		return ErrMediaBalanceHoldUnavailable
@@ -126,6 +143,14 @@ func (s *OpenAIGatewayService) ReserveMediaBalance(ctx context.Context, cmd *Med
 }
 
 func (s *OpenAIGatewayService) ReleaseMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) error {
+	if cmd != nil && cmd.LinkCard {
+		repo, ok := s.usageBillingRepo.(LinkCardMediaBalanceHoldRepository)
+		if !ok || repo == nil {
+			return ErrMediaBalanceHoldUnavailable
+		}
+		_, err := repo.ReleaseLinkCardMediaBalance(ctx, cmd)
+		return err
+	}
 	repo, ok := s.usageBillingRepo.(MediaBalanceHoldRepository)
 	if !ok || repo == nil {
 		return ErrMediaBalanceHoldUnavailable
@@ -141,6 +166,14 @@ func (s *OpenAIGatewayService) ReleaseMediaBalance(ctx context.Context, cmd *Med
 // before the upstream POST so uncertain async requests remain recoverable. A
 // hold is still settled only after a success marker or successful task state.
 func (s *OpenAIGatewayService) MarkMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) error {
+	if cmd != nil && cmd.LinkCard {
+		repo, ok := s.usageBillingRepo.(LinkCardMediaBalanceHoldRepository)
+		if !ok || repo == nil {
+			return ErrMediaBalanceHoldUnavailable
+		}
+		_, err := repo.MarkLinkCardMediaBalanceDispatched(ctx, cmd)
+		return err
+	}
 	repo, ok := s.usageBillingRepo.(MediaBalanceHoldRepository)
 	if !ok || repo == nil {
 		return ErrMediaBalanceHoldUnavailable
@@ -154,6 +187,14 @@ func (s *OpenAIGatewayService) MarkMediaBalanceDispatched(ctx context.Context, c
 // unavailable until the hold expires, the repository can still settle the
 // exact frozen amount without replaying the upstream request.
 func (s *OpenAIGatewayService) MarkMediaBalanceForCapture(ctx context.Context, cmd *MediaBalanceHoldCommand, actualCost float64) error {
+	if cmd != nil && cmd.LinkCard {
+		repo, ok := s.usageBillingRepo.(LinkCardMediaBalanceHoldRepository)
+		if !ok || repo == nil {
+			return ErrMediaBalanceHoldUnavailable
+		}
+		_, err := repo.MarkLinkCardMediaBalanceForCapture(ctx, cmd, normalizeMediaBalanceAmount(actualCost))
+		return err
+	}
 	repo, ok := s.usageBillingRepo.(MediaBalanceHoldRepository)
 	if !ok || repo == nil {
 		return ErrMediaBalanceHoldUnavailable

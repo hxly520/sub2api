@@ -459,14 +459,14 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		if h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) && generationPricingSnapshot != nil {
 			holdAmount := generationPricingSnapshot.EstimatedCost(1, upstreamRequest.DurationSeconds)
 			if holdAmount > 0 {
-				mediaHold = newMediaBalanceHoldCommand(
+				mediaHold = markLinkCardMediaBalanceHold(newMediaBalanceHoldCommand(
 					apiKey.ID,
 					subject.UserID,
 					service.MediaBalanceHoldRequestID(generationPublicTaskID),
 					requestFingerprint,
 					service.HashUsageRequestPayload(body),
 					holdAmount,
-				)
+				), apiKey)
 				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
 					status, code, message, retryAfter := billingErrorDetails(err)
 					if retryAfter > 0 {
@@ -794,7 +794,7 @@ func finalizeOpenAIVideoTaskFromStatus(
 		if err := h.gatewayService.MarkOpenAIVideoTaskTerminal(c.Request.Context(), apiKey.ID, clientTaskID, status, "video_task_failed"); err != nil {
 			reqLog.Warn("openai.videos.mark_task_failed_status_failed", zap.String("request_id", clientTaskID), zap.String("status", status), zap.Error(err))
 		}
-		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task))
+		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task, apiKey))
 		return
 	}
 	if !service.IsMediaGenerationSuccessStatus(status) || task.UsageRecordedAt != nil {
@@ -887,7 +887,7 @@ func recordOpenAIVideoFinalUsage(
 		ResponseStatus:       statusResult.ResponseStatus,
 		VideoStatus:          statusResult.VideoStatus,
 	}
-	mediaHold := mediaBalanceHoldCommandForTask(task)
+	mediaHold := mediaBalanceHoldCommandForTask(task, apiKey)
 	actualMediaCost := mediaBalanceSettledCost(mediaHold, mediaBalanceActualCost(task.PricingSnapshot(), recordResult, videoCount, durationSeconds, true))
 	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 		reqLog.Warn("openai.videos.mark_balance_capture_pending_failed", zap.String("request_id", clientTaskID), zap.Error(markErr))
@@ -908,7 +908,7 @@ func recordOpenAIVideoFinalUsage(
 			QuotaPlatform:        quotaPlatform,
 			MediaPricingSnapshot: task.PricingSnapshot(),
 			MediaBalanceHoldRequestID: func() string {
-				if mediaHold := mediaBalanceHoldCommandForTask(task); mediaHold != nil {
+				if mediaHold := mediaBalanceHoldCommandForTask(task, apiKey); mediaHold != nil {
 					return mediaHold.RequestID
 				}
 				return ""

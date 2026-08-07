@@ -32,7 +32,8 @@ func (r *usageBillingRepository) ReconcileExpiredMediaBalanceHolds(ctx context.C
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT user_id, MIN(expires_at) AS first_expires_at
 		FROM media_balance_holds
-		WHERE status IN ('reserved', 'dispatched', 'capture_pending')
+		WHERE funding_source = 'user_balance'
+			AND status IN ('reserved', 'dispatched', 'capture_pending')
 			AND expires_at <= NOW()
 		GROUP BY user_id
 		HAVING $1::timestamptz IS NULL

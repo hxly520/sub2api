@@ -56,6 +56,16 @@
 - Sub2API、积分服务、PostgreSQL、Redis 和 `infinite-canvas` 容器 ID、镜像和启动时间未变化，restart count 均为 0。Sub2API `/health`、积分 `/healthz` 和工作台根路径均返回 200，PostgreSQL `pg_isready`、Redis PING 和 `nginx -t` 通过；Nginx PID 仍为 `1814246`，未 reload。
 - `postgres_data`、`redis_data`、Sub2API `data`、旧 `images`、`image-reference-tests` 和 `ui-reference-20260731` 均确认仍在原路径。空的发布/传入目录继续保留，未扩大删除范围。
 
+### 0.3 2026-08-07 提链/额度卡开发候选边界
+
+- 提链/额度卡中心当前尚未形成已验证的生产候选制品，未构建镜像、上传服务器、执行迁移或修改生产 Nginx。生产第 0 节所列 Sub2API、积分服务、容器和迁移事实不因该候选改变。
+- 产品与资金契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
+- 候选默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`；管理员控制台受管理员认证保护。该默认值只是开发门禁，不是生产已验证状态，也不得据此推断用户 `1` 当前生产可访问。
+- `194_link_cards.sql` 仍是未应用候选迁移。当前生产 `public.schema_migrations` 仍以第 5 节已核验基线为准；在共享或生产数据库首次应用 `194` 前，必须完成数据库备份、隔离迁移、标准 Key 零回归、并发额度预留、末笔超额拒绝、退款在途收口和旧镜像回滚审查。
+- `2026-08-07` 本地已完成后端 `-tags=unit ./internal/...` 全量测试（并补齐既有 points `/auth/me` 契约字段）、提链定向 Go vet、Ent/Wire 重新生成、迁移测试、前端完整 Vitest、Vue TypeScript 检查和前端生产构建；覆盖原生分组交集、专属倍率覆盖、专属分组运行时撤权、发行/当前倍率换算、欠费充值自动恢复和普通 Key 隔离。`0.06x`、`0.07x`、`0.08x`、`0.09x` 的双向换算矩阵固定向上取一位小数，内部结算倍率不低于当前原生倍率。该记录不代表迁移或生产验收完成。
+- 可以构建保持全局关闭且仅用户 `1` 开发名单的测试候选；未完成 PostgreSQL 资金竞态测试、用户 `1` 最小金额逐笔对账、非名单服务端拒绝和三端桌面/移动验收前，不得应用生产迁移、切换生产容器或开启全体功能。
+- 候选构建仍按现有边界只把 Sub2API 镜像上传、导入或缓存到服务器，由维护者手工切换；自动化不得替换运行容器、执行生产迁移、修改 Nginx 或开启 `link_cards_enabled`。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
@@ -64,6 +74,7 @@
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
+- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置开发候选，不是独立数据库或第二套网关；是否已部署只能由第 0 节后续明确生产记录确认。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
@@ -184,6 +195,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 私有迁移 `173_media_generation_tasks.sql` 至 `179_media_balance_hold_dispatch_state.sql` 已进入生产，禁止改名、删除或修改内容。
 - 私有迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 已进入生产并提供全站到期冻结扫描索引；继续按 `_notx` 语义执行，禁止修改 checksum。
 - 私有迁移 `193_points_balance_credit_ledger.sql` 已进入生产，为积分服务向 Sub2API 幂等发放余额。积分服务自己的 4 条迁移位于同一数据库的独立 `points` schema，共 21 张表，并记录在 `points_schema_migrations`；不得写入或混入 Sub2API `public.schema_migrations`。第三条迁移保存一次性历史作业及逐日游标，当前生产作业已成功且不得重跑；第四条迁移增加原始消费阶梯与可空金额上限，不增加新表。
+- 私有迁移 `194_link_cards.sql` 仅存在于 `2026-08-07` 开发候选，尚未进入生产。它计划扩展 `api_keys` 并创建提链分组授权、永久幂等和不可修改资金流水表；首次在任一共享环境应用后即纳入 checksum 不可变清单，只能用后续新迁移修正。生产盘点发现 `194` 记录前不得宣称提链数据表已上线。
 - PostgreSQL实际 `max_connections=100`；当前应用连接池配置为 `max_open=256`、`max_idle=128`，存在连接上限不匹配。
 - 升级前必须备份数据库并记录备份校验、恢复命令和保存位置。积分首次部署备份及 SHA256 已记录在 2.2 节；这不替代后续版本升级的独立新备份，也不代表已建立定时备份或完成隔离恢复演练。
 
@@ -235,6 +247,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 四种图片模式的在途任务、失败、冻结余额、后台核销最近运行结果、worker队列和对象存储可用性；分别统计 active、capture_pending、captured、released，禁止只核对用户余额总数。
 8. 15731工作台的 `infinite-canvas` 镜像tag、digest、OCI revision、首页状态、API Base、模型开关和近时段错误；确认旧 `images` 目录未挂载且未被Nginx引用。
 9. 当前镜像与上一稳定镜像的tag、digest和数据库兼容边界。
+10. 若候选包含提链功能，记录功能开关、开发名单是否仅用户 `1`、标准/提链 Key 数量、各状态和资金流水聚合；不读取或保存完整 Key。核对创建者余额差量、提链储备/已用/退款守恒、在途额度和重复 request/operation 数为零异常。
 
 原始盘点输出只能保存到仓库外受控位置；Git文档只保留本文件这类脱敏结论。
 
@@ -242,10 +255,10 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 1. 从完整克隆的当前私有 `main` 创建 `codex/upgrade-vX.Y.Z-*`。
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
-3. 解决协议、调度、四种图片模式、媒体计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 中的完整门禁。
+3. 解决协议、调度、四种图片模式、媒体计费、提链 Key 鉴权/计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 与 `docs/LINK_CARDS_CN.md` 中的完整门禁。
 4. 通过 CI 或受控本机构建环境构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和 commit；发布摘要必须记录 manifest digest、image ID 和传输归档 SHA256。
 5. Sub2API 新镜像只上传、导入或缓存，不立即替换运行容器；积分镜像可在 `points` schema 备份和旧镜像记录完成后独立更新。
-6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额。
+6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额；若已启用提链，再确认在途额度为零或可安全恢复、资金账本守恒且旧镜像不会接管活动提链 Key。
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
@@ -358,6 +371,7 @@ cat POINTS_APP_PSQL_VARS points-system/deploy/shared-database-users-email-rollba
 - 数据库恢复属于单独操作，必须先验证备份可恢复性。
 - Redis状态不作为唯一业务事实源，但后缀异步图片和队列状态会受Redis持久化影响。
 - Cloudflare Worker、Nginx和15731 `infinite-canvas` 工作台各有独立版本与回滚物，Sub2API镜像回滚不会同步回滚它们；旧服务器 `images` 快照不是工作台回滚物。
+- 提链迁移是 forward-only。存在提链 Key 时，回滚到不识别 `key_type` 的旧 Sub2API 前必须先关闭入口、冻结并禁用全部提链 Key、失效鉴权缓存、等待在途请求归零并完成资金对账；不得删除幂等或资金流水表，也不得直接把储备余额加回创建者。
 
 ## 11. 仓库外依赖
 

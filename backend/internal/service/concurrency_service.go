@@ -77,6 +77,7 @@ const (
 )
 
 var ErrOpenAIWSIngressLeaseLost = errors.New("openai websocket ingress lease lost")
+var ErrAPIKeyConcurrencyUnavailable = errors.New("api key concurrency tracking is unavailable")
 
 // OpenAIWSIngressLease keeps a Redis-backed ingress lease alive and cancels
 // its context if Redis cannot confirm ownership for a full lease lifetime.
@@ -418,12 +419,23 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 // applying key-level concurrency limits. It is fail-open: Redis errors are
 // logged and return a no-op release function.
 func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64) func() {
-	if s == nil || s.cache == nil || apiKeyID <= 0 {
+	release, err := s.TrackAPIKeySlotStrict(ctx, apiKeyID)
+	if err != nil {
+		logger.LegacyPrintf("service.concurrency", "Warning: failed to track api key slot for %d: %v", apiKeyID, err)
 		return func() {}
+	}
+	return release
+}
+
+// TrackAPIKeySlotStrict is used by prepaid link cards. Redis tracking failures
+// must reject the request instead of creating an unaccounted in-flight window.
+func (s *ConcurrencyService) TrackAPIKeySlotStrict(ctx context.Context, apiKeyID int64) (func(), error) {
+	if s == nil || s.cache == nil || apiKeyID <= 0 {
+		return nil, ErrAPIKeyConcurrencyUnavailable
 	}
 	cache, ok := s.cache.(APIKeyConcurrencyCache)
 	if !ok {
-		return func() {}
+		return nil, ErrAPIKeyConcurrencyUnavailable
 	}
 
 	requestID := generateRequestID()
@@ -435,8 +447,7 @@ func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64
 	err := cache.TrackAPIKeySlot(trackCtx, apiKeyID, requestID)
 	cancel()
 	if err != nil {
-		logger.LegacyPrintf("service.concurrency", "Warning: failed to track api key slot for %d (req=%s): %v", apiKeyID, requestID, err)
-		return func() {}
+		return nil, err
 	}
 
 	return func() {
@@ -445,7 +456,7 @@ func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64
 		if err := cache.ReleaseAPIKeySlot(bgCtx, apiKeyID, requestID); err != nil {
 			logger.LegacyPrintf("service.concurrency", "Warning: failed to release api key slot for %d (req=%s): %v", apiKeyID, requestID, err)
 		}
-	}
+	}, nil
 }
 
 // GetAPIKeyConcurrencyBatch gets real-time active request counts for API keys.
@@ -475,6 +486,23 @@ func (s *ConcurrencyService) GetAPIKeyConcurrencyBatch(ctx context.Context, apiK
 		result[apiKeyID] = counts[apiKeyID]
 	}
 	return result, nil
+}
+
+// GetAPIKeyConcurrencyStrict returns an error when the distributed counter is
+// unavailable. Financial mutations use this variant before refunding a card.
+func (s *ConcurrencyService) GetAPIKeyConcurrencyStrict(ctx context.Context, apiKeyID int64) (int, error) {
+	if s == nil || s.cache == nil || apiKeyID <= 0 {
+		return 0, ErrAPIKeyConcurrencyUnavailable
+	}
+	cache, ok := s.cache.(APIKeyConcurrencyCache)
+	if !ok {
+		return 0, ErrAPIKeyConcurrencyUnavailable
+	}
+	counts, err := cache.GetAPIKeyConcurrencyBatch(ctx, []int64{apiKeyID})
+	if err != nil {
+		return 0, err
+	}
+	return counts[apiKeyID], nil
 }
 
 func zeroAPIKeyConcurrencyMap(apiKeyIDs []int64) map[int64]int {

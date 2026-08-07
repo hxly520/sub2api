@@ -4,16 +4,28 @@ import "time"
 
 // APIKeyAuthSnapshot API Key 认证缓存快照（仅包含认证所需字段）
 type APIKeyAuthSnapshot struct {
-	Version     int                      `json:"version"`
-	APIKeyID    int64                    `json:"api_key_id"`
-	UserID      int64                    `json:"user_id"`
-	GroupID     *int64                   `json:"group_id,omitempty"`
-	Name        string                   `json:"name"`
-	Status      string                   `json:"status"`
-	IPWhitelist []string                 `json:"ip_whitelist,omitempty"`
-	IPBlacklist []string                 `json:"ip_blacklist,omitempty"`
-	User        APIKeyAuthUserSnapshot   `json:"user"`
-	Group       *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
+	Version            int                      `json:"version"`
+	APIKeyID           int64                    `json:"api_key_id"`
+	UserID             int64                    `json:"user_id"`
+	GroupID            *int64                   `json:"group_id,omitempty"`
+	Name               string                   `json:"name"`
+	Status             string                   `json:"status"`
+	KeyType            string                   `json:"key_type"`
+	LinkState          string                   `json:"link_state,omitempty"`
+	LinkRateMultiplier float64                  `json:"link_rate_multiplier,omitempty"`
+	LinkOriginalDebit  float64                  `json:"link_original_debit,omitempty"`
+	LinkTotalFunded    float64                  `json:"link_total_funded,omitempty"`
+	LinkTotalRefunded  float64                  `json:"link_total_refunded,omitempty"`
+	LinkReservedAmount float64                  `json:"link_reserved_amount,omitempty"`
+	LinkConcurrency    int                      `json:"link_concurrency,omitempty"`
+	LinkRPMLimit       int                      `json:"link_rpm_limit,omitempty"`
+	LinkActivatedAt    *time.Time               `json:"link_activated_at,omitempty"`
+	LinkRevokedAt      *time.Time               `json:"link_revoked_at,omitempty"`
+	LinkFrozenReason   string                   `json:"link_frozen_reason,omitempty"`
+	IPWhitelist        []string                 `json:"ip_whitelist,omitempty"`
+	IPBlacklist        []string                 `json:"ip_blacklist,omitempty"`
+	User               APIKeyAuthUserSnapshot   `json:"user"`
+	Group              *APIKeyAuthGroupSnapshot `json:"group,omitempty"`
 
 	// Quota fields for API Key independent quota feature
 	Quota     float64 `json:"quota"`      // Quota limit in USD (0 = unlimited)

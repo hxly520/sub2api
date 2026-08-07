@@ -134,6 +134,16 @@ type APIKeyRateLimitData struct {
 	Window7dStart *time.Time
 }
 
+// LinkCardBillingState is the authoritative database state checked immediately
+// before forwarding a prepaid request. It intentionally excludes owner data.
+type LinkCardBillingState struct {
+	Status    string
+	LinkState string
+	Quota     float64
+	QuotaUsed float64
+	Reserved  float64
+}
+
 // EffectiveUsage5h returns the 5h window usage, or 0 if the window has expired.
 func (d *APIKeyRateLimitData) EffectiveUsage5h() float64 {
 	if IsWindowExpired(d.Window5hStart, RateLimitWindow5h) {

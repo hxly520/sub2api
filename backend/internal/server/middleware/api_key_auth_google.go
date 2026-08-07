@@ -81,12 +81,34 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 		// disabled / 未知状态 → 无条件拦截（expired 和 quota_exhausted 留给计费阶段，
 		// 与主中间件 api_key_auth.go 保持一致）。
+		SetOpsFallbackAPIKey(c, apiKey)
+		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path)
+		// Standard Google keys retain the historical status/expiry/quota checks
+		// on every request. The read-only exemption is only for depleted link keys.
+		if !apiKey.IsLinkKey() {
+			skipBilling = false
+		}
+
 		if !apiKey.IsActive() &&
 			apiKey.Status != service.StatusAPIKeyExpired &&
 			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
 			MarkIngressRejected(c, IngressRejectAPIKeyDisabled)
 			abortWithGoogleError(c, 401, "API key is disabled")
 			return
+		}
+		if apiKey.IsLinkKey() && apiKey.LinkState != service.LinkCardStateActive {
+			if apiKey.LinkState == service.LinkCardStateDepleted {
+				if !skipBilling {
+					abortWithGoogleError(c, 429, "Link card quota is exhausted")
+					return
+				}
+				// Read-only usage and async-task polling remain available after depletion.
+			} else {
+				MarkIngressRejected(c, IngressRejectAPIKeyDisabled)
+				abortWithGoogleError(c, 401, "Link card is not active")
+				return
+			}
 		}
 
 		// 检查 IP 限制（白名单/黑名单）。与主中间件保持一致，避免 Gemini 端点绕过 Key 的 IP ACL。
@@ -136,7 +158,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			c.Set(string(ContextKeyAPIKey), apiKey)
 			c.Set(string(ContextKeyUser), AuthSubject{
 				UserID:      apiKey.User.ID,
-				Concurrency: apiKey.User.Concurrency,
+				Concurrency: apiKey.EffectiveConcurrency(),
 			})
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 			setGroupContext(c, apiKey.Group)
@@ -146,27 +168,32 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 
 		// Key 状态检查（状态字段可能因后台异步刷新而滞后，故显式拦截）。
-		switch apiKey.Status {
-		case service.StatusAPIKeyQuotaExhausted:
-			abortWithGoogleError(c, 429, "API key 额度已用完")
-			return
-		case service.StatusAPIKeyExpired:
-			abortWithGoogleError(c, 403, "API key 已过期")
-			return
-		}
+		if !skipBilling {
+			if !skipBilling {
+				switch apiKey.Status {
+				case service.StatusAPIKeyQuotaExhausted:
+					abortWithGoogleError(c, 429, "API key 额度已用完")
+					return
+				case service.StatusAPIKeyExpired:
+					abortWithGoogleError(c, 403, "API key 已过期")
+					return
+				}
 
-		// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量，与主中间件一致）。
-		if apiKey.IsExpired() {
-			abortWithGoogleError(c, 403, "API key 已过期")
-			return
-		}
-		if apiKey.IsQuotaExhausted() {
-			abortWithGoogleError(c, 429, "API key 额度已用完")
-			return
+				// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量，与主中间件一致）。
+				if !skipBilling && apiKey.IsExpired() {
+					abortWithGoogleError(c, 403, "API key 已过期")
+					return
+				}
+				if !skipBilling && apiKey.IsQuotaExhausted() {
+					abortWithGoogleError(c, 429, "API key 额度已用完")
+					return
+				}
+
+			}
 		}
 
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-		if isSubscriptionType && subscriptionService != nil {
+		if isSubscriptionType && subscriptionService != nil && !apiKey.IsLinkKey() {
 			subscription, err := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
@@ -199,7 +226,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 
 			c.Set(string(ContextKeySubscription), subscription)
-		} else {
+		} else if !apiKey.IsLinkKey() {
 			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
 				abortWithGoogleError(c, 403, "Insufficient account balance")
 				return
@@ -209,7 +236,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		c.Set(string(ContextKeyAPIKey), apiKey)
 		c.Set(string(ContextKeyUser), AuthSubject{
 			UserID:      apiKey.User.ID,
-			Concurrency: apiKey.User.Concurrency,
+			Concurrency: apiKey.EffectiveConcurrency(),
 		})
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)

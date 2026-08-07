@@ -46,6 +46,16 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 
 > ⚠️ Do **not** place executable "Down" SQL in the same file. The runner does not parse goose Up/Down sections and will execute all SQL statements in the file.
 
+## Private Candidate Migration Registry
+
+- `193_points_balance_credit_ledger.sql` is the latest private migration confirmed in production by `docs/PRODUCTION_OPERATIONS_CN.md`.
+- `194_link_cards.sql` is the forward-only link-card/quota-card candidate. As of `2026-08-07` it has not been applied to production and must not be described as deployed.
+- Before `194_link_cards.sql` is applied to any shared environment, review it together with `docs/LINK_CARDS_CN.md`, generated Ent schema, migration tests, standard API-key isolation, concurrent quota admission, refund/in-flight settlement, and rollback compatibility.
+- After the first shared application, `194_link_cards.sql` becomes checksum-immutable. Any correction must use the next migration number; never edit, rename, delete, or renumber `194`.
+- Application rollback does not remove link-card tables or ledger rows. Before rolling back to a binary that does not understand `key_type`, disable the feature, freeze and disable every link key, invalidate auth caches, drain in-flight requests, and reconcile funds. Preserve operations and ledger rows for audit.
+
+The authoritative product and release checklist is [`../../docs/LINK_CARDS_CN.md`](../../docs/LINK_CARDS_CN.md). Production application status is recorded only in [`../../docs/PRODUCTION_OPERATIONS_CN.md`](../../docs/PRODUCTION_OPERATIONS_CN.md).
+
 ## Important Rules
 
 ### ⚠️ Immutability Principle
@@ -124,9 +134,10 @@ touch migrations/018_your_new_change.sql
    - One logical change per migration
    - Easier to review and rollback
 
-2. **Write reversible migrations**
-   - Always provide a working Down migration
-   - Test rollback before committing
+2. **Plan reversibility without inline Down SQL**
+   - Keep the applied migration forward-only and immutable
+   - Use a new numbered migration for schema reversal when that is safe
+   - Document application rollback compatibility separately from database restoration
 
 3. **Use transactions**
    - Wrap DDL statements in transactions when possible

@@ -52,6 +52,12 @@ type Tx struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// LinkCardGroupAuthorization is the client for interacting with the LinkCardGroupAuthorization builders.
+	LinkCardGroupAuthorization *LinkCardGroupAuthorizationClient
+	// LinkCardLedger is the client for interacting with the LinkCardLedger builders.
+	LinkCardLedger *LinkCardLedgerClient
+	// LinkCardOperation is the client for interacting with the LinkCardOperation builders.
+	LinkCardOperation *LinkCardOperationClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -242,6 +248,9 @@ func (tx *Tx) init() {
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(tx.config)
+	tx.LinkCardGroupAuthorization = NewLinkCardGroupAuthorizationClient(tx.config)
+	tx.LinkCardLedger = NewLinkCardLedgerClient(tx.config)
+	tx.LinkCardOperation = NewLinkCardOperationClient(tx.config)
 	tx.PaymentAuditLog = NewPaymentAuditLogClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)

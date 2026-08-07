@@ -139,6 +139,7 @@ docs/*
 !docs/MEDIA_API_CN.md
 !docs/PRIVATE_CUSTOMIZATION_CN.md
 !docs/PRODUCTION_OPERATIONS_CN.md
+!docs/LINK_CARDS_CN.md
 !docs/PRODUCTION_DEPLOYMENT_*_CN.md
 !docs/ASYNC_IMAGE_TASKS.md
 !docs/legal/

@@ -31,6 +31,30 @@ const (
 	FieldGroupID = "group_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldKeyType holds the string denoting the key_type field in the database.
+	FieldKeyType = "key_type"
+	// FieldLinkState holds the string denoting the link_state field in the database.
+	FieldLinkState = "link_state"
+	// FieldLinkRateMultiplier holds the string denoting the link_rate_multiplier field in the database.
+	FieldLinkRateMultiplier = "link_rate_multiplier"
+	// FieldLinkOriginalDebit holds the string denoting the link_original_debit field in the database.
+	FieldLinkOriginalDebit = "link_original_debit"
+	// FieldLinkTotalFunded holds the string denoting the link_total_funded field in the database.
+	FieldLinkTotalFunded = "link_total_funded"
+	// FieldLinkTotalRefunded holds the string denoting the link_total_refunded field in the database.
+	FieldLinkTotalRefunded = "link_total_refunded"
+	// FieldLinkReservedAmount holds the string denoting the link_reserved_amount field in the database.
+	FieldLinkReservedAmount = "link_reserved_amount"
+	// FieldLinkConcurrency holds the string denoting the link_concurrency field in the database.
+	FieldLinkConcurrency = "link_concurrency"
+	// FieldLinkRpmLimit holds the string denoting the link_rpm_limit field in the database.
+	FieldLinkRpmLimit = "link_rpm_limit"
+	// FieldLinkActivatedAt holds the string denoting the link_activated_at field in the database.
+	FieldLinkActivatedAt = "link_activated_at"
+	// FieldLinkRevokedAt holds the string denoting the link_revoked_at field in the database.
+	FieldLinkRevokedAt = "link_revoked_at"
+	// FieldLinkFrozenReason holds the string denoting the link_frozen_reason field in the database.
+	FieldLinkFrozenReason = "link_frozen_reason"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
 	FieldLastUsedAt = "last_used_at"
 	// FieldIPWhitelist holds the string denoting the ip_whitelist field in the database.
@@ -103,6 +127,18 @@ var Columns = []string{
 	FieldName,
 	FieldGroupID,
 	FieldStatus,
+	FieldKeyType,
+	FieldLinkState,
+	FieldLinkRateMultiplier,
+	FieldLinkOriginalDebit,
+	FieldLinkTotalFunded,
+	FieldLinkTotalRefunded,
+	FieldLinkReservedAmount,
+	FieldLinkConcurrency,
+	FieldLinkRpmLimit,
+	FieldLinkActivatedAt,
+	FieldLinkRevokedAt,
+	FieldLinkFrozenReason,
 	FieldLastUsedAt,
 	FieldIPWhitelist,
 	FieldIPBlacklist,
@@ -152,6 +188,20 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DefaultKeyType holds the default value on creation for the "key_type" field.
+	DefaultKeyType string
+	// KeyTypeValidator is a validator for the "key_type" field. It is called by the builders before save.
+	KeyTypeValidator func(string) error
+	// LinkStateValidator is a validator for the "link_state" field. It is called by the builders before save.
+	LinkStateValidator func(string) error
+	// DefaultLinkTotalFunded holds the default value on creation for the "link_total_funded" field.
+	DefaultLinkTotalFunded float64
+	// DefaultLinkTotalRefunded holds the default value on creation for the "link_total_refunded" field.
+	DefaultLinkTotalRefunded float64
+	// DefaultLinkReservedAmount holds the default value on creation for the "link_reserved_amount" field.
+	DefaultLinkReservedAmount float64
+	// LinkFrozenReasonValidator is a validator for the "link_frozen_reason" field. It is called by the builders before save.
+	LinkFrozenReasonValidator func(string) error
 	// DefaultQuota holds the default value on creation for the "quota" field.
 	DefaultQuota float64
 	// DefaultQuotaUsed holds the default value on creation for the "quota_used" field.
@@ -216,6 +266,66 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByKeyType orders the results by the key_type field.
+func ByKeyType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeyType, opts...).ToFunc()
+}
+
+// ByLinkState orders the results by the link_state field.
+func ByLinkState(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkState, opts...).ToFunc()
+}
+
+// ByLinkRateMultiplier orders the results by the link_rate_multiplier field.
+func ByLinkRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkRateMultiplier, opts...).ToFunc()
+}
+
+// ByLinkOriginalDebit orders the results by the link_original_debit field.
+func ByLinkOriginalDebit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkOriginalDebit, opts...).ToFunc()
+}
+
+// ByLinkTotalFunded orders the results by the link_total_funded field.
+func ByLinkTotalFunded(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkTotalFunded, opts...).ToFunc()
+}
+
+// ByLinkTotalRefunded orders the results by the link_total_refunded field.
+func ByLinkTotalRefunded(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkTotalRefunded, opts...).ToFunc()
+}
+
+// ByLinkReservedAmount orders the results by the link_reserved_amount field.
+func ByLinkReservedAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkReservedAmount, opts...).ToFunc()
+}
+
+// ByLinkConcurrency orders the results by the link_concurrency field.
+func ByLinkConcurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkConcurrency, opts...).ToFunc()
+}
+
+// ByLinkRpmLimit orders the results by the link_rpm_limit field.
+func ByLinkRpmLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkRpmLimit, opts...).ToFunc()
+}
+
+// ByLinkActivatedAt orders the results by the link_activated_at field.
+func ByLinkActivatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkActivatedAt, opts...).ToFunc()
+}
+
+// ByLinkRevokedAt orders the results by the link_revoked_at field.
+func ByLinkRevokedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkRevokedAt, opts...).ToFunc()
+}
+
+// ByLinkFrozenReason orders the results by the link_frozen_reason field.
+func ByLinkFrozenReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLinkFrozenReason, opts...).ToFunc()
 }
 
 // ByLastUsedAt orders the results by the last_used_at field.

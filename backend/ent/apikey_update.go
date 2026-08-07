@@ -134,6 +134,271 @@ func (_u *APIKeyUpdate) SetNillableStatus(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetKeyType sets the "key_type" field.
+func (_u *APIKeyUpdate) SetKeyType(v string) *APIKeyUpdate {
+	_u.mutation.SetKeyType(v)
+	return _u
+}
+
+// SetNillableKeyType sets the "key_type" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableKeyType(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetKeyType(*v)
+	}
+	return _u
+}
+
+// SetLinkState sets the "link_state" field.
+func (_u *APIKeyUpdate) SetLinkState(v string) *APIKeyUpdate {
+	_u.mutation.SetLinkState(v)
+	return _u
+}
+
+// SetNillableLinkState sets the "link_state" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkState(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkState(*v)
+	}
+	return _u
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (_u *APIKeyUpdate) ClearLinkState() *APIKeyUpdate {
+	_u.mutation.ClearLinkState()
+	return _u
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (_u *APIKeyUpdate) SetLinkRateMultiplier(v float64) *APIKeyUpdate {
+	_u.mutation.ResetLinkRateMultiplier()
+	_u.mutation.SetLinkRateMultiplier(v)
+	return _u
+}
+
+// SetNillableLinkRateMultiplier sets the "link_rate_multiplier" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkRateMultiplier(v *float64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddLinkRateMultiplier adds value to the "link_rate_multiplier" field.
+func (_u *APIKeyUpdate) AddLinkRateMultiplier(v float64) *APIKeyUpdate {
+	_u.mutation.AddLinkRateMultiplier(v)
+	return _u
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (_u *APIKeyUpdate) ClearLinkRateMultiplier() *APIKeyUpdate {
+	_u.mutation.ClearLinkRateMultiplier()
+	return _u
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (_u *APIKeyUpdate) SetLinkOriginalDebit(v float64) *APIKeyUpdate {
+	_u.mutation.ResetLinkOriginalDebit()
+	_u.mutation.SetLinkOriginalDebit(v)
+	return _u
+}
+
+// SetNillableLinkOriginalDebit sets the "link_original_debit" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkOriginalDebit(v *float64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkOriginalDebit(*v)
+	}
+	return _u
+}
+
+// AddLinkOriginalDebit adds value to the "link_original_debit" field.
+func (_u *APIKeyUpdate) AddLinkOriginalDebit(v float64) *APIKeyUpdate {
+	_u.mutation.AddLinkOriginalDebit(v)
+	return _u
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (_u *APIKeyUpdate) ClearLinkOriginalDebit() *APIKeyUpdate {
+	_u.mutation.ClearLinkOriginalDebit()
+	return _u
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (_u *APIKeyUpdate) SetLinkTotalFunded(v float64) *APIKeyUpdate {
+	_u.mutation.ResetLinkTotalFunded()
+	_u.mutation.SetLinkTotalFunded(v)
+	return _u
+}
+
+// SetNillableLinkTotalFunded sets the "link_total_funded" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkTotalFunded(v *float64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkTotalFunded(*v)
+	}
+	return _u
+}
+
+// AddLinkTotalFunded adds value to the "link_total_funded" field.
+func (_u *APIKeyUpdate) AddLinkTotalFunded(v float64) *APIKeyUpdate {
+	_u.mutation.AddLinkTotalFunded(v)
+	return _u
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (_u *APIKeyUpdate) SetLinkTotalRefunded(v float64) *APIKeyUpdate {
+	_u.mutation.ResetLinkTotalRefunded()
+	_u.mutation.SetLinkTotalRefunded(v)
+	return _u
+}
+
+// SetNillableLinkTotalRefunded sets the "link_total_refunded" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkTotalRefunded(v *float64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkTotalRefunded(*v)
+	}
+	return _u
+}
+
+// AddLinkTotalRefunded adds value to the "link_total_refunded" field.
+func (_u *APIKeyUpdate) AddLinkTotalRefunded(v float64) *APIKeyUpdate {
+	_u.mutation.AddLinkTotalRefunded(v)
+	return _u
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (_u *APIKeyUpdate) SetLinkReservedAmount(v float64) *APIKeyUpdate {
+	_u.mutation.ResetLinkReservedAmount()
+	_u.mutation.SetLinkReservedAmount(v)
+	return _u
+}
+
+// SetNillableLinkReservedAmount sets the "link_reserved_amount" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkReservedAmount(v *float64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkReservedAmount(*v)
+	}
+	return _u
+}
+
+// AddLinkReservedAmount adds value to the "link_reserved_amount" field.
+func (_u *APIKeyUpdate) AddLinkReservedAmount(v float64) *APIKeyUpdate {
+	_u.mutation.AddLinkReservedAmount(v)
+	return _u
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (_u *APIKeyUpdate) SetLinkConcurrency(v int) *APIKeyUpdate {
+	_u.mutation.ResetLinkConcurrency()
+	_u.mutation.SetLinkConcurrency(v)
+	return _u
+}
+
+// SetNillableLinkConcurrency sets the "link_concurrency" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkConcurrency(v *int) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLinkConcurrency adds value to the "link_concurrency" field.
+func (_u *APIKeyUpdate) AddLinkConcurrency(v int) *APIKeyUpdate {
+	_u.mutation.AddLinkConcurrency(v)
+	return _u
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (_u *APIKeyUpdate) ClearLinkConcurrency() *APIKeyUpdate {
+	_u.mutation.ClearLinkConcurrency()
+	return _u
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (_u *APIKeyUpdate) SetLinkRpmLimit(v int) *APIKeyUpdate {
+	_u.mutation.ResetLinkRpmLimit()
+	_u.mutation.SetLinkRpmLimit(v)
+	return _u
+}
+
+// SetNillableLinkRpmLimit sets the "link_rpm_limit" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkRpmLimit(v *int) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkRpmLimit(*v)
+	}
+	return _u
+}
+
+// AddLinkRpmLimit adds value to the "link_rpm_limit" field.
+func (_u *APIKeyUpdate) AddLinkRpmLimit(v int) *APIKeyUpdate {
+	_u.mutation.AddLinkRpmLimit(v)
+	return _u
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (_u *APIKeyUpdate) ClearLinkRpmLimit() *APIKeyUpdate {
+	_u.mutation.ClearLinkRpmLimit()
+	return _u
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (_u *APIKeyUpdate) SetLinkActivatedAt(v time.Time) *APIKeyUpdate {
+	_u.mutation.SetLinkActivatedAt(v)
+	return _u
+}
+
+// SetNillableLinkActivatedAt sets the "link_activated_at" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkActivatedAt(v *time.Time) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkActivatedAt(*v)
+	}
+	return _u
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (_u *APIKeyUpdate) ClearLinkActivatedAt() *APIKeyUpdate {
+	_u.mutation.ClearLinkActivatedAt()
+	return _u
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (_u *APIKeyUpdate) SetLinkRevokedAt(v time.Time) *APIKeyUpdate {
+	_u.mutation.SetLinkRevokedAt(v)
+	return _u
+}
+
+// SetNillableLinkRevokedAt sets the "link_revoked_at" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkRevokedAt(v *time.Time) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkRevokedAt(*v)
+	}
+	return _u
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (_u *APIKeyUpdate) ClearLinkRevokedAt() *APIKeyUpdate {
+	_u.mutation.ClearLinkRevokedAt()
+	return _u
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (_u *APIKeyUpdate) SetLinkFrozenReason(v string) *APIKeyUpdate {
+	_u.mutation.SetLinkFrozenReason(v)
+	return _u
+}
+
+// SetNillableLinkFrozenReason sets the "link_frozen_reason" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLinkFrozenReason(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLinkFrozenReason(*v)
+	}
+	return _u
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (_u *APIKeyUpdate) ClearLinkFrozenReason() *APIKeyUpdate {
+	_u.mutation.ClearLinkFrozenReason()
+	return _u
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_u *APIKeyUpdate) SetLastUsedAt(v time.Time) *APIKeyUpdate {
 	_u.mutation.SetLastUsedAt(v)
@@ -560,6 +825,21 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.KeyType(); ok {
+		if err := apikey.KeyTypeValidator(v); err != nil {
+			return &ValidationError{Name: "key_type", err: fmt.Errorf(`ent: validator failed for field "APIKey.key_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LinkState(); ok {
+		if err := apikey.LinkStateValidator(v); err != nil {
+			return &ValidationError{Name: "link_state", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_state": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LinkFrozenReason(); ok {
+		if err := apikey.LinkFrozenReasonValidator(v); err != nil {
+			return &ValidationError{Name: "link_frozen_reason", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_frozen_reason": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -595,6 +875,87 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.KeyType(); ok {
+		_spec.SetField(apikey.FieldKeyType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LinkState(); ok {
+		_spec.SetField(apikey.FieldLinkState, field.TypeString, value)
+	}
+	if _u.mutation.LinkStateCleared() {
+		_spec.ClearField(apikey.FieldLinkState, field.TypeString)
+	}
+	if value, ok := _u.mutation.LinkRateMultiplier(); ok {
+		_spec.SetField(apikey.FieldLinkRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkRateMultiplier(); ok {
+		_spec.AddField(apikey.FieldLinkRateMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.LinkRateMultiplierCleared() {
+		_spec.ClearField(apikey.FieldLinkRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.LinkOriginalDebit(); ok {
+		_spec.SetField(apikey.FieldLinkOriginalDebit, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkOriginalDebit(); ok {
+		_spec.AddField(apikey.FieldLinkOriginalDebit, field.TypeFloat64, value)
+	}
+	if _u.mutation.LinkOriginalDebitCleared() {
+		_spec.ClearField(apikey.FieldLinkOriginalDebit, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.LinkTotalFunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalFunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkTotalFunded(); ok {
+		_spec.AddField(apikey.FieldLinkTotalFunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkTotalRefunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalRefunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkTotalRefunded(); ok {
+		_spec.AddField(apikey.FieldLinkTotalRefunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkReservedAmount(); ok {
+		_spec.SetField(apikey.FieldLinkReservedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkReservedAmount(); ok {
+		_spec.AddField(apikey.FieldLinkReservedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkConcurrency(); ok {
+		_spec.SetField(apikey.FieldLinkConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLinkConcurrency(); ok {
+		_spec.AddField(apikey.FieldLinkConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LinkConcurrencyCleared() {
+		_spec.ClearField(apikey.FieldLinkConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.LinkRpmLimit(); ok {
+		_spec.SetField(apikey.FieldLinkRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLinkRpmLimit(); ok {
+		_spec.AddField(apikey.FieldLinkRpmLimit, field.TypeInt, value)
+	}
+	if _u.mutation.LinkRpmLimitCleared() {
+		_spec.ClearField(apikey.FieldLinkRpmLimit, field.TypeInt)
+	}
+	if value, ok := _u.mutation.LinkActivatedAt(); ok {
+		_spec.SetField(apikey.FieldLinkActivatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LinkActivatedAtCleared() {
+		_spec.ClearField(apikey.FieldLinkActivatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LinkRevokedAt(); ok {
+		_spec.SetField(apikey.FieldLinkRevokedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LinkRevokedAtCleared() {
+		_spec.ClearField(apikey.FieldLinkRevokedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LinkFrozenReason(); ok {
+		_spec.SetField(apikey.FieldLinkFrozenReason, field.TypeString, value)
+	}
+	if _u.mutation.LinkFrozenReasonCleared() {
+		_spec.ClearField(apikey.FieldLinkFrozenReason, field.TypeString)
 	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
@@ -918,6 +1279,271 @@ func (_u *APIKeyUpdateOne) SetNillableStatus(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
 	}
+	return _u
+}
+
+// SetKeyType sets the "key_type" field.
+func (_u *APIKeyUpdateOne) SetKeyType(v string) *APIKeyUpdateOne {
+	_u.mutation.SetKeyType(v)
+	return _u
+}
+
+// SetNillableKeyType sets the "key_type" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableKeyType(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetKeyType(*v)
+	}
+	return _u
+}
+
+// SetLinkState sets the "link_state" field.
+func (_u *APIKeyUpdateOne) SetLinkState(v string) *APIKeyUpdateOne {
+	_u.mutation.SetLinkState(v)
+	return _u
+}
+
+// SetNillableLinkState sets the "link_state" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkState(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkState(*v)
+	}
+	return _u
+}
+
+// ClearLinkState clears the value of the "link_state" field.
+func (_u *APIKeyUpdateOne) ClearLinkState() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkState()
+	return _u
+}
+
+// SetLinkRateMultiplier sets the "link_rate_multiplier" field.
+func (_u *APIKeyUpdateOne) SetLinkRateMultiplier(v float64) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkRateMultiplier()
+	_u.mutation.SetLinkRateMultiplier(v)
+	return _u
+}
+
+// SetNillableLinkRateMultiplier sets the "link_rate_multiplier" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkRateMultiplier(v *float64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddLinkRateMultiplier adds value to the "link_rate_multiplier" field.
+func (_u *APIKeyUpdateOne) AddLinkRateMultiplier(v float64) *APIKeyUpdateOne {
+	_u.mutation.AddLinkRateMultiplier(v)
+	return _u
+}
+
+// ClearLinkRateMultiplier clears the value of the "link_rate_multiplier" field.
+func (_u *APIKeyUpdateOne) ClearLinkRateMultiplier() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkRateMultiplier()
+	return _u
+}
+
+// SetLinkOriginalDebit sets the "link_original_debit" field.
+func (_u *APIKeyUpdateOne) SetLinkOriginalDebit(v float64) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkOriginalDebit()
+	_u.mutation.SetLinkOriginalDebit(v)
+	return _u
+}
+
+// SetNillableLinkOriginalDebit sets the "link_original_debit" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkOriginalDebit(v *float64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkOriginalDebit(*v)
+	}
+	return _u
+}
+
+// AddLinkOriginalDebit adds value to the "link_original_debit" field.
+func (_u *APIKeyUpdateOne) AddLinkOriginalDebit(v float64) *APIKeyUpdateOne {
+	_u.mutation.AddLinkOriginalDebit(v)
+	return _u
+}
+
+// ClearLinkOriginalDebit clears the value of the "link_original_debit" field.
+func (_u *APIKeyUpdateOne) ClearLinkOriginalDebit() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkOriginalDebit()
+	return _u
+}
+
+// SetLinkTotalFunded sets the "link_total_funded" field.
+func (_u *APIKeyUpdateOne) SetLinkTotalFunded(v float64) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkTotalFunded()
+	_u.mutation.SetLinkTotalFunded(v)
+	return _u
+}
+
+// SetNillableLinkTotalFunded sets the "link_total_funded" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkTotalFunded(v *float64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkTotalFunded(*v)
+	}
+	return _u
+}
+
+// AddLinkTotalFunded adds value to the "link_total_funded" field.
+func (_u *APIKeyUpdateOne) AddLinkTotalFunded(v float64) *APIKeyUpdateOne {
+	_u.mutation.AddLinkTotalFunded(v)
+	return _u
+}
+
+// SetLinkTotalRefunded sets the "link_total_refunded" field.
+func (_u *APIKeyUpdateOne) SetLinkTotalRefunded(v float64) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkTotalRefunded()
+	_u.mutation.SetLinkTotalRefunded(v)
+	return _u
+}
+
+// SetNillableLinkTotalRefunded sets the "link_total_refunded" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkTotalRefunded(v *float64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkTotalRefunded(*v)
+	}
+	return _u
+}
+
+// AddLinkTotalRefunded adds value to the "link_total_refunded" field.
+func (_u *APIKeyUpdateOne) AddLinkTotalRefunded(v float64) *APIKeyUpdateOne {
+	_u.mutation.AddLinkTotalRefunded(v)
+	return _u
+}
+
+// SetLinkReservedAmount sets the "link_reserved_amount" field.
+func (_u *APIKeyUpdateOne) SetLinkReservedAmount(v float64) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkReservedAmount()
+	_u.mutation.SetLinkReservedAmount(v)
+	return _u
+}
+
+// SetNillableLinkReservedAmount sets the "link_reserved_amount" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkReservedAmount(v *float64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkReservedAmount(*v)
+	}
+	return _u
+}
+
+// AddLinkReservedAmount adds value to the "link_reserved_amount" field.
+func (_u *APIKeyUpdateOne) AddLinkReservedAmount(v float64) *APIKeyUpdateOne {
+	_u.mutation.AddLinkReservedAmount(v)
+	return _u
+}
+
+// SetLinkConcurrency sets the "link_concurrency" field.
+func (_u *APIKeyUpdateOne) SetLinkConcurrency(v int) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkConcurrency()
+	_u.mutation.SetLinkConcurrency(v)
+	return _u
+}
+
+// SetNillableLinkConcurrency sets the "link_concurrency" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkConcurrency(v *int) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkConcurrency(*v)
+	}
+	return _u
+}
+
+// AddLinkConcurrency adds value to the "link_concurrency" field.
+func (_u *APIKeyUpdateOne) AddLinkConcurrency(v int) *APIKeyUpdateOne {
+	_u.mutation.AddLinkConcurrency(v)
+	return _u
+}
+
+// ClearLinkConcurrency clears the value of the "link_concurrency" field.
+func (_u *APIKeyUpdateOne) ClearLinkConcurrency() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkConcurrency()
+	return _u
+}
+
+// SetLinkRpmLimit sets the "link_rpm_limit" field.
+func (_u *APIKeyUpdateOne) SetLinkRpmLimit(v int) *APIKeyUpdateOne {
+	_u.mutation.ResetLinkRpmLimit()
+	_u.mutation.SetLinkRpmLimit(v)
+	return _u
+}
+
+// SetNillableLinkRpmLimit sets the "link_rpm_limit" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkRpmLimit(v *int) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkRpmLimit(*v)
+	}
+	return _u
+}
+
+// AddLinkRpmLimit adds value to the "link_rpm_limit" field.
+func (_u *APIKeyUpdateOne) AddLinkRpmLimit(v int) *APIKeyUpdateOne {
+	_u.mutation.AddLinkRpmLimit(v)
+	return _u
+}
+
+// ClearLinkRpmLimit clears the value of the "link_rpm_limit" field.
+func (_u *APIKeyUpdateOne) ClearLinkRpmLimit() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkRpmLimit()
+	return _u
+}
+
+// SetLinkActivatedAt sets the "link_activated_at" field.
+func (_u *APIKeyUpdateOne) SetLinkActivatedAt(v time.Time) *APIKeyUpdateOne {
+	_u.mutation.SetLinkActivatedAt(v)
+	return _u
+}
+
+// SetNillableLinkActivatedAt sets the "link_activated_at" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkActivatedAt(v *time.Time) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkActivatedAt(*v)
+	}
+	return _u
+}
+
+// ClearLinkActivatedAt clears the value of the "link_activated_at" field.
+func (_u *APIKeyUpdateOne) ClearLinkActivatedAt() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkActivatedAt()
+	return _u
+}
+
+// SetLinkRevokedAt sets the "link_revoked_at" field.
+func (_u *APIKeyUpdateOne) SetLinkRevokedAt(v time.Time) *APIKeyUpdateOne {
+	_u.mutation.SetLinkRevokedAt(v)
+	return _u
+}
+
+// SetNillableLinkRevokedAt sets the "link_revoked_at" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkRevokedAt(v *time.Time) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkRevokedAt(*v)
+	}
+	return _u
+}
+
+// ClearLinkRevokedAt clears the value of the "link_revoked_at" field.
+func (_u *APIKeyUpdateOne) ClearLinkRevokedAt() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkRevokedAt()
+	return _u
+}
+
+// SetLinkFrozenReason sets the "link_frozen_reason" field.
+func (_u *APIKeyUpdateOne) SetLinkFrozenReason(v string) *APIKeyUpdateOne {
+	_u.mutation.SetLinkFrozenReason(v)
+	return _u
+}
+
+// SetNillableLinkFrozenReason sets the "link_frozen_reason" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLinkFrozenReason(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLinkFrozenReason(*v)
+	}
+	return _u
+}
+
+// ClearLinkFrozenReason clears the value of the "link_frozen_reason" field.
+func (_u *APIKeyUpdateOne) ClearLinkFrozenReason() *APIKeyUpdateOne {
+	_u.mutation.ClearLinkFrozenReason()
 	return _u
 }
 
@@ -1360,6 +1986,21 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.KeyType(); ok {
+		if err := apikey.KeyTypeValidator(v); err != nil {
+			return &ValidationError{Name: "key_type", err: fmt.Errorf(`ent: validator failed for field "APIKey.key_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LinkState(); ok {
+		if err := apikey.LinkStateValidator(v); err != nil {
+			return &ValidationError{Name: "link_state", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_state": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LinkFrozenReason(); ok {
+		if err := apikey.LinkFrozenReasonValidator(v); err != nil {
+			return &ValidationError{Name: "link_frozen_reason", err: fmt.Errorf(`ent: validator failed for field "APIKey.link_frozen_reason": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -1412,6 +2053,87 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.KeyType(); ok {
+		_spec.SetField(apikey.FieldKeyType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LinkState(); ok {
+		_spec.SetField(apikey.FieldLinkState, field.TypeString, value)
+	}
+	if _u.mutation.LinkStateCleared() {
+		_spec.ClearField(apikey.FieldLinkState, field.TypeString)
+	}
+	if value, ok := _u.mutation.LinkRateMultiplier(); ok {
+		_spec.SetField(apikey.FieldLinkRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkRateMultiplier(); ok {
+		_spec.AddField(apikey.FieldLinkRateMultiplier, field.TypeFloat64, value)
+	}
+	if _u.mutation.LinkRateMultiplierCleared() {
+		_spec.ClearField(apikey.FieldLinkRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.LinkOriginalDebit(); ok {
+		_spec.SetField(apikey.FieldLinkOriginalDebit, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkOriginalDebit(); ok {
+		_spec.AddField(apikey.FieldLinkOriginalDebit, field.TypeFloat64, value)
+	}
+	if _u.mutation.LinkOriginalDebitCleared() {
+		_spec.ClearField(apikey.FieldLinkOriginalDebit, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.LinkTotalFunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalFunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkTotalFunded(); ok {
+		_spec.AddField(apikey.FieldLinkTotalFunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkTotalRefunded(); ok {
+		_spec.SetField(apikey.FieldLinkTotalRefunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkTotalRefunded(); ok {
+		_spec.AddField(apikey.FieldLinkTotalRefunded, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkReservedAmount(); ok {
+		_spec.SetField(apikey.FieldLinkReservedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedLinkReservedAmount(); ok {
+		_spec.AddField(apikey.FieldLinkReservedAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.LinkConcurrency(); ok {
+		_spec.SetField(apikey.FieldLinkConcurrency, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLinkConcurrency(); ok {
+		_spec.AddField(apikey.FieldLinkConcurrency, field.TypeInt, value)
+	}
+	if _u.mutation.LinkConcurrencyCleared() {
+		_spec.ClearField(apikey.FieldLinkConcurrency, field.TypeInt)
+	}
+	if value, ok := _u.mutation.LinkRpmLimit(); ok {
+		_spec.SetField(apikey.FieldLinkRpmLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedLinkRpmLimit(); ok {
+		_spec.AddField(apikey.FieldLinkRpmLimit, field.TypeInt, value)
+	}
+	if _u.mutation.LinkRpmLimitCleared() {
+		_spec.ClearField(apikey.FieldLinkRpmLimit, field.TypeInt)
+	}
+	if value, ok := _u.mutation.LinkActivatedAt(); ok {
+		_spec.SetField(apikey.FieldLinkActivatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LinkActivatedAtCleared() {
+		_spec.ClearField(apikey.FieldLinkActivatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LinkRevokedAt(); ok {
+		_spec.SetField(apikey.FieldLinkRevokedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LinkRevokedAtCleared() {
+		_spec.ClearField(apikey.FieldLinkRevokedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LinkFrozenReason(); ok {
+		_spec.SetField(apikey.FieldLinkFrozenReason, field.TypeString, value)
+	}
+	if _u.mutation.LinkFrozenReasonCleared() {
+		_spec.ClearField(apikey.FieldLinkFrozenReason, field.TypeString)
 	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)

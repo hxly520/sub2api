@@ -34,6 +34,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardgroupauthorization"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardledger"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardoperation"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -101,6 +104,12 @@ type Client struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// LinkCardGroupAuthorization is the client for interacting with the LinkCardGroupAuthorization builders.
+	LinkCardGroupAuthorization *LinkCardGroupAuthorizationClient
+	// LinkCardLedger is the client for interacting with the LinkCardLedger builders.
+	LinkCardLedger *LinkCardLedgerClient
+	// LinkCardOperation is the client for interacting with the LinkCardOperation builders.
+	LinkCardOperation *LinkCardOperationClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -171,6 +180,9 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(c.config)
+	c.LinkCardGroupAuthorization = NewLinkCardGroupAuthorizationClient(c.config)
+	c.LinkCardLedger = NewLinkCardLedgerClient(c.config)
+	c.LinkCardOperation = NewLinkCardOperationClient(c.config)
 	c.PaymentAuditLog = NewPaymentAuditLogClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
@@ -302,6 +314,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		LinkCardGroupAuthorization:    NewLinkCardGroupAuthorizationClient(cfg),
+		LinkCardLedger:                NewLinkCardLedgerClient(cfg),
+		LinkCardOperation:             NewLinkCardOperationClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -360,6 +375,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		LinkCardGroupAuthorization:    NewLinkCardGroupAuthorizationClient(cfg),
+		LinkCardLedger:                NewLinkCardLedgerClient(cfg),
+		LinkCardOperation:             NewLinkCardOperationClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -414,7 +432,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.IdentityAdoptionDecision, c.LinkCardGroupAuthorization, c.LinkCardLedger,
+		c.LinkCardOperation, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
@@ -434,7 +453,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.IdentityAdoptionDecision, c.LinkCardGroupAuthorization, c.LinkCardLedger,
+		c.LinkCardOperation, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
@@ -486,6 +506,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *IdentityAdoptionDecisionMutation:
 		return c.IdentityAdoptionDecision.mutate(ctx, m)
+	case *LinkCardGroupAuthorizationMutation:
+		return c.LinkCardGroupAuthorization.mutate(ctx, m)
+	case *LinkCardLedgerMutation:
+		return c.LinkCardLedger.mutate(ctx, m)
+	case *LinkCardOperationMutation:
+		return c.LinkCardOperation.mutate(ctx, m)
 	case *PaymentAuditLogMutation:
 		return c.PaymentAuditLog.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -3574,6 +3600,405 @@ func (c *IdentityAdoptionDecisionClient) mutate(ctx context.Context, m *Identity
 		return (&IdentityAdoptionDecisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown IdentityAdoptionDecision mutation op: %q", m.Op())
+	}
+}
+
+// LinkCardGroupAuthorizationClient is a client for the LinkCardGroupAuthorization schema.
+type LinkCardGroupAuthorizationClient struct {
+	config
+}
+
+// NewLinkCardGroupAuthorizationClient returns a client for the LinkCardGroupAuthorization from the given config.
+func NewLinkCardGroupAuthorizationClient(c config) *LinkCardGroupAuthorizationClient {
+	return &LinkCardGroupAuthorizationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `linkcardgroupauthorization.Hooks(f(g(h())))`.
+func (c *LinkCardGroupAuthorizationClient) Use(hooks ...Hook) {
+	c.hooks.LinkCardGroupAuthorization = append(c.hooks.LinkCardGroupAuthorization, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `linkcardgroupauthorization.Intercept(f(g(h())))`.
+func (c *LinkCardGroupAuthorizationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.LinkCardGroupAuthorization = append(c.inters.LinkCardGroupAuthorization, interceptors...)
+}
+
+// Create returns a builder for creating a LinkCardGroupAuthorization entity.
+func (c *LinkCardGroupAuthorizationClient) Create() *LinkCardGroupAuthorizationCreate {
+	mutation := newLinkCardGroupAuthorizationMutation(c.config, OpCreate)
+	return &LinkCardGroupAuthorizationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of LinkCardGroupAuthorization entities.
+func (c *LinkCardGroupAuthorizationClient) CreateBulk(builders ...*LinkCardGroupAuthorizationCreate) *LinkCardGroupAuthorizationCreateBulk {
+	return &LinkCardGroupAuthorizationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *LinkCardGroupAuthorizationClient) MapCreateBulk(slice any, setFunc func(*LinkCardGroupAuthorizationCreate, int)) *LinkCardGroupAuthorizationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &LinkCardGroupAuthorizationCreateBulk{err: fmt.Errorf("calling to LinkCardGroupAuthorizationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*LinkCardGroupAuthorizationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &LinkCardGroupAuthorizationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for LinkCardGroupAuthorization.
+func (c *LinkCardGroupAuthorizationClient) Update() *LinkCardGroupAuthorizationUpdate {
+	mutation := newLinkCardGroupAuthorizationMutation(c.config, OpUpdate)
+	return &LinkCardGroupAuthorizationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *LinkCardGroupAuthorizationClient) UpdateOne(_m *LinkCardGroupAuthorization) *LinkCardGroupAuthorizationUpdateOne {
+	mutation := newLinkCardGroupAuthorizationMutation(c.config, OpUpdateOne, withLinkCardGroupAuthorization(_m))
+	return &LinkCardGroupAuthorizationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *LinkCardGroupAuthorizationClient) UpdateOneID(id int64) *LinkCardGroupAuthorizationUpdateOne {
+	mutation := newLinkCardGroupAuthorizationMutation(c.config, OpUpdateOne, withLinkCardGroupAuthorizationID(id))
+	return &LinkCardGroupAuthorizationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for LinkCardGroupAuthorization.
+func (c *LinkCardGroupAuthorizationClient) Delete() *LinkCardGroupAuthorizationDelete {
+	mutation := newLinkCardGroupAuthorizationMutation(c.config, OpDelete)
+	return &LinkCardGroupAuthorizationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *LinkCardGroupAuthorizationClient) DeleteOne(_m *LinkCardGroupAuthorization) *LinkCardGroupAuthorizationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *LinkCardGroupAuthorizationClient) DeleteOneID(id int64) *LinkCardGroupAuthorizationDeleteOne {
+	builder := c.Delete().Where(linkcardgroupauthorization.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &LinkCardGroupAuthorizationDeleteOne{builder}
+}
+
+// Query returns a query builder for LinkCardGroupAuthorization.
+func (c *LinkCardGroupAuthorizationClient) Query() *LinkCardGroupAuthorizationQuery {
+	return &LinkCardGroupAuthorizationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeLinkCardGroupAuthorization},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a LinkCardGroupAuthorization entity by its id.
+func (c *LinkCardGroupAuthorizationClient) Get(ctx context.Context, id int64) (*LinkCardGroupAuthorization, error) {
+	return c.Query().Where(linkcardgroupauthorization.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *LinkCardGroupAuthorizationClient) GetX(ctx context.Context, id int64) *LinkCardGroupAuthorization {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *LinkCardGroupAuthorizationClient) Hooks() []Hook {
+	return c.hooks.LinkCardGroupAuthorization
+}
+
+// Interceptors returns the client interceptors.
+func (c *LinkCardGroupAuthorizationClient) Interceptors() []Interceptor {
+	return c.inters.LinkCardGroupAuthorization
+}
+
+func (c *LinkCardGroupAuthorizationClient) mutate(ctx context.Context, m *LinkCardGroupAuthorizationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&LinkCardGroupAuthorizationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&LinkCardGroupAuthorizationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&LinkCardGroupAuthorizationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&LinkCardGroupAuthorizationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown LinkCardGroupAuthorization mutation op: %q", m.Op())
+	}
+}
+
+// LinkCardLedgerClient is a client for the LinkCardLedger schema.
+type LinkCardLedgerClient struct {
+	config
+}
+
+// NewLinkCardLedgerClient returns a client for the LinkCardLedger from the given config.
+func NewLinkCardLedgerClient(c config) *LinkCardLedgerClient {
+	return &LinkCardLedgerClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `linkcardledger.Hooks(f(g(h())))`.
+func (c *LinkCardLedgerClient) Use(hooks ...Hook) {
+	c.hooks.LinkCardLedger = append(c.hooks.LinkCardLedger, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `linkcardledger.Intercept(f(g(h())))`.
+func (c *LinkCardLedgerClient) Intercept(interceptors ...Interceptor) {
+	c.inters.LinkCardLedger = append(c.inters.LinkCardLedger, interceptors...)
+}
+
+// Create returns a builder for creating a LinkCardLedger entity.
+func (c *LinkCardLedgerClient) Create() *LinkCardLedgerCreate {
+	mutation := newLinkCardLedgerMutation(c.config, OpCreate)
+	return &LinkCardLedgerCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of LinkCardLedger entities.
+func (c *LinkCardLedgerClient) CreateBulk(builders ...*LinkCardLedgerCreate) *LinkCardLedgerCreateBulk {
+	return &LinkCardLedgerCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *LinkCardLedgerClient) MapCreateBulk(slice any, setFunc func(*LinkCardLedgerCreate, int)) *LinkCardLedgerCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &LinkCardLedgerCreateBulk{err: fmt.Errorf("calling to LinkCardLedgerClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*LinkCardLedgerCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &LinkCardLedgerCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for LinkCardLedger.
+func (c *LinkCardLedgerClient) Update() *LinkCardLedgerUpdate {
+	mutation := newLinkCardLedgerMutation(c.config, OpUpdate)
+	return &LinkCardLedgerUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *LinkCardLedgerClient) UpdateOne(_m *LinkCardLedger) *LinkCardLedgerUpdateOne {
+	mutation := newLinkCardLedgerMutation(c.config, OpUpdateOne, withLinkCardLedger(_m))
+	return &LinkCardLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *LinkCardLedgerClient) UpdateOneID(id int64) *LinkCardLedgerUpdateOne {
+	mutation := newLinkCardLedgerMutation(c.config, OpUpdateOne, withLinkCardLedgerID(id))
+	return &LinkCardLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for LinkCardLedger.
+func (c *LinkCardLedgerClient) Delete() *LinkCardLedgerDelete {
+	mutation := newLinkCardLedgerMutation(c.config, OpDelete)
+	return &LinkCardLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *LinkCardLedgerClient) DeleteOne(_m *LinkCardLedger) *LinkCardLedgerDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *LinkCardLedgerClient) DeleteOneID(id int64) *LinkCardLedgerDeleteOne {
+	builder := c.Delete().Where(linkcardledger.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &LinkCardLedgerDeleteOne{builder}
+}
+
+// Query returns a query builder for LinkCardLedger.
+func (c *LinkCardLedgerClient) Query() *LinkCardLedgerQuery {
+	return &LinkCardLedgerQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeLinkCardLedger},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a LinkCardLedger entity by its id.
+func (c *LinkCardLedgerClient) Get(ctx context.Context, id int64) (*LinkCardLedger, error) {
+	return c.Query().Where(linkcardledger.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *LinkCardLedgerClient) GetX(ctx context.Context, id int64) *LinkCardLedger {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *LinkCardLedgerClient) Hooks() []Hook {
+	return c.hooks.LinkCardLedger
+}
+
+// Interceptors returns the client interceptors.
+func (c *LinkCardLedgerClient) Interceptors() []Interceptor {
+	return c.inters.LinkCardLedger
+}
+
+func (c *LinkCardLedgerClient) mutate(ctx context.Context, m *LinkCardLedgerMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&LinkCardLedgerCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&LinkCardLedgerUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&LinkCardLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&LinkCardLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown LinkCardLedger mutation op: %q", m.Op())
+	}
+}
+
+// LinkCardOperationClient is a client for the LinkCardOperation schema.
+type LinkCardOperationClient struct {
+	config
+}
+
+// NewLinkCardOperationClient returns a client for the LinkCardOperation from the given config.
+func NewLinkCardOperationClient(c config) *LinkCardOperationClient {
+	return &LinkCardOperationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `linkcardoperation.Hooks(f(g(h())))`.
+func (c *LinkCardOperationClient) Use(hooks ...Hook) {
+	c.hooks.LinkCardOperation = append(c.hooks.LinkCardOperation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `linkcardoperation.Intercept(f(g(h())))`.
+func (c *LinkCardOperationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.LinkCardOperation = append(c.inters.LinkCardOperation, interceptors...)
+}
+
+// Create returns a builder for creating a LinkCardOperation entity.
+func (c *LinkCardOperationClient) Create() *LinkCardOperationCreate {
+	mutation := newLinkCardOperationMutation(c.config, OpCreate)
+	return &LinkCardOperationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of LinkCardOperation entities.
+func (c *LinkCardOperationClient) CreateBulk(builders ...*LinkCardOperationCreate) *LinkCardOperationCreateBulk {
+	return &LinkCardOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *LinkCardOperationClient) MapCreateBulk(slice any, setFunc func(*LinkCardOperationCreate, int)) *LinkCardOperationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &LinkCardOperationCreateBulk{err: fmt.Errorf("calling to LinkCardOperationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*LinkCardOperationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &LinkCardOperationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for LinkCardOperation.
+func (c *LinkCardOperationClient) Update() *LinkCardOperationUpdate {
+	mutation := newLinkCardOperationMutation(c.config, OpUpdate)
+	return &LinkCardOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *LinkCardOperationClient) UpdateOne(_m *LinkCardOperation) *LinkCardOperationUpdateOne {
+	mutation := newLinkCardOperationMutation(c.config, OpUpdateOne, withLinkCardOperation(_m))
+	return &LinkCardOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *LinkCardOperationClient) UpdateOneID(id int64) *LinkCardOperationUpdateOne {
+	mutation := newLinkCardOperationMutation(c.config, OpUpdateOne, withLinkCardOperationID(id))
+	return &LinkCardOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for LinkCardOperation.
+func (c *LinkCardOperationClient) Delete() *LinkCardOperationDelete {
+	mutation := newLinkCardOperationMutation(c.config, OpDelete)
+	return &LinkCardOperationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *LinkCardOperationClient) DeleteOne(_m *LinkCardOperation) *LinkCardOperationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *LinkCardOperationClient) DeleteOneID(id int64) *LinkCardOperationDeleteOne {
+	builder := c.Delete().Where(linkcardoperation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &LinkCardOperationDeleteOne{builder}
+}
+
+// Query returns a query builder for LinkCardOperation.
+func (c *LinkCardOperationClient) Query() *LinkCardOperationQuery {
+	return &LinkCardOperationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeLinkCardOperation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a LinkCardOperation entity by its id.
+func (c *LinkCardOperationClient) Get(ctx context.Context, id int64) (*LinkCardOperation, error) {
+	return c.Query().Where(linkcardoperation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *LinkCardOperationClient) GetX(ctx context.Context, id int64) *LinkCardOperation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *LinkCardOperationClient) Hooks() []Hook {
+	return c.hooks.LinkCardOperation
+}
+
+// Interceptors returns the client interceptors.
+func (c *LinkCardOperationClient) Interceptors() []Interceptor {
+	return c.inters.LinkCardOperation
+}
+
+func (c *LinkCardOperationClient) mutate(ctx context.Context, m *LinkCardOperationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&LinkCardOperationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&LinkCardOperationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&LinkCardOperationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&LinkCardOperationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown LinkCardOperation mutation op: %q", m.Op())
 	}
 }
 
@@ -6828,25 +7253,25 @@ type (
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
-		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Hook
+		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, LinkCardGroupAuthorization,
+		LinkCardLedger, LinkCardOperation, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
-		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Interceptor
+		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, LinkCardGroupAuthorization,
+		LinkCardLedger, LinkCardOperation, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

@@ -35,6 +35,7 @@ type UsageBillingCommand struct {
 	MediaType           string
 
 	BalanceCost         float64
+	PrepaidLinkCost     float64
 	SubscriptionCost    float64
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
@@ -45,6 +46,10 @@ type UsageBillingCommand struct {
 	// instead of deducting BalanceCost a second time.
 	MediaBalanceHoldRequestID  string
 	MediaBalanceHoldActualCost float64
+	// MediaBalanceHoldLinkCard marks a hold funded by the prepaid link-card
+	// reserve. It is populated from the authenticated API key and is never
+	// accepted from an API request payload.
+	MediaBalanceHoldLinkCard bool
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -90,6 +95,12 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.APIKeyRateLimitCost,
 		c.AccountQuotaCost,
 	)
+	// Keep the standard-key fingerprint byte-for-byte compatible with releases
+	// before link cards. This matters during rolling upgrades when an idempotent
+	// request can be retried against a newer instance.
+	if c.PrepaidLinkCost > 0 {
+		raw += fmt.Sprintf("|prepaid_link=%0.10f", c.PrepaidLinkCost)
+	}
 	if holdRequestID := strings.TrimSpace(c.MediaBalanceHoldRequestID); holdRequestID != "" {
 		raw += "|hold=" + holdRequestID
 		raw += fmt.Sprintf("|hold_actual=%0.10f", c.MediaBalanceHoldActualCost)
@@ -145,6 +156,9 @@ type BatchImageBalanceHoldCommand struct {
 	BatchID            string
 	HoldAmount         float64
 	ActualAmount       float64
+	// LinkCard is set by the server after classifying the API key. Standard
+	// batch-image holds continue using the user's frozen balance path.
+	LinkCard bool
 }
 
 func (c *BatchImageBalanceHoldCommand) Normalize() {
@@ -198,4 +212,14 @@ type MediaBalanceHoldRepository interface {
 	MarkMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
 	MarkMediaBalanceForCapture(ctx context.Context, cmd *MediaBalanceHoldCommand, actualCost float64) (*MediaBalanceHoldResult, error)
 	ReleaseMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+}
+
+// LinkCardMediaBalanceHoldRepository is an optional capability implemented by
+// the SQL billing repository. Keeping it separate preserves source
+// compatibility for existing billing test doubles and standard-key callers.
+type LinkCardMediaBalanceHoldRepository interface {
+	ReserveLinkCardMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+	MarkLinkCardMediaBalanceDispatched(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
+	MarkLinkCardMediaBalanceForCapture(ctx context.Context, cmd *MediaBalanceHoldCommand, actualCost float64) (*MediaBalanceHoldResult, error)
+	ReleaseLinkCardMediaBalance(ctx context.Context, cmd *MediaBalanceHoldCommand) (*MediaBalanceHoldResult, error)
 }

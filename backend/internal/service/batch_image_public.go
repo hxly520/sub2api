@@ -76,9 +76,11 @@ type BatchImageReferenceInput struct {
 }
 
 type BatchImageOwner struct {
-	UserID   int64
-	APIKeyID int64
-	GroupID  *int64
+	UserID             int64
+	APIKeyID           int64
+	GroupID            *int64
+	LinkCard           bool
+	LinkRateMultiplier float64
 }
 
 type BatchImagePublicService struct {
@@ -256,6 +258,9 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	apiKeyID := owner.APIKeyID
 	accountID := account.ID
 	holdID := BatchImageHoldRequestID(batchID)
+	if owner.LinkCard {
+		holdID = LinkCardBatchImageHoldID(batchID)
+	}
 	holdAmount := pricingSnapshot.HoldAmount
 	job, err := s.Repo.CreateBatchImageJob(ctx, CreateBatchImageJobParams{
 		BatchID:                 batchID,
@@ -1032,6 +1037,9 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		}
 		if groupMultiplier < 0 {
 			groupMultiplier = 0
+		}
+		if owner.LinkCard {
+			groupMultiplier = LinkCardChargeRateMultiplierFromIssue(groupMultiplier, owner.LinkRateMultiplier)
 		}
 		discountMultiplier = group.BatchImageDiscountMultiplier
 		if discountMultiplier < 0 {

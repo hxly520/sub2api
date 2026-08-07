@@ -237,6 +237,42 @@ func (f IdentityAdoptionDecisionFunc) Mutate(ctx context.Context, m ent.Mutation
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdentityAdoptionDecisionMutation", m)
 }
 
+// The LinkCardGroupAuthorizationFunc type is an adapter to allow the use of ordinary
+// function as LinkCardGroupAuthorization mutator.
+type LinkCardGroupAuthorizationFunc func(context.Context, *ent.LinkCardGroupAuthorizationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f LinkCardGroupAuthorizationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.LinkCardGroupAuthorizationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.LinkCardGroupAuthorizationMutation", m)
+}
+
+// The LinkCardLedgerFunc type is an adapter to allow the use of ordinary
+// function as LinkCardLedger mutator.
+type LinkCardLedgerFunc func(context.Context, *ent.LinkCardLedgerMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f LinkCardLedgerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.LinkCardLedgerMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.LinkCardLedgerMutation", m)
+}
+
+// The LinkCardOperationFunc type is an adapter to allow the use of ordinary
+// function as LinkCardOperation mutator.
+type LinkCardOperationFunc func(context.Context, *ent.LinkCardOperationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f LinkCardOperationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.LinkCardOperationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.LinkCardOperationMutation", m)
+}
+
 // The PaymentAuditLogFunc type is an adapter to allow the use of ordinary
 // function as PaymentAuditLog mutator.
 type PaymentAuditLogFunc func(context.Context, *ent.PaymentAuditLogMutation) (ent.Value, error)

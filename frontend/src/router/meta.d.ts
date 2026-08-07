@@ -62,6 +62,12 @@ declare module 'vue-router' {
     requiresPointsSystem?: boolean
 
     /**
+     * Whether this route requires an explicit Link Card access decision.
+     * Unknown and failed checks are denied.
+     */
+    requiresLinkCards?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

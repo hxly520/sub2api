@@ -34,6 +34,12 @@ const appStore = vi.hoisted(() => ({
   fetchPublicSettings: vi.fn(),
 }))
 
+const getLinkCardAccess = vi.hoisted(() => vi.fn())
+
+vi.mock('@/api/linkCards', () => ({
+  getLinkCardAccess,
+}))
+
 vi.mock('vue-router', () => ({
   createWebHistory: vi.fn(() => ({})),
   createRouter: vi.fn((options: { routes: Array<Record<string, any>> }) => {
@@ -126,6 +132,45 @@ describe('feature route guard', () => {
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
+    getLinkCardAccess.mockReset()
+    getLinkCardAccess.mockResolvedValue({ enabled: true, allowed: true, development_mode: true })
+  })
+
+  it('allows Link Card navigation only after an explicit backend allow', async () => {
+    const route = routerHarness.routes.find((item) => item.path === '/link-cards')
+    expect(route?.meta).toMatchObject({ requiresAuth: true, requiresLinkCards: true })
+
+    const { navigation, next } = runGuard(route?.meta ?? {}, route?.path ?? '/link-cards')
+    await navigation
+
+    expect(getLinkCardAccess).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it.each([
+    ['explicit denial', async () => ({ enabled: true, allowed: false, development_mode: true })],
+    ['access request failure', async () => { throw new Error('network') }],
+  ])('fails closed on Link Card %s', async (_name, implementation) => {
+    getLinkCardAccess.mockImplementation(implementation)
+
+    const { navigation, next } = runGuard({ requiresLinkCards: true }, '/link-cards')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('keeps the admin Link Card console independent from the user feature switch', async () => {
+    authStore.isAdmin = true
+    const route = routerHarness.routes.find((item) => item.path === '/admin/link-cards')
+    const { navigation, next } = runGuard(route?.meta ?? {}, route?.path ?? '/admin/link-cards')
+    await navigation
+
+    expect(route?.meta).toMatchObject({ requiresAdmin: true })
+    expect(route?.meta?.requiresLinkCards).toBeUndefined()
+    expect(getLinkCardAccess).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledWith()
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {

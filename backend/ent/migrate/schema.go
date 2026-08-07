@@ -18,6 +18,18 @@ var (
 		{Name: "key", Type: field.TypeString, Unique: true, Size: 128},
 		{Name: "name", Type: field.TypeString, Size: 100},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "key_type", Type: field.TypeString, Size: 16, Default: "standard"},
+		{Name: "link_state", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "link_rate_multiplier", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "link_original_debit", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "link_total_funded", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "link_total_refunded", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "link_reserved_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "link_concurrency", Type: field.TypeInt, Nullable: true},
+		{Name: "link_rpm_limit", Type: field.TypeInt, Nullable: true},
+		{Name: "link_activated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "link_revoked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "link_frozen_reason", Type: field.TypeString, Nullable: true, Size: 500},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
 		{Name: "ip_whitelist", Type: field.TypeJSON, Nullable: true},
 		{Name: "ip_blacklist", Type: field.TypeJSON, Nullable: true},
@@ -44,13 +56,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "api_keys_groups_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[22]},
+				Columns:    []*schema.Column{APIKeysColumns[34]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "api_keys_users_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[23]},
+				Columns:    []*schema.Column{APIKeysColumns[35]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -59,17 +71,27 @@ var (
 			{
 				Name:    "apikey_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[23]},
+				Columns: []*schema.Column{APIKeysColumns[35]},
 			},
 			{
 				Name:    "apikey_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[22]},
+				Columns: []*schema.Column{APIKeysColumns[34]},
 			},
 			{
 				Name:    "apikey_status",
 				Unique:  false,
 				Columns: []*schema.Column{APIKeysColumns[6]},
+			},
+			{
+				Name:    "apikey_key_type_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[7], APIKeysColumns[35], APIKeysColumns[1]},
+			},
+			{
+				Name:    "apikey_key_type_link_state_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[7], APIKeysColumns[8], APIKeysColumns[1]},
 			},
 			{
 				Name:    "apikey_deleted_at",
@@ -79,17 +101,17 @@ var (
 			{
 				Name:    "apikey_last_used_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[7]},
+				Columns: []*schema.Column{APIKeysColumns[19]},
 			},
 			{
 				Name:    "apikey_quota_quota_used",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[10], APIKeysColumns[11]},
+				Columns: []*schema.Column{APIKeysColumns[22], APIKeysColumns[23]},
 			},
 			{
 				Name:    "apikey_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[12]},
+				Columns: []*schema.Column{APIKeysColumns[24]},
 			},
 		},
 	}
@@ -1072,6 +1094,96 @@ var (
 				Name:    "identityadoptiondecision_identity_id",
 				Unique:  false,
 				Columns: []*schema.Column{IdentityAdoptionDecisionsColumns[6]},
+			},
+		},
+	}
+	// LinkCardGroupAuthorizationsColumns holds the columns for the "link_card_group_authorizations" table.
+	LinkCardGroupAuthorizationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "group_id", Type: field.TypeInt64, Unique: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// LinkCardGroupAuthorizationsTable holds the schema information for the "link_card_group_authorizations" table.
+	LinkCardGroupAuthorizationsTable = &schema.Table{
+		Name:       "link_card_group_authorizations",
+		Columns:    LinkCardGroupAuthorizationsColumns,
+		PrimaryKey: []*schema.Column{LinkCardGroupAuthorizationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "linkcardgroupauthorization_enabled_sort_order_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{LinkCardGroupAuthorizationsColumns[2], LinkCardGroupAuthorizationsColumns[3], LinkCardGroupAuthorizationsColumns[1]},
+			},
+		},
+	}
+	// LinkCardLedgerColumns holds the columns for the "link_card_ledger" table.
+	LinkCardLedgerColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "operation_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "api_key_id", Type: field.TypeInt64},
+		{Name: "creator_user_id", Type: field.TypeInt64},
+		{Name: "entry_type", Type: field.TypeString, Size: 32},
+		{Name: "reserve_delta", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "creator_balance_delta", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "quota_before", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "quota_after", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "quota_used_before", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "quota_used_after", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "actor_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "reason", Type: field.TypeString, Size: 500, Default: ""},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// LinkCardLedgerTable holds the schema information for the "link_card_ledger" table.
+	LinkCardLedgerTable = &schema.Table{
+		Name:       "link_card_ledger",
+		Columns:    LinkCardLedgerColumns,
+		PrimaryKey: []*schema.Column{LinkCardLedgerColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "linkcardledger_creator_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{LinkCardLedgerColumns[3], LinkCardLedgerColumns[15]},
+			},
+			{
+				Name:    "linkcardledger_api_key_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{LinkCardLedgerColumns[2], LinkCardLedgerColumns[15]},
+			},
+		},
+	}
+	// LinkCardOperationsColumns holds the columns for the "link_card_operations" table.
+	LinkCardOperationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "scope", Type: field.TypeString, Size: 64},
+		{Name: "actor_user_id", Type: field.TypeInt64},
+		{Name: "creator_user_id", Type: field.TypeInt64},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "idempotency_key_hash", Type: field.TypeString, Size: 64},
+		{Name: "request_fingerprint", Type: field.TypeString, Size: 64},
+		{Name: "response_body", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// LinkCardOperationsTable holds the schema information for the "link_card_operations" table.
+	LinkCardOperationsTable = &schema.Table{
+		Name:       "link_card_operations",
+		Columns:    LinkCardOperationsColumns,
+		PrimaryKey: []*schema.Column{LinkCardOperationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "linkcardoperation_scope_actor_user_id_idempotency_key_hash",
+				Unique:  true,
+				Columns: []*schema.Column{LinkCardOperationsColumns[1], LinkCardOperationsColumns[2], LinkCardOperationsColumns[5]},
+			},
+			{
+				Name:    "linkcardoperation_api_key_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{LinkCardOperationsColumns[4], LinkCardOperationsColumns[8]},
 			},
 		},
 	}
@@ -2082,6 +2194,9 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
+		LinkCardGroupAuthorizationsTable,
+		LinkCardLedgerTable,
+		LinkCardOperationsTable,
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -2178,6 +2293,15 @@ func init() {
 	IdentityAdoptionDecisionsTable.ForeignKeys[1].RefTable = PendingAuthSessionsTable
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
+	}
+	LinkCardGroupAuthorizationsTable.Annotation = &entsql.Annotation{
+		Table: "link_card_group_authorizations",
+	}
+	LinkCardLedgerTable.Annotation = &entsql.Annotation{
+		Table: "link_card_ledger",
+	}
+	LinkCardOperationsTable.Annotation = &entsql.Annotation{
+		Table: "link_card_operations",
 	}
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",

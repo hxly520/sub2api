@@ -258,6 +258,18 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 	inboundEndpoint := "/v1/images/batches"
 	upstreamEndpoint := "vertex:batchPredictionJobs"
 	imageSize := "1K"
+	// Batch snapshots store the already-resolved billable unit price.  For a
+	// link card that price includes the native group rate converted through the
+	// issuance snapshot; keep the usage row's TotalCost at the raw (pre-group)
+	// amount so the normal link-card projection can expose stable 1x quota
+	// units. Standard-key rows retain the historical values below.
+	logTotalCost := actualCost
+	logImageOutputCost := actualCost
+	logRateMultiplier := job.GroupRateMultiplier * job.BatchDiscountMultiplier
+	if isLinkCardBatchImageHoldID(job.HoldID) && logRateMultiplier > 0 {
+		logTotalCost = actualCost / logRateMultiplier
+		logImageOutputCost = logTotalCost
+	}
 	usageLog := &UsageLog{
 		UserID:                job.UserID,
 		APIKeyID:              *job.APIKeyID,
@@ -268,10 +280,10 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 		InboundEndpoint:       &inboundEndpoint,
 		UpstreamEndpoint:      &upstreamEndpoint,
 		ImageCount:            job.SuccessCount,
-		ImageOutputCost:       actualCost,
-		TotalCost:             actualCost,
+		ImageOutputCost:       logImageOutputCost,
+		TotalCost:             logTotalCost,
 		ActualCost:            actualCost,
-		RateMultiplier:        job.GroupRateMultiplier * job.BatchDiscountMultiplier,
+		RateMultiplier:        logRateMultiplier,
 		AccountRateMultiplier: &accountRateMultiplier,
 		BillingType:           BillingTypeBalance,
 		RequestType:           RequestTypeSync,

@@ -243,14 +243,14 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		if mediaPricingSnapshot != nil {
 			holdAmount := mediaPricingSnapshot.EstimatedCost(parsed.N, 0)
 			if holdAmount > 0 {
-				mediaHold = newMediaBalanceHoldCommand(
+				mediaHold = markLinkCardMediaBalanceHold(newMediaBalanceHoldCommand(
 					apiKey.ID,
 					subject.UserID,
 					service.MediaBalanceHoldRequestID(state.publicTaskID),
 					state.requestFingerprint,
 					service.HashUsageRequestPayload(body),
 					holdAmount,
-				)
+				), apiKey)
 				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
 					status, code, message, retryAfter := billingErrorDetails(err)
 					if retryAfter > 0 {
@@ -619,7 +619,7 @@ func finalizeOpenAIImageTaskFromStatus(
 	status := service.NormalizeMediaGenerationStatus(result.MediaStatus)
 	if service.IsMediaGenerationFailureStatus(status) {
 		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, task.ClientTaskID(), status, "image_task_failed")
-		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task))
+		releaseMediaBalanceHold(h, mediaBalanceHoldCommandForTask(task, apiKey))
 		return
 	}
 	if !service.IsMediaGenerationSuccessStatus(status) || task.UsageRecordedAt != nil {
@@ -702,7 +702,7 @@ func recordOpenAIImageFinalUsage(
 	userAgent := c.GetHeader("User-Agent")
 	clientIP := ip.GetClientIP(c)
 	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-	mediaHold := mediaBalanceHoldCommandForTask(task)
+	mediaHold := mediaBalanceHoldCommandForTask(task, apiKey)
 	actualMediaCost := mediaBalanceSettledCost(mediaHold, mediaBalanceActualCost(task.PricingSnapshot(), recordResult, task.RequestCount, 0, false))
 	if markErr := markMediaBalanceHoldForCapture(h, mediaHold, actualMediaCost); markErr != nil {
 		reqLog.Warn("openai.images.mark_balance_capture_pending_failed", zap.String("request_id", publicTaskID), zap.Error(markErr))
@@ -723,7 +723,7 @@ func recordOpenAIImageFinalUsage(
 			QuotaPlatform:        quotaPlatform,
 			MediaPricingSnapshot: task.PricingSnapshot(),
 			MediaBalanceHoldRequestID: func() string {
-				if mediaHold := mediaBalanceHoldCommandForTask(task); mediaHold != nil {
+				if mediaHold := mediaBalanceHoldCommandForTask(task, apiKey); mediaHold != nil {
 					return mediaHold.RequestID
 				}
 				return ""

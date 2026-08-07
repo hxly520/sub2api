@@ -126,6 +126,18 @@ func RegisterUserRoutes(
 			points.POST("/launch", h.Points.LaunchUser)
 		}
 
+		linkCards := authenticated.Group("/link-cards")
+		{
+			linkCards.GET("/access", h.LinkCard.Access)
+			linkCards.GET("/settings", h.LinkCard.Settings)
+			linkCards.GET("/groups", h.LinkCard.Groups)
+			linkCards.GET("/cards", h.LinkCard.Cards)
+			linkCards.POST("/cards", h.LinkCard.Create)
+			linkCards.POST("/cards/:id/recharge", h.LinkCard.Recharge)
+			linkCards.POST("/cards/:id/refund", h.LinkCard.Refund)
+			linkCards.GET("/usage", panelRateLimiter.Heavy(), h.LinkCard.Usage)
+		}
+
 		// 卡密兑换
 		redeem := authenticated.Group("/redeem")
 		{

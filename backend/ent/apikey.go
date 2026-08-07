@@ -36,6 +36,30 @@ type APIKey struct {
 	GroupID *int64 `json:"group_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
+	// Credential scope: standard or prepaid link
+	KeyType string `json:"key_type,omitempty"`
+	// LinkState holds the value of the "link_state" field.
+	LinkState *string `json:"link_state,omitempty"`
+	// LinkRateMultiplier holds the value of the "link_rate_multiplier" field.
+	LinkRateMultiplier *float64 `json:"link_rate_multiplier,omitempty"`
+	// LinkOriginalDebit holds the value of the "link_original_debit" field.
+	LinkOriginalDebit *float64 `json:"link_original_debit,omitempty"`
+	// LinkTotalFunded holds the value of the "link_total_funded" field.
+	LinkTotalFunded float64 `json:"link_total_funded,omitempty"`
+	// LinkTotalRefunded holds the value of the "link_total_refunded" field.
+	LinkTotalRefunded float64 `json:"link_total_refunded,omitempty"`
+	// Actual prepaid amount reserved by in-flight link requests
+	LinkReservedAmount float64 `json:"link_reserved_amount,omitempty"`
+	// LinkConcurrency holds the value of the "link_concurrency" field.
+	LinkConcurrency *int `json:"link_concurrency,omitempty"`
+	// LinkRpmLimit holds the value of the "link_rpm_limit" field.
+	LinkRpmLimit *int `json:"link_rpm_limit,omitempty"`
+	// LinkActivatedAt holds the value of the "link_activated_at" field.
+	LinkActivatedAt *time.Time `json:"link_activated_at,omitempty"`
+	// LinkRevokedAt holds the value of the "link_revoked_at" field.
+	LinkRevokedAt *time.Time `json:"link_revoked_at,omitempty"`
+	// LinkFrozenReason holds the value of the "link_frozen_reason" field.
+	LinkFrozenReason *string `json:"link_frozen_reason,omitempty"`
 	// Last usage time of this API key
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	// Allowed IPs/CIDRs, e.g. ["192.168.1.100", "10.0.0.0/8"]
@@ -123,13 +147,13 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case apikey.FieldIPWhitelist, apikey.FieldIPBlacklist:
 			values[i] = new([]byte)
-		case apikey.FieldQuota, apikey.FieldQuotaUsed, apikey.FieldRateLimit5h, apikey.FieldRateLimit1d, apikey.FieldRateLimit7d, apikey.FieldUsage5h, apikey.FieldUsage1d, apikey.FieldUsage7d:
+		case apikey.FieldLinkRateMultiplier, apikey.FieldLinkOriginalDebit, apikey.FieldLinkTotalFunded, apikey.FieldLinkTotalRefunded, apikey.FieldLinkReservedAmount, apikey.FieldQuota, apikey.FieldQuotaUsed, apikey.FieldRateLimit5h, apikey.FieldRateLimit1d, apikey.FieldRateLimit7d, apikey.FieldUsage5h, apikey.FieldUsage1d, apikey.FieldUsage7d:
 			values[i] = new(sql.NullFloat64)
-		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID:
+		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID, apikey.FieldLinkConcurrency, apikey.FieldLinkRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
+		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus, apikey.FieldKeyType, apikey.FieldLinkState, apikey.FieldLinkFrozenReason:
 			values[i] = new(sql.NullString)
-		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
+		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLinkActivatedAt, apikey.FieldLinkRevokedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -201,6 +225,86 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				_m.Status = value.String
+			}
+		case apikey.FieldKeyType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field key_type", values[i])
+			} else if value.Valid {
+				_m.KeyType = value.String
+			}
+		case apikey.FieldLinkState:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field link_state", values[i])
+			} else if value.Valid {
+				_m.LinkState = new(string)
+				*_m.LinkState = value.String
+			}
+		case apikey.FieldLinkRateMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_rate_multiplier", values[i])
+			} else if value.Valid {
+				_m.LinkRateMultiplier = new(float64)
+				*_m.LinkRateMultiplier = value.Float64
+			}
+		case apikey.FieldLinkOriginalDebit:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_original_debit", values[i])
+			} else if value.Valid {
+				_m.LinkOriginalDebit = new(float64)
+				*_m.LinkOriginalDebit = value.Float64
+			}
+		case apikey.FieldLinkTotalFunded:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_total_funded", values[i])
+			} else if value.Valid {
+				_m.LinkTotalFunded = value.Float64
+			}
+		case apikey.FieldLinkTotalRefunded:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_total_refunded", values[i])
+			} else if value.Valid {
+				_m.LinkTotalRefunded = value.Float64
+			}
+		case apikey.FieldLinkReservedAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_reserved_amount", values[i])
+			} else if value.Valid {
+				_m.LinkReservedAmount = value.Float64
+			}
+		case apikey.FieldLinkConcurrency:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_concurrency", values[i])
+			} else if value.Valid {
+				_m.LinkConcurrency = new(int)
+				*_m.LinkConcurrency = int(value.Int64)
+			}
+		case apikey.FieldLinkRpmLimit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field link_rpm_limit", values[i])
+			} else if value.Valid {
+				_m.LinkRpmLimit = new(int)
+				*_m.LinkRpmLimit = int(value.Int64)
+			}
+		case apikey.FieldLinkActivatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field link_activated_at", values[i])
+			} else if value.Valid {
+				_m.LinkActivatedAt = new(time.Time)
+				*_m.LinkActivatedAt = value.Time
+			}
+		case apikey.FieldLinkRevokedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field link_revoked_at", values[i])
+			} else if value.Valid {
+				_m.LinkRevokedAt = new(time.Time)
+				*_m.LinkRevokedAt = value.Time
+			}
+		case apikey.FieldLinkFrozenReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field link_frozen_reason", values[i])
+			} else if value.Valid {
+				_m.LinkFrozenReason = new(string)
+				*_m.LinkFrozenReason = value.String
 			}
 		case apikey.FieldLastUsedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -379,6 +483,58 @@ func (_m *APIKey) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
+	builder.WriteString(", ")
+	builder.WriteString("key_type=")
+	builder.WriteString(_m.KeyType)
+	builder.WriteString(", ")
+	if v := _m.LinkState; v != nil {
+		builder.WriteString("link_state=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkRateMultiplier; v != nil {
+		builder.WriteString("link_rate_multiplier=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkOriginalDebit; v != nil {
+		builder.WriteString("link_original_debit=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("link_total_funded=")
+	builder.WriteString(fmt.Sprintf("%v", _m.LinkTotalFunded))
+	builder.WriteString(", ")
+	builder.WriteString("link_total_refunded=")
+	builder.WriteString(fmt.Sprintf("%v", _m.LinkTotalRefunded))
+	builder.WriteString(", ")
+	builder.WriteString("link_reserved_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.LinkReservedAmount))
+	builder.WriteString(", ")
+	if v := _m.LinkConcurrency; v != nil {
+		builder.WriteString("link_concurrency=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkRpmLimit; v != nil {
+		builder.WriteString("link_rpm_limit=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkActivatedAt; v != nil {
+		builder.WriteString("link_activated_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkRevokedAt; v != nil {
+		builder.WriteString("link_revoked_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LinkFrozenReason; v != nil {
+		builder.WriteString("link_frozen_reason=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.LastUsedAt; v != nil {
 		builder.WriteString("last_used_at=")

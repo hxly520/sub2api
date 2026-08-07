@@ -27,6 +27,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardgroupauthorization"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardledger"
+	"github.com/Wei-Shaw/sub2api/ent/linkcardoperation"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -619,6 +622,87 @@ func (f TraverseIdentityAdoptionDecision) Traverse(ctx context.Context, q ent.Qu
 	return fmt.Errorf("unexpected query type %T. expect *ent.IdentityAdoptionDecisionQuery", q)
 }
 
+// The LinkCardGroupAuthorizationFunc type is an adapter to allow the use of ordinary function as a Querier.
+type LinkCardGroupAuthorizationFunc func(context.Context, *ent.LinkCardGroupAuthorizationQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f LinkCardGroupAuthorizationFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.LinkCardGroupAuthorizationQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.LinkCardGroupAuthorizationQuery", q)
+}
+
+// The TraverseLinkCardGroupAuthorization type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseLinkCardGroupAuthorization func(context.Context, *ent.LinkCardGroupAuthorizationQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseLinkCardGroupAuthorization) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseLinkCardGroupAuthorization) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.LinkCardGroupAuthorizationQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.LinkCardGroupAuthorizationQuery", q)
+}
+
+// The LinkCardLedgerFunc type is an adapter to allow the use of ordinary function as a Querier.
+type LinkCardLedgerFunc func(context.Context, *ent.LinkCardLedgerQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f LinkCardLedgerFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.LinkCardLedgerQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.LinkCardLedgerQuery", q)
+}
+
+// The TraverseLinkCardLedger type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseLinkCardLedger func(context.Context, *ent.LinkCardLedgerQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseLinkCardLedger) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseLinkCardLedger) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.LinkCardLedgerQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.LinkCardLedgerQuery", q)
+}
+
+// The LinkCardOperationFunc type is an adapter to allow the use of ordinary function as a Querier.
+type LinkCardOperationFunc func(context.Context, *ent.LinkCardOperationQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f LinkCardOperationFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.LinkCardOperationQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.LinkCardOperationQuery", q)
+}
+
+// The TraverseLinkCardOperation type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseLinkCardOperation func(context.Context, *ent.LinkCardOperationQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseLinkCardOperation) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseLinkCardOperation) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.LinkCardOperationQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.LinkCardOperationQuery", q)
+}
+
 // The PaymentAuditLogFunc type is an adapter to allow the use of ordinary function as a Querier.
 type PaymentAuditLogFunc func(context.Context, *ent.PaymentAuditLogQuery) (ent.Value, error)
 
@@ -1200,6 +1284,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.IdempotencyRecordQuery, predicate.IdempotencyRecord, idempotencyrecord.OrderOption]{typ: ent.TypeIdempotencyRecord, tq: q}, nil
 	case *ent.IdentityAdoptionDecisionQuery:
 		return &query[*ent.IdentityAdoptionDecisionQuery, predicate.IdentityAdoptionDecision, identityadoptiondecision.OrderOption]{typ: ent.TypeIdentityAdoptionDecision, tq: q}, nil
+	case *ent.LinkCardGroupAuthorizationQuery:
+		return &query[*ent.LinkCardGroupAuthorizationQuery, predicate.LinkCardGroupAuthorization, linkcardgroupauthorization.OrderOption]{typ: ent.TypeLinkCardGroupAuthorization, tq: q}, nil
+	case *ent.LinkCardLedgerQuery:
+		return &query[*ent.LinkCardLedgerQuery, predicate.LinkCardLedger, linkcardledger.OrderOption]{typ: ent.TypeLinkCardLedger, tq: q}, nil
+	case *ent.LinkCardOperationQuery:
+		return &query[*ent.LinkCardOperationQuery, predicate.LinkCardOperation, linkcardoperation.OrderOption]{typ: ent.TypeLinkCardOperation, tq: q}, nil
 	case *ent.PaymentAuditLogQuery:
 		return &query[*ent.PaymentAuditLogQuery, predicate.PaymentAuditLog, paymentauditlog.OrderOption]{typ: ent.TypePaymentAuditLog, tq: q}, nil
 	case *ent.PaymentOrderQuery:

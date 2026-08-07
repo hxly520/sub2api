@@ -78,12 +78,18 @@ func (h *GatewayHandler) resolveKeyBillingRate(c *gin.Context, apiKey *service.A
 }
 
 func buildKeyBillingInfo(apiKey *service.APIKey, resolvedRate float64, now time.Time) keyBillingInfoResponse {
-	groupRate := apiKey.Group.RateMultiplier
+	nativeResolvedRate := resolvedRate
+	groupRate := keyQuotaRateMultiplier(apiKey, apiKey.Group.RateMultiplier)
+	resolvedRate = keyQuotaRateMultiplier(apiKey, resolvedRate)
 	var userRate *float64
 	if resolvedRate != groupRate {
 		userRate = &resolvedRate
 	}
 	appliedPeak := apiKey.Group.PeakMultiplierAt(now)
+	effectiveRate := resolvedRate * appliedPeak
+	if apiKey.IsLinkKey() {
+		effectiveRate = keyQuotaRateMultiplier(apiKey, nativeResolvedRate*appliedPeak)
+	}
 
 	response := keyBillingInfoResponse{
 		Object:                  "sub2api.key_billing",
@@ -93,7 +99,7 @@ func buildKeyBillingInfo(apiKey *service.APIKey, resolvedRate float64, now time.
 		UserRateMultiplier:      userRate,
 		ResolvedRateMultiplier:  resolvedRate,
 		PeakRateEnabled:         apiKey.Group.PeakRateEnabled,
-		EffectiveRateMultiplier: resolvedRate * appliedPeak,
+		EffectiveRateMultiplier: effectiveRate,
 		ObservedAt:              now.UTC(),
 	}
 	if apiKey.Group.PeakRateEnabled {
@@ -105,4 +111,8 @@ func buildKeyBillingInfo(apiKey *service.APIKey, resolvedRate float64, now time.
 		response.Timezone = &tz
 	}
 	return response
+}
+
+func keyQuotaRateMultiplier(apiKey *service.APIKey, nativeRate float64) float64 {
+	return service.LinkCardQuotaRateMultiplier(apiKey, nativeRate)
 }

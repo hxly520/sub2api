@@ -104,6 +104,33 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.InDelta(t, 0.25, *job.HoldAmount, 1e-12)
 	})
 
+	t.Run("rounds link-card group conversion upward before batch pricing", func(t *testing.T) {
+		svc, repo, _, _, _ := newTestBatchImagePublicService(true)
+		groupID := int64(7)
+		svc.GroupRepo = &publicBatchImageGroupRepo{groups: map[int64]*Group{
+			groupID: {
+				ID:                           groupID,
+				Platform:                     PlatformGemini,
+				RateMultiplier:               0.08,
+				AllowImageGeneration:         true,
+				AllowBatchImageGeneration:    true,
+				BatchImageDiscountMultiplier: 1,
+				BatchImageHoldMultiplier:     1,
+			},
+		}}
+
+		got, err := svc.Submit(ctx, BatchImageOwner{
+			UserID: 11, APIKeyID: 22, GroupID: &groupID, LinkCard: true, LinkRateMultiplier: 0.07,
+		}, validBatchImageSubmitRequest(), "")
+		require.NoError(t, err)
+		require.InDelta(t, 0.042, got.EstimatedCost, 1e-12)
+
+		job := repo.jobs[got.ID]
+		require.InDelta(t, 0.084, job.GroupRateMultiplier, 1e-12)
+		require.InDelta(t, 0.021, job.BillableUnitPrice, 1e-12)
+		require.InDelta(t, 0.042, *job.HoldAmount, 1e-12)
+	})
+
 	t.Run("uses configured group 1k image price for batch image base price", func(t *testing.T) {
 		svc, repo, _, _, _ := newTestBatchImagePublicService(true)
 		groupID := int64(7)

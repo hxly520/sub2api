@@ -261,14 +261,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if mediaPricingSnapshot != nil {
 			holdAmount := mediaPricingSnapshot.EstimatedCost(parsed.N, 0)
 			if holdAmount > 0 {
-				mediaHold = newMediaBalanceHoldCommand(
+				mediaHold = markLinkCardMediaBalanceHold(newMediaBalanceHoldCommand(
 					apiKey.ID,
 					subject.UserID,
 					service.NewMediaBalanceHoldRequestID(),
 					service.HashMediaGenerationRequestFingerprint(parsed.Endpoint, body),
 					service.HashUsageRequestPayload(body),
 					holdAmount,
-				)
+				), apiKey)
 				mediaHold.ExpiresAfter = service.SynchronousMediaBalanceHoldTTL
 				if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
 					status, code, message, retryAfter := billingErrorDetails(err)

@@ -95,6 +95,66 @@ func Status(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldStatus, v))
 }
 
+// KeyType applies equality check predicate on the "key_type" field. It's identical to KeyTypeEQ.
+func KeyType(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyType, v))
+}
+
+// LinkState applies equality check predicate on the "link_state" field. It's identical to LinkStateEQ.
+func LinkState(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkState, v))
+}
+
+// LinkRateMultiplier applies equality check predicate on the "link_rate_multiplier" field. It's identical to LinkRateMultiplierEQ.
+func LinkRateMultiplier(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRateMultiplier, v))
+}
+
+// LinkOriginalDebit applies equality check predicate on the "link_original_debit" field. It's identical to LinkOriginalDebitEQ.
+func LinkOriginalDebit(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkOriginalDebit, v))
+}
+
+// LinkTotalFunded applies equality check predicate on the "link_total_funded" field. It's identical to LinkTotalFundedEQ.
+func LinkTotalFunded(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalRefunded applies equality check predicate on the "link_total_refunded" field. It's identical to LinkTotalRefundedEQ.
+func LinkTotalRefunded(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkTotalRefunded, v))
+}
+
+// LinkReservedAmount applies equality check predicate on the "link_reserved_amount" field. It's identical to LinkReservedAmountEQ.
+func LinkReservedAmount(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkReservedAmount, v))
+}
+
+// LinkConcurrency applies equality check predicate on the "link_concurrency" field. It's identical to LinkConcurrencyEQ.
+func LinkConcurrency(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkConcurrency, v))
+}
+
+// LinkRpmLimit applies equality check predicate on the "link_rpm_limit" field. It's identical to LinkRpmLimitEQ.
+func LinkRpmLimit(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRpmLimit, v))
+}
+
+// LinkActivatedAt applies equality check predicate on the "link_activated_at" field. It's identical to LinkActivatedAtEQ.
+func LinkActivatedAt(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkActivatedAt, v))
+}
+
+// LinkRevokedAt applies equality check predicate on the "link_revoked_at" field. It's identical to LinkRevokedAtEQ.
+func LinkRevokedAt(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRevokedAt, v))
+}
+
+// LinkFrozenReason applies equality check predicate on the "link_frozen_reason" field. It's identical to LinkFrozenReasonEQ.
+func LinkFrozenReason(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkFrozenReason, v))
+}
+
 // LastUsedAt applies equality check predicate on the "last_used_at" field. It's identical to LastUsedAtEQ.
 func LastUsedAt(v time.Time) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldLastUsedAt, v))
@@ -533,6 +593,641 @@ func StatusEqualFold(v string) predicate.APIKey {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// KeyTypeEQ applies the EQ predicate on the "key_type" field.
+func KeyTypeEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyType, v))
+}
+
+// KeyTypeNEQ applies the NEQ predicate on the "key_type" field.
+func KeyTypeNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldKeyType, v))
+}
+
+// KeyTypeIn applies the In predicate on the "key_type" field.
+func KeyTypeIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldKeyType, vs...))
+}
+
+// KeyTypeNotIn applies the NotIn predicate on the "key_type" field.
+func KeyTypeNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldKeyType, vs...))
+}
+
+// KeyTypeGT applies the GT predicate on the "key_type" field.
+func KeyTypeGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldKeyType, v))
+}
+
+// KeyTypeGTE applies the GTE predicate on the "key_type" field.
+func KeyTypeGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldKeyType, v))
+}
+
+// KeyTypeLT applies the LT predicate on the "key_type" field.
+func KeyTypeLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldKeyType, v))
+}
+
+// KeyTypeLTE applies the LTE predicate on the "key_type" field.
+func KeyTypeLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldKeyType, v))
+}
+
+// KeyTypeContains applies the Contains predicate on the "key_type" field.
+func KeyTypeContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldKeyType, v))
+}
+
+// KeyTypeHasPrefix applies the HasPrefix predicate on the "key_type" field.
+func KeyTypeHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldKeyType, v))
+}
+
+// KeyTypeHasSuffix applies the HasSuffix predicate on the "key_type" field.
+func KeyTypeHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldKeyType, v))
+}
+
+// KeyTypeEqualFold applies the EqualFold predicate on the "key_type" field.
+func KeyTypeEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldKeyType, v))
+}
+
+// KeyTypeContainsFold applies the ContainsFold predicate on the "key_type" field.
+func KeyTypeContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldKeyType, v))
+}
+
+// LinkStateEQ applies the EQ predicate on the "link_state" field.
+func LinkStateEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkState, v))
+}
+
+// LinkStateNEQ applies the NEQ predicate on the "link_state" field.
+func LinkStateNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkState, v))
+}
+
+// LinkStateIn applies the In predicate on the "link_state" field.
+func LinkStateIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkState, vs...))
+}
+
+// LinkStateNotIn applies the NotIn predicate on the "link_state" field.
+func LinkStateNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkState, vs...))
+}
+
+// LinkStateGT applies the GT predicate on the "link_state" field.
+func LinkStateGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkState, v))
+}
+
+// LinkStateGTE applies the GTE predicate on the "link_state" field.
+func LinkStateGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkState, v))
+}
+
+// LinkStateLT applies the LT predicate on the "link_state" field.
+func LinkStateLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkState, v))
+}
+
+// LinkStateLTE applies the LTE predicate on the "link_state" field.
+func LinkStateLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkState, v))
+}
+
+// LinkStateContains applies the Contains predicate on the "link_state" field.
+func LinkStateContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldLinkState, v))
+}
+
+// LinkStateHasPrefix applies the HasPrefix predicate on the "link_state" field.
+func LinkStateHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldLinkState, v))
+}
+
+// LinkStateHasSuffix applies the HasSuffix predicate on the "link_state" field.
+func LinkStateHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldLinkState, v))
+}
+
+// LinkStateIsNil applies the IsNil predicate on the "link_state" field.
+func LinkStateIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkState))
+}
+
+// LinkStateNotNil applies the NotNil predicate on the "link_state" field.
+func LinkStateNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkState))
+}
+
+// LinkStateEqualFold applies the EqualFold predicate on the "link_state" field.
+func LinkStateEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldLinkState, v))
+}
+
+// LinkStateContainsFold applies the ContainsFold predicate on the "link_state" field.
+func LinkStateContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldLinkState, v))
+}
+
+// LinkRateMultiplierEQ applies the EQ predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierNEQ applies the NEQ predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierNEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierIn applies the In predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkRateMultiplier, vs...))
+}
+
+// LinkRateMultiplierNotIn applies the NotIn predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierNotIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkRateMultiplier, vs...))
+}
+
+// LinkRateMultiplierGT applies the GT predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierGT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierGTE applies the GTE predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierGTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierLT applies the LT predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierLT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierLTE applies the LTE predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierLTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkRateMultiplier, v))
+}
+
+// LinkRateMultiplierIsNil applies the IsNil predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkRateMultiplier))
+}
+
+// LinkRateMultiplierNotNil applies the NotNil predicate on the "link_rate_multiplier" field.
+func LinkRateMultiplierNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkRateMultiplier))
+}
+
+// LinkOriginalDebitEQ applies the EQ predicate on the "link_original_debit" field.
+func LinkOriginalDebitEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitNEQ applies the NEQ predicate on the "link_original_debit" field.
+func LinkOriginalDebitNEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitIn applies the In predicate on the "link_original_debit" field.
+func LinkOriginalDebitIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkOriginalDebit, vs...))
+}
+
+// LinkOriginalDebitNotIn applies the NotIn predicate on the "link_original_debit" field.
+func LinkOriginalDebitNotIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkOriginalDebit, vs...))
+}
+
+// LinkOriginalDebitGT applies the GT predicate on the "link_original_debit" field.
+func LinkOriginalDebitGT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitGTE applies the GTE predicate on the "link_original_debit" field.
+func LinkOriginalDebitGTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitLT applies the LT predicate on the "link_original_debit" field.
+func LinkOriginalDebitLT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitLTE applies the LTE predicate on the "link_original_debit" field.
+func LinkOriginalDebitLTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkOriginalDebit, v))
+}
+
+// LinkOriginalDebitIsNil applies the IsNil predicate on the "link_original_debit" field.
+func LinkOriginalDebitIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkOriginalDebit))
+}
+
+// LinkOriginalDebitNotNil applies the NotNil predicate on the "link_original_debit" field.
+func LinkOriginalDebitNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkOriginalDebit))
+}
+
+// LinkTotalFundedEQ applies the EQ predicate on the "link_total_funded" field.
+func LinkTotalFundedEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalFundedNEQ applies the NEQ predicate on the "link_total_funded" field.
+func LinkTotalFundedNEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalFundedIn applies the In predicate on the "link_total_funded" field.
+func LinkTotalFundedIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkTotalFunded, vs...))
+}
+
+// LinkTotalFundedNotIn applies the NotIn predicate on the "link_total_funded" field.
+func LinkTotalFundedNotIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkTotalFunded, vs...))
+}
+
+// LinkTotalFundedGT applies the GT predicate on the "link_total_funded" field.
+func LinkTotalFundedGT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalFundedGTE applies the GTE predicate on the "link_total_funded" field.
+func LinkTotalFundedGTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalFundedLT applies the LT predicate on the "link_total_funded" field.
+func LinkTotalFundedLT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalFundedLTE applies the LTE predicate on the "link_total_funded" field.
+func LinkTotalFundedLTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkTotalFunded, v))
+}
+
+// LinkTotalRefundedEQ applies the EQ predicate on the "link_total_refunded" field.
+func LinkTotalRefundedEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkTotalRefunded, v))
+}
+
+// LinkTotalRefundedNEQ applies the NEQ predicate on the "link_total_refunded" field.
+func LinkTotalRefundedNEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkTotalRefunded, v))
+}
+
+// LinkTotalRefundedIn applies the In predicate on the "link_total_refunded" field.
+func LinkTotalRefundedIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkTotalRefunded, vs...))
+}
+
+// LinkTotalRefundedNotIn applies the NotIn predicate on the "link_total_refunded" field.
+func LinkTotalRefundedNotIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkTotalRefunded, vs...))
+}
+
+// LinkTotalRefundedGT applies the GT predicate on the "link_total_refunded" field.
+func LinkTotalRefundedGT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkTotalRefunded, v))
+}
+
+// LinkTotalRefundedGTE applies the GTE predicate on the "link_total_refunded" field.
+func LinkTotalRefundedGTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkTotalRefunded, v))
+}
+
+// LinkTotalRefundedLT applies the LT predicate on the "link_total_refunded" field.
+func LinkTotalRefundedLT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkTotalRefunded, v))
+}
+
+// LinkTotalRefundedLTE applies the LTE predicate on the "link_total_refunded" field.
+func LinkTotalRefundedLTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkTotalRefunded, v))
+}
+
+// LinkReservedAmountEQ applies the EQ predicate on the "link_reserved_amount" field.
+func LinkReservedAmountEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkReservedAmount, v))
+}
+
+// LinkReservedAmountNEQ applies the NEQ predicate on the "link_reserved_amount" field.
+func LinkReservedAmountNEQ(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkReservedAmount, v))
+}
+
+// LinkReservedAmountIn applies the In predicate on the "link_reserved_amount" field.
+func LinkReservedAmountIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkReservedAmount, vs...))
+}
+
+// LinkReservedAmountNotIn applies the NotIn predicate on the "link_reserved_amount" field.
+func LinkReservedAmountNotIn(vs ...float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkReservedAmount, vs...))
+}
+
+// LinkReservedAmountGT applies the GT predicate on the "link_reserved_amount" field.
+func LinkReservedAmountGT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkReservedAmount, v))
+}
+
+// LinkReservedAmountGTE applies the GTE predicate on the "link_reserved_amount" field.
+func LinkReservedAmountGTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkReservedAmount, v))
+}
+
+// LinkReservedAmountLT applies the LT predicate on the "link_reserved_amount" field.
+func LinkReservedAmountLT(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkReservedAmount, v))
+}
+
+// LinkReservedAmountLTE applies the LTE predicate on the "link_reserved_amount" field.
+func LinkReservedAmountLTE(v float64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkReservedAmount, v))
+}
+
+// LinkConcurrencyEQ applies the EQ predicate on the "link_concurrency" field.
+func LinkConcurrencyEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyNEQ applies the NEQ predicate on the "link_concurrency" field.
+func LinkConcurrencyNEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyIn applies the In predicate on the "link_concurrency" field.
+func LinkConcurrencyIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkConcurrency, vs...))
+}
+
+// LinkConcurrencyNotIn applies the NotIn predicate on the "link_concurrency" field.
+func LinkConcurrencyNotIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkConcurrency, vs...))
+}
+
+// LinkConcurrencyGT applies the GT predicate on the "link_concurrency" field.
+func LinkConcurrencyGT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyGTE applies the GTE predicate on the "link_concurrency" field.
+func LinkConcurrencyGTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyLT applies the LT predicate on the "link_concurrency" field.
+func LinkConcurrencyLT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyLTE applies the LTE predicate on the "link_concurrency" field.
+func LinkConcurrencyLTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkConcurrency, v))
+}
+
+// LinkConcurrencyIsNil applies the IsNil predicate on the "link_concurrency" field.
+func LinkConcurrencyIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkConcurrency))
+}
+
+// LinkConcurrencyNotNil applies the NotNil predicate on the "link_concurrency" field.
+func LinkConcurrencyNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkConcurrency))
+}
+
+// LinkRpmLimitEQ applies the EQ predicate on the "link_rpm_limit" field.
+func LinkRpmLimitEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitNEQ applies the NEQ predicate on the "link_rpm_limit" field.
+func LinkRpmLimitNEQ(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitIn applies the In predicate on the "link_rpm_limit" field.
+func LinkRpmLimitIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkRpmLimit, vs...))
+}
+
+// LinkRpmLimitNotIn applies the NotIn predicate on the "link_rpm_limit" field.
+func LinkRpmLimitNotIn(vs ...int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkRpmLimit, vs...))
+}
+
+// LinkRpmLimitGT applies the GT predicate on the "link_rpm_limit" field.
+func LinkRpmLimitGT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitGTE applies the GTE predicate on the "link_rpm_limit" field.
+func LinkRpmLimitGTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitLT applies the LT predicate on the "link_rpm_limit" field.
+func LinkRpmLimitLT(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitLTE applies the LTE predicate on the "link_rpm_limit" field.
+func LinkRpmLimitLTE(v int) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkRpmLimit, v))
+}
+
+// LinkRpmLimitIsNil applies the IsNil predicate on the "link_rpm_limit" field.
+func LinkRpmLimitIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkRpmLimit))
+}
+
+// LinkRpmLimitNotNil applies the NotNil predicate on the "link_rpm_limit" field.
+func LinkRpmLimitNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkRpmLimit))
+}
+
+// LinkActivatedAtEQ applies the EQ predicate on the "link_activated_at" field.
+func LinkActivatedAtEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtNEQ applies the NEQ predicate on the "link_activated_at" field.
+func LinkActivatedAtNEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtIn applies the In predicate on the "link_activated_at" field.
+func LinkActivatedAtIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkActivatedAt, vs...))
+}
+
+// LinkActivatedAtNotIn applies the NotIn predicate on the "link_activated_at" field.
+func LinkActivatedAtNotIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkActivatedAt, vs...))
+}
+
+// LinkActivatedAtGT applies the GT predicate on the "link_activated_at" field.
+func LinkActivatedAtGT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtGTE applies the GTE predicate on the "link_activated_at" field.
+func LinkActivatedAtGTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtLT applies the LT predicate on the "link_activated_at" field.
+func LinkActivatedAtLT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtLTE applies the LTE predicate on the "link_activated_at" field.
+func LinkActivatedAtLTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkActivatedAt, v))
+}
+
+// LinkActivatedAtIsNil applies the IsNil predicate on the "link_activated_at" field.
+func LinkActivatedAtIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkActivatedAt))
+}
+
+// LinkActivatedAtNotNil applies the NotNil predicate on the "link_activated_at" field.
+func LinkActivatedAtNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkActivatedAt))
+}
+
+// LinkRevokedAtEQ applies the EQ predicate on the "link_revoked_at" field.
+func LinkRevokedAtEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtNEQ applies the NEQ predicate on the "link_revoked_at" field.
+func LinkRevokedAtNEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtIn applies the In predicate on the "link_revoked_at" field.
+func LinkRevokedAtIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkRevokedAt, vs...))
+}
+
+// LinkRevokedAtNotIn applies the NotIn predicate on the "link_revoked_at" field.
+func LinkRevokedAtNotIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkRevokedAt, vs...))
+}
+
+// LinkRevokedAtGT applies the GT predicate on the "link_revoked_at" field.
+func LinkRevokedAtGT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtGTE applies the GTE predicate on the "link_revoked_at" field.
+func LinkRevokedAtGTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtLT applies the LT predicate on the "link_revoked_at" field.
+func LinkRevokedAtLT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtLTE applies the LTE predicate on the "link_revoked_at" field.
+func LinkRevokedAtLTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkRevokedAt, v))
+}
+
+// LinkRevokedAtIsNil applies the IsNil predicate on the "link_revoked_at" field.
+func LinkRevokedAtIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkRevokedAt))
+}
+
+// LinkRevokedAtNotNil applies the NotNil predicate on the "link_revoked_at" field.
+func LinkRevokedAtNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkRevokedAt))
+}
+
+// LinkFrozenReasonEQ applies the EQ predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonNEQ applies the NEQ predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonIn applies the In predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLinkFrozenReason, vs...))
+}
+
+// LinkFrozenReasonNotIn applies the NotIn predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLinkFrozenReason, vs...))
+}
+
+// LinkFrozenReasonGT applies the GT predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonGTE applies the GTE predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonLT applies the LT predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonLTE applies the LTE predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonContains applies the Contains predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonHasPrefix applies the HasPrefix predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonHasSuffix applies the HasSuffix predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonIsNil applies the IsNil predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLinkFrozenReason))
+}
+
+// LinkFrozenReasonNotNil applies the NotNil predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLinkFrozenReason))
+}
+
+// LinkFrozenReasonEqualFold applies the EqualFold predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldLinkFrozenReason, v))
+}
+
+// LinkFrozenReasonContainsFold applies the ContainsFold predicate on the "link_frozen_reason" field.
+func LinkFrozenReasonContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldLinkFrozenReason, v))
 }
 
 // LastUsedAtEQ applies the EQ predicate on the "last_used_at" field.

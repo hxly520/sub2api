@@ -197,6 +197,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { getLinkCardAccess } from '@/api/linkCards'
 
 interface NavItem {
   path: string
@@ -243,6 +244,7 @@ const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
+const linkCardsAllowed = ref(false)
 
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
@@ -689,6 +691,7 @@ const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 // Only the authenticated, policy-aware server decision may expose this entry;
 // public settings and persisted user data are not authorization evidence.
 const flagPointsSystem = () => authStore.user?.points_system_access === true
+const flagLinkCards = () => linkCardsAllowed.value
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value
@@ -711,6 +714,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/points', label: pointsMenuLabel.value, icon: GiftIcon, featureFlag: flagPointsSystem },
+    { path: '/link-cards', label: t('linkCards.title'), icon: KeyIcon, hideInSimpleMode: true, featureFlag: flagLinkCards },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
@@ -820,7 +824,8 @@ const adminNavItems = computed((): NavItem[] => {
       ],
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
-    { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
+    { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true },
+    { path: '/admin/link-cards', label: t('linkCards.adminTitle'), icon: KeyIcon }
   ]
 
   const visible = applyFeatureFlags(baseItems)
@@ -945,6 +950,12 @@ watch(
 
 onMounted(() => {
   void refreshBatchImageAccess()
+  // The personal link-card entry is also shown in an administrator's
+  // "My Account" section. Always resolve the server-side rollout decision;
+  // admin-only controls remain protected by the separate admin route.
+  void getLinkCardAccess()
+    .then((access) => { linkCardsAllowed.value = access.allowed === true })
+    .catch(() => { linkCardsAllowed.value = false })
   if (authStore.user && authStore.user.points_system_access === undefined) {
     void authStore.refreshUser().catch(() => undefined)
   }

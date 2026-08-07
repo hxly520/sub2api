@@ -205,7 +205,20 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 后续官方升级不得把积分余额发放改成前端请求参数直写用户余额，不得恢复已删除的积分兑换流程，也不得用浮点数处理积分比例、消费金额、百分比或奖励金额。
 
-### 3.7 支付扩展
+### 3.7 提链与额度卡中心
+
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-07` 该功能仍是尚未完成完整验证、构建或部署的开发候选，不得写成生产已启用能力。
+- 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
+- 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key，激活后才显示 1x 额度、使用记录和接入教程。
+- 默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`。非名单用户必须同时被菜单、前端路由和全部用户/公共 API 拒绝；管理员控制台始终受管理员认证保护，不依赖普通用户开关。
+- 创建和充值必须先在数据库事务内从创建者真实余额扣款。批量创建总扣款固定为单张金额乘数量，余额不足或任一 Key/流水失败时整批回滚。可选分组是提链控制台授权与 Sub2API 原生用户可用分组的交集，专属分组继续由 `user_allowed_groups` 控制，用户专属倍率覆盖分组默认倍率。创建时写入发行换算快照；`10 U / 0.10x = 100 U` 只表示对外固定 1x 初始额度，浏览器不得提交倍率或资金事实。
+- 已发行额度不因后续分组或专属倍率变化而重算；请求继续实时使用当前原生有效倍率，卡片 1x 等效扣减倍率按“当前有效倍率 / 发行换算倍率”向上取一位小数，禁止四舍五入向下造成成本损失。例如发行 `0.07x`、当前 `0.08x` 时按 `1.2x` 而不是 `1.1x` 扣卡片额度；发行 `0.10x`、当前 `0.15x` 时为 `1.5x`。耗尽状态对外显示“欠费”，创建者充值成功后同事务自动恢复卡片和 API Key，无需手动启用。
+- 创建、充值、退款和管理员操作必须使用永久幂等记录；资金变动写入不可修改的 `link_card_ledger`。创建者只可退回未激活且零使用的本人 Key，管理员才可退回已激活或已使用 Key 的未消费余额；退款前必须冻结、失效鉴权缓存并收口在途请求。
+- 提链调用不得二次扣创建者余额。网关必须按每张 Key 独立执行并发、RPM、额度预留和幂等结算；费用超过剩余额度时禁止截断为剩余额度后仍完整成功。计费仓库异常必须失败关闭，不能回退到普通余额扣款。
+- 用户、管理员和公共使用记录复用 Sub2API Token、缓存、费用、类型、流式、延迟和首 Token 字段，默认每页 10 条；普通/公共响应只展示 1x 费用，不泄露创建者、内部倍率或实际资金字段。
+- 主要入口：`backend/internal/service/link_card.go`、`repository/link_card_repo.go`、`repository/usage_billing_repo.go`、`server/routes/link_cards.go`、`frontend/src/api/linkCards.ts`、三端 `LinkCard*View.vue` 与迁移 `194_link_cards.sql`。
+
+### 3.8 支付扩展
 
 - KeyingPay V2 provider：`backend/internal/payment/provider/keyingpay.go`。
 - 工厂、路由、配置和前端入口：`payment/provider/factory.go`、`server/routes/payment.go`、`handler/payment_webhook_handler.go`、`frontend/src/components/payment/`。
@@ -213,7 +226,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 支付回调必须验证签名并保持幂等。创建、回调、主动查单、退款、退款查询和关闭订单要复用 Sub2API 原有订单状态机，不能绕过平台订单表直接加余额。
 
-### 3.8 公开页面、导入与边缘部署
+### 3.9 公开页面、导入与边缘部署
 
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
@@ -232,6 +245,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 新增的非事务并发索引迁移，服务于全站到期冻结扫描，当前已进入生产。后续发布必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本，当前已进入生产；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
+- `194_link_cards.sql` 是提链/额度卡中心的 forward-only 开发候选，当前未进入生产。它扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；首次在共享环境应用前必须完成资金并发设计和迁移审查，应用后禁止改名、改号或修改 checksum，只能追加后续迁移。
 - 积分角色读取 Sub2API 用户表必须保持列级 allowlist：内部关联用 `id`、界面登录邮箱用 `email`、过滤软删除用 `deleted_at`。阶段 A 允许短期精确双读 `id/email/username/deleted_at`，仅用于新旧积分镜像兼容切换；新镜像验收后必须由阶段 B 收敛为 `id/email/deleted_at`。任何新增展示字段都必须先经过数据最小化审查，禁止把用户表整表授权给积分角色。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
@@ -302,6 +316,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - `channel_available.go` 和可用渠道前端：模型来源必须仍为渠道定价。
 - 支付 provider、webhook 和订单生命周期：签名、幂等、金额和状态转换。
 - `points-system/`、Sub2API points bridge 和 `193_points_balance_credit_ledger.sql`：单位精度、次日策略、消费快照修订、最低昨日消费门槛、阶梯边界、金额上限、签到并发、管理员 disabled 配置入口、启动票据、缓存代次、余额幂等与失败终态。
+- `api_keys`、API Key 鉴权/缓存、usage 计费事务和 `194_link_cards.sql`：标准/提链 Key 隔离、每 Key 并发与 RPM、倍率快照、批量原子扣款、额度预留、末笔超额拒绝、永久幂等、退款在途收口和不可变流水。
 
 ## 6. 发布门禁
 
@@ -345,6 +360,7 @@ go build ./cmd/server
 | 视频 | 每个公开模型的创建、查询、内容下载、长轮询恢复、公开 ID、失败不扣费、成功一次计费 |
 | 前端 | 可用渠道长模型列表、移动端、Q 群入口、支付 provider 配置 |
 | 积分与签到 | 两位小数比例、真实成功消费、00:05 动态刷新、业务发放时间、快照修订、总/昨日积分阶梯、最低昨日消费金额、固定/百分比奖励、每日次数、三层金额上限、并发签到、刷新与签到按钮恢复、签到未知结果幂等确认、四卡紧凑等高、真实同步状态、8px 面板尺度、reduced-motion、两表每页 10 条独立分页、父主题跨刷新权威、浅/深表格与悬停对比、Canvas 换色、disabled 管理员入口、HMAC 轮换、票据重放、公网内部接口拒绝、同库 schema 隔离、邮箱 ACL 阶段 A/B、反向回滚与失败事务 PostgreSQL CI、缓存旧值回填竞态、拒绝记录收敛、余额幂等、未知 credit 禁止直接冲正和永久失败人工重试 |
+| 提链与额度卡 | 默认关闭且仅用户 1 灰度、非名单服务端拒绝、标准 Key 页面隔离、授权分组与倍率快照、单张/批量原子扣款、余额不足零发卡、永久幂等、完整 Key 激活、短期公共会话、创建者/管理员退款权限、退款在途收口、每 Key 并发/RPM、请求前额度预留、末笔不得免费差额、计费失败关闭、不可变流水、原生 Token/缓存/费用明细、三端每页 10 条、100+ Key 搜索分页及桌面浅色/深色/390px 移动端 |
 | 检测兼容 | 按标准协议真实测试，不识别检测器、不伪造模型身份或固定输出 |
 
 收费媒体真实测试应使用最小数量并保存任务 ID、时间窗和 usage 对照。禁止为了“多试几次”自动循环创建付费媒体任务。
@@ -355,9 +371,10 @@ go build ./cmd/server
 2. 构建带 commit 的不可变镜像标签，并记录 digest；浮动版本标签不能作为唯一回滚点。
 3. Sub2API 镜像按运维约定只上传/导入服务器，是否切换由维护窗口决定。
 4. 积分镜像可在备份 `points` schema 并记录旧镜像后独立更新，但必须断言 Sub2API 容器 ID、启动时间和镜像引用未变；一次性历史回算不得随更新重跑。
-5. 切换前备份 compose 和数据库；只修改目标服务的镜像 tag，不顺带改账号、渠道价格或网关配置。
-6. 切换后检查版本、health、restart、migration、关键路由和错误日志。
-7. 回滚时恢复旧不可变镜像；如果新迁移不向后兼容，按预先准备的数据回滚方案处理，不能只改镜像。
+5. 提链首次候选只允许保持全局关闭和用户 `1` 开发灰度；完成 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md) 的资金、并发、迁移和三端门禁前，不构建或切换生产镜像。
+6. 切换前备份 compose 和数据库；只修改目标服务的镜像 tag，不顺带改账号、渠道价格或网关配置。
+7. 切换后检查版本、health、restart、migration、关键路由和错误日志。
+8. 回滚时恢复旧不可变镜像；如果新迁移不向后兼容，按预先准备的数据回滚方案处理，不能只改镜像。存在提链 Key 时先关闭入口、冻结和禁用全部提链 Key、清空在途并对账，禁止让不识别 `key_type` 的旧镜像接管活动 Key。
 
 ## 7. 不可破坏清单
 
@@ -380,6 +397,9 @@ go build ./cmd/server
 - 积分子页不得用固定浅色覆盖深色表格或悬停状态；严格校验后的父主题在后续资料刷新中保持权威，并触发 Canvas 重绘。四张概览卡在桌面和移动端不得互相错位或发生按钮遮挡，两张个人记录表默认每页 10 条且独立翻页。
 - 积分用户首屏失败必须进入持久可重试状态，管理员首屏必须在真实汇总加载后才揭示；窄屏 Canvas 不得使用固定内部宽度造成日期挤压，普通 hover 不得使用近似选中态的高强度主色填充。
 - 余额缓存旧回源不得覆盖积分 credit/reversal 后的新余额；缓存同步失败必须保持同一交易可重试。公网域名不得代理内部 credit 路径，`/launch` 之外的积分访问日志不得整体关闭。
+- 普通 API Key 页面和接口不得显示、编辑或删除提链 Key；提链 Key 未激活、冻结、耗尽、退款或撤销时不得通过网关鉴权，状态变更必须失效鉴权缓存。
+- 提链创建/充值只能由服务端从创建者真实余额原子扣款；调用时不得再次扣创建者余额。客户端不得决定创建者、倍率、总扣款、可退款额、已用额或结算费用。
+- 提链批量创建必须全成或全败，所有资金写操作永久幂等并写不可变流水；并发调用、最后一笔额度和管理员退款在途请求不能造成透支、免费差额、重复扣款或超额退款。
 
 ## 8. 文档更新规则
 
@@ -387,7 +407,7 @@ go build ./cmd/server
 
 1. 本文档的功能清单、代码入口和不可破坏约束。
 2. `docs/MEDIA_API_CN.md`、`docs/PRODUCTION_OPERATIONS_CN.md` 或对应部署文档中的对外契约与运行边界。
-3. 配置示例和迁移说明。
+3. 涉及提链/额度卡中心时同步更新 `docs/LINK_CARDS_CN.md`；配置示例和迁移说明也必须同步。
 4. 对应测试矩阵。
 
 不得在文档中保存生产凭据、真实 API Key、支付密钥、Worker Secret、数据库连接串或 SSH/GitHub Token。

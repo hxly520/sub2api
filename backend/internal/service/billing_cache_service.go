@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -95,6 +96,10 @@ type cacheWriteTask struct {
 // apiKeyRateLimitLoader defines the interface for loading rate limit data from DB.
 type apiKeyRateLimitLoader interface {
 	GetRateLimitData(ctx context.Context, keyID int64) (*APIKeyRateLimitData, error)
+}
+
+type linkCardBillingStateLoader interface {
+	GetLinkCardBillingState(ctx context.Context, keyID int64) (*LinkCardBillingState, error)
 }
 
 type subscriptionCacheInvalidationPubSub interface {
@@ -750,7 +755,27 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	// 判断计费模式
 	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
 
-	if isSubscriptionMode {
+	if apiKey != nil && apiKey.IsLinkKey() {
+		loader, ok := s.apiKeyRateLimitLoader.(linkCardBillingStateLoader)
+		if !ok || loader == nil {
+			return ErrBillingServiceUnavailable
+		}
+		state, err := loader.GetLinkCardBillingState(ctx, apiKey.ID)
+		if err != nil || state == nil {
+			if err == nil {
+				err = errors.New("link card billing state is empty")
+			}
+			return ErrBillingServiceUnavailable.WithCause(err)
+		}
+		apiKey.Status = state.Status
+		apiKey.LinkState = state.LinkState
+		apiKey.Quota = state.Quota
+		apiKey.QuotaUsed = state.QuotaUsed
+		apiKey.LinkReservedAmount = state.Reserved
+		if apiKey.LinkState != LinkCardStateActive || linkCardQuotaUnavailable(state.Quota, state.QuotaUsed, state.Reserved) {
+			return ErrLinkCardPrepaidExhausted
+		}
+	} else if isSubscriptionMode {
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
 			return err
 		}
@@ -761,7 +786,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	}
 
 	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
-	if !isSubscriptionMode {
+	if !isSubscriptionMode && (apiKey == nil || !apiKey.IsLinkKey()) {
 		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
 			return err
 		}
@@ -775,11 +800,30 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	}
 
 	// RPM 限流：级联回落（Override → Group → User），放在最后以避免为注定失败的请求增加计数。
-	if err := s.checkRPM(ctx, user, group); err != nil {
+	rpmUser := user
+	if apiKey != nil && apiKey.IsLinkKey() && user != nil {
+		copyUser := *user
+		copyUser.ID = -apiKey.ID
+		copyUser.RPMLimit = apiKey.LinkRPMLimit
+		unlimitedGroupRPM := 0
+		copyUser.UserGroupRPMOverride = &unlimitedGroupRPM
+		rpmUser = &copyUser
+	}
+	if err := s.checkRPM(ctx, rpmUser, group); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// linkCardQuotaUnavailable treats active holds as spent for admission without
+// changing quota_used. This keeps polling/status requests working while an
+// asynchronous media or batch task owns the reserved amount.
+func linkCardQuotaUnavailable(quota, used, reserved float64) bool {
+	if quota <= 0 {
+		return false
+	}
+	return used+reserved >= quota-0.00000001
 }
 
 // checkRPM 执行并行 RPM 限流，所有适用的限制同时生效，任一超限即拒绝：

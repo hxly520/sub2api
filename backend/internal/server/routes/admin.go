@@ -99,6 +99,8 @@ func RegisterAdminRoutes(
 		// API Key 管理
 		registerAdminAPIKeyRoutes(admin, h)
 
+		registerAdminLinkCardRoutes(admin, h, stepUpAuth)
+
 		// 定时测试计划
 		registerScheduledTestRoutes(admin, h)
 
@@ -123,6 +125,21 @@ func RegisterAdminRoutes(
 		points := admin.Group("/points")
 		points.GET("/status", h.Points.StatusAdmin)
 		points.POST("/launch", gin.HandlerFunc(stepUpAuth), h.Points.LaunchAdmin)
+	}
+}
+
+func registerAdminLinkCardRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	linkCards := admin.Group("/link-cards")
+	{
+		linkCards.GET("/settings", h.Admin.LinkCard.Settings)
+		linkCards.PUT("/settings", gin.HandlerFunc(stepUpAuth), h.Admin.LinkCard.UpdateSettings)
+		linkCards.GET("/groups", h.Admin.LinkCard.Groups)
+		linkCards.POST("/groups", gin.HandlerFunc(stepUpAuth), h.Admin.LinkCard.UpsertGroup)
+		linkCards.PUT("/groups", gin.HandlerFunc(stepUpAuth), h.Admin.LinkCard.UpsertGroup)
+		linkCards.DELETE("/groups", gin.HandlerFunc(stepUpAuth), h.Admin.LinkCard.RemoveGroup)
+		linkCards.GET("/cards", h.Admin.LinkCard.Cards)
+		linkCards.GET("/usage", h.Admin.LinkCard.Usage)
+		linkCards.POST("/cards/:id/actions", gin.HandlerFunc(stepUpAuth), h.Admin.LinkCard.Action)
 	}
 }
 

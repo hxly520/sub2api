@@ -33,6 +33,13 @@ type MediaBalanceHoldReconciliationRepository interface {
 	ReconcileExpiredMediaBalanceHolds(ctx context.Context, after *MediaBalanceHoldReconciliationCursor, limit int) (*MediaBalanceHoldReconciliationResult, error)
 }
 
+// LinkCardHoldReconciliationRepository is optional so existing standard-media
+// test doubles and deployments remain source compatible. Implementations
+// settle expired prepaid-card holds independently of user frozen balance.
+type LinkCardHoldReconciliationRepository interface {
+	ReconcileExpiredLinkCardHolds(ctx context.Context, limit int) ([]int64, error)
+}
+
 type mediaBalanceCacheInvalidator interface {
 	InvalidateUserBalance(ctx context.Context, userID int64) error
 }
@@ -153,13 +160,22 @@ func (s *MediaBalanceHoldReconciliationService) runOnce() {
 			slog.Error("[MediaBalanceHoldReconciliation] batch failed", "error", err)
 		}
 		if result == nil || result.ScannedUsers < s.batchSize || result.NextCursor == nil {
-			return
+			break
 		}
 		cursor = result.NextCursor
 		if err := ctx.Err(); err != nil {
 			slog.Warn("[MediaBalanceHoldReconciliation] run deadline reached", "error", err)
-			return
+			break
 		}
+	}
+	if linkRepo, ok := s.repo.(LinkCardHoldReconciliationRepository); ok {
+		linkCtx, linkCancel := context.WithTimeout(runCtx, mediaBalanceHoldReconciliationTimeout)
+		userIDs, err := linkRepo.ReconcileExpiredLinkCardHolds(linkCtx, s.batchSize)
+		linkCancel()
+		if err != nil {
+			slog.Error("[MediaBalanceHoldReconciliation] link-card batch failed", "error", err)
+		}
+		s.invalidateBalanceCaches(runCtx, userIDs)
 	}
 }
 

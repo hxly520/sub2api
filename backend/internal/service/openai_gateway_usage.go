@@ -165,10 +165,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
 	// 不并入上面的 Resolve，以免污染 user:group 倍率缓存。
 	baseMultiplier := multiplier
+	// A link-card issuance snapshot fixes only its initial 1x quota conversion.
+	// Runtime pricing follows the creator's current native group configuration.
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, timezone.Now())
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
+	webSearchMultiplier := LinkCardChargeRateMultiplier(apiKey, baseMultiplier)
+	multiplier = LinkCardChargeRateMultiplier(apiKey, multiplier)
+	imageMultiplier = LinkCardChargeRateMultiplier(apiKey, imageMultiplier)
+	videoMultiplier = LinkCardChargeRateMultiplier(apiKey, videoMultiplier)
 	if isOpenAIVideoUsageResult(result, nil) && input.MediaPricingSnapshot != nil {
 		videoMultiplier = input.MediaPricingSnapshot.RateMultiplier
+	} else if result.ImageCount > 0 && input.MediaPricingSnapshot != nil {
+		imageMultiplier = input.MediaPricingSnapshot.RateMultiplier
 	}
 
 	var cost *CostBreakdown
@@ -202,7 +210,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		multiplier,
 		imageMultiplier,
 		videoMultiplier,
-		baseMultiplier,
+		webSearchMultiplier,
 		tokens,
 		serviceTier,
 		longContextBillingEnabled,
@@ -881,9 +889,9 @@ func (s *OpenAIGatewayService) resolveOpenAIMediaRateMultiplier(ctx context.Cont
 		}
 	}
 	if video {
-		return maxZeroMultiplier(resolveVideoRateMultiplier(apiKey, baseMultiplier))
+		return maxZeroMultiplier(LinkCardChargeRateMultiplier(apiKey, resolveVideoRateMultiplier(apiKey, baseMultiplier)))
 	}
-	return maxZeroMultiplier(resolveImageRateMultiplier(apiKey, baseMultiplier))
+	return maxZeroMultiplier(LinkCardChargeRateMultiplier(apiKey, resolveImageRateMultiplier(apiKey, baseMultiplier)))
 }
 
 func maxZeroMultiplier(value float64) float64 {
