@@ -209,7 +209,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选已升级到 `v0.1.172`，并新增公共会话 404 修复和激活防爆破保护。生产全局开关、开发名单和容器切换仍以维护者手工操作为准，不得把候选状态写成全体用户已开放。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，基线为 `v0.1.172`，并保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护。生产全局开关、开发名单和容器切换仍以维护者手工操作为准，不得把候选状态写成全体用户已开放。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。
@@ -219,6 +219,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 创建、充值、退款和管理员操作必须使用永久幂等记录；资金变动写入不可修改的 `link_card_ledger`。创建者只可退回未激活且零使用的本人 Key，管理员才可退回已激活或已使用 Key 的未消费余额；退款前必须冻结、失效鉴权缓存并收口在途请求。
 - 提链调用不得二次扣创建者余额。文本请求完全沿用 Sub2API 原生后扣时序：准入时可用额度必须严格大于零，提链 `quota=0` 不能解释为不限额；已经准入的最后一笔或并发请求允许在结算后形成欠费，但必须完整记录实际费用，随后立即禁用 Key 并拒绝新请求；图片、视频和批量生图继续使用请求前额度预留。网关按每张 Key 独立执行并发、RPM 与幂等结算，计费仓库异常必须失败关闭，不能回退到普通余额扣款。
 - 用户、管理员和公共使用记录复用 Sub2API Token、缓存、费用、类型、流式、延迟和首 Token 字段，默认每页 10 条；普通/公共响应只展示 1x 费用，不泄露创建者、内部倍率或实际资金字段。
+- 费用对账使用数据库 `decimal` 精确值；原生页面的六位小数金额仅是展示值，禁止用它乘发行倍率反算。`usage_logs` 的输入、输出、缓存读写和图像费用都必须进入原生明细与额度卡明细；费用/Token 悬停通过 `body` Teleport、实际尺寸测量、视口钳制和窄屏滚动保证首行可见。
 - 主要入口：`backend/internal/service/link_card.go`、`repository/link_card_repo.go`、`repository/usage_billing_repo.go`、`server/routes/link_cards.go`、`frontend/src/api/linkCards.ts`、三端 `LinkCard*View.vue` 与迁移 `194_link_cards.sql`。
 - 公共页面 404 修复：额度卡短期会话过期时，`/api/v1/public/link-cards/*` 的 401 只由额度卡页面处理，不进入 Sub2API 登录 token 刷新或 `/login` 跳转；Nginx 对遗留 `/login` 做防御性 `302 /card`，因此 `key.52token.org` 不再落到不存在的登录页。公共接口请求不携带 Sub2API `Authorization`，继续使用 `X-Link-Card-Session`。
 - 激活防爆破：激活入口先按可信客户端 IP 做 Redis 共享的每分钟 30 次 fail-close 限流；只有明确的 `ErrLinkCardNotFound` 才计入连续错误，达到第 10 次立即锁定 5 分钟，Redis 保存截断 SHA-256 IP 键而不是完整 Key。成功激活清零连续错误，Redis 不可用时返回 `503` 并关闭激活入口；锁定响应带 `Retry-After`，前端留在 Key 输入页。
