@@ -46,12 +46,13 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 
 > ⚠️ Do **not** place executable "Down" SQL in the same file. The runner does not parse goose Up/Down sections and will execute all SQL statements in the file.
 
-## Private Candidate Migration Registry
+## Private Migration Registry
 
-- `193_points_balance_credit_ledger.sql` is the latest private migration confirmed in production by `docs/PRODUCTION_OPERATIONS_CN.md`.
-- `194_link_cards.sql` is the forward-only link-card/quota-card candidate. As of `2026-08-07` it has not been applied to production and must not be described as deployed.
-- Before `194_link_cards.sql` is applied to any shared environment, review it together with `docs/LINK_CARDS_CN.md`, generated Ent schema, migration tests, standard API-key isolation, concurrent quota admission, refund/in-flight settlement, and rollback compatibility.
-- After the first shared application, `194_link_cards.sql` becomes checksum-immutable. Any correction must use the next migration number; never edit, rename, delete, or renumber `194`.
+- `193_points_balance_credit_ledger.sql` and `194_link_cards.sql` are private migrations confirmed in production by `docs/PRODUCTION_OPERATIONS_CN.md`.
+- `194_link_cards.sql` entered production on `2026-08-08`. Its SHA256 checksum over trimmed content is `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`.
+- Upstream `v0.1.172` also contains `194_add_usage_log_upstream_response_model.sql`, followed by `195_add_usage_log_upstream_model_mismatch_index_notx.sql`. This is compatible with the private `194_link_cards.sql`: the runner identifies and records migrations by the complete filename, not by the numeric prefix alone.
+- Keep all three filenames and SQL contents unchanged. Their lexical execution order is `194_add_usage_log_upstream_response_model.sql`, `194_link_cards.sql`, then `195_add_usage_log_upstream_model_mismatch_index_notx.sql`; an already-applied private `194_link_cards.sql` is checksum-validated and skipped while either missing upstream migration is applied independently.
+- Any correction must use a new, unique migration filename after the current migration set. Never edit, rename, delete, or renumber an applied migration.
 - Application rollback does not remove link-card tables or ledger rows. Before rolling back to a binary that does not understand `key_type`, disable the feature, freeze and disable every link key, invalidate auth caches, drain in-flight requests, and reconcile funds. Preserve operations and ledger rows for audit.
 
 The authoritative product and release checklist is [`../../docs/LINK_CARDS_CN.md`](../../docs/LINK_CARDS_CN.md). Production application status is recorded only in [`../../docs/PRODUCTION_OPERATIONS_CN.md`](../../docs/PRODUCTION_OPERATIONS_CN.md).

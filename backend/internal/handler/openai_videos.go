@@ -357,7 +357,11 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		}
 	}
 
-	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, routingModel)
+	requestCtx := withOpenAIAccountScheduleProfile(
+		service.WithOpenAIProfitControlSuppressed(c.Request.Context()),
+		c,
+		routingModel,
+	)
 	routingStart := time.Now()
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 		requestCtx,
@@ -532,10 +536,14 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 
-	accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream || parsed.ContentRequest, &streamStarted, reqLog)
-	if !accountAcquired {
+	accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream || parsed.ContentRequest, &streamStarted, reqLog)
+	if slotResult != openAISlotAcquireOK {
 		if parsed.GenerationRequest {
 			markMediaGenerationTaskTerminalDetached(h, apiKey.ID, generationPublicTaskID, service.MediaGenerationStatusFailed, "account_slot_unavailable")
+		}
+		if slotResult == openAISlotAcquireProfitVetoed {
+			markOpsRoutingCapacityLimited(c)
+			h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
 		}
 		return
 	}

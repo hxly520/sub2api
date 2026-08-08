@@ -718,6 +718,8 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		pricingAt = timezone.Now()
 	}
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, pricingAt)
+	multiplier = LinkCardChargeRateMultiplier(apiKey, multiplier)
+	imageMultiplier = LinkCardChargeRateMultiplier(apiKey, imageMultiplier)
 
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)

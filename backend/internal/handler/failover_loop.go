@@ -61,6 +61,7 @@ type FailoverState struct {
 	LastFailoverErr       *service.UpstreamFailoverError
 	ForceCacheBilling     bool
 	hasBoundSession       bool
+	automaticReplay       bool
 
 	// profitVetoedAccountIDs 记录被分组利润门终检否决的账号，是 FailedAccountIDs
 	// 的子集。之所以单独维护：HandleSelectionExhausted 的 503 退避分支会清空
@@ -79,7 +80,16 @@ func NewFailoverState(maxSwitches int, hasBoundSession bool) *FailoverState {
 		FailedAccountIDs:       make(map[int64]struct{}),
 		SameAccountRetryCount:  make(map[int64]int),
 		hasBoundSession:        hasBoundSession,
+		automaticReplay:        true,
 		profitVetoedAccountIDs: make(map[int64]struct{}),
+	}
+}
+
+// DisableAutomaticReplay prevents non-idempotent media creation from being
+// submitted more than once while retaining the normal text failover policy.
+func (s *FailoverState) DisableAutomaticReplay() {
+	if s != nil {
+		s.automaticReplay = false
 	}
 }
 

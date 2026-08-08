@@ -36,7 +36,10 @@ type OpenAIRecordUsageInput struct {
 	// PricingAt 是请求级定价时刻（请求开始捕获，与利润门的 D 同源）：高峰因子
 	// 按该时刻计算，保证同一请求从准入到扣费不中途变价。零值回退记录时刻
 	//（既有行为），供未装配的路径（图片/异步/cyber 等）沿用。
-	PricingAt time.Time
+	PricingAt                 time.Time
+	MediaPricingSnapshot      *MediaGenerationPricingSnapshot
+	MediaBalanceHoldRequestID string
+	MediaBalanceHoldAmount    float64
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	ChannelUsageFields

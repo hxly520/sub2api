@@ -207,6 +207,75 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.069568')
   })
 
+  it('keeps first-row cost and token tooltips inside the viewport', async () => {
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 180 })
+
+    try {
+      const row = {
+        request_id: 'req-tooltip-viewport',
+        actual_cost: 0.092883,
+        total_cost: 0.092883,
+        account_rate_multiplier: 1,
+        rate_multiplier: 1,
+        input_cost: 0.020285,
+        output_cost: 0.00303,
+        cache_creation_cost: 0,
+        cache_read_cost: 0.069568,
+        input_tokens: 4057,
+        output_tokens: 101,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 32,
+      }
+      const wrapper = mount(UsageTable, {
+        props: { data: [row], loading: false, columns: [] },
+        attachTo: document.body,
+        global: {
+          stubs: {
+            DataTable: DataTableStub,
+            EmptyState: true,
+            Icon: true,
+          },
+        },
+      })
+
+      const triggerRects = wrapper.findAll('.group.relative')
+      expect(triggerRects).toHaveLength(2)
+      const costTrigger = triggerRects[1]
+      const tokenTrigger = triggerRects[0]
+      vi.spyOn(costTrigger.element, 'getBoundingClientRect').mockReturnValue({
+        x: 270, y: 4, top: 4, left: 270, right: 286, bottom: 20,
+        width: 16, height: 16, toJSON: () => ({}),
+      } as DOMRect)
+      vi.spyOn(tokenTrigger.element, 'getBoundingClientRect').mockReturnValue({
+        x: 270, y: 4, top: 4, left: 270, right: 286, bottom: 20,
+        width: 16, height: 16, toJSON: () => ({}),
+      } as DOMRect)
+
+      await costTrigger.trigger('mouseenter')
+      await nextTick()
+      await nextTick()
+      const costPortal = document.body.querySelector('[data-testid="cost-tooltip"]')
+
+      await tokenTrigger.trigger('mouseenter')
+      await nextTick()
+      await nextTick()
+      const tokenPortal = document.body.querySelector('[data-testid="token-tooltip"]')
+
+      expect(costPortal).not.toBeNull()
+      expect(tokenPortal).not.toBeNull()
+      expect(Number.parseFloat((costPortal as HTMLElement).style.top)).toBeGreaterThanOrEqual(8)
+      expect(Number.parseFloat((tokenPortal as HTMLElement).style.top)).toBeGreaterThanOrEqual(8)
+
+      wrapper.unmount()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight })
+    }
+  })
+
   it('shows requested and upstream models separately for admin rows', () => {
     const row = {
       request_id: 'req-admin-model-1',

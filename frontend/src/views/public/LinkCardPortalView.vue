@@ -71,58 +71,27 @@
                 ><Icon name="copy" size="xs" /></button>
               </div>
             </div>
-            <button type="button" class="tech-icon-button" :title="t('common.refresh')" :disabled="usageLoading" @click="loadUsage"><Icon name="refresh" size="sm" :class="usageLoading ? 'animate-spin motion-reduce:animate-none' : ''" /></button>
+            <button
+              type="button"
+              class="tech-icon-button"
+              data-testid="refresh-link-card-details"
+              :title="t('common.refresh')"
+              :aria-label="t('common.refresh')"
+              :disabled="detailsRefreshing || usageLoading"
+              @click="refreshDetails"
+            >
+              <Icon name="refresh" size="sm" :class="detailsRefreshing ? 'animate-spin motion-reduce:animate-none' : ''" />
+            </button>
           </div>
 
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-[980px]">
-              <thead><tr><th>时间</th><th>{{ t('linkCards.model') }}</th><th>{{ t('linkCards.requestType') }}</th><th>{{ t('linkCards.tokens') }}</th><th>缓存</th><th>{{ t('linkCards.cost') }}</th><th>{{ t('linkCards.latency') }}</th><th>{{ t('linkCards.requestId') }}</th></tr></thead>
-              <tbody>
-                <tr v-for="row in usageRows" :key="row.request_id">
-                  <td>{{ formatDate(row.created_at) }}</td>
-                  <td><span class="block max-w-[170px] truncate text-zinc-200" :title="row.model">{{ row.model }}</span></td>
-                  <td><span class="tech-tag">{{ requestType(row) }}</span></td>
-                  <td>
-                    <div class="detail-tip" tabindex="0">
-                      <span class="cursor-help tabular-nums text-zinc-200">{{ totalTokens(row).toLocaleString() }}</span>
-                      <div class="detail-panel">
-                        <p><span>输入</span><strong>{{ row.input_tokens.toLocaleString() }}</strong></p>
-                        <p><span>输出</span><strong>{{ row.output_tokens.toLocaleString() }}</strong></p>
-                        <p v-if="row.cache_creation_5m_tokens > 0"><span>缓存写入 5m</span><strong>{{ row.cache_creation_5m_tokens.toLocaleString() }}</strong></p>
-                        <p v-if="row.cache_creation_1h_tokens > 0"><span>缓存写入 1h</span><strong>{{ row.cache_creation_1h_tokens.toLocaleString() }}</strong></p>
-                        <p v-if="row.cache_creation_5m_tokens === 0 && row.cache_creation_1h_tokens === 0"><span>缓存写入</span><strong>{{ row.cache_creation_tokens.toLocaleString() }}</strong></p>
-                        <p><span>缓存读取</span><strong>{{ row.cache_read_tokens.toLocaleString() }}</strong></p>
-                        <p v-if="row.image_input_tokens > 0"><span>图像输入</span><strong>{{ row.image_input_tokens.toLocaleString() }}</strong></p>
-                        <p v-if="row.image_output_tokens > 0"><span>图像输出</span><strong>{{ row.image_output_tokens.toLocaleString() }}</strong></p>
-                        <p class="detail-total"><span>Token 合计</span><strong>{{ totalTokens(row).toLocaleString() }}</strong></p>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span :class="row.cache_read_tokens > 0 ? 'text-emerald-300' : 'text-zinc-500'">{{ row.cache_read_tokens > 0 ? `命中 ${row.cache_read_tokens.toLocaleString()}` : '未命中' }}</span></td>
-                  <td>
-                    <div class="detail-tip" tabindex="0">
-                      <span class="cursor-help tabular-nums text-cyan-300">{{ money(row.total_cost) }}</span>
-                      <div class="detail-panel">
-                        <p><span>输入费用</span><strong>{{ money(row.input_cost) }}</strong></p>
-                        <p><span>输出费用</span><strong>{{ money(row.output_cost) }}</strong></p>
-                        <p><span>缓存写入</span><strong>{{ money(row.cache_creation_cost) }}</strong></p>
-                        <p><span>缓存读取</span><strong>{{ money(row.cache_read_cost) }}</strong></p>
-                        <p v-if="Number(row.image_input_cost) > 0"><span>图像输入费用</span><strong>{{ money(row.image_input_cost) }}</strong></p>
-                        <p v-if="Number(row.image_output_cost) > 0"><span>图像输出费用</span><strong>{{ money(row.image_output_cost) }}</strong></p>
-                        <p class="detail-total"><span>原始费用</span><strong>{{ money(row.total_cost) }}</strong></p>
-                        <p><span>实扣费用</span><strong>{{ money(row.actual_cost) }}</strong></p>
-                        <p><span>计费倍率</span><strong>{{ row.rate_multiplier }}x</strong></p>
-                        <p v-if="row.service_tier"><span>服务等级</span><strong>{{ row.service_tier }}</strong></p>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span class="tabular-nums text-zinc-300">{{ duration(row.first_token_ms) }} / {{ duration(row.duration_ms) }}</span></td>
-                  <td><code class="block max-w-[160px] truncate text-xs text-zinc-500" :title="row.request_id">{{ row.request_id }}</code></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="quota-usage-table dark">
+            <LinkCardUsageTable
+              :rows="usageTableRows"
+              :loading="usageLoading"
+              show-endpoint
+              show-billing-mode
+            />
           </div>
-          <div v-if="!usageLoading && usageRows.length === 0" class="px-5 py-12 text-center text-sm text-zinc-500">{{ t('linkCards.noUsage') }}</div>
           <div v-if="usageTotal > 0" class="flex items-center justify-between border-t border-white/10 px-4 py-3 text-sm sm:px-5">
             <span class="text-zinc-500">{{ usageTotal.toLocaleString() }} 条</span>
             <div class="flex items-center gap-2"><button class="tech-page-button" :disabled="usagePage <= 1" @click="changePage(usagePage - 1)"><Icon name="chevronLeft" size="sm" /></button><span class="min-w-20 text-center tabular-nums text-zinc-400">{{ usagePage }} / {{ totalPages }}</span><button class="tech-page-button" :disabled="usagePage >= totalPages" @click="changePage(usagePage + 1)"><Icon name="chevronRight" size="sm" /></button></div>
@@ -212,6 +181,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import LinkCardUsageTable, { type LinkCardUsageRow } from '@/components/link-cards/LinkCardUsageTable.vue'
 import { useAppStore } from '@/stores/app'
 import { sanitizeUrl } from '@/utils/url'
 import { publicLinkCardsAPI, type PublicLinkCardProfile, type PublicLinkCardUsageLog } from '@/api/linkCards'
@@ -233,6 +203,7 @@ const sessionToken = ref('')
 const profile = ref<PublicLinkCardProfile | null>(null)
 const usageRows = ref<PublicLinkCardUsageLog[]>([])
 const usageLoading = ref(false)
+const detailsRefreshing = ref(false)
 const usagePage = ref(1)
 const usageTotal = ref(0)
 const activeGuide = ref<GuideKey>('codex')
@@ -249,6 +220,22 @@ const metrics = computed(() => profile.value ? [
   { key: 'requests', label: t('linkCards.requestCount'), value: profile.value.card.request_count.toLocaleString(), icon: 'database' as const },
   { key: 'status', label: t('linkCards.cardStatus'), value: statusLabel(profile.value.card.status), icon: 'checkCircle' as const },
 ] : [])
+const usageTableRows = computed<LinkCardUsageRow[]>(() => usageRows.value.map((row, index) => ({
+  ...row,
+  id: (usagePage.value - 1) * 10 + index + 1,
+  card_id: 0,
+  card_key: profile.value?.card.masked_key || '-',
+  group_id: null,
+  group_name: profile.value?.card.group_name || '-',
+  input_cost: Number(row.input_cost),
+  output_cost: Number(row.output_cost),
+  cache_creation_cost: Number(row.cache_creation_cost),
+  cache_read_cost: Number(row.cache_read_cost),
+  image_input_cost: Number(row.image_input_cost),
+  image_output_cost: Number(row.image_output_cost),
+  total_cost: Number(row.total_cost),
+  actual_cost: Number(row.actual_cost),
+})))
 const guides = computed(() => [
   { key: 'codex' as const, label: t('linkCards.codex'), code: `curl ${apiBase.value}/responses \\\n  -H "Authorization: Bearer CARD_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","input":"Hello","stream":true}'`, configFiles: codexConfigFiles(apiBase.value), ccSwitchClient: 'Codex / Responses', ccSwitchEndpoint: apiBase.value },
   { key: 'claude' as const, label: t('linkCards.claude'), code: `curl ${apiBase.value}/messages \\\n  -H "x-api-key: CARD_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}],"stream":true}'`, configFiles: claudeConfigFiles(apiBase.value), ccSwitchClient: 'Claude / Messages', ccSwitchEndpoint: apiBase.value },
@@ -300,10 +287,6 @@ function openAIConfigFiles(base: string): GuideFile[] {
 
 function isFullKey(value: string): boolean { return /^sk-[A-Za-z0-9_-]{20,}$/.test(value) }
 function money(value: unknown): string { const number = Number(value); return `$${Number.isFinite(number) ? number.toFixed(6).replace(/0+$/, '').replace(/\.$/, '') : '0'}` }
-function totalTokens(row: PublicLinkCardUsageLog): number { return row.total_tokens || row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens }
-function duration(value: number | null): string { if (value == null) return '-'; return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(2)}s` }
-function requestType(row: PublicLinkCardUsageLog): string { if (row.request_type === 'ws_v2') return 'WebSocket'; if (row.request_type === 'stream' || row.stream) return 'Stream'; return row.request_type || 'Sync' }
-function formatDate(value: string): string { return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) }
 function statusLabel(status: string): string { if (status === 'active') return t('linkCards.active'); if (status === 'frozen') return t('linkCards.frozen'); if (status === 'depleted') return t('linkCards.exhausted'); return status }
 
 async function activateCard(): Promise<void> {
@@ -335,13 +318,63 @@ function activationFailureMessage(error: unknown): string {
 async function loadProfile(): Promise<void> {
   if (!sessionToken.value) { portalState.value = 'activate'; return }
   portalState.value = 'loading'
-  try { profile.value = await publicLinkCardsAPI.getMe(sessionToken.value); usagePage.value = 1; await loadUsage(); portalState.value = 'details' } catch { clearSession(); activationError.value = t('linkCards.sessionExpired') }
+  usageLoading.value = true
+  usagePage.value = 1
+  try {
+    const [nextProfile, result] = await Promise.all([
+      publicLinkCardsAPI.getMe(sessionToken.value),
+      publicLinkCardsAPI.listUsage(sessionToken.value, { page: 1, page_size: 10 }),
+    ])
+    profile.value = nextProfile
+    applyUsageResult(result)
+    portalState.value = 'details'
+  } catch {
+    expireSession()
+  } finally {
+    usageLoading.value = false
+  }
 }
 
 async function loadUsage(): Promise<void> {
   if (!sessionToken.value) return
   usageLoading.value = true
-  try { const result = await publicLinkCardsAPI.listUsage(sessionToken.value, { page: usagePage.value, page_size: 10 }); usageRows.value = result.items || []; usageTotal.value = result.total } catch { clearSession(); activationError.value = t('linkCards.sessionExpired') } finally { usageLoading.value = false }
+  try {
+    const result = await publicLinkCardsAPI.listUsage(sessionToken.value, { page: usagePage.value, page_size: 10 })
+    applyUsageResult(result)
+  } catch {
+    expireSession()
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+async function refreshDetails(): Promise<void> {
+  if (!sessionToken.value || detailsRefreshing.value) return
+  detailsRefreshing.value = true
+  usageLoading.value = true
+  try {
+    const [nextProfile, result] = await Promise.all([
+      publicLinkCardsAPI.getMe(sessionToken.value),
+      publicLinkCardsAPI.listUsage(sessionToken.value, { page: usagePage.value, page_size: 10 }),
+    ])
+    profile.value = nextProfile
+    applyUsageResult(result)
+  } catch {
+    expireSession()
+  } finally {
+    usageLoading.value = false
+    detailsRefreshing.value = false
+  }
+}
+
+function applyUsageResult(result: { items?: PublicLinkCardUsageLog[]; total: number }): void {
+  usageRows.value = result.items || []
+  usageTotal.value = result.total
+}
+
+function expireSession(): void {
+  clearSession()
+  activationError.value = t('linkCards.sessionExpired')
 }
 
 function changePage(page: number): void { if (page < 1 || page > totalPages.value) return; usagePage.value = page; void loadUsage() }
@@ -376,16 +409,12 @@ onMounted(() => { const saved = sessionStorage.getItem(SESSION_KEY); if (saved) 
 .tech-button:hover, .tech-icon-button:hover, .tech-page-button:hover { border-color: rgba(103,232,249,.42); background: rgba(103,232,249,.08); color: #a5f3fc; }
 .inline-copy-button:hover, .inline-copy-button:focus-visible { border-color: rgba(163,230,53,.42); background: rgba(163,230,53,.08); color: #d9f99d; outline: none; }
 .tech-button:disabled, .tech-icon-button:disabled, .tech-page-button:disabled { cursor: not-allowed; opacity: .35; }
-table th { border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.025); padding: 11px 16px; color: #71717a; font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
-table td { border-bottom: 1px solid rgba(255,255,255,.065); padding: 13px 16px; color: #a1a1aa; font-size: 12px; white-space: nowrap; }
-table tbody tr:hover { background: rgba(255,255,255,.025); }
+.quota-usage-table { border-top: 1px solid rgba(255,255,255,.08); }
+.quota-usage-table :deep(.table-wrapper) { scrollbar-color: rgba(103,232,249,.28) transparent; }
+.quota-usage-table :deep(.table-header) { background: #11151a; }
+.quota-usage-table :deep(.table-body) { background: #0f1216; }
+.quota-usage-table :deep(.table-body tr:hover) { background: #161a20; }
 .tech-tag { display: inline-flex; border: 1px solid rgba(103,232,249,.18); border-radius: 4px; background: rgba(103,232,249,.07); padding: 2px 6px; color: #a5f3fc; font-size: 10px; }
-.detail-tip { position: relative; display: inline-block; outline: none; }
-.detail-panel { position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 30; display: none; min-width: 210px; transform: translateX(-50%); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; background: #15181d; padding: 10px; box-shadow: 0 16px 45px rgba(0,0,0,.55); }
-.detail-tip:hover .detail-panel, .detail-tip:focus .detail-panel { display: block; }
-.detail-panel p { display: flex; justify-content: space-between; gap: 20px; padding: 3px 0; color: #a1a1aa; font-size: 11px; }
-.detail-panel strong { color: #f4f4f5; font-weight: 600; font-variant-numeric: tabular-nums; }
-.detail-panel .detail-total { margin-top: 5px; border-top: 1px solid rgba(255,255,255,.1); padding-top: 7px; }
 .guide-tab { min-height: 38px; border-bottom: 2px solid transparent; padding: 0 12px; color: #71717a; font-size: 12px; font-weight: 600; white-space: nowrap; transition: color .16s, border-color .16s; }
 .guide-tab:hover { color: #d4d4d8; }
 .guide-tab-active { border-color: #a3e635; color: #d9f99d; }

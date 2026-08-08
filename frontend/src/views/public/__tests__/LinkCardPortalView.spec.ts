@@ -19,7 +19,8 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError }),
 }))
 
-vi.mock('vue-i18n', () => ({
+vi.mock('vue-i18n', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-i18n')>()),
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
@@ -86,13 +87,24 @@ describe('LinkCardPortalView', () => {
     expect(wrapper.get('[data-testid="copy-link-card-key"]').attributes('aria-label')).toBe('linkCards.copyFullKey')
     expect(wrapper.text()).not.toContain(fullKey)
     expect(wrapper.get('pre').text()).not.toContain('\n+')
-    expect(wrapper.text()).toContain('缓存写入 5m')
-    expect(wrapper.text()).toContain('缓存写入 1h')
-    expect(wrapper.text()).toContain('图像输入费用')
-    expect(wrapper.text()).toContain('原始费用')
-    expect(wrapper.text()).toContain('实扣费用')
-    expect(wrapper.text()).toContain('计费倍率')
-    expect(wrapper.text()).toContain('服务等级')
+    expect(wrapper.text()).toContain('usage.endpoint')
+    expect(wrapper.text()).toContain('admin.usage.billingMode')
+    expect(wrapper.findAll('.group.relative').length).toBeGreaterThanOrEqual(2)
+    await wrapper.findAll('.group.relative')[0].trigger('mouseenter')
+    await flushPromises()
+    expect(document.body.textContent).toContain('usage.tokenDetails')
+    expect(document.body.textContent).toContain('admin.usage.cacheCreation5mTokens')
+    expect(document.body.textContent).toContain('admin.usage.cacheCreation1hTokens')
+    expect(document.body.textContent).toContain('usage.imageInputTokens')
+    await wrapper.findAll('.group.relative')[0].trigger('mouseleave')
+    await wrapper.findAll('.group.relative')[1].trigger('mouseenter')
+    await flushPromises()
+    expect(document.body.textContent).toContain('usage.costDetails')
+    expect(document.body.textContent).toContain('usage.imageInputCost')
+    expect(document.body.textContent).toContain('usage.original')
+    expect(document.body.textContent).toContain('usage.userBilled')
+    expect(document.body.textContent).toContain('usage.rate')
+    expect(document.body.textContent).toContain('usage.serviceTier')
 
     await wrapper.get('[data-testid="copy-link-card-key"]').trigger('click')
     await flushPromises()
@@ -152,6 +164,29 @@ describe('LinkCardPortalView', () => {
 
     expect(wrapper.get('[data-testid="link-card-api-endpoint"]').text()).toBe('https://api.52token.org/v1')
     expect(wrapper.text()).not.toContain('/v1/v1')
+  })
+
+  it('refreshes the profile metrics and usage rows together', async () => {
+    sessionStorage.setItem('link_card_portal_session', 'saved-session')
+    getMe
+      .mockResolvedValueOnce({ card, key: fullKey, api_base_url: 'https://api.52token.org/v1' })
+      .mockResolvedValueOnce({
+        card: { ...card, remaining_quota: 1190, used_quota: 60, request_count: 4 },
+        key: fullKey,
+        api_base_url: 'https://api.52token.org/v1',
+      })
+    const wrapper = mount(LinkCardPortalView, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('$1230')
+    await wrapper.get('[data-testid="refresh-link-card-details"]').trigger('click')
+    await flushPromises()
+
+    expect(getMe).toHaveBeenCalledTimes(2)
+    expect(listUsage).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('$1190')
+    expect(wrapper.text()).toContain('60')
+    expect(wrapper.get('[data-testid="refresh-link-card-details"]').attributes('disabled')).toBeUndefined()
   })
 
   it('rejects partial Keys without contacting the server', async () => {

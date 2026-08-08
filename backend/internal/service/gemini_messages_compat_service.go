@@ -1120,7 +1120,8 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		ImageCount:                    imageCount,
 		ImageSize:                     imageSize,
 		ImageInputSize:                imageInputSize,
-	}, nil
+		ClientDisconnect:              clientDisconnected,
+	}, forwardErr
 }
 
 func isGeminiSignatureRelatedError(respBody []byte) bool {
@@ -1676,7 +1677,8 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		ImageCount:                    imageCount,
 		ImageSize:                     imageSize,
 		ImageInputSize:                imageInputSize,
-	}, nil
+		ClientDisconnect:              clientDisconnected,
+	}, forwardErr
 }
 
 // checkErrorPolicyInLoop 在重试循环内预检查错误策略。
@@ -2736,6 +2738,9 @@ func (s *GeminiMessagesCompatService) handleNativeNonStreamingResponse(c *gin.Co
 			respBody = unwrappedBody
 		}
 	}
+	if requireTerminal && strings.TrimSpace(extractGeminiFinishReasonFromJSON(respBody)) == "" {
+		return nil, s.writeGoogleError(c, http.StatusBadGateway, "Gemini upstream response ended without finishReason")
+	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -2802,62 +2807,16 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	var firstTokenMs *int
-
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			trimmed := strings.TrimRight(line, "\r\n")
-			if strings.HasPrefix(trimmed, "data:") {
-				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				// Keepalive / done markers
-				if payload == "" || payload == "[DONE]" {
-					_, _ = io.WriteString(c.Writer, line)
-					flusher.Flush()
-				} else {
-					var rawToWrite string
-					rawToWrite = payload
-
-					var rawBytes []byte
-					if isOAuth {
-						innerBytes, err := unwrapGeminiResponse([]byte(payload))
-						if err == nil {
-							rawToWrite = string(innerBytes)
-							rawBytes = innerBytes
-						}
-					} else {
-						rawBytes = []byte(payload)
-					}
-
-					if u := extractGeminiUsage(rawBytes); u != nil {
-						usage = u
-					}
-					observer.ObserveGemini(rawBytes)
-
-					if firstTokenMs == nil {
-						ms := int(time.Since(startTime).Milliseconds())
-						firstTokenMs = &ms
-					}
-
-					if isOAuth {
-						// SSE format requires double newline (\n\n) to separate events
-						_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", rawToWrite)
-					} else {
-						// Pass-through for AI Studio responses.
-						_, _ = io.WriteString(c.Writer, line)
-					}
-					flusher.Flush()
-				}
-			} else {
-				_, _ = io.WriteString(c.Writer, line)
-				flusher.Flush()
-			}
-		}
-
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
+	finishReason := ""
+	clientDisconnected := ctx != nil && ctx.Err() != nil
+	clientOutputStarted := false
+	lastDownstreamWriteAt := time.Now()
+	events := readGeminiNativeStreamLines(resp.Body)
+	streamResult := func() *geminiNativeStreamResult {
+		return &geminiNativeStreamResult{
+			usage:              usage,
+			firstTokenMs:       firstTokenMs,
+			clientDisconnected: clientDisconnected,
 		}
 	}
 	markClientDisconnected := func(stage string, err error) {
@@ -2956,6 +2915,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(
 						if u := extractGeminiUsage(rawBytes); u != nil {
 							usage = u
 						}
+						observer.ObserveGemini(rawBytes)
 						if currentFinishReason := extractGeminiFinishReasonFromJSON(rawBytes); currentFinishReason != "" {
 							finishReason = currentFinishReason
 							terminalObserved = true

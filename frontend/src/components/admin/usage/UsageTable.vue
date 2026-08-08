@@ -260,13 +260,15 @@
   <Teleport to="body">
     <div
       v-if="tokenTooltipVisible"
-      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      ref="tokenTooltipRef"
+      data-testid="token-tooltip"
+      class="fixed z-[9999] pointer-events-none"
       :style="{
         left: tokenTooltipPosition.x + 'px',
         top: tokenTooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+      <div class="max-h-[calc(100vh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto whitespace-normal rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <div>
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.tokenDetails') }}</div>
@@ -335,7 +337,12 @@
             <span class="font-semibold text-blue-400">{{ ((tokenTooltipData?.input_tokens || 0) + (tokenTooltipData?.output_tokens || 0) + (tokenTooltipData?.cache_creation_tokens || 0) + (tokenTooltipData?.cache_read_tokens || 0)).toLocaleString() }}</span>
           </div>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div
+          class="absolute top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-t-[6px] border-b-transparent border-t-transparent"
+          :class="tokenTooltipPlacement === 'right'
+            ? 'right-full border-r-[6px] border-r-gray-900 dark:border-r-gray-800'
+            : 'left-full border-l-[6px] border-l-gray-900 dark:border-l-gray-800'"
+        ></div>
       </div>
     </div>
   </Teleport>
@@ -344,13 +351,15 @@
   <Teleport to="body">
     <div
       v-if="tooltipVisible"
-      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      ref="tooltipRef"
+      data-testid="cost-tooltip"
+      class="fixed z-[9999] pointer-events-none"
       :style="{
         left: tooltipPosition.x + 'px',
         top: tooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+      <div class="max-h-[calc(100vh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto whitespace-normal rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-gray-700 pb-1.5">
@@ -472,14 +481,19 @@
             </div>
           </template>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div
+          class="absolute top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-t-[6px] border-b-transparent border-t-transparent"
+          :class="tooltipPlacement === 'right'
+            ? 'right-full border-r-[6px] border-r-gray-900 dark:border-r-gray-800'
+            : 'left-full border-l-[6px] border-l-gray-900 dark:border-l-gray-800'"
+        ></div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
@@ -613,11 +627,15 @@ const handleBatchFetchIpGeo = async () => {
 const tooltipVisible = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipData = ref<AdminUsageLog | null>(null)
+const tooltipRef = ref<HTMLElement | null>(null)
+const tooltipPlacement = ref<'right' | 'left'>('right')
 
 // Tooltip state - token
 const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
+const tokenTooltipRef = ref<HTMLElement | null>(null)
+const tokenTooltipPlacement = ref<'right' | 'left'>('right')
 
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
@@ -655,14 +673,55 @@ const formatDuration = (ms: number | null | undefined): string => {
   return `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`
 }
 
+const clampTooltipValue = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), Math.max(min, max))
+
+/** Keep teleported detail panels inside the viewport, including the first row. */
+const placeTooltip = async (
+  anchor: DOMRect,
+  tooltip: { value: HTMLElement | null },
+  position: { value: { x: number; y: number } },
+  placement: { value: 'right' | 'left' }
+) => {
+  const gap = 8
+  const margin = 8
+  placement.value = 'right'
+  position.value = {
+    x: anchor.right + gap,
+    y: anchor.top + anchor.height / 2,
+  }
+
+  await nextTick()
+  const tooltipElement = tooltip.value
+  const tooltipRect = tooltipElement && typeof tooltipElement.getBoundingClientRect === 'function'
+    ? tooltipElement.getBoundingClientRect()
+    : null
+  if (!tooltipRect) return
+
+  const viewportWidth = typeof window === 'undefined' ? tooltipRect.right : window.innerWidth
+  const viewportHeight = typeof window === 'undefined' ? tooltipRect.bottom : window.innerHeight
+  const canFlipLeft = anchor.left - gap - tooltipRect.width >= margin
+  const rightOverflow = anchor.right + gap + tooltipRect.width > viewportWidth - margin
+  const nextPlacement = rightOverflow && canFlipLeft ? 'left' : 'right'
+  const preferredX = nextPlacement === 'left'
+    ? anchor.left - gap - tooltipRect.width
+    : anchor.right + gap
+  const preferredY = anchor.top + anchor.height / 2 - tooltipRect.height / 2
+
+  placement.value = nextPlacement
+  position.value = {
+    x: clampTooltipValue(preferredX, margin, viewportWidth - margin - tooltipRect.width),
+    y: clampTooltipValue(preferredY, margin, viewportHeight - margin - tooltipRect.height),
+  }
+}
+
 // Cost tooltip functions
 const showTooltip = (event: MouseEvent, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
   tooltipData.value = row
-  tooltipPosition.value.x = rect.right + 8
-  tooltipPosition.value.y = rect.top + rect.height / 2
   tooltipVisible.value = true
+  void placeTooltip(rect, tooltipRef, tooltipPosition, tooltipPlacement)
 }
 
 const hideTooltip = () => {
@@ -675,9 +734,8 @@ const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
   tokenTooltipData.value = row
-  tokenTooltipPosition.value.x = rect.right + 8
-  tokenTooltipPosition.value.y = rect.top + rect.height / 2
   tokenTooltipVisible.value = true
+  void placeTooltip(rect, tokenTooltipRef, tokenTooltipPosition, tokenTooltipPlacement)
 }
 
 const hideTokenTooltip = () => {

@@ -386,6 +386,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
+
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}

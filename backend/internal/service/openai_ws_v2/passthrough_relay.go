@@ -159,6 +159,7 @@ type observedUpstreamEvent struct {
 	terminal         bool
 	eventType        string
 	responseID       string
+	upstreamErr      error
 	usage            Usage
 	responseModel    string
 	responseConflict bool
@@ -895,6 +896,9 @@ func observeUpstreamMessage(
 		responseID: responseID,
 		usage:      parsedUsage,
 	}
+	if eventType == "error" {
+		observed.upstreamErr = state.recordUpstreamError(message)
+	}
 	var turnTiming *relayTurnTiming
 	if responseID != "" {
 		turnTiming = openAIWSRelayGetOrInitTurnTiming(state, responseID, now)
@@ -922,8 +926,10 @@ func observeUpstreamMessage(
 		if turnTiming, ok := openAIWSRelayDeleteTurnTiming(state, responseID); ok {
 			observed.responseModel = relayTurnResponseModel(&turnTiming)
 			observed.responseConflict = turnTiming.responseModelConflict
+			state.stateMu.Lock()
 			state.lastResponseModel = observed.responseModel
 			state.responseConflict = observed.responseConflict
+			state.stateMu.Unlock()
 			duration := now.Sub(turnTiming.startAt)
 			if duration < 0 {
 				duration = 0
@@ -1162,6 +1168,7 @@ func enrichResult(result *RelayResult, state *relayState, duration time.Duration
 		return
 	}
 	result.RequestModel = state.currentRequestModel()
+	state.stateMu.RLock()
 	result.ResponseModel = state.lastResponseModel
 	result.ResponseModelConflict = state.responseConflict
 	result.Usage = state.usage

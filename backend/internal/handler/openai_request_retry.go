@@ -35,7 +35,7 @@ func (b *openAIRequestRetryBudget) tryPoolRetry(
 	failoverErr *service.UpstreamFailoverError,
 ) bool {
 	if b == nil || account == nil || failoverErr == nil || !failoverErr.RetryableOnSameAccount ||
-		(!failoverErr.IsOpenAIModelAtCapacity() && !failoverErr.RequestScopedTransient) {
+		(!failoverErr.CanSafelyReplayRequest() && !failoverErr.RequestScopedTransient) {
 		return false
 	}
 	limit := account.GetPoolModeRetryCount()

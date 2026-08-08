@@ -692,6 +692,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
+	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
+	defer drainGuard.Stop()
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 

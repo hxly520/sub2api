@@ -326,6 +326,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		OpenAIWSMode:                  false,
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
+		ClientDisconnect:              clientDisconnected,
 	}
 	if imageCount > 0 {
 		forwardResult.ImageCount = imageCount
@@ -1503,6 +1504,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
+	}
+	if isOpenAIFailedResponseModelAtCapacity(body) {
+		message := extractOpenAISSEErrorMessage(body)
+		return nil, s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), body, message)
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {

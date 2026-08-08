@@ -498,12 +498,12 @@ export default {
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
         apiKeyHint: 'Your OpenAI API Key',
-        flattenNamespaces: 'Flatten Codex namespaces',
-        flattenNamespacesDesc:
-          'OpenAI OAuth compatibility switch. Keep disabled unless the upstream client requires flattened Responses tool namespaces.',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        upstreamRelay: 'Upstream relay mode',
+        upstreamRelayDesc:
+          'For OpenAI API-key relay upstreams only. Skips duplicate local default Codex instructions while preserving client instructions, cache/session affinity, tools, model mapping, and billing. This account option is independent of the global first-token optimization setting.',
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',

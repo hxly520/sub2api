@@ -943,6 +943,8 @@ func TestAPIContracts(t *testing.T) {
 					"openai_codex_client_version":       "",
 					"openai_codex_client_version_synced": "",
 					"openai_codex_version_auto_sync_enabled": true,
+					"openai_first_response_enabled":     false,
+					"openai_first_response_timeout_ms":  5000,
 					"openai_fast_policy_settings": {
 						"rules": []
 					},
@@ -1149,7 +1151,7 @@ func TestAPIContracts(t *testing.T) {
 					"google_oauth_frontend_redirect_url": "/auth/oauth/callback",
 					"site_name": "Sub2API",
 					"site_logo": "",
-					"site_subtitle": "API Service Management Console",
+					"site_subtitle": "Subscription to API Conversion Platform",
 					"api_base_url": "",
 					"api_key_acl_trust_forwarded_ip": false,
 					"forwarded_client_ip_headers": [],
@@ -1249,6 +1251,8 @@ func TestAPIContracts(t *testing.T) {
 					"openai_codex_client_version":       "",
 					"openai_codex_client_version_synced": "",
 					"openai_codex_version_auto_sync_enabled": true,
+					"openai_first_response_enabled":     false,
+					"openai_first_response_timeout_ms":  5000,
 					"openai_fast_policy_settings": {
 						"rules": []
 					},

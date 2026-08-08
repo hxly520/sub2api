@@ -323,7 +323,7 @@ function toUsageRow(row: LinkCardUsageLog): LinkCardUsageRow {
     card_id: row.link_card_id,
     card_key: row.masked_key || row.key_prefix,
     group_name: row.group_name || undefined,
-    input_cost: Number(row.input_cost), output_cost: Number(row.output_cost), cache_creation_cost: Number(row.cache_creation_cost), cache_read_cost: Number(row.cache_read_cost), total_cost: Number(row.total_cost), actual_cost: Number(row.actual_cost),
+    input_cost: Number(row.input_cost), output_cost: Number(row.output_cost), cache_creation_cost: Number(row.cache_creation_cost), cache_read_cost: Number(row.cache_read_cost), image_input_cost: Number(row.image_input_cost), image_output_cost: Number(row.image_output_cost), total_cost: Number(row.total_cost), actual_cost: Number(row.actual_cost),
   }
 }
 

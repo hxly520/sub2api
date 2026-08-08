@@ -170,7 +170,7 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 		}
 	}
 	requestCtx := withOpenAIAccountScheduleProfile(
-		service.WithOpenAIImageGenerationIntent(c.Request.Context()),
+		service.WithOpenAIProfitControlSuppressed(service.WithOpenAIImageGenerationIntent(c.Request.Context())),
 		c,
 		routingModel,
 	)
@@ -311,9 +311,13 @@ func (h *OpenAIGatewayHandler) handleOpenAIImageAsyncCreation(
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 
-	accountRelease, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, new(bool), reqLog)
-	if !acquired {
+	accountRelease, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, new(bool), reqLog)
+	if slotResult != openAISlotAcquireOK {
 		markMediaGenerationTaskTerminalDetached(h, apiKey.ID, state.publicTaskID, service.MediaGenerationStatusFailed, "account_slot_unavailable")
+		if slotResult == openAISlotAcquireProfitVetoed {
+			markOpsRoutingCapacityLimited(c)
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
+		}
 		return
 	}
 	writerSizeBeforeForward := c.Writer.Size()
