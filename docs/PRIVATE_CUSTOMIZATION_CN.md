@@ -209,7 +209,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，基线为 `v0.1.172`，并保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护。生产全局开关、开发名单和容器切换仍以维护者手工操作为准，不得把候选状态写成全体用户已开放。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，文档提交为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，基线为 `v0.1.172`，并保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护。候选镜像已构建并归档，生产全局开关、开发名单和容器切换仍以维护者手工操作为准，不得把候选状态写成全体用户已开放。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。

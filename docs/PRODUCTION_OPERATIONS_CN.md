@@ -101,6 +101,13 @@
 - 额度卡详情已复用原生 `UsageTable` 的 Token/缓存/图像费用、计费模式、类型、端点、延迟、请求 ID 和时间字段；刷新并发读取 `/me` 与使用记录并在成功、失败、会话过期后恢复按钮状态。费用和 Token 悬停面板改为 `body` Teleport，动态测量后在视口上下左右边界内钳制，窄屏换行并允许纵向滚动，首行不再被上方容器遮挡。
 - 验证证据：后端 `go test -p 1 ./... -count=1` 通过；前端全量 Vitest、`vue-tsc --noEmit`、生产 `vite build` 通过；额度卡/原生 `UsageTable` 定向 Vitest `26/26` 通过；桌面和 `390x844` 移动端悬停面板均无横向溢出。候选镜像仍需由后续 GitHub Actions 构建并只上传服务器归档，生产容器继续由维护者手工切换。
 
+### 0.7 2026-08-09 v0.1.172 候选镜像构建与服务器归档
+
+- GitHub Actions Cachecompat Image run `31266208097` 已成功完成，代码提交为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`；容器内 `-version` 冒烟通过，DockerHub 和 `latest` 均未发布。
+- 不可变镜像为 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`，GHCR registry digest 为 `sha256:e775f82c4c748497c422313236c9ff566aa7f0bca807d73c9499fbce9025e321`。本地归档位于仓库外 `C:\Users\Mr.O\Documents\sub2api\_build\image-7fe54f0856ee\sub2api-0.1.172-7fe54f0856ee-linux-amd64.tar`，大小 `43,584,000` bytes，SHA256 为 `b522368d46d60eefee227700dafca66f7fd839ac1b1a402c9cc1982e0ddc6e7a`，`crane validate --tarball` 通过。
+- 同一归档已上传至 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.172-7fe54f0856ee-linux-amd64.tar`，远端 SHA256 完全一致，权限 `0600 root:root`；服务器已 `docker load`，候选 image ID 为 `sha256:88c34f7a4c4c175c2baa5699a5bb2f25ad7256cfd69396f541fb2430b98dc06a`，OCI revision 与版本标签正确，候选 `-version` 冒烟通过。
+- 归档和加载前后运行容器均保持 `d028e112b509`、镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`、healthy、restart `0`、原启动时间不变；没有执行 Compose、迁移、流量切换或服务重启。候选由维护者手工决定切换窗口。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。

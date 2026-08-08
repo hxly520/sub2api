@@ -4,7 +4,7 @@
 
 > 历史生产状态（2026-08-08）：维护者当时手工运行的是 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`，`194_link_cards.sql` 已应用且用户 1 的 0.08x 资金验收完成；这段记录只描述历史运行态。
 
-> 当前源码候选状态：私有分支 `codex/final-v0.1.172-compat` 的代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，已兼容官方 `v0.1.172` 与 `upstream/main=cc67b1aca`，`backend/cmd/server/VERSION=0.1.172`。额度卡公共会话 404 修复、Redis fail-close 激活保护、原生使用记录复刻、刷新并发收口和首行悬停视口保护已纳入候选；候选镜像尚未自动替换 Sub2API 生产容器，必须由维护者手工切换。
+> 当前源码候选状态：私有分支 `codex/final-v0.1.172-compat` 的代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，文档提交为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，已兼容官方 `v0.1.172` 与 `upstream/main=cc67b1aca`，`backend/cmd/server/VERSION=0.1.172`。额度卡公共会话 404 修复、Redis fail-close 激活保护、原生使用记录复刻、刷新并发收口和首行悬停视口保护已纳入候选；候选镜像已由 GitHub Actions 构建并归档到服务器缓存，尚未替换 Sub2API 生产容器，必须由维护者手工切换。
 
 ## 1. 产品边界
 
