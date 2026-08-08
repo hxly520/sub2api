@@ -6,6 +6,8 @@
 
 > 当前源码候选状态：私有分支 `codex/final-v0.1.172-compat` 的代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，文档提交为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，已兼容官方 `v0.1.172` 与 `upstream/main=cc67b1aca`，`backend/cmd/server/VERSION=0.1.172`。额度卡公共会话 404 修复、Redis fail-close 激活保护、原生使用记录复刻、刷新并发收口和首行悬停视口保护已纳入候选；候选镜像已由 GitHub Actions 构建并归档到服务器缓存，尚未替换 Sub2API 生产容器，必须由维护者手工切换。
 
+> 当前生产状态（2026-08-09）：维护者已手工切换 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`。提链门禁已正式开放全体已认证注册用户：`link_cards_enabled=true`、`link_cards_development_mode=false`；开发名单 `[1]` 与旧兼容键 `link_cards_rollout_user_id=1` 仅作休眠回滚值保留，不构成用户限制。完整只读验收、活动卡资金基线和回滚目录见 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节。
+
 ## 1. 产品边界
 
 提链 Key 是存放在 Sub2API `api_keys` 表中的预充值 API Key。创建者仍是已注册用户，但下游使用者不需要注册 Sub2API 账号：创建者先从自己的 Sub2API 余额中划出金额创建 Key，下游在额度卡中心用完整 Key 激活后，直接调用现有 Sub2API 网关。
@@ -30,14 +32,14 @@
 
 ## 2. 灰度与功能开关
 
-候选默认设置必须保持：
+开发候选默认设置（仅适用于未完成正式验收的候选环境）必须保持：
 
 - `link_cards_enabled=false`：全体用户功能关闭。
 - `link_cards_development_mode=true`。
 - `link_cards_development_user_ids=[1]`，兼容单值 `link_cards_rollout_user_id=1`。
 - 管理员控制台不受普通用户开关限制，但仍必须经过管理员认证和合规门禁。
 - 开关关闭时，只有开发名单中的用户可以看到菜单、通过前端路由守卫并调用用户或公共接口；其余用户的菜单、直接路由和手工 API 请求都必须在服务端失败关闭。
-- 未经真实验收不得把 `link_cards_enabled` 改为 `true`，不得扩大开发名单，也不得把名单下发给浏览器。
+- 正式生产已经完成真实验收并开启全局开关；后续升级不得把当前生产状态误写回候选灰度。若需回滚，先将 `link_cards_enabled=false`、`link_cards_development_mode=false`，再按生产运维文档处理已发行 Key 的冻结和资金对账。开发名单只保存在服务端，不能下发浏览器。
 
 功能开关不是安全边界的替代品。每个读取和写入接口都必须重新检查当前用户或 Key 创建者是否仍在允许范围；公共激活也必须在修改 Key 状态前完成同一检查。
 

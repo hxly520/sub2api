@@ -108,6 +108,14 @@
 - 同一归档已上传至 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.172-7fe54f0856ee-linux-amd64.tar`，远端 SHA256 完全一致，权限 `0600 root:root`；服务器已 `docker load`，候选 image ID 为 `sha256:88c34f7a4c4c175c2baa5699a5bb2f25ad7256cfd69396f541fb2430b98dc06a`，OCI revision 与版本标签正确，候选 `-version` 冒烟通过。
 - 归档和加载前后运行容器均保持 `d028e112b509`、镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`、healthy、restart `0`、原启动时间不变；没有执行 Compose、迁移、流量切换或服务重启。候选由维护者手工决定切换窗口。
 
+### 0.8 2026-08-09 v0.1.172 手工切换与提链全用户正式开放
+
+- 维护者已手工切换 Sub2API 到不可变镜像 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`，运行容器为 `6aef5ed35699...`，OCI revision 为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，启动时间 `2026-08-09 00:33:11 CST`；当前 `healthy`、restart count `0`。PostgreSQL、Redis、积分服务和生图工作台未重启或替换。
+- `194_link_cards.sql` 已在生产数据库应用；本次只在 `settings` 表事务内更新提链门禁：`link_cards_enabled=true`、`link_cards_development_mode=false`。开发名单 `[1]` 与旧兼容键 `link_cards_rollout_user_id=1` 仅作为休眠回滚值保留，在正式模式下不参与授权判断，因此不再限制用户 ID 1，所有已认证且状态正常的注册用户均可访问提链中心。回滚 SQL 与变更前设置快照保存在服务器 root-only 目录 `/root/sub2api-rollbacks/link-cards-global-20260809-005913`。
+- 全用户只读验收：非 ID 1 用户 `2` 的 `/auth/me`、`/link-cards/access`、`/settings`、`/groups`、`/cards?page=1&page_size=10`、`/usage?page=1&page_size=10` 均为 `200`，access 为 `enabled=true、allowed=true、development_mode=false`；用户 1 access 及管理员 settings/groups/cards/usage 均为 `200`。未认证提链 access 仍为 `401`。
+- 真实网关验收：活动提链 Key `api_keys.id=161` 请求 `/v1/models` 返回 `200`（3 个模型）。验收前后该卡仍为 `active`，发行金额 `10.00000000`、退款 `0`、在途预留 `0`；全站提链资金负数计数为 `0`，在途预留合计为 `0`。API `/health=200`，额度卡 `/card=200`，`/login` 继续 `302` 到 `/card`。
+- 重要边界：开启用户中心门禁不会停止已激活提链 Key 的网关请求；网关仍按 Key 状态、原生用户/分组权限、并发、RPM、额度和原生计费链路控制。若需紧急停止已发行 Key，必须在管理员控制台冻结 Key 或撤销授权分组后再对账，不能只依赖入口开关。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
@@ -116,7 +124,7 @@
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
-- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前已按第 0.5 节部署但仍保持全局关闭和用户 1 开发灰度，不能写成全体用户已开放。
+- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前生产状态与全用户正式开放证据以第 0.8 节为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
