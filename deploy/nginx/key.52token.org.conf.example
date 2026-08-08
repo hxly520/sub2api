@@ -42,6 +42,10 @@ server {
         return 302 /card;
     }
 
+    # Defense in depth for stale frontend bundles or expired public sessions.
+    # The quota-card host intentionally has no Sub2API login surface.
+    location = /login { return 302 /card; }
+
     location ~ ^/(card|link-card|quota-card)$ {
         limit_except GET { deny all; }
         include /etc/nginx/snippets/sub2api-key-proxy.inc;

@@ -16,6 +16,10 @@ import { refreshAuthTokens } from './tokenRefresh'
 import { getAPIBaseURL } from './url'
 export { buildApiUrl, buildGatewayUrl } from './url'
 
+function isPublicLinkCardEndpoint(value: string): boolean {
+  return /(?:^|\/)public\/link-cards(?:\/|$)/.test(value.split('?', 1)[0])
+}
+
 // ==================== Axios Instance Configuration ====================
 
 export const apiClient: AxiosInstance = axios.create({
@@ -40,9 +44,10 @@ const getUserTimezone = (): string => {
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const requestURL = String(config.url || '')
     // Attach token from localStorage
     const token = localStorage.getItem('auth_token')
-    if (token && config.headers) {
+    if (token && config.headers && !isPublicLinkCardEndpoint(requestURL)) {
       config.headers.Authorization = `Bearer ${token}`
     }
 
@@ -60,7 +65,6 @@ apiClient.interceptors.request.use(
     }
 
     if (config.headers) {
-      const requestURL = String(config.url || '')
       if (shouldMarkAdminUIRequest(requestURL)) {
         config.headers[ADMIN_UI_REQUEST_HEADER] = '1'
       }
@@ -116,6 +120,19 @@ apiClient.interceptors.response.use(
 
       // Validate `data` shape to avoid HTML error pages breaking our error handling.
       const apiData = (typeof data === 'object' && data !== null ? data : {}) as Record<string, any>
+
+      // Quota-card sessions are anonymous and independent from Sub2API login.
+      // An expired X-Link-Card-Session must return to the Key entry view rather
+      // than refreshing auth tokens or redirecting key.52token.org to /login.
+      if (status === 401 && isPublicLinkCardEndpoint(url)) {
+        return Promise.reject({
+          status,
+          code: apiData.code,
+          reason: apiData.reason,
+          message: apiData.message || apiData.detail || error.message,
+          metadata: apiData.metadata,
+        })
+      }
 
       // Ops monitoring disabled: treat as feature-flagged 404, and proactively redirect away
       // from ops pages to avoid broken UI states.

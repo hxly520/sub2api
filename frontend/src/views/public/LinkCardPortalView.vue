@@ -316,7 +316,20 @@ async function activateCard(): Promise<void> {
     sessionStorage.setItem(SESSION_KEY, result.session_token)
     keyInput.value = ''
     await loadProfile()
-  } catch { activationError.value = t('linkCards.activationFailed') } finally { activating.value = false }
+  } catch (error) { activationError.value = activationFailureMessage(error) } finally { activating.value = false }
+}
+
+function activationFailureMessage(error: unknown): string {
+  const payload = error && typeof error === 'object' ? error as Record<string, unknown> : {}
+  if (payload.reason !== 'LINK_CARD_ACTIVATION_LOCKED' && payload.status !== 429) {
+    return t('linkCards.activationFailed')
+  }
+  const metadata = payload.metadata && typeof payload.metadata === 'object'
+    ? payload.metadata as Record<string, unknown>
+    : {}
+  const retryAfter = Number(metadata.retry_after_seconds)
+  const minutes = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter / 60) : 5
+  return t('linkCards.activationLocked', { minutes })
 }
 
 async function loadProfile(): Promise<void> {

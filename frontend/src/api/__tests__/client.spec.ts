@@ -74,6 +74,22 @@ describe('API Client', () => {
       expect(config.headers.get('Authorization')).toBeFalsy()
     })
 
+    it('额度卡公共接口不携带 Sub2API 登录令牌', async () => {
+      localStorage.setItem('auth_token', 'dashboard-token')
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.get('/public/link-cards/me')
+
+      expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBeFalsy()
+    })
+
     it('GET 请求自动附加 timezone 参数', async () => {
       const adapter = vi.fn().mockResolvedValue({
         status: 200,
@@ -310,6 +326,41 @@ describe('API Client', () => {
   // --- 401 Token 刷新 ---
 
   describe('401 Token 刷新', () => {
+    it('额度卡短期会话过期时不跳转登录页或清除 Sub2API 登录态', async () => {
+      localStorage.setItem('auth_token', 'dashboard-token')
+      localStorage.setItem('refresh_token', 'dashboard-refresh')
+      window.history.replaceState({}, '', '/card')
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: {
+            code: 401,
+            reason: 'LINK_CARD_SESSION_INVALID',
+            message: 'link card session is invalid or expired',
+          },
+        },
+        config: {
+          url: '/public/link-cards/me',
+          headers: { 'X-Link-Card-Session': 'expired-session' },
+        },
+        code: 'ERR_BAD_REQUEST',
+        message: 'Request failed with status code 401',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.get('/public/link-cards/me')).rejects.toEqual(
+        expect.objectContaining({
+          status: 401,
+          reason: 'LINK_CARD_SESSION_INVALID',
+        })
+      )
+
+      expect(window.location.pathname).toBe('/card')
+      expect(localStorage.getItem('auth_token')).toBe('dashboard-token')
+      expect(localStorage.getItem('refresh_token')).toBe('dashboard-refresh')
+      expect(sessionStorage.getItem('auth_expired')).toBeNull()
+    })
+
     it('无 refresh_token 时 401 清除 localStorage', async () => {
       localStorage.setItem('auth_token', 'expired-token')
       // 不设置 refresh_token

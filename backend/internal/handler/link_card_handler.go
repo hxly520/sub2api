@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -180,9 +181,13 @@ func (h *LinkCardHandler) Activate(c *gin.Context) {
 		return
 	}
 	result, err := h.service.Activate(c.Request.Context(), body.Key)
+	if errors.Is(err, service.ErrLinkCardNotFound) && middleware2.HandleLinkCardActivationFailure(c) {
+		return
+	}
 	if response.ErrorFrom(c, err) {
 		return
 	}
+	middleware2.ResetLinkCardActivationFailures(c)
 	response.Success(c, result)
 }
 func (h *LinkCardHandler) PublicProfile(c *gin.Context) {

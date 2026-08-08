@@ -540,6 +540,26 @@ func stripOpenAILegacyResponsesBeta(headers http.Header) {
 	}
 }
 
+func isolateOpenAIAPIKeyRequestSessionHeaders(req *http.Request, apiKeyID int64, promptCacheKey string) {
+	if req == nil {
+		return
+	}
+	clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
+	clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
+	req.Header.Del("session_id")
+	req.Header.Del("conversation_id")
+
+	if clientSessionID == "" {
+		clientSessionID = strings.TrimSpace(promptCacheKey)
+	}
+	if clientSessionID != "" {
+		req.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, clientSessionID)))
+	}
+	if clientConversationID != "" {
+		req.Header.Set("conversation_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, clientConversationID)))
+	}
+}
+
 func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte) bool {
 	if isOpenAIContextWindowError("", responseBody) {
 		return false

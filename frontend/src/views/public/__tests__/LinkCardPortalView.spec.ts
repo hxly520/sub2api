@@ -163,6 +163,22 @@ describe('LinkCardPortalView', () => {
     expect(wrapper.text()).toContain('linkCards.invalidKey')
   })
 
+  it('keeps the activation page visible when the backend locks invalid attempts', async () => {
+    activate.mockRejectedValueOnce({
+      status: 429,
+      reason: 'LINK_CARD_ACTIVATION_LOCKED',
+      metadata: { retry_after_seconds: '300' },
+    })
+    const wrapper = mount(LinkCardPortalView, { global: { stubs: { Icon: true } } })
+    await wrapper.get('#quota-card-key').setValue(fullKey)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('linkCards.activationLocked')
+    expect(wrapper.find('#quota-card-key').exists()).toBe(true)
+    expect(getMe).not.toHaveBeenCalled()
+  })
+
   it('restores a short-lived details session and copies the exact Key', async () => {
     sessionStorage.setItem('link_card_portal_session', 'saved-session')
     const wrapper = mount(LinkCardPortalView, { global: { stubs: { Icon: true } } })

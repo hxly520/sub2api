@@ -108,6 +108,7 @@ export default {
     activating: '正在验证',
     invalidKey: '请输入完整有效的额度卡 Key',
     activationFailed: 'Key 无效、已被销毁或暂不可用',
+    activationLocked: '错误次数过多，请在 {minutes} 分钟后重试',
     sessionExpired: '会话已失效，请重新输入 Key',
     clearSession: '查询其他 Key',
     availableBalance: '可用额度',
