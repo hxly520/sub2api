@@ -569,6 +569,8 @@ export default {
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
         apiKeyHint: '您的 OpenAI API Key',
+        flattenNamespaces: '摊平 Codex namespace',
+        flattenNamespacesDesc: 'OpenAI OAuth 兼容开关，仅在上游客户端要求摊平 Responses 工具 namespace 时开启。',
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',

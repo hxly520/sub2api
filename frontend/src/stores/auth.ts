@@ -5,13 +5,19 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
-import { authAPI, isTotp2FARequired, passkeyAPI, type LoginResponse } from '@/api'
+import {
+  authAPI,
+  getPointsUserAccess,
+  isTotp2FARequired,
+  passkeyAPI,
+  type LoginResponse,
+} from '@/api'
 import type {
+  ActionCaptchaRequestProof,
   User,
   LoginRequest,
   RegisterRequest,
   AuthResponse,
-  ActionCaptchaRequestProof
 } from '@/types'
 
 const AUTH_TOKEN_KEY = 'auth_token'

@@ -177,6 +177,12 @@ type activateLinkCardBody struct {
 func (h *LinkCardHandler) Activate(c *gin.Context) {
 	var body activateLinkCardBody
 	if err := c.ShouldBindJSON(&body); err != nil {
+		// Treat malformed or missing credentials as activation failures too. This
+		// keeps the public endpoint's brute-force guard effective when a caller
+		// tries to bypass it with an empty body or a different JSON shape.
+		if middleware2.HandleLinkCardActivationFailure(c) {
+			return
+		}
 		response.BadRequest(c, "invalid key")
 		return
 	}

@@ -15,11 +15,12 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库候选基线：官方 Release `v0.1.169`（release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`）及其后的私有兼容提交，`backend/cmd/server/VERSION=0.1.169`。本轮只合入该已发布 tag，不合入 tag 之后的官方 `main`。媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护和跨协议终态校验均属于必须保留的二开。
+- 当前仓库候选基线：官方 `v0.1.172` 及官方标签后的 `upstream/main=cc67b1aca` 热修复，`backend/cmd/server/VERSION=0.1.172`。私有兼容分支为 `codex/upgrade-v0.1.172-compat`；最近一次兼容合并提交为 `35c73a669`，额度卡公共会话/防爆破修复提交为 `d8e380220`。本轮保留媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选未自动替换生产。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
+- 官方升级补丁记录：`68d8f122e` 同步版本号至 `0.1.172`，`8ad0a5ff5` 将 `nanoid` 升至 `3.3.17`，`cc67b1aca` 合入 OAuth 路由提示修复。官方 `194_add_usage_log_upstream_response_model.sql`、私有 `194_link_cards.sql` 和官方 `195_add_usage_log_upstream_model_mismatch_index_notx.sql` 按完整文件名独立迁移，不能按数字前缀覆盖。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
 私有主线谱系：
@@ -208,7 +209,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。截至 `2026-08-08`，维护者已手工切换到 UI 修复提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 对应的不可变镜像 `0.1.169-b3e230220a9d`；用户 1 的 0.08x 真实资金验收及切换后只读验收已完成，证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。生产全局开关继续关闭，开发名单仅 `[1]`，不得写成全体用户已开放。仓库 `main` 已到 `d591b4122`，该提交及工作树中的教程增强仍是未构建、未部署候选。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选已升级到 `v0.1.172`，并新增公共会话 404 修复和激活防爆破保护。生产全局开关、开发名单和容器切换仍以维护者手工操作为准，不得把候选状态写成全体用户已开放。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。
@@ -219,6 +220,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 提链调用不得二次扣创建者余额。文本请求完全沿用 Sub2API 原生后扣时序：准入时可用额度必须严格大于零，提链 `quota=0` 不能解释为不限额；已经准入的最后一笔或并发请求允许在结算后形成欠费，但必须完整记录实际费用，随后立即禁用 Key 并拒绝新请求；图片、视频和批量生图继续使用请求前额度预留。网关按每张 Key 独立执行并发、RPM 与幂等结算，计费仓库异常必须失败关闭，不能回退到普通余额扣款。
 - 用户、管理员和公共使用记录复用 Sub2API Token、缓存、费用、类型、流式、延迟和首 Token 字段，默认每页 10 条；普通/公共响应只展示 1x 费用，不泄露创建者、内部倍率或实际资金字段。
 - 主要入口：`backend/internal/service/link_card.go`、`repository/link_card_repo.go`、`repository/usage_billing_repo.go`、`server/routes/link_cards.go`、`frontend/src/api/linkCards.ts`、三端 `LinkCard*View.vue` 与迁移 `194_link_cards.sql`。
+- 公共页面 404 修复：额度卡短期会话过期时，`/api/v1/public/link-cards/*` 的 401 只由额度卡页面处理，不进入 Sub2API 登录 token 刷新或 `/login` 跳转；Nginx 对遗留 `/login` 做防御性 `302 /card`，因此 `key.52token.org` 不再落到不存在的登录页。公共接口请求不携带 Sub2API `Authorization`，继续使用 `X-Link-Card-Session`。
+- 激活防爆破：激活入口先按可信客户端 IP 做 Redis 共享的每分钟 30 次 fail-close 限流；只有明确的 `ErrLinkCardNotFound` 才计入连续错误，达到第 10 次立即锁定 5 分钟，Redis 保存截断 SHA-256 IP 键而不是完整 Key。成功激活清零连续错误，Redis 不可用时返回 `503` 并关闭激活入口；锁定响应带 `Retry-After`，前端留在 Key 输入页。
 
 ### 3.8 支付扩展
 
@@ -270,7 +273,14 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.169 合并兼容结论
+### 5.0 v0.1.172 当前合并兼容结论
+
+- 官方基线为 tag `v0.1.172`，并继续合入 `upstream/main=cc67b1aca` 的版本、依赖安全和 OpenAI 路由提示修复；源码版本固定为 `0.1.172`。合并采用官方非冲突变更加私有冲突段兼容移植，重新生成 Ent/Wire，不覆盖额度卡、积分、媒体和首页功能。
+- 关键兼容点包括 `FailoverState` 同时保留媒体非幂等重放边界与官方利润门状态、Responses/Chat/Anthropic/Gemini/WS 的请求级定价时间、媒体端点利润门豁免、OpenAI 上游响应模型审计，以及官方 Codex 路由提示。公共额度卡 404 和 Redis fail-close 激活保护作为独立私有中间件保留。
+- 迁移 runner 按完整 filename 和 checksum 识别迁移；生产已有私有 `194_link_cards.sql` 不改名、不重编号、不改 checksum，官方同号 `194/195` 缺失部分独立追加。回归测试位于 `backend/internal/repository/migrations_runner_notx_test.go`。
+- 本地验证门禁：`go test ./... -run '^$'`、额度卡激活限流测试、额度卡 API/页面 Vitest 定向测试均通过；前端全量和镜像构建须在推送 `main` 后继续执行。GitHub Actions 只发布带版本和 commit 的候选镜像，Sub2API 服务器容器不由自动化切换。
+
+### 5.1 v0.1.169 历史合并兼容结论
 
 - 合并提交 `3da18b9dd2d0ecc890a5605a4d1cf97093a8659e` 只合入官方 `v0.1.169` Release commit `26d894ef4f50645a4bf1030e378ac892f17d0223`。冲突仅涉及可用渠道复合分组测试和 OpenAI 账号调度器：复合分组保留官方测试与私有可见模型/隐私边界；调度器采用官方带 context 的代理熔断 fail-open，同时保留私有模型级运行时阻断、sticky/画像选择和单候选降级逻辑。
 - 官方新增 Gemini/xAI 上游路径片段校验、Responses 子路径守卫、代理流熔断事件折叠与无候选 fail-open、容器 `no-new-privileges`、运行时价格资源 fallback、邮件正文处理、订阅配额显示修正及安全审计更新。Compose 中的积分环境变量、非 root 运行、私有迁移和媒体配置均保留。
@@ -279,7 +289,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 私有媒体冻结和核销、精确容量拒绝重试、Responses/Chat/Anthropic/Gemini/WS 正式终态、积分同库隔离、登录邮箱展示与软删除会话失效、管理员/用户双工作区、未登录首页和上传 Logo 均不得被官方更新覆盖。签到当前仅通过独立 `preview` 门禁向用户 1 灰度，禁止借由积分中心全体开放而扩大签到范围；历史积分作业不得重跑。
 - 合并后的后端 unit/default 全量测试、`go vet`、`go build`，积分服务 test/vet/build，前端 ESLint/typecheck/全量 Vitest/production build 均已通过。本轮 GitHub 镜像工作流因账户计费门禁未获得 runner，已按受控本机构建回退完成镜像层内容、revision、SHA256、GHCR digest、服务器 `docker load` 和隔离冒烟；后续发布仍优先使用 GitHub 工作流，runner 不可用时必须沿用同等校验的受控回退流程并记录不可变 digest。
 
-### 5.0.1 v0.1.168 历史合并结论
+### 5.2 v0.1.168 历史合并结论
 
 - 合并提交 `d30c42da` 只合入官方 `v0.1.168` Release tree，不合入 tag 之后的未发布 `main`；其后私有提交 `9f1b6bae`、`e4179147`、`55ac503b`、`d83ea1bb`、`7e598fbb` 分别承载媒体核销、积分、同库部署、跨平台测试稳定性和未登录首页。官方新增 Passkey、模型广场、OpenAI Live、Kimi K3、账号/API Key 声明列更新和多项协议、计费及安全审计修复。
 - 冲突处理以官方结构和行为为主，同时保留私有 Codex APIKey-only 合法空清单兜底、当前 TTFT 口径、协议/缓存兼容、媒体余额预留与核销、统一视频接口、平台代理 URL、KeyingPay V2、Q 群入口和可用渠道展示。

@@ -630,6 +630,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						streamStarted = true
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
+					if retryBudget.tryPoolRetry(c.Request.Context(), reqLog, account, failoverErr) {
+						continue
+					}
 					if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						reqLog.Warn("openai.automatic_replay_suppressed",
@@ -1858,6 +1861,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 		h.releaseOpenAIFailedPoolStickySession(c, reqLog, apiKey.GroupID, sessionHash, account)
 		releaseAccountSlot()
+		if retryBudget.tryPoolRetry(ctx, reqLog, account, failoverErr) {
+			return ensureUserSlotHeld()
+		}
 		if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 			reqLog.Warn("openai.websocket_automatic_replay_suppressed",
 				zap.Int64("account_id", account.ID),

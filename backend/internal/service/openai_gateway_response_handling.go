@@ -1212,6 +1212,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	// Capture the raw upstream model before any client-facing model rewrite or
+	// SSE/compact conversion. Direct service callers may not have initialized
+	// the request-scoped observer, so create it lazily here as well.
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -1220,6 +1223,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		observeOpenAISSEBody(observer, string(body))
 	} else {
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
+	}
+	if isOpenAIFailedResponseModelAtCapacity(body) {
+		message := extractOpenAISSEErrorMessage(body)
+		return nil, s.newOpenAIStreamFailoverError(c, account, false, resp.Header.Get("x-request-id"), body, message)
 	}
 
 	// Detect SSE responses for ALL account types via Content-Type header.
@@ -1478,11 +1485,25 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		return payload, false
 	}
 	updated := payload
-	// 容量降载码对 Codex CLI 是致命错误；事件既然要写给客户端（failover 已不可用），
-	// 就改写为客户端可重试的错误码。error 帧与 response.failed 都要改：上游降载
-	// 总是先推 error 帧再收 failed，两帧携带同一个错误。
+	// Capacity-shed codes are fatal to Codex clients. Once an error event must
+	// be forwarded, rewrite only those codes so the client can apply backoff.
 	if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
 		updated = rewritten
+	}
+	for _, path := range []string{"response.error.message", "error.message", "message"} {
+		message := gjson.GetBytes(updated, path)
+		if message.Type != gjson.String {
+			continue
+		}
+		clientMessage := sanitizeClientUpstreamErrorMessage(message.String())
+		if clientMessage == message.String() {
+			continue
+		}
+		next, err := sjson.SetBytes(updated, path, clientMessage)
+		if err != nil {
+			return payload, false
+		}
+		updated = next
 	}
 	if !isFailedEvent {
 		return updated, !bytes.Equal(updated, payload)

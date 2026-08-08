@@ -21,6 +21,43 @@ type openAIRequestRetryBudget struct {
 	modelCapacityRetries            int
 	modelCapacitySelectionPending   bool
 	modelCapacityCandidateReuseUsed bool
+	poolRetryCounts                 map[int64]int
+}
+
+// tryPoolRetry preserves the account-local retry contract for explicit,
+// pre-generation upstream rejections. It is separate from the cross-account
+// replay budget because retrying the same account does not consume an account
+// switch and must remain bounded by that account's own setting.
+func (b *openAIRequestRetryBudget) tryPoolRetry(
+	ctx context.Context,
+	logger *zap.Logger,
+	account *service.Account,
+	failoverErr *service.UpstreamFailoverError,
+) bool {
+	if b == nil || account == nil || failoverErr == nil || !failoverErr.RetryableOnSameAccount ||
+		(!failoverErr.IsOpenAIModelAtCapacity() && !failoverErr.RequestScopedTransient) {
+		return false
+	}
+	limit := account.GetPoolModeRetryCount()
+	if limit <= 0 {
+		return false
+	}
+	if b.poolRetryCounts == nil {
+		b.poolRetryCounts = make(map[int64]int)
+	}
+	if b.poolRetryCounts[account.ID] >= limit {
+		return false
+	}
+	b.poolRetryCounts[account.ID]++
+	if logger != nil {
+		logger.Warn("openai.pool_mode_retry",
+			zap.Int64("account_id", account.ID),
+			zap.Int("upstream_status", failoverErr.StatusCode),
+			zap.Int("retry_count", b.poolRetryCounts[account.ID]),
+			zap.Int("retry_limit", limit),
+		)
+	}
+	return sleepWithContext(ctx, sameAccountRetryDelay)
 }
 
 func (b *openAIRequestRetryBudget) tryConsumeIfAllowed(allowed bool, account *service.Account, failoverErr *service.UpstreamFailoverError) bool {

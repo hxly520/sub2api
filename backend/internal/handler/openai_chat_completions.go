@@ -314,6 +314,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					h.reportOpenAIAccountFailoverScheduleResult(c, account, reqModel, failoverErr)
+					if retryBudget.tryPoolRetry(c.Request.Context(), reqLog, account, failoverErr) {
+						continue
+					}
 					if !retryBudget.tryConsumeIfAllowed(!imageIntent, account, failoverErr) {
 						h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 						reqLog.Warn("openai_chat_completions.automatic_replay_suppressed",

@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { getLinkCardAccess } from '@/api/linkCards'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
+import { resolveLinkCardPortalRedirect } from './linkCardPortal'
 import { resolveRouteDocumentTitle } from './title'
 
 /**
@@ -201,7 +202,7 @@ const routes: RouteRecordRaw[] = [
   // ==================== User Routes ====================
   {
     path: '/',
-    redirect: () => window.location.hostname === 'key.52token.org' ? '/card' : '/home'
+    redirect: () => resolveLinkCardPortalRedirect(window.location.hostname, '/') || '/home'
   },
   {
     path: '/dashboard',
@@ -827,6 +828,12 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
 router.beforeEach(async (to, _from, next) => {
   // 开始导航加载状态
   navigationLoading.startNavigation()
+
+  const portalRedirect = resolveLinkCardPortalRedirect(window.location.hostname, to.path)
+  if (portalRedirect) {
+    next(portalRedirect)
+    return
+  }
 
   const authStore = useAuthStore()
 

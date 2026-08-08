@@ -202,6 +202,35 @@ func TestOpenAIRequestRetryBudget_ModelCapacityWritesStructuredRetryLog(t *testi
 	require.NotContains(t, fields, "response_body")
 }
 
+func TestOpenAIRequestRetryBudget_PoolRetryOnlyHandlesCapacityRejections(t *testing.T) {
+	account := &service.Account{
+		ID:       9,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode": true,
+			"pool_mode_retry_count": 1,
+		},
+	}
+
+	capacity := &service.UpstreamFailoverError{
+		StatusCode:             http.StatusBadGateway,
+		Reason:                 service.GatewayFailureReason("openai_model_at_capacity"),
+		NextAccountAction:      service.NextAccountRetry,
+		RetryableOnSameAccount: true,
+	}
+	genericTransient := &service.UpstreamFailoverError{
+		StatusCode:             http.StatusBadGateway,
+		NextAccountAction:      service.NextAccountRetry,
+		RetryableOnSameAccount: true,
+	}
+
+	budget := openAIRequestRetryBudget{}
+	require.True(t, budget.tryPoolRetry(context.Background(), nil, account, capacity))
+	require.False(t, budget.tryPoolRetry(context.Background(), nil, account, capacity))
+	require.False(t, budget.tryPoolRetry(context.Background(), nil, account, genericTransient))
+}
+
 func TestOpenAIRequestRetryBudget_NonExactServiceUnavailableRemainsUnsafe(t *testing.T) {
 	budget := openAIRequestRetryBudget{}
 	account := &service.Account{ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}

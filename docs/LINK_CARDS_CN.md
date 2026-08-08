@@ -2,7 +2,9 @@
 
 本文记录私有 Sub2API 的“提链/额度卡中心”产品、数据、计费、安全和升级契约，供后续官方版本兼容合并与生产交接使用。本文不保存真实 API Key、用户余额、数据库连接、会话令牌或服务器凭据。
 
-> 状态说明：截至 `2026-08-08`，维护者已手工把生产 Sub2API 切换到私有 `main` 提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 对应的不可变镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`。容器 healthy、restart count `0`；`194_link_cards.sql` 已按固定 checksum 进入生产。用户 1 的 0.08x 创建、激活、充值、冻结/解冻、退款和账本对账已完成；临时授权已撤销，3 个测试 Key 全部 `refunded`，活动提链 Key 为 `0`。全局开关仍为关闭，开发名单仅 `[1]`，没有开放全体用户。完整证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。仓库 `main` 当前已到 `d591b4122`，该提交及工作树中的公共接入教程增强仍是未构建、未部署的候选变更，不得写成生产现状。
+> 历史生产状态（2026-08-08）：维护者当时手工运行的是 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`，`194_link_cards.sql` 已应用且用户 1 的 0.08x 资金验收完成；这段记录只描述历史运行态。
+
+> 当前源码候选状态：私有分支 `codex/upgrade-v0.1.172-compat` 已兼容官方 `v0.1.172` 与 `upstream/main=cc67b1aca`，`backend/cmd/server/VERSION=0.1.172`。额度卡公共会话 404 修复、Redis fail-close 激活保护和公共页面安全测试已纳入候选；候选镜像尚未自动替换 Sub2API 生产容器，必须由维护者手工切换。
 
 ## 1. 产品边界
 
@@ -68,6 +70,8 @@
 - `GET /me`
 - `GET /usage`
 
+公共安全约束：激活接口按可信客户端 IP 共享 Redis 限制每分钟 30 次，只有明确的未知 Key 错误计入连续失败；第 10 次连续失败锁定 5 分钟并返回 `Retry-After`。成功激活清零错误计数，Redis 故障时 fail-close 返回 `503`。公共接口不带 Sub2API 登录 `Authorization`，短期会话过期的 401 由额度卡页面回到 Key 输入页，不跳转不存在的 `/login`。
+
 公共激活只接受完整 Key。激活成功响应仍只返回脱敏 Key和短期会话令牌；后续资料和记录请求使用 `X-Link-Card-Session`，不得在 URL、查询参数或日志中传递完整 Key。为了支持用户在详情页恢复并复制当前提链 Key，只有通过有效短期会话访问 `GET /me` 时，响应顶层才返回该卡完整 Key；该响应必须强制 `Cache-Control: private, no-store`，页面只显示脱敏值，复制按钮读取完整值。公共资料仍不得返回创建者 ID、邮箱、发行倍率、实际预充值金额或内部资金字段。
 
 ### 3.2 主要代码入口
@@ -78,6 +82,8 @@
 - 网关鉴权与计费：`backend/internal/server/middleware/api_key_auth.go`、`backend/internal/service/gateway_usage_billing.go`、`backend/internal/repository/usage_billing_repo.go`、`backend/internal/service/openai_gateway_usage.go`。
 - 路由与 Handler：`backend/internal/server/routes/link_cards.go`、`routes/user.go`、`routes/admin.go`、`backend/internal/handler/link_card_handler.go`、`handler/admin/link_card_handler.go`。
 - 前端：`frontend/src/api/linkCards.ts`、`views/user/LinkCardsView.vue`、`views/admin/LinkCardsConsoleView.vue`、`views/public/LinkCardPortalView.vue`、`components/link-cards/`。
+
+升级时必须同时保留 `frontend/src/api/client.ts` 的公共会话拦截规则、`backend/internal/server/middleware/link_card_activation_limiter.go` 的 Redis 防爆破中间件和 `deploy/nginx/key.52token.org.conf.example` 的 `/login -> /card` 防御性重定向；删除任一项都会复现额度卡 404 或降低激活安全性。
 
 普通 `/api/v1/keys` 页面、查询和更新必须固定只处理 `key_type=standard`。提链 Key 只能通过本节专用接口管理，官方升级不得因 API Key 仓库或 Ent 查询重构而重新混入原 Key 列表。
 
