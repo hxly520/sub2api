@@ -55,27 +55,22 @@
           </article>
         </div>
 
-        <section class="tech-panel mb-5 flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5" data-testid="link-card-key-panel">
-          <div class="min-w-0">
-            <p class="text-xs font-medium text-zinc-500">{{ t('linkCards.cardKey') }}</p>
-            <code class="mt-1 block truncate font-mono text-sm text-zinc-200" :title="profile.card.masked_key">{{ profile.card.masked_key }}</code>
-          </div>
-          <button
-            type="button"
-            class="tech-button inline-flex shrink-0 items-center justify-center gap-2"
-            data-testid="copy-link-card-key"
-            :title="t('linkCards.copyFullKey')"
-            :aria-label="t('linkCards.copyFullKey')"
-            @click="copyCardKey"
-          >
-            <Icon name="copy" size="sm" />
-            {{ t('linkCards.copy') }}
-          </button>
-        </section>
-
         <section class="tech-panel overflow-hidden">
           <div class="flex flex-col gap-2 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div><h2 class="text-sm font-semibold text-white">{{ t('linkCards.usage') }}</h2><p class="mt-1 text-xs text-zinc-500">{{ profile.card.masked_key }} · {{ profile.card.group_name }}</p></div>
+            <div class="min-w-0">
+              <h2 class="text-sm font-semibold text-white">{{ t('linkCards.usage') }}</h2>
+              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
+                <span class="truncate" :title="`${profile.card.masked_key} · ${profile.card.group_name}`">{{ profile.card.masked_key }} · {{ profile.card.group_name }}</span>
+                <button
+                  type="button"
+                  class="inline-copy-button shrink-0"
+                  data-testid="copy-link-card-key"
+                  :title="t('linkCards.copyFullKey')"
+                  :aria-label="t('linkCards.copyFullKey')"
+                  @click="copyCardKey"
+                ><Icon name="copy" size="xs" /></button>
+              </div>
+            </div>
             <button type="button" class="tech-icon-button" :title="t('common.refresh')" :disabled="usageLoading" @click="loadUsage"><Icon name="refresh" size="sm" :class="usageLoading ? 'animate-spin motion-reduce:animate-none' : ''" /></button>
           </div>
 
@@ -158,8 +153,54 @@
             </div>
           </div>
           <div class="relative bg-[#090b0e] p-4 sm:p-5">
-            <button type="button" class="absolute right-3 top-3 tech-icon-button" :title="t('linkCards.copy')" @click="copyGuide"><Icon name="copy" size="sm" /></button>
-            <pre class="overflow-x-auto pr-10 text-xs leading-6 text-zinc-300 sm:text-sm"><code>{{ currentGuide.code }}</code></pre>
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <p class="text-[11px] font-semibold uppercase text-zinc-500">{{ t('linkCards.requestExample') }}</p>
+              <button type="button" class="tech-icon-button" :title="t('linkCards.copy')" :aria-label="t('linkCards.copy')" data-testid="copy-link-card-guide" @click="copyGuide"><Icon name="copy" size="sm" /></button>
+            </div>
+            <pre class="overflow-x-auto text-xs leading-6 text-zinc-300 sm:text-sm"><code>{{ currentGuide.code }}</code></pre>
+          </div>
+
+          <div class="border-t border-white/10 px-4 py-4 sm:px-5 sm:py-5">
+            <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+              <div>
+                <h3 class="text-xs font-semibold text-white">{{ t('linkCards.configurationFiles') }}</h3>
+                <p class="mt-1 text-xs text-zinc-500">{{ t('linkCards.configurationHint') }}</p>
+              </div>
+              <span class="text-[11px] text-zinc-600">CARD_KEY {{ t('linkCards.keyPlaceholderHint') }}</span>
+            </div>
+
+            <div class="mt-3 space-y-3">
+              <div v-for="(file, index) in currentGuide.configFiles" :key="file.path" class="config-file">
+                <div class="flex items-center justify-between gap-3 border-b border-white/10 bg-[#11151a] px-3 py-2">
+                  <code class="min-w-0 truncate font-mono text-[11px] text-zinc-400">{{ file.path }}</code>
+                  <button
+                    type="button"
+                    class="tech-icon-button shrink-0"
+                    :data-testid="`copy-link-card-config-${index}`"
+                    :title="t('linkCards.copyConfiguration')"
+                    :aria-label="t('linkCards.copyConfiguration')"
+                    @click="copyConfig(file.code)"
+                  ><Icon name="copy" size="sm" /></button>
+                </div>
+                <pre class="overflow-x-auto bg-[#090b0e] px-3 py-3 text-xs leading-6 text-zinc-300"><code>{{ file.code }}</code></pre>
+              </div>
+            </div>
+
+            <div class="ccswitch-config mt-4" data-testid="link-card-ccswitch-config">
+              <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <div>
+                  <h3 class="text-xs font-semibold text-white">{{ t('linkCards.ccSwitch') }}</h3>
+                  <p class="mt-1 text-xs text-zinc-500">{{ t('linkCards.ccSwitchHint') }}</p>
+                </div>
+                <span class="tech-tag">CCSwitch</span>
+              </div>
+              <dl class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="ccswitch-field"><dt>{{ t('linkCards.ccSwitchClient') }}</dt><dd>{{ currentGuide.ccSwitchClient }}</dd></div>
+                <div class="ccswitch-field"><dt>{{ t('linkCards.endpoint') }}</dt><dd class="break-all font-mono">{{ currentGuide.ccSwitchEndpoint }}</dd></div>
+                <div class="ccswitch-field"><dt>{{ t('linkCards.ccSwitchApiKey') }}</dt><dd>CARD_KEY</dd></div>
+                <div class="ccswitch-field"><dt>{{ t('linkCards.ccSwitchModel') }}</dt><dd>MODEL</dd></div>
+              </dl>
+            </div>
           </div>
         </section>
       </template>
@@ -177,6 +218,7 @@ import { publicLinkCardsAPI, type PublicLinkCardProfile, type PublicLinkCardUsag
 
 type PortalState = 'activate' | 'loading' | 'details'
 type GuideKey = 'codex' | 'claude' | 'openai'
+type GuideFile = { path: string; code: string }
 const SESSION_KEY = 'link_card_portal_session'
 const FALLBACK_API_BASE = 'https://api.52token.org/v1'
 
@@ -194,7 +236,12 @@ const usageLoading = ref(false)
 const usagePage = ref(1)
 const usageTotal = ref(0)
 const activeGuide = ref<GuideKey>('codex')
-const apiBase = computed(() => profile.value?.api_base_url?.replace(/\/+$/, '') || FALLBACK_API_BASE)
+function normalizeApiBase(value: string): string {
+  const normalized = value.trim().replace(/\/+$/, '')
+  if (!normalized) return FALLBACK_API_BASE
+  return normalized.endsWith('/v1') ? normalized : `${normalized}/v1`
+}
+const apiBase = computed(() => normalizeApiBase(profile.value?.api_base_url || FALLBACK_API_BASE))
 const totalPages = computed(() => Math.max(1, Math.ceil(usageTotal.value / 10)))
 const metrics = computed(() => profile.value ? [
   { key: 'balance', label: t('linkCards.availableBalance'), value: money(profile.value.card.remaining_quota), icon: 'creditCard' as const },
@@ -203,11 +250,53 @@ const metrics = computed(() => profile.value ? [
   { key: 'status', label: t('linkCards.cardStatus'), value: statusLabel(profile.value.card.status), icon: 'checkCircle' as const },
 ] : [])
 const guides = computed(() => [
-  { key: 'codex' as const, label: t('linkCards.codex'), code: `curl ${apiBase.value}/responses \\\n  -H "Authorization: Bearer CARD_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","input":"Hello","stream":true}'` },
-  { key: 'claude' as const, label: t('linkCards.claude'), code: `curl ${apiBase.value}/messages \\\n  -H "x-api-key: CARD_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}],"stream":true}'` },
-  { key: 'openai' as const, label: t('linkCards.openaiCompatible'), code: `curl ${apiBase.value}/chat/completions \\\n  -H "Authorization: Bearer CARD_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","messages":[{"role":"user","content":"Hello"}],"stream":true}'` },
+  { key: 'codex' as const, label: t('linkCards.codex'), code: `curl ${apiBase.value}/responses \\\n  -H "Authorization: Bearer CARD_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","input":"Hello","stream":true}'`, configFiles: codexConfigFiles(apiBase.value), ccSwitchClient: 'Codex / Responses', ccSwitchEndpoint: apiBase.value },
+  { key: 'claude' as const, label: t('linkCards.claude'), code: `curl ${apiBase.value}/messages \\\n  -H "x-api-key: CARD_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}],"stream":true}'`, configFiles: claudeConfigFiles(apiBase.value), ccSwitchClient: 'Claude / Messages', ccSwitchEndpoint: apiBase.value },
+  { key: 'openai' as const, label: t('linkCards.openaiCompatible'), code: `curl ${apiBase.value}/chat/completions \\\n  -H "Authorization: Bearer CARD_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"MODEL","messages":[{"role":"user","content":"Hello"}],"stream":true}'`, configFiles: openAIConfigFiles(apiBase.value), ccSwitchClient: 'OpenAI compatible', ccSwitchEndpoint: apiBase.value },
 ])
 const currentGuide = computed(() => guides.value.find((guide) => guide.key === activeGuide.value) || guides.value[0])
+
+function codexConfigFiles(base: string): GuideFile[] {
+  return [
+    {
+      path: '~/.codex/config.toml',
+      code: [
+        `model_provider = "custom"`,
+        `model = "MODEL"`,
+        ``,
+        `[model_providers.custom]`,
+        `name = "52Token"`,
+        `base_url = "${base}"`,
+        `wire_api = "responses"`,
+        `requires_openai_auth = true`,
+      ].join('\n'),
+    },
+    { path: '~/.codex/auth.json', code: ['{', `  "OPENAI_API_KEY": "CARD_KEY"`, '}'].join('\n') },
+  ]
+}
+
+function claudeConfigFiles(base: string): GuideFile[] {
+  return [{
+    path: '~/.claude/settings.json',
+    code: [
+      `{`,
+      `  "$schema": "https://json.schemastore.org/claude-code-settings.json",`,
+      `  "env": {`,
+      `    "ANTHROPIC_BASE_URL": "${base}",`,
+      `    "ANTHROPIC_AUTH_TOKEN": "CARD_KEY",`,
+      `    "ANTHROPIC_MODEL": "MODEL"`,
+      `  }`,
+      `}`,
+    ].join('\n'),
+  }]
+}
+
+function openAIConfigFiles(base: string): GuideFile[] {
+  return [{
+    path: '.env',
+    code: [`OPENAI_BASE_URL=${base}`, 'OPENAI_API_KEY=CARD_KEY', 'OPENAI_MODEL=MODEL'].join('\n'),
+  }]
+}
 
 function isFullKey(value: string): boolean { return /^sk-[A-Za-z0-9_-]{20,}$/.test(value) }
 function money(value: unknown): string { const number = Number(value); return `$${Number.isFinite(number) ? number.toFixed(6).replace(/0+$/, '').replace(/\.$/, '') : '0'}` }
@@ -250,6 +339,7 @@ async function copyValue(value: string, successMessage: string): Promise<void> {
 async function copyCardKey(): Promise<void> { if (profile.value?.key) await copyValue(profile.value.key, t('linkCards.keyCopied')) }
 async function copyAPIBase(): Promise<void> { await copyValue(apiBase.value, t('linkCards.endpointCopied')) }
 async function copyGuide(): Promise<void> { await copyValue(currentGuide.value.code, t('linkCards.guideCopied')) }
+async function copyConfig(value: string): Promise<void> { await copyValue(value, t('linkCards.configurationCopied')) }
 
 onMounted(() => { const saved = sessionStorage.getItem(SESSION_KEY); if (saved) { sessionToken.value = saved; void loadProfile() } })
 </script>
@@ -269,7 +359,9 @@ onMounted(() => { const saved = sessionStorage.getItem(SESSION_KEY); if (saved) 
 .tech-button, .tech-icon-button, .tech-page-button { border: 1px solid rgba(255,255,255,.13); border-radius: 6px; background: rgba(255,255,255,.04); color: #d4d4d8; transition: background .16s, border-color .16s, color .16s; }
 .tech-button { min-height: 38px; padding: 0 12px; font-size: 12px; font-weight: 600; }
 .tech-icon-button, .tech-page-button { display: inline-flex; height: 34px; width: 34px; align-items: center; justify-content: center; }
+.inline-copy-button { display: inline-flex; height: 24px; width: 24px; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.1); border-radius: 5px; background: rgba(255,255,255,.025); color: #71717a; transition: background .16s, border-color .16s, color .16s; }
 .tech-button:hover, .tech-icon-button:hover, .tech-page-button:hover { border-color: rgba(103,232,249,.42); background: rgba(103,232,249,.08); color: #a5f3fc; }
+.inline-copy-button:hover, .inline-copy-button:focus-visible { border-color: rgba(163,230,53,.42); background: rgba(163,230,53,.08); color: #d9f99d; outline: none; }
 .tech-button:disabled, .tech-icon-button:disabled, .tech-page-button:disabled { cursor: not-allowed; opacity: .35; }
 table th { border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.025); padding: 11px 16px; color: #71717a; font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
 table td { border-bottom: 1px solid rgba(255,255,255,.065); padding: 13px 16px; color: #a1a1aa; font-size: 12px; white-space: nowrap; }
@@ -284,6 +376,11 @@ table tbody tr:hover { background: rgba(255,255,255,.025); }
 .guide-tab { min-height: 38px; border-bottom: 2px solid transparent; padding: 0 12px; color: #71717a; font-size: 12px; font-weight: 600; white-space: nowrap; transition: color .16s, border-color .16s; }
 .guide-tab:hover { color: #d4d4d8; }
 .guide-tab-active { border-color: #a3e635; color: #d9f99d; }
+.config-file { overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 6px; }
+.ccswitch-config { border-top: 1px solid rgba(255,255,255,.1); padding-top: 16px; }
+.ccswitch-field { min-width: 0; border-left: 2px solid rgba(103,232,249,.24); background: rgba(255,255,255,.025); padding: 8px 10px; }
+.ccswitch-field dt { color: #52525b; font-size: 10px; font-weight: 600; }
+.ccswitch-field dd { margin-top: 5px; overflow-wrap: anywhere; color: #d4d4d8; font-size: 11px; }
 @media (max-width: 640px) { .activation-panel { padding: 24px 18px; } .quota-grid { background-size: 24px 24px; } }
-@media (prefers-reduced-motion: reduce) { .activate-button, .tech-button, .tech-icon-button, .tech-page-button, .guide-tab { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .activate-button, .tech-button, .tech-icon-button, .tech-page-button, .inline-copy-button, .guide-tab { transition: none; } }
 </style>

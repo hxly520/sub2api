@@ -50,7 +50,7 @@ describe('LinkCardPortalView', () => {
       value: { writeText },
     })
     activate.mockResolvedValue({ session_token: 'session-token', expires_at: '2026-08-08T00:00:00Z' })
-    getMe.mockResolvedValue({ card, key: fullKey, api_base_url: 'https://api.52token.org/v1/' })
+    getMe.mockResolvedValue({ card, key: fullKey, api_base_url: 'https://api.52token.org/' })
     listUsage.mockResolvedValue({
       items: [{
         request_id: 'req-1', model: 'MODEL',
@@ -81,8 +81,10 @@ describe('LinkCardPortalView', () => {
     expect(wrapper.text()).toContain('linkCards.integration')
     expect(wrapper.text()).toContain('https://api.52token.org/v1/responses')
     expect(wrapper.get('[data-testid="link-card-api-endpoint"]').text()).toBe('https://api.52token.org/v1')
-    expect(wrapper.get('[data-testid="link-card-key-panel"]').text()).toContain(card.masked_key)
-    expect(wrapper.get('[data-testid="link-card-key-panel"]').text()).not.toContain(fullKey)
+    expect(wrapper.find('[data-testid="link-card-key-panel"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain(`${card.masked_key} · ${card.group_name}`)
+    expect(wrapper.get('[data-testid="copy-link-card-key"]').attributes('aria-label')).toBe('linkCards.copyFullKey')
+    expect(wrapper.text()).not.toContain(fullKey)
     expect(wrapper.get('pre').text()).not.toContain('\n+')
     expect(wrapper.text()).toContain('缓存写入 5m')
     expect(wrapper.text()).toContain('缓存写入 1h')
@@ -101,6 +103,55 @@ describe('LinkCardPortalView', () => {
     await flushPromises()
     expect(writeText).toHaveBeenLastCalledWith('https://api.52token.org/v1')
     expect(showSuccess).toHaveBeenLastCalledWith('linkCards.endpointCopied')
+  })
+
+  it('shows CCSwitch values and copyable configuration files for every protocol', async () => {
+    sessionStorage.setItem('link_card_portal_session', 'saved-session')
+    const wrapper = mount(LinkCardPortalView, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    let configText = wrapper.findAll('.config-file pre code').map((node) => node.text()).join('\n')
+    expect(configText).toContain('model_provider = "custom"')
+    expect(configText).toContain('base_url = "https://api.52token.org/v1"')
+    expect(configText).toContain('wire_api = "responses"')
+    expect(configText).toContain('"OPENAI_API_KEY": "CARD_KEY"')
+    expect(wrapper.get('[data-testid="link-card-ccswitch-config"]').text()).toContain('Codex / Responses')
+    expect(wrapper.get('[data-testid="link-card-ccswitch-config"]').text()).toContain('https://api.52token.org/v1')
+
+    const claudeTab = wrapper.findAll('button').find((button) => button.text() === 'linkCards.claude')
+    expect(claudeTab).toBeDefined()
+    await claudeTab!.trigger('click')
+
+    configText = wrapper.findAll('.config-file pre code').map((node) => node.text()).join('\n')
+    expect(wrapper.text()).toContain('~/.claude/settings.json')
+    expect(configText).toContain('"ANTHROPIC_BASE_URL": "https://api.52token.org/v1"')
+    expect(configText).toContain('"ANTHROPIC_AUTH_TOKEN": "CARD_KEY"')
+    expect(configText).toContain('"ANTHROPIC_MODEL": "MODEL"')
+    expect(wrapper.get('[data-testid="link-card-ccswitch-config"]').text()).toContain('Claude / Messages')
+
+    await wrapper.get('[data-testid="copy-link-card-config-0"]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining('ANTHROPIC_AUTH_TOKEN'))
+    expect(showSuccess).toHaveBeenLastCalledWith('linkCards.configurationCopied')
+
+    const openAITab = wrapper.findAll('button').find((button) => button.text() === 'linkCards.openaiCompatible')
+    expect(openAITab).toBeDefined()
+    await openAITab!.trigger('click')
+
+    configText = wrapper.findAll('.config-file pre code').map((node) => node.text()).join('\n')
+    expect(configText).toContain('OPENAI_BASE_URL=https://api.52token.org/v1')
+    expect(configText).toContain('OPENAI_API_KEY=CARD_KEY')
+    expect(wrapper.get('[data-testid="link-card-ccswitch-config"]').text()).toContain('OpenAI compatible')
+  })
+
+  it('does not duplicate v1 when the API Base already includes it', async () => {
+    sessionStorage.setItem('link_card_portal_session', 'saved-session')
+    getMe.mockResolvedValueOnce({ card, key: fullKey, api_base_url: 'https://api.52token.org/v1/' })
+    const wrapper = mount(LinkCardPortalView, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="link-card-api-endpoint"]').text()).toBe('https://api.52token.org/v1')
+    expect(wrapper.text()).not.toContain('/v1/v1')
   })
 
   it('rejects partial Keys without contacting the server', async () => {
