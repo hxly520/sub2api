@@ -505,8 +505,10 @@ func TestLinkCardActivationResponseDoesNotLeakCreatorOrFundingInternals(t *testi
 
 	profile, err := svc.PortalCard(context.Background(), result.SessionToken)
 	require.NoError(t, err)
+	require.Equal(t, privateCard.Key, profile.Key)
 	profilePayload, err := json.Marshal(profile)
 	require.NoError(t, err)
+	require.Contains(t, string(profilePayload), `"key":"`+privateCard.Key+`"`)
 	require.NotContains(t, string(profilePayload), "creator@example.test")
 	require.NotContains(t, string(profilePayload), `"creator_user_id"`)
 	require.NotContains(t, string(profilePayload), `"issue_rate_multiplier"`)

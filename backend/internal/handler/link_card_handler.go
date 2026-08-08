@@ -186,6 +186,10 @@ func (h *LinkCardHandler) Activate(c *gin.Context) {
 	response.Success(c, result)
 }
 func (h *LinkCardHandler) PublicProfile(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+	c.Header("Vary", "X-Link-Card-Session")
 	result, err := h.service.PortalCard(c.Request.Context(), strings.TrimSpace(c.GetHeader("X-Link-Card-Session")))
 	if response.ErrorFrom(c, err) {
 		return

@@ -276,6 +276,7 @@ export interface ActivateLinkCardResponse {
 
 export interface PublicLinkCardProfile {
   card: PublicLinkCard
+  key: string
   api_base_url: string
 }
 

@@ -55,6 +55,24 @@
           </article>
         </div>
 
+        <section class="tech-panel mb-5 flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5" data-testid="link-card-key-panel">
+          <div class="min-w-0">
+            <p class="text-xs font-medium text-zinc-500">{{ t('linkCards.cardKey') }}</p>
+            <code class="mt-1 block truncate font-mono text-sm text-zinc-200" :title="profile.card.masked_key">{{ profile.card.masked_key }}</code>
+          </div>
+          <button
+            type="button"
+            class="tech-button inline-flex shrink-0 items-center justify-center gap-2"
+            data-testid="copy-link-card-key"
+            :title="t('linkCards.copyFullKey')"
+            :aria-label="t('linkCards.copyFullKey')"
+            @click="copyCardKey"
+          >
+            <Icon name="copy" size="sm" />
+            {{ t('linkCards.copy') }}
+          </button>
+        </section>
+
         <section class="tech-panel overflow-hidden">
           <div class="flex flex-col gap-2 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div><h2 class="text-sm font-semibold text-white">{{ t('linkCards.usage') }}</h2><p class="mt-1 text-xs text-zinc-500">{{ profile.card.masked_key }} · {{ profile.card.group_name }}</p></div>
@@ -119,10 +137,24 @@
         <section class="tech-panel mt-5 overflow-hidden">
           <div class="border-b border-white/10 px-4 pt-4 sm:px-5">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div><h2 class="text-sm font-semibold text-white">{{ t('linkCards.integration') }}</h2><p class="mt-1 text-xs text-zinc-500">{{ t('linkCards.streamRequired') }} · {{ apiBase }}</p></div>
+              <div><h2 class="text-sm font-semibold text-white">{{ t('linkCards.integration') }}</h2><p class="mt-1 text-xs text-zinc-500">{{ t('linkCards.streamRequired') }}</p></div>
               <div class="flex gap-1 overflow-x-auto" role="tablist">
                 <button v-for="guide in guides" :key="guide.key" type="button" class="guide-tab" :class="activeGuide === guide.key ? 'guide-tab-active' : ''" @click="activeGuide = guide.key">{{ guide.label }}</button>
               </div>
+            </div>
+            <div class="mt-4 flex flex-col gap-2 border-t border-white/10 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="min-w-0">
+                <p class="text-[11px] font-semibold uppercase text-zinc-500">{{ t('linkCards.endpoint') }}</p>
+                <code class="mt-1 block break-all font-mono text-sm text-lime-200" data-testid="link-card-api-endpoint">{{ apiBase }}</code>
+              </div>
+              <button
+                type="button"
+                class="tech-icon-button shrink-0"
+                data-testid="copy-link-card-api-endpoint"
+                :title="t('linkCards.copyEndpoint')"
+                :aria-label="t('linkCards.copyEndpoint')"
+                @click="copyAPIBase"
+              ><Icon name="copy" size="sm" /></button>
             </div>
           </div>
           <div class="relative bg-[#090b0e] p-4 sm:p-5">
@@ -162,7 +194,7 @@ const usageLoading = ref(false)
 const usagePage = ref(1)
 const usageTotal = ref(0)
 const activeGuide = ref<GuideKey>('codex')
-const apiBase = computed(() => profile.value?.api_base_url?.replace(/\/$/, '') || FALLBACK_API_BASE)
+const apiBase = computed(() => profile.value?.api_base_url?.replace(/\/+$/, '') || FALLBACK_API_BASE)
 const totalPages = computed(() => Math.max(1, Math.ceil(usageTotal.value / 10)))
 const metrics = computed(() => profile.value ? [
   { key: 'balance', label: t('linkCards.availableBalance'), value: money(profile.value.card.remaining_quota), icon: 'creditCard' as const },
@@ -212,7 +244,12 @@ async function loadUsage(): Promise<void> {
 
 function changePage(page: number): void { if (page < 1 || page > totalPages.value) return; usagePage.value = page; void loadUsage() }
 function clearSession(): void { sessionStorage.removeItem(SESSION_KEY); sessionToken.value = ''; profile.value = null; usageRows.value = []; usageTotal.value = 0; portalState.value = 'activate' }
-async function copyGuide(): Promise<void> { try { await navigator.clipboard.writeText(currentGuide.value.code); appStore.showSuccess(t('linkCards.copied')) } catch { appStore.showError(t('common.copyFailed')) } }
+async function copyValue(value: string, successMessage: string): Promise<void> {
+  try { await navigator.clipboard.writeText(value); appStore.showSuccess(successMessage) } catch { appStore.showError(t('common.copyFailed')) }
+}
+async function copyCardKey(): Promise<void> { if (profile.value?.key) await copyValue(profile.value.key, t('linkCards.keyCopied')) }
+async function copyAPIBase(): Promise<void> { await copyValue(apiBase.value, t('linkCards.endpointCopied')) }
+async function copyGuide(): Promise<void> { await copyValue(currentGuide.value.code, t('linkCards.guideCopied')) }
 
 onMounted(() => { const saved = sessionStorage.getItem(SESSION_KEY); if (saved) { sessionToken.value = saved; void loadProfile() } })
 </script>

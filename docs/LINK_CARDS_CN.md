@@ -68,7 +68,7 @@
 - `GET /me`
 - `GET /usage`
 
-公共激活只接受完整 Key。激活成功后返回短期会话令牌；后续资料和记录请求使用 `X-Link-Card-Session`，不得继续在 URL、查询参数或日志中传递完整 Key。公共资料响应只返回脱敏 Key、状态、分组名称、1x 发行/已用/剩余额度、请求次数和 API Base，不返回创建者 ID、邮箱、发行倍率、实际预充值金额或内部资金字段。
+公共激活只接受完整 Key。激活成功响应仍只返回脱敏 Key和短期会话令牌；后续资料和记录请求使用 `X-Link-Card-Session`，不得在 URL、查询参数或日志中传递完整 Key。为了支持用户在详情页恢复并复制当前提链 Key，只有通过有效短期会话访问 `GET /me` 时，响应顶层才返回该卡完整 Key；该响应必须强制 `Cache-Control: private, no-store`，页面只显示脱敏值，复制按钮读取完整值。公共资料仍不得返回创建者 ID、邮箱、发行倍率、实际预充值金额或内部资金字段。
 
 ### 3.2 主要代码入口
 
@@ -161,7 +161,7 @@ pending_activation -> active -> depleted
 - Claude 协议：流式 `POST https://api.52token.org/v1/messages`。
 - OpenAI 兼容：流式 `POST https://api.52token.org/v1/chat/completions`。
 
-教程只展示通用接入参数、API Base、请求路径、流式开关和当前 Key 的复制入口，不承诺某个固定模型始终可用；模型列表以 Key 绑定分组的实时可用模型为准。
+教程必须独立标注并允许复制只到 `/v1` 为止的 API Base，例如 `https://api.52token.org/v1`，供 CCSwitch 等客户端自行识别 Responses 或 Chat 接口；不得把 `/responses`、`/messages` 或 `/chat/completions` 混入“API 端点”字段。协议切换示例仍展示对应请求路径和流式参数，并提供当前 Key 的复制入口；模型列表以 Key 绑定分组的实时可用模型为准。
 
 公共激活和查询路由必须设置独立 IP 限流、请求体上限和访问日志脱敏。日志不得包含完整 Key、`X-Link-Card-Session`、Authorization、请求正文或响应正文。会话默认 `3600` 秒，允许管理员在 `300-86400` 秒范围调整；页面关闭或会话过期不影响 Key 本身的激活状态。
 

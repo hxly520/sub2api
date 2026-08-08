@@ -904,6 +904,7 @@ type PublicLinkCard struct {
 
 type PublicLinkCardProfile struct {
 	Card       PublicLinkCard `json:"card"`
+	Key        string         `json:"key"`
 	APIBaseURL string         `json:"api_base_url"`
 }
 
@@ -1039,7 +1040,7 @@ func (s *LinkCardService) PortalCard(ctx context.Context, sessionToken string) (
 	if err != nil {
 		return nil, err
 	}
-	return &PublicLinkCardProfile{Card: *publicLinkCard(card), APIBaseURL: settings.APIBaseURL}, nil
+	return &PublicLinkCardProfile{Card: *publicLinkCard(card), Key: card.Key, APIBaseURL: settings.APIBaseURL}, nil
 }
 
 func (s *LinkCardService) PortalUsage(ctx context.Context, sessionToken string, params pagination.PaginationParams, filters LinkCardUsageFilters) ([]PublicLinkCardUsageLog, *pagination.PaginationResult, error) {
