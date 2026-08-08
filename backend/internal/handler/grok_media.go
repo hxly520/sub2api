@@ -187,7 +187,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 	}
-	requestCtx := withOpenAIAccountScheduleProfile(c.Request.Context(), c, requestModel)
+	// Grok 媒体（图片/视频生成与视频查询）按媒体倍率计费，不在 token 利润门
+	// 范围内：显式豁免，防止 service 层防御性装门按文本 D 误过滤媒体请求，
+	// 也防止已计费的在途视频任务因绑定账号被门排除而查询返回伪 404。
+	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	mediaEligibilityRejected := false
 	switchCount := 0
@@ -301,71 +305,17 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		if endpoint.IsGenerationRequest() && !mediaBalancePrepared && h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
-			mediaBalancePrepared = true
-			mappedModel := grokMediaScheduleModel(account, routingModel, nil)
-			usageFields := service.ChannelUsageFields{
-				OriginalModel:      requestModel,
-				ChannelMappedModel: mappedModel,
-			}
-			var pricingErr error
-			if endpoint.IsVideoGenerationRequest() {
-				mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIVideoPricingSnapshot(
-					requestCtx,
-					apiKey,
-					subject.UserID,
-					requestModel,
-					mappedModel,
-					requestInfo.Resolution,
-					requestInfo.DurationSeconds,
-					1,
-					usageFields,
-				)
-			} else {
-				mediaPricingSnapshot, pricingErr = h.gatewayService.CaptureOpenAIImagePricingSnapshot(
-					requestCtx,
-					apiKey,
-					subject.UserID,
-					requestModel,
-					mappedModel,
-					requestInfo.SizeTier,
-					requestInfo.N,
-					usageFields,
-				)
-			}
-			if pricingErr != nil {
-				reqLog.Warn("grok_media.capture_pricing_snapshot_failed", zap.Error(pricingErr))
-				h.errorResponse(c, http.StatusServiceUnavailable, "billing_service_error", "Media pricing is unavailable")
+		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		if slotResult == openAISlotAcquireProfitVetoed {
+			// 媒体路径已显式豁免利润门（suppress 标记），此分支仅防御性兜底，
+			// 同样受否决上限约束。
+			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
+				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
 			}
-			if mediaPricingSnapshot != nil {
-				holdAmount := mediaPricingSnapshot.EstimatedCost(requestInfo.N, requestInfo.DurationSeconds)
-				if endpoint.IsVideoGenerationRequest() {
-					holdAmount = mediaPricingSnapshot.EstimatedCost(1, requestInfo.DurationSeconds)
-				}
-				if holdAmount > 0 {
-					mediaHold = markLinkCardMediaBalanceHold(newMediaBalanceHoldCommand(
-						apiKey.ID,
-						subject.UserID,
-						service.NewMediaBalanceHoldRequestID(),
-						service.HashMediaGenerationRequestFingerprint(string(endpoint), body),
-						service.HashUsageRequestPayload(body),
-						holdAmount,
-					), apiKey)
-					if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
-						status, code, message, retryAfter := billingErrorDetails(err)
-						if retryAfter > 0 {
-							c.Header("Retry-After", strconv.Itoa(retryAfter))
-						}
-						h.errorResponse(c, status, code, message)
-						return
-					}
-				}
-			}
+			continue
 		}
-
-		accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
-		if !accountAcquired {
+		if slotResult != openAISlotAcquireOK {
 			return
 		}
 
