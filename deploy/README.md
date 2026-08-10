@@ -2,7 +2,7 @@
 
 > **Private fork operators:** production for this repository uses a private,
 > immutable image built from the current private `main`. Do not run the
-> upstream one-click installer or deploy `weishaw/sub2api:latest` against the
+> upstream one-click installer or deploy an official image against the
 > private production database: doing so drops the private protocol, scheduler,
 > media billing, Edge delivery, and payment compatibility layer. Read
 > [`../docs/PRODUCTION_OPERATIONS_CN.md`](../docs/PRODUCTION_OPERATIONS_CN.md)
@@ -67,15 +67,16 @@ See [APPLE_CONTAINER.md](./APPLE_CONTAINER.md) for configuration, upgrades, pers
 
 ### Method 1: One-Click Deployment (Recommended)
 
-Use the automated preparation script for the easiest setup:
+Use the automated preparation script from an authenticated checkout. It reads
+Compose files from `hxly520/sub2api` through the GitHub Contents API; a private
+repository requires a read-only token.
 
 ```bash
-# Download and run the preparation script
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
-
-# Or download first, then run
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh -o docker-deploy.sh
-chmod +x docker-deploy.sh
+# Clone with an authorized SSH key or GitHub credential helper.
+git clone git@github.com:hxly520/sub2api.git
+cd sub2api/deploy
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN='<read-only contents token>'
 ./docker-deploy.sh
 ```
 
@@ -89,13 +90,16 @@ chmod +x docker-deploy.sh
 **After running the script:**
 ```bash
 # Start services
-docker compose -f docker-compose.local.yml up -d
+echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+PRIVATE_RELEASE_VERSION=0.1.172-52t.1
+export SUB2API_IMAGE="ghcr.io/hxly520/sub2api:${PRIVATE_RELEASE_VERSION}"
+docker compose up -d
 
 # View logs
-docker compose -f docker-compose.local.yml logs -f sub2api
+docker compose logs -f sub2api
 
 # If admin password was auto-generated, find it in logs:
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose logs sub2api | grep "admin password"
 
 # Access Web UI
 # http://localhost:8080
@@ -107,7 +111,7 @@ If you prefer manual control:
 
 ```bash
 # Clone repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone git@github.com:hxly520/sub2api.git
 cd sub2api/deploy
 
 # Configure environment
@@ -125,6 +129,9 @@ echo "TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}" >> .env
 mkdir -p data postgres_data redis_data
 
 # Start all services using local directory version
+echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+PRIVATE_RELEASE_VERSION=0.1.172-52t.1
+export SUB2API_IMAGE="ghcr.io/hxly520/sub2api:${PRIVATE_RELEASE_VERSION}"
 docker compose -f docker-compose.local.yml up -d
 
 # View logs (check for auto-generated admin password)
@@ -142,6 +149,19 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.yml** | Named volumes (/var/lib/docker/volumes/) | ⚠️ Requires docker commands | Simple setup, don't need migration |
 
 **Recommendation:** Use `docker-compose.local.yml` (deployed by `docker-deploy.sh`) for easier data management and migration.
+
+### Legacy `docker-compose` Command
+
+Docker Compose v2 is invoked as `docker compose`. To preserve an existing
+operator workflow that calls `docker-compose`, install the repository wrapper:
+
+```bash
+sudo install -m 0755 docker-compose-compat.sh /usr/local/bin/docker-compose
+docker-compose --version
+```
+
+The wrapper only delegates arguments to the installed Docker Compose v2 plugin;
+installing it does not recreate, restart, or otherwise change running containers.
 
 ### How Auto-Setup Works
 
@@ -253,7 +273,9 @@ docker compose down -v
 | `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
 | `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
 | `TZ` | No | `Asia/Shanghai` | Timezone |
-| `UPDATE_GITHUB_TOKEN` | No | *(empty)* | Token for `api.github.com` release checks only; asset downloads remain anonymous. |
+| `UPDATE_GITHUB_TOKEN` | Private repo | *(empty)* | Read-only Contents token for private Release metadata and authenticated asset API downloads. |
+| `UPDATE_REPOSITORY` | No | `hxly520/sub2api` | Repository used for private release checks and updates. |
+| `UPDATE_DOCKER_IMAGE` | No | `ghcr.io/hxly520/sub2api` | Private image base shown for Compose updates. |
 | `GEMINI_OAUTH_CLIENT_ID` | No | *(builtin)* | Google OAuth client ID (Gemini OAuth). Leave empty to use the built-in Gemini CLI client. |
 | `GEMINI_OAUTH_CLIENT_SECRET` | No | *(builtin)* | Google OAuth client secret (Gemini OAuth). Leave empty to use the built-in Gemini CLI client. |
 | `GEMINI_OAUTH_SCOPES` | No | *(default)* | OAuth scopes (Gemini OAuth) |
@@ -388,15 +410,32 @@ GEMINI_OAUTH_CLIENT_SECRET=GOCSPX-your-client-secret
 
 For production servers using systemd.
 
-### One-Line Installation
+Prerequisites: Bash 4+, `curl`, `tar`, `jq`, and either `sha256sum` or
+`shasum`. Keep `UPDATE_GITHUB_TOKEN` separate from the GHCR `read:packages`
+credential; the former only needs read-only Contents access to the repository.
+
+### Authenticated Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN='<read-only contents token>'
+sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN bash ./install.sh install
 ```
+
+The installer writes `/etc/sub2api-update.env` atomically as `root:sub2api`
+mode `0640`, and the systemd unit reads it on startup. On later command-line
+runs, an unset `UPDATE_REPOSITORY`, `UPDATE_GITHUB_TOKEN`,
+`UPDATE_DOCKER_IMAGE`, `UPDATE_CHANNEL`, `UPDATE_IN_PLACE_ENABLED`,
+`UPDATE_REQUIRE_CHECKSUM`, or `UPDATE_REQUIRE_MANIFEST` is restored by reading
+only that exact, allowlisted key from the file. Explicit environment variables
+take precedence. The installer never sources the file as shell code, and it
+validates the recovered repository, token, image, channel, and policy values
+before using or persisting them. Keep the file root-managed and do not add
+unrelated shell expressions to it.
 
 ### Manual Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/Wei-Shaw/sub2api/releases)
+1. Download the approved release from [Private GitHub Releases](https://github.com/hxly520/sub2api/releases), including `checksums.txt`.
 2. Extract and copy the binary to `/opt/sub2api/`
 3. Copy `sub2api.service` to `/etc/systemd/system/`
 4. Run:
@@ -411,10 +450,10 @@ curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install
 
 ```bash
 # Install
-sudo ./install.sh
+sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN bash ./install.sh install
 
-# Upgrade
-sudo ./install.sh upgrade
+# Upgrade with the allowlisted values persisted by the initial installation
+sudo bash ./install.sh upgrade
 
 # Uninstall
 sudo ./install.sh uninstall

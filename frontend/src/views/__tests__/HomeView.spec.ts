@@ -83,6 +83,8 @@ describe('HomeView', () => {
 
     expect(wrapper.get('[data-testid="default-home"]')).toBeTruthy()
     expect(wrapper.get('[data-testid="home-hero"]')).toBeTruthy()
+    expect(wrapper.find('.home-scene-frame').exists()).toBe(false)
+    expect(wrapper.find('.home-data-visual-svg').exists()).toBe(true)
     expect(wrapper.get('[data-testid="home-overview"]')).toBeTruthy()
     expect(wrapper.get('[data-testid="home-reliability"]')).toBeTruthy()
     expect(wrapper.get('[data-testid="home-guide"]')).toBeTruthy()

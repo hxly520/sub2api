@@ -12,7 +12,7 @@
 
 services:
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ${SUB2API_IMAGE:-ghcr.io/hxly520/sub2api:latest}
     container_name: sub2api
     restart: unless-stopped
     security_opt:
@@ -42,6 +42,12 @@ services:
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
+      - UPDATE_REPOSITORY=${UPDATE_REPOSITORY:-hxly520/sub2api}
+      - UPDATE_DOCKER_IMAGE=${UPDATE_DOCKER_IMAGE:-ghcr.io/hxly520/sub2api}
+      - UPDATE_CHANNEL=${UPDATE_CHANNEL:-stable}
+      - UPDATE_IN_PLACE_ENABLED=${UPDATE_IN_PLACE_ENABLED:-true}
+      - UPDATE_REQUIRE_CHECKSUM=${UPDATE_REQUIRE_CHECKSUM:-true}
+      - UPDATE_REQUIRE_MANIFEST=${UPDATE_REQUIRE_MANIFEST:-true}
 
       # =======================================================================
       # Database Configuration (PostgreSQL) - Required

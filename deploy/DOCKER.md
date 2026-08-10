@@ -5,12 +5,16 @@ Sub2API is an AI API Gateway Platform for distributing and managing AI product s
 ## Quick Start
 
 ```bash
+export SUB2API_IMAGE=ghcr.io/hxly520/sub2api:0.1.172-52t.1
+# Authenticate once with a read:packages PAT when the GHCR package is private.
+echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
 docker run -d \
   --name sub2api \
   -p 8080:8080 \
   -e DATABASE_URL="postgres://user:pass@host:5432/sub2api" \
   -e REDIS_URL="redis://host:6379" \
-  weishaw/sub2api:latest
+  "$SUB2API_IMAGE"
 ```
 
 ## Docker Compose
@@ -20,7 +24,7 @@ version: '3.8'
 
 services:
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ${SUB2API_IMAGE:?pin a private release tag or digest}
     ports:
       - "8080:8080"
     environment:
@@ -65,12 +69,11 @@ volumes:
 
 ## Tags
 
-- `latest` - Latest stable release
-- `x.y.z` - Specific version
-- `x.y` - Latest patch of minor version
-- `x` - Latest minor of major version
+- `x.y.z-52t.n` - Approved private release
+- `sha-<commit>` or `x.y.z-<commit>` - Immutable compatibility-build candidate
+- Production deployments must pin an approved tag or digest; do not rely on `latest`.
 
 ## Links
 
-- [GitHub Repository](https://github.com/weishaw/sub2api)
-- [Documentation](https://github.com/weishaw/sub2api#readme)
+- [Private GitHub Repository](https://github.com/hxly520/sub2api)
+- [Deployment Documentation](https://github.com/hxly520/sub2api/tree/main/deploy)

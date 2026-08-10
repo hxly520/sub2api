@@ -4,7 +4,7 @@
 # Copy this file to /etc/sub2api/config.yaml and modify as needed
 # 复制此文件到 /etc/sub2api/config.yaml 并根据需要修改
 #
-# Documentation / 文档: https://github.com/Wei-Shaw/sub2api
+# Private repository / 私有仓库: https://github.com/hxly520/sub2api
 
 # =============================================================================
 # Server Configuration
@@ -1293,6 +1293,15 @@ update:
   # Leave empty for direct connection (recommended for overseas servers)
   # 留空表示直连（适用于海外服务器）
   proxy_url: ""
+  # Private Release source and matching Compose image repository.
+  repository: "hxly520/sub2api"
+  docker_image: "ghcr.io/hxly520/sub2api"
+  channel: "stable"
+  # In-place updates still perform a short graceful process restart.
+  in_place_enabled: true
+  # Production private releases must contain both assets.
+  require_checksum: true
+  require_manifest: true
 
 # =============================================================================
 # Independent Points System (独立积分与签到系统)

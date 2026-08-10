@@ -84,10 +84,16 @@ describe('public landing page entry contract', () => {
     )
   })
 
-  it('ships the split hero and its raster visual inside the exact-root HTML', () => {
+  it('ships the split hero and its transparent vector visual inside the exact-root HTML', () => {
     expect(document.querySelector('.hero-layout .hero-copy-block')).not.toBeNull()
     expect(document.querySelector('.hero-layout .hero-visual[role="img"]')).not.toBeNull()
-    expect(html).toContain('data:image/webp;base64,')
+    expect(document.querySelector('.hero-layout .home-data-visual-svg')).not.toBeNull()
+    expect(html).not.toContain('data:image/webp;base64,')
+  })
+
+  it('does not reintroduce decorative hero pseudo-element borders', () => {
+    expect(html).not.toContain('.hero::before')
+    expect(html).not.toContain('.hero::after')
   })
 })
 

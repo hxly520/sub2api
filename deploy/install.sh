@@ -2,7 +2,10 @@
 #
 # Sub2API Installation Script
 # Sub2API 安装脚本
-# Usage: curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | bash
+# Private repository usage:
+#   export UPDATE_GITHUB_TOKEN='<read-only contents token>'
+#   export UPDATE_REPOSITORY='hxly520/sub2api'
+#   bash deploy/install.sh install
 #
 
 set -e
@@ -31,11 +34,51 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-GITHUB_REPO="Wei-Shaw/sub2api"
 INSTALL_DIR="/opt/sub2api"
-SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
 CONFIG_DIR="/etc/sub2api"
+UPDATE_ENV_FILE="/etc/sub2api-update.env"
+
+# Read only known values from the root-managed environment file. Never source
+# this file as shell code.
+read_persisted_update_value() {
+    local key="$1"
+    [ -r "$UPDATE_ENV_FILE" ] || return 0
+    awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$UPDATE_ENV_FILE"
+}
+
+if [ -z "${UPDATE_REPOSITORY:-}" ]; then
+    UPDATE_REPOSITORY=$(read_persisted_update_value UPDATE_REPOSITORY)
+fi
+if [ -z "${UPDATE_GITHUB_TOKEN:-}" ]; then
+    UPDATE_GITHUB_TOKEN=$(read_persisted_update_value UPDATE_GITHUB_TOKEN)
+fi
+if [ -z "${UPDATE_REQUIRE_CHECKSUM:-}" ]; then
+    UPDATE_REQUIRE_CHECKSUM=$(read_persisted_update_value UPDATE_REQUIRE_CHECKSUM)
+fi
+if [ -z "${UPDATE_REQUIRE_MANIFEST:-}" ]; then
+    UPDATE_REQUIRE_MANIFEST=$(read_persisted_update_value UPDATE_REQUIRE_MANIFEST)
+fi
+if [ -z "${UPDATE_DOCKER_IMAGE:-}" ]; then
+    UPDATE_DOCKER_IMAGE=$(read_persisted_update_value UPDATE_DOCKER_IMAGE)
+fi
+if [ -z "${UPDATE_CHANNEL:-}" ]; then
+    UPDATE_CHANNEL=$(read_persisted_update_value UPDATE_CHANNEL)
+fi
+if [ -z "${UPDATE_IN_PLACE_ENABLED:-}" ]; then
+    UPDATE_IN_PLACE_ENABLED=$(read_persisted_update_value UPDATE_IN_PLACE_ENABLED)
+fi
+
+# Release source. UPDATE_REPOSITORY must be an owner/repository pair and the
+# token only needs read-only Contents access to the private repository.
+GITHUB_REPO="${UPDATE_REPOSITORY:-hxly520/sub2api}"
+GITHUB_API_ROOT="https://api.github.com"
+GITHUB_API_VERSION="2022-11-28"
+REQUIRE_RELEASE_CHECKSUM="${UPDATE_REQUIRE_CHECKSUM:-true}"
+REQUIRE_RELEASE_MANIFEST="${UPDATE_REQUIRE_MANIFEST:-true}"
+UPDATE_DOCKER_IMAGE_VALUE="${UPDATE_DOCKER_IMAGE:-ghcr.io/hxly520/sub2api}"
+UPDATE_CHANNEL_VALUE="${UPDATE_CHANNEL:-stable}"
+UPDATE_IN_PLACE_ENABLED_VALUE="${UPDATE_IN_PLACE_ENABLED:-true}"
 
 # Server configuration (will be set by user)
 SERVER_HOST="0.0.0.0"
@@ -151,7 +194,7 @@ declare -A MSG_ZH=(
     ["cmd_uninstall"]="卸载 Sub2API"
     ["cmd_install_version"]="安装/回退到指定版本"
     ["cmd_list_versions"]="列出可用版本"
-    ["opt_version"]="指定要安装的版本号 (例如: v1.0.0)"
+    ["opt_version"]="指定要安装的私有版本号 (例如: v0.1.172-52t.1)"
 
     # Server configuration
     ["server_config_title"]="服务器配置"
@@ -276,7 +319,7 @@ declare -A MSG_EN=(
     ["cmd_uninstall"]="Remove Sub2API"
     ["cmd_install_version"]="Install/rollback to a specific version"
     ["cmd_list_versions"]="List available versions"
-    ["opt_version"]="Specify version to install (e.g., v1.0.0)"
+    ["opt_version"]="Specify a private version (e.g., v0.1.172-52t.1)"
 
     # Server configuration
     ["server_config_title"]="Server Configuration"
@@ -349,7 +392,7 @@ select_language() {
     echo "  2) $(msg 'lang_en')"
     echo ""
 
-    read -p "$(msg 'enter_choice'): " lang_input < /dev/tty
+    read -r -p "$(msg 'enter_choice'): " lang_input < /dev/tty
 
     case "$lang_input" in
         2|en|EN|english|English)
@@ -390,7 +433,7 @@ configure_server() {
 
     # Server host
     echo -e "${YELLOW}$(msg 'server_host_hint')${NC}"
-    read -p "$(msg 'server_host_prompt') [${SERVER_HOST}]: " input_host < /dev/tty
+    read -r -p "$(msg 'server_host_prompt') [${SERVER_HOST}]: " input_host < /dev/tty
     if [ -n "$input_host" ]; then
         SERVER_HOST="$input_host"
     fi
@@ -400,7 +443,7 @@ configure_server() {
     # Server port
     echo -e "${YELLOW}$(msg 'server_port_hint')${NC}"
     while true; do
-        read -p "$(msg 'server_port_prompt') [${SERVER_PORT}]: " input_port < /dev/tty
+        read -r -p "$(msg 'server_port_prompt') [${SERVER_PORT}]: " input_port < /dev/tty
         if [ -z "$input_port" ]; then
             # Use default
             break
@@ -473,6 +516,17 @@ check_dependencies() {
         missing+=("tar")
     fi
 
+    # Release metadata must be parsed structurally. This is also required to
+    # resolve private release asset API URLs without exposing the token in a
+    # github.com browser download request.
+    if ! command -v jq &> /dev/null; then
+        missing+=("jq")
+    fi
+
+    if ! command -v sha256sum &> /dev/null && ! command -v shasum &> /dev/null; then
+        missing+=("sha256sum (or shasum)")
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "$(msg 'missing_deps'): ${missing[*]}"
         print_info "$(msg 'install_deps_first')"
@@ -480,7 +534,93 @@ check_dependencies() {
     fi
 }
 
-# Authenticate only GitHub REST API requests. Release asset downloads must stay anonymous.
+calculate_sha256() {
+    local file="$1"
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+    else
+        shasum -a 256 "$file" | awk '{print $1}'
+    fi
+}
+
+# Validate the configurable source before it is interpolated into an API URL.
+validate_release_source() {
+    if [[ ! "$GITHUB_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+        print_error "Invalid UPDATE_REPOSITORY: $GITHUB_REPO (expected owner/repository)"
+        return 2
+    fi
+    if [[ ! "$UPDATE_DOCKER_IMAGE_VALUE" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]]; then
+        print_error "Invalid UPDATE_DOCKER_IMAGE: $UPDATE_DOCKER_IMAGE_VALUE"
+        return 2
+    fi
+    if [[ ! "$UPDATE_CHANNEL_VALUE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        print_error "Invalid UPDATE_CHANNEL: $UPDATE_CHANNEL_VALUE"
+        return 2
+    fi
+
+    case "$REQUIRE_RELEASE_CHECKSUM" in
+        true|false)
+            ;;
+        *)
+            print_error "UPDATE_REQUIRE_CHECKSUM must be true or false"
+            return 2
+            ;;
+    esac
+
+    case "$REQUIRE_RELEASE_MANIFEST" in
+        true|false)
+            ;;
+        *)
+            print_error "UPDATE_REQUIRE_MANIFEST must be true or false"
+            return 2
+            ;;
+    esac
+
+    case "$UPDATE_IN_PLACE_ENABLED_VALUE" in
+        true|false)
+            ;;
+        *)
+            print_error "UPDATE_IN_PLACE_ENABLED must be true or false"
+            return 2
+            ;;
+    esac
+}
+
+validate_github_token() {
+    if [ -n "${UPDATE_GITHUB_TOKEN:-}" ] && [[ ! "$UPDATE_GITHUB_TOKEN" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        print_error "UPDATE_GITHUB_TOKEN contains unsupported characters"
+        return 2
+    fi
+}
+
+persist_update_environment() {
+    local update_env="$UPDATE_ENV_FILE"
+    local update_env_tmp
+
+    validate_release_source || return $?
+    validate_github_token || return $?
+    update_env_tmp=$(mktemp "/etc/.sub2api-update.env.XXXXXX")
+    chmod 0600 "$update_env_tmp"
+    {
+        printf 'UPDATE_REPOSITORY=%s\n' "$GITHUB_REPO"
+        printf 'UPDATE_DOCKER_IMAGE=%s\n' "$UPDATE_DOCKER_IMAGE_VALUE"
+        printf 'UPDATE_CHANNEL=%s\n' "$UPDATE_CHANNEL_VALUE"
+        printf 'UPDATE_IN_PLACE_ENABLED=%s\n' "$UPDATE_IN_PLACE_ENABLED_VALUE"
+        printf 'UPDATE_REQUIRE_CHECKSUM=%s\n' "$REQUIRE_RELEASE_CHECKSUM"
+        printf 'UPDATE_REQUIRE_MANIFEST=%s\n' "$REQUIRE_RELEASE_MANIFEST"
+        if [ -n "${UPDATE_GITHUB_TOKEN:-}" ]; then
+            printf 'UPDATE_GITHUB_TOKEN=%s\n' "$UPDATE_GITHUB_TOKEN"
+        fi
+    } > "$update_env_tmp"
+    if id "$SERVICE_USER" &>/dev/null; then
+        chown "root:$SERVICE_USER" "$update_env_tmp"
+        chmod 0640 "$update_env_tmp"
+    fi
+    mv -f "$update_env_tmp" "$update_env"
+}
+
+# Authenticate only requests whose destination is the GitHub REST API. The
+# token is supplied through curl's stdin config so it is not visible in argv.
 github_api_curl() {
     local arg
     local expect_value=false
@@ -512,30 +652,113 @@ github_api_curl() {
         esac
     done
 
-    if [ "$expect_value" = true ] || [[ "$url" != https://api.github.com/* ]]; then
+    if [ "$expect_value" = true ] || [[ "$url" != "${GITHUB_API_ROOT}/"* ]]; then
         echo "github_api_curl requires exactly one GitHub API URL" >&2
         return 2
     fi
 
-    if [ -n "${UPDATE_GITHUB_TOKEN:-}" ]; then
-        if [[ "$UPDATE_GITHUB_TOKEN" == *$'\n'* || "$UPDATE_GITHUB_TOKEN" == *$'\r'* || "$UPDATE_GITHUB_TOKEN" == *'"'* || "$UPDATE_GITHUB_TOKEN" == *'\'* ]]; then
-            echo "UPDATE_GITHUB_TOKEN contains unsupported characters" >&2
-            return 2
+    validate_release_source || return $?
+
+    validate_github_token || return $?
+
+    {
+        printf 'header = "Accept: application/vnd.github+json"\n'
+        printf 'header = "X-GitHub-Api-Version: %s"\n' "$GITHUB_API_VERSION"
+        printf 'header = "User-Agent: sub2api-private-installer"\n'
+        if [ -n "${UPDATE_GITHUB_TOKEN:-}" ]; then
+            printf 'header = "Authorization: Bearer %s"\n' "$UPDATE_GITHUB_TOKEN"
         fi
-        printf 'header = "Authorization: Bearer %s"\n' "$UPDATE_GITHUB_TOKEN" | UPDATE_GITHUB_TOKEN= GITHUB_TOKEN= GH_TOKEN= curl -q --globoff --config - "$@"
-    else
-        UPDATE_GITHUB_TOKEN= GITHUB_TOKEN= GH_TOKEN= curl -q --globoff "$@"
+    } | env UPDATE_GITHUB_TOKEN='' GITHUB_TOKEN='' GH_TOKEN='' curl -q --globoff --config - "$@"
+}
+
+# Download a release asset via its API URL. curl deliberately does not use
+# --location-trusted, so Authorization is removed when GitHub redirects to its
+# release asset storage host.
+github_asset_download() {
+    local url="$1"
+    local output="$2"
+    local asset_prefix="${GITHUB_API_ROOT}/repos/${GITHUB_REPO}/releases/assets/"
+    local asset_id
+
+    validate_release_source || return $?
+    case "$url" in
+        "${asset_prefix}"*)
+            asset_id="${url#"${asset_prefix}"}"
+            ;;
+        *)
+            print_error "Refusing unexpected release asset URL: $url"
+            return 2
+            ;;
+    esac
+    if [[ ! "$asset_id" =~ ^[0-9]+$ ]]; then
+        print_error "Refusing invalid release asset ID"
+        return 2
     fi
+
+    validate_github_token || return $?
+
+    {
+        printf 'header = "Accept: application/octet-stream"\n'
+        printf 'header = "X-GitHub-Api-Version: %s"\n' "$GITHUB_API_VERSION"
+        printf 'header = "User-Agent: sub2api-private-installer"\n'
+        if [ -n "${UPDATE_GITHUB_TOKEN:-}" ]; then
+            printf 'header = "Authorization: Bearer %s"\n' "$UPDATE_GITHUB_TOKEN"
+        fi
+    } | env UPDATE_GITHUB_TOKEN='' GITHUB_TOKEN='' GH_TOKEN='' curl \
+        -q --globoff --fail --silent --show-error --location \
+        --proto '=https' --proto-redir '=https' \
+        --connect-timeout 10 --max-time 600 \
+        --config - --output "$output" --url "$url"
+}
+
+fetch_release_json() {
+    local version="$1"
+    github_api_curl -s --connect-timeout 10 --max-time 30 \
+        "${GITHUB_API_ROOT}/repos/${GITHUB_REPO}/releases/tags/${version}"
+}
+
+release_asset_url() {
+    local release_json="$1"
+    local asset_name="$2"
+    printf '%s' "$release_json" | jq -er --arg name "$asset_name" '
+        [.assets[] | select(.name == $name)] |
+        if length == 1 then .[0].url else error("release asset missing or duplicated") end
+    '
+}
+
+release_asset_size() {
+    local release_json="$1"
+    local asset_name="$2"
+    printf '%s' "$release_json" | jq -er --arg name "$asset_name" '
+        [.assets[] | select(.name == $name)] |
+        if length == 1 and (.[0].size | type) == "number" and .[0].size >= 0
+        then .[0].size
+        else error("release asset size missing or duplicated")
+        end
+    '
+}
+
+validate_release_tag_format() {
+    local version="$1"
+    [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-52t\.([1-9][0-9]*)$ ]]
 }
 
 # Get latest release version
 get_latest_version() {
     print_info "$(msg 'fetching_version')"
-    LATEST_VERSION=$(github_api_curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    local release_json
+    if ! release_json=$(github_api_curl -s --connect-timeout 10 --max-time 30 "${GITHUB_API_ROOT}/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null); then
+        release_json=""
+    fi
+    LATEST_VERSION=$(printf '%s' "$release_json" | jq -er '.tag_name | strings | select(length > 0)' 2>/dev/null || true)
 
     if [ -z "$LATEST_VERSION" ]; then
         print_error "$(msg 'failed_get_version')"
-        print_info "Please check your network connection or try again later."
+        print_info "Check UPDATE_REPOSITORY, network access, and UPDATE_GITHUB_TOKEN for a private repository."
+        exit 1
+    fi
+    if ! validate_release_tag_format "$LATEST_VERSION"; then
+        print_error "Invalid release tag returned by GitHub: $LATEST_VERSION"
         exit 1
     fi
 
@@ -547,11 +770,16 @@ list_versions() {
     print_info "$(msg 'fetching_versions')"
 
     local versions
-    versions=$(github_api_curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -20)
+    versions=$(github_api_curl -s --connect-timeout 10 --max-time 30 "${GITHUB_API_ROOT}/repos/${GITHUB_REPO}/releases?per_page=100" 2>/dev/null | jq -er '
+        .[] |
+        select(.draft == false and .prerelease == false) |
+        .tag_name |
+        select(test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-52t\\.([1-9][0-9]*)$"))
+    ' 2>/dev/null | head -20 || true)
 
     if [ -z "$versions" ]; then
         print_error "$(msg 'failed_get_version')"
-        print_info "Please check your network connection or try again later."
+        print_info "Check UPDATE_REPOSITORY, network access, and UPDATE_GITHUB_TOKEN for a private repository."
         exit 1
     fi
 
@@ -580,11 +808,16 @@ validate_version() {
         version="v$version"
     fi
 
+    if ! validate_release_tag_format "$version"; then
+        print_error "Invalid release version: $version" >&2
+        exit 1
+    fi
+
     print_info "$(msg 'validating_version') $version" >&2
 
     # Check if the release exists
     local http_code
-    http_code=$(github_api_curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${version}" 2>/dev/null)
+    http_code=$(github_api_curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "${GITHUB_API_ROOT}/repos/${GITHUB_REPO}/releases/tags/${version}" 2>/dev/null)
 
     # Check for network errors (empty or non-numeric response)
     if [ -z "$http_code" ] || ! [[ "$http_code" =~ ^[0-9]+$ ]]; then
@@ -607,7 +840,7 @@ validate_version() {
 get_current_version() {
     if [ -f "$INSTALL_DIR/sub2api" ]; then
         # Use grep -E for better compatibility (works on macOS and Linux)
-        "$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown"
+        "$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?' | head -1 || echo "unknown"
     else
         echo "not_installed"
     fi
@@ -617,53 +850,175 @@ get_current_version() {
 download_and_extract() {
     local version_num=${LATEST_VERSION#v}
     local archive_name="sub2api_${version_num}_${OS}_${ARCH}.tar.gz"
-    local download_url="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/${archive_name}"
-    local checksum_url="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/checksums.txt"
+    local release_json
+    local archive_url
+    local archive_expected_size
+    local checksum_url=""
+    local manifest_url=""
+    local expected_checksum
+    local actual_checksum
+    local archive_size
+    local metadata_size
+    local manifest_source_commit=""
+    local binary_version
+    local binary_commit
+    local new_binary
+
+    if ! validate_release_tag_format "$LATEST_VERSION"; then
+        print_error "Invalid release tag: $LATEST_VERSION"
+        exit 1
+    fi
+
+    if ! release_json=$(fetch_release_json "$LATEST_VERSION"); then
+        print_error "Failed to read release metadata for $LATEST_VERSION"
+        print_info "Check UPDATE_REPOSITORY and UPDATE_GITHUB_TOKEN."
+        exit 1
+    fi
+    if ! printf '%s' "$release_json" | jq -e --arg tag "$LATEST_VERSION" '
+        .tag_name == $tag and .draft == false and .prerelease == false
+    ' >/dev/null; then
+        print_error "Release is not a stable publication for $LATEST_VERSION"
+        exit 1
+    fi
+    if ! archive_url=$(release_asset_url "$release_json" "$archive_name" 2>/dev/null); then
+        print_error "Release asset is missing or duplicated: $archive_name"
+        exit 1
+    fi
+    if ! archive_expected_size=$(release_asset_size "$release_json" "$archive_name" 2>/dev/null); then
+        print_error "Release asset size is missing or invalid: $archive_name"
+        exit 1
+    fi
+    checksum_url=$(release_asset_url "$release_json" "checksums.txt" 2>/dev/null || true)
+    manifest_url=$(release_asset_url "$release_json" "update-manifest.json" 2>/dev/null || true)
 
     print_info "$(msg 'downloading') ${archive_name}..."
 
     # Create temp directory
     TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
+    trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
-    # Download archive
-    if ! curl -sL "$download_url" -o "$TEMP_DIR/$archive_name"; then
+    # Download through the authenticated GitHub asset API. Redirected object
+    # storage receives no repository token.
+    if ! github_asset_download "$archive_url" "$TEMP_DIR/$archive_name"; then
         print_error "$(msg 'download_failed')"
         exit 1
+    fi
+    archive_size=$(wc -c < "$TEMP_DIR/$archive_name" | tr -d '[:space:]')
+    if [ "$archive_size" -gt $((500 * 1024 * 1024)) ]; then
+        print_error "Downloaded archive exceeds the 500 MiB safety limit"
+        exit 1
+    fi
+    if [ "$archive_size" -ne "$archive_expected_size" ]; then
+        print_error "Downloaded archive size does not match GitHub release metadata"
+        exit 1
+    fi
+
+    # The release manifest is the source of truth for update policy. The
+    # installer validates it even though a systemd deployment can apply a full
+    # release instead of using the admin binary-only updater.
+    if [ -n "$manifest_url" ] && github_asset_download "$manifest_url" "$TEMP_DIR/update-manifest.json"; then
+        metadata_size=$(wc -c < "$TEMP_DIR/update-manifest.json" | tr -d '[:space:]')
+        if [ "$metadata_size" -gt $((1024 * 1024)) ]; then
+            print_error "update-manifest.json exceeds the 1 MiB safety limit"
+            exit 1
+        fi
+        if ! jq -e --arg version "$version_num" '
+            .schema_version == 1 and
+            .version == $version and
+            (.source_commit | type == "string" and test("^[0-9A-Fa-f]{40}$")) and
+            (.policy == "hot-update-safe" or
+             .policy == "image-update-recommended" or
+             .policy == "image-update-required") and
+            (.reasons | type == "array")
+        ' "$TEMP_DIR/update-manifest.json" >/dev/null; then
+            print_error "Release update manifest is invalid or does not match $version_num"
+            exit 1
+        fi
+        RELEASE_UPDATE_POLICY=$(jq -r '.policy' "$TEMP_DIR/update-manifest.json")
+        manifest_source_commit=$(jq -r '.source_commit | ascii_downcase' "$TEMP_DIR/update-manifest.json")
+        print_info "Release update policy: $RELEASE_UPDATE_POLICY"
+    elif [ "$REQUIRE_RELEASE_MANIFEST" = "true" ]; then
+        print_error "Required update-manifest.json is missing"
+        exit 1
+    else
+        print_warning "update-manifest.json is missing"
     fi
 
     # Download and verify checksum
     print_info "$(msg 'verifying_checksum')"
-    if curl -sL "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
-        local expected_checksum=$(grep "$archive_name" "$TEMP_DIR/checksums.txt" | awk '{print $1}')
-        local actual_checksum=$(sha256sum "$TEMP_DIR/$archive_name" | awk '{print $1}')
+    if [ -n "$checksum_url" ] && github_asset_download "$checksum_url" "$TEMP_DIR/checksums.txt"; then
+        if [ "$(wc -c < "$TEMP_DIR/checksums.txt" | tr -d '[:space:]')" -gt $((1024 * 1024)) ]; then
+            print_error "checksums.txt exceeds the 1 MiB safety limit"
+            exit 1
+        fi
+        expected_checksum=$(awk -v name="$archive_name" '$2 == name || $2 == "*" name {print $1; exit}' "$TEMP_DIR/checksums.txt")
+        actual_checksum=$(calculate_sha256 "$TEMP_DIR/$archive_name")
 
-        if [ "$expected_checksum" != "$actual_checksum" ]; then
+        if [[ ! "$expected_checksum" =~ ^[0-9A-Fa-f]{64}$ ]] || [ "${expected_checksum,,}" != "${actual_checksum,,}" ]; then
             print_error "$(msg 'checksum_failed')"
-            print_error "Expected: $expected_checksum"
+            print_error "Expected: ${expected_checksum:-missing}"
             print_error "Actual: $actual_checksum"
             exit 1
         fi
         print_success "$(msg 'checksum_verified')"
+    elif [ "$REQUIRE_RELEASE_CHECKSUM" = "true" ]; then
+        print_error "$(msg 'checksum_not_found')"
+        exit 1
     else
         print_warning "$(msg 'checksum_not_found')"
     fi
 
     # Extract
     print_info "$(msg 'extracting')"
-    tar -xzf "$TEMP_DIR/$archive_name" -C "$TEMP_DIR"
+    if [ "$(tar -tzf "$TEMP_DIR/$archive_name" | awk '$0 == "sub2api" {count++} END {print count + 0}')" -ne 1 ]; then
+        print_error "Release archive must contain exactly one root sub2api binary"
+        exit 1
+    fi
+    tar -xzf "$TEMP_DIR/$archive_name" -C "$TEMP_DIR" sub2api
+
+    if [ ! -f "$TEMP_DIR/sub2api" ] || [ -L "$TEMP_DIR/sub2api" ]; then
+        print_error "Release archive does not contain the sub2api binary"
+        exit 1
+    fi
+    chmod +x "$TEMP_DIR/sub2api"
+    if ! binary_version=$("$TEMP_DIR/sub2api" --version 2>&1); then
+        print_error "Downloaded binary failed its --version preflight"
+        exit 1
+    fi
+    if ! printf '%s\n' "$binary_version" | awk -v expected="$version_num" '
+        { for (i = 1; i < NF; i++) if ($i == "Sub2API" && $(i + 1) == expected) found = 1 }
+        END { exit(found ? 0 : 1) }
+    '; then
+        print_error "Downloaded binary version does not match $version_num"
+        exit 1
+    fi
+    if [ -n "$manifest_source_commit" ]; then
+        if [[ ! "$binary_version" =~ commit:[[:space:]]*([0-9A-Fa-f]{40}) ]]; then
+            print_error "Downloaded binary does not expose a full embedded source commit"
+            exit 1
+        fi
+        binary_commit=${BASH_REMATCH[1],,}
+        if [ "$binary_commit" != "$manifest_source_commit" ]; then
+            print_error "Downloaded binary source commit does not match update-manifest.json"
+            exit 1
+        fi
+    fi
 
     # Create install directory
     mkdir -p "$INSTALL_DIR"
 
-    # Copy binary
-    cp "$TEMP_DIR/sub2api" "$INSTALL_DIR/sub2api"
-    chmod +x "$INSTALL_DIR/sub2api"
+    # Copy into the destination filesystem, then atomically replace the binary.
+    new_binary="$INSTALL_DIR/.sub2api.new.$$"
+    cp "$TEMP_DIR/sub2api" "$new_binary"
+    chmod 0755 "$new_binary"
 
-    # Copy deploy files if they exist in the archive
-    if [ -d "$TEMP_DIR/deploy" ]; then
-        cp -r "$TEMP_DIR/deploy/"* "$INSTALL_DIR/" 2>/dev/null || true
-    fi
+    # Systemd reads this file on every start so the private updater can access
+    # the same release source after installation.
+    persist_update_environment
+
+    # Commit the already verified binary as the final step. The temporary file
+    # is on the destination filesystem, so rename is atomic.
+    mv -f "$new_binary" "$INSTALL_DIR/sub2api"
 
     print_success "$(msg 'binary_installed') $INSTALL_DIR/sub2api"
 }
@@ -713,12 +1068,13 @@ setup_directories() {
 # Install systemd service
 install_service() {
     print_info "$(msg 'installing_service')"
+    persist_update_environment
 
     # Create service file with configured host and port
     cat > /etc/systemd/system/sub2api.service << EOF
 [Unit]
 Description=Sub2API - AI API Gateway Platform
-Documentation=https://github.com/Wei-Shaw/sub2api
+Documentation=https://github.com/${GITHUB_REPO}
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
@@ -728,6 +1084,7 @@ User=sub2api
 Group=sub2api
 WorkingDirectory=/opt/sub2api
 ExecStart=/opt/sub2api/sub2api
+EnvironmentFile=-/etc/sub2api-update.env
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -788,7 +1145,7 @@ get_public_ip() {
 start_service() {
     print_info "$(msg 'starting_service')"
 
-    if systemctl start sub2api; then
+    if systemctl start sub2api && wait_for_service_stability; then
         print_success "$(msg 'service_started')"
         return 0
     else
@@ -796,6 +1153,24 @@ start_service() {
         print_info "sudo journalctl -u sub2api -n 50"
         return 1
     fi
+}
+
+wait_for_service_stability() {
+    local stable_checks=0
+    local attempt=0
+    while [ "$attempt" -lt 30 ]; do
+        attempt=$((attempt + 1))
+        if systemctl is-active --quiet sub2api; then
+            stable_checks=$((stable_checks + 1))
+            if [ "$stable_checks" -ge 5 ]; then
+                return 0
+            fi
+        else
+            stable_checks=0
+        fi
+        sleep 1
+    done
+    return 1
 }
 
 # Enable service auto-start
@@ -852,6 +1227,21 @@ print_completion() {
 }
 
 # Upgrade function
+restore_binary_backup() {
+    local backup_path="$1"
+    local restore_path="$INSTALL_DIR/.sub2api.restore.$$"
+
+    if [ ! -f "$backup_path" ]; then
+        print_error "Rollback backup is unavailable: $backup_path"
+        return 1
+    fi
+    cp "$backup_path" "$restore_path"
+    chmod 0755 "$restore_path"
+    chown "$SERVICE_USER:$SERVICE_USER" "$restore_path"
+    mv -f "$restore_path" "$INSTALL_DIR/sub2api"
+    systemctl start sub2api && wait_for_service_stability
+}
+
 upgrade() {
     # Check if Sub2API is installed
     if [ ! -f "$INSTALL_DIR/sub2api" ]; then
@@ -863,20 +1253,16 @@ upgrade() {
     print_info "$(msg 'upgrading')"
 
     # Get current version
-    CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?' | head -1 || echo "unknown")
     print_info "$(msg 'current_version'): $CURRENT_VERSION"
-
-    # Stop service
-    if systemctl is-active --quiet sub2api; then
-        print_info "$(msg 'stopping_service')"
-        systemctl stop sub2api
-    fi
 
     # Backup current binary
     cp "$INSTALL_DIR/sub2api" "$INSTALL_DIR/sub2api.backup"
     print_info "$(msg 'backup_created'): $INSTALL_DIR/sub2api.backup"
 
-    # Download and install new version
+    # Download, verify, and atomically replace while the old process keeps
+    # serving from its already mapped executable. Downtime begins only when the
+    # service is restarted after all preflight checks pass.
     get_latest_version
     download_and_extract
 
@@ -885,7 +1271,16 @@ upgrade() {
 
     # Start service
     print_info "$(msg 'starting_service')"
-    systemctl start sub2api
+    if ! systemctl restart sub2api || ! wait_for_service_stability; then
+        print_error "$(msg 'service_start_failed')"
+        print_warning "Restoring the previous binary..."
+        if restore_binary_backup "$INSTALL_DIR/sub2api.backup"; then
+            print_warning "Previous version restored and started"
+        else
+            print_error "Automatic restore failed; inspect: sudo journalctl -u sub2api -n 50"
+        fi
+        exit 1
+    fi
 
     print_success "$(msg 'upgrade_complete')"
 }
@@ -894,6 +1289,7 @@ upgrade() {
 # Requires: Sub2API must already be installed
 install_version() {
     local target_version="$1"
+    local backup_name=""
 
     # Check if Sub2API is installed
     if [ ! -f "$INSTALL_DIR/sub2api" ]; then
@@ -918,15 +1314,8 @@ install_version() {
         exit 0
     fi
 
-    # Stop service if running
-    if systemctl is-active --quiet sub2api; then
-        print_info "$(msg 'stopping_service')"
-        systemctl stop sub2api
-    fi
-
     # Backup current binary (for potential recovery)
     if [ -f "$INSTALL_DIR/sub2api" ]; then
-        local backup_name
         if [ "$current_version" != "unknown" ] && [ "$current_version" != "not_installed" ]; then
             backup_name="sub2api.backup.${current_version}"
         else
@@ -947,11 +1336,16 @@ install_version() {
 
     # Start service
     print_info "$(msg 'starting_service')"
-    if systemctl start sub2api; then
+    if systemctl restart sub2api && wait_for_service_stability; then
         print_success "$(msg 'service_started')"
     else
         print_error "$(msg 'service_start_failed')"
-        print_info "sudo journalctl -u sub2api -n 50"
+        if [ -n "$backup_name" ] && restore_binary_backup "$INSTALL_DIR/$backup_name"; then
+            print_warning "Previous version restored and started"
+        else
+            print_error "Automatic restore failed; inspect: sudo journalctl -u sub2api -n 50"
+        fi
+        exit 1
     fi
 
     # Print completion message
@@ -991,6 +1385,7 @@ uninstall() {
 
     print_info "$(msg 'removing_files')"
     rm -f /etc/systemd/system/sub2api.service
+    rm -f "$UPDATE_ENV_FILE"
     systemctl daemon-reload
 
     print_info "$(msg 'removing_install_dir')"
@@ -1146,6 +1541,7 @@ main() {
                 echo "Usage: $0 rollback -v <version>"
                 echo "       $0 rollback <version>"
                 echo ""
+                check_dependencies
                 list_versions
                 exit 1
             fi
@@ -1156,6 +1552,7 @@ main() {
             exit 0
             ;;
         list-versions|versions)
+            check_dependencies
             list_versions
             exit 0
             ;;

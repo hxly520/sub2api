@@ -97,7 +97,7 @@
       class="sticky top-0 z-50 border-b border-gray-200/80 bg-white/90 backdrop-blur-md dark:border-dark-800 dark:bg-dark-950/90"
     >
       <nav
-        class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
+        class="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
         :aria-label="t('home.nav.primary')"
       >
         <a href="#top" class="flex min-w-0 items-center gap-2.5" @click="closeMobileNav">
@@ -193,7 +193,7 @@
         data-testid="home-mobile-menu"
         class="border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-800 dark:bg-dark-950 lg:hidden"
       >
-        <div class="mx-auto grid max-w-7xl grid-cols-2 gap-1 sm:grid-cols-3">
+        <div class="mx-auto grid max-w-[1440px] grid-cols-2 gap-1 sm:grid-cols-3">
           <a
             v-for="item in sectionNavItems"
             :key="`mobile-${item.href}`"
@@ -236,13 +236,12 @@
         aria-labelledby="home-title"
       >
         <div class="home-scene pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-          <span class="home-scene-frame"></span>
           <span class="home-scene-line home-scene-line-one"></span>
           <span class="home-scene-line home-scene-line-two"></span>
         </div>
 
-        <div class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-          <div class="grid items-center gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-4">
+        <div class="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+          <div class="home-hero-grid grid items-center gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-10 xl:gap-12">
             <div class="home-hero-copy max-w-2xl">
               <p class="flex items-center gap-2.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
                 <span class="h-px w-7 bg-blue-500" aria-hidden="true"></span>
@@ -291,11 +290,7 @@
             </div>
 
             <figure class="home-data-visual relative min-w-0" aria-labelledby="home-visual-caption">
-              <img
-                src="/home-data-visual.png"
-                :alt="t('home.hero.visualAlt')"
-                class="home-data-visual-image block h-auto w-full object-contain"
-              />
+              <HomeTechVisual />
               <figcaption id="home-visual-caption" class="sr-only">
                 {{ t('home.hero.visualAlt') }}
               </figcaption>
@@ -332,7 +327,7 @@
         class="scroll-mt-20 border-b border-gray-200 bg-white py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-950"
         aria-labelledby="overview-title"
       >
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
           <div class="max-w-3xl">
             <p class="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
               <span class="h-px w-6 bg-blue-500" aria-hidden="true"></span>
@@ -384,7 +379,7 @@
         class="scroll-mt-20 border-b border-gray-900 bg-[#111318] py-16 text-white sm:py-20"
         aria-labelledby="reliability-title"
       >
-        <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:px-8">
+        <div class="mx-auto grid max-w-[1440px] gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:px-8">
           <div>
             <p class="flex items-center gap-2 text-xs font-semibold text-blue-300">
               <span class="h-px w-6 bg-blue-400" aria-hidden="true"></span>
@@ -429,7 +424,7 @@
         class="scroll-mt-20 border-b border-gray-200 bg-[#f7f9fc] py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-900"
         aria-labelledby="guide-title"
       >
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
           <div class="mx-auto max-w-3xl text-center">
             <p class="text-xs font-semibold text-blue-700 dark:text-blue-300">{{ t('home.guide.eyebrow') }}</p>
             <h2 id="guide-title" class="mt-3 text-3xl font-bold leading-tight text-gray-950 sm:text-4xl dark:text-white">
@@ -473,7 +468,7 @@
         class="scroll-mt-20 border-b border-gray-200 bg-white py-16 sm:py-20 dark:border-dark-800 dark:bg-dark-950"
         aria-labelledby="faq-title"
       >
-        <div class="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:px-8">
+        <div class="mx-auto grid max-w-[1440px] gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:px-8">
           <div>
             <p class="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
               <span class="h-px w-6 bg-blue-500" aria-hidden="true"></span>
@@ -506,7 +501,7 @@
       </section>
 
       <section class="bg-blue-600 py-14 text-white dark:bg-blue-700" aria-labelledby="home-cta-title">
-        <div class="mx-auto flex max-w-7xl flex-col gap-7 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div class="mx-auto flex max-w-[1440px] flex-col gap-7 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div class="max-w-3xl">
             <p class="text-xs font-semibold text-blue-100">{{ t('home.cta.eyebrow') }}</p>
             <h2 id="home-cta-title" class="mt-2 text-3xl font-bold leading-tight">{{ t('home.cta.title') }}</h2>
@@ -535,7 +530,7 @@
     </main>
 
     <footer class="border-t border-gray-200 bg-gray-50 dark:border-dark-800 dark:bg-dark-950">
-      <div class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+      <div class="mx-auto flex max-w-[1440px] flex-col gap-5 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
         <div class="flex min-w-0 items-center gap-3">
           <img :src="siteLogo || '/logo.svg'" alt="" class="h-8 w-8 flex-none rounded-md object-contain" />
           <div class="min-w-0">
@@ -564,6 +559,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import HomeTechVisual from '@/components/home/HomeTechVisual.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import {
   sanitizeHomeContentFrameUrl,
@@ -785,13 +781,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.home-scene-frame {
-  position: absolute;
-  inset: 7% 5%;
-  border-right: 1px solid rgba(148, 163, 184, 0.22);
-  border-left: 1px solid rgba(148, 163, 184, 0.22);
-}
-
 .home-scene-line {
   position: absolute;
   right: 0;
@@ -814,25 +803,10 @@ onMounted(() => {
 
 .home-data-visual {
   display: flex;
-  min-height: 310px;
+  min-height: clamp(300px, 34vw, 500px);
   align-items: center;
   justify-content: center;
   isolation: isolate;
-}
-
-.home-data-visual-image {
-  max-height: 390px;
-  filter: drop-shadow(0 28px 42px rgba(49, 92, 167, 0.11));
-  mix-blend-mode: multiply;
-  animation: home-visual-enter 700ms ease-out both;
-}
-
-.dark .home-data-visual-image {
-  border-radius: 8px;
-  background: #f5f8fc;
-  filter: none;
-  mix-blend-mode: normal;
-  opacity: 0.88;
 }
 
 .home-overview-item:not(:last-child) {
@@ -965,47 +939,33 @@ onMounted(() => {
   }
 }
 
-@keyframes home-visual-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 1023px) {
   .home-data-visual {
-    min-height: 220px;
-    max-width: 760px;
+    min-height: clamp(250px, 48vw, 380px);
+    max-width: 900px;
     margin: 0 auto;
-  }
-
-  .home-data-visual-image {
-    max-height: 300px;
   }
 }
 
 @media (max-width: 639px) {
   .home-hero > div:last-child {
-    padding-top: 24px;
-    padding-bottom: 24px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .home-hero-grid {
+    gap: 1.25rem;
   }
 
   .home-data-visual {
-    min-height: 125px;
-  }
-
-  .home-data-visual-image {
-    max-height: 125px;
+    width: 100%;
+    max-width: 240px;
+    min-height: clamp(140px, 40vw, 180px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-flow-pulse,
-  .home-data-visual-image {
+  .home-flow-pulse {
     animation: none;
   }
 }

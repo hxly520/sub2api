@@ -93,6 +93,8 @@ temp/
 dist/
 build/
 release/
+!tools/release/
+!tools/release/*.sh
 points-system/_local-build/
 
 # 后端嵌入的前端构建产物
@@ -127,7 +129,8 @@ scripts
 .code-review-state
 #openspec/
 code-reviews/
-AGENTS.md
+# Repository handoff instructions are intentionally versioned.
+!AGENTS.md
 backend/cmd/server/server
 deploy/docker-compose.override.yml
 .gocache/
@@ -139,6 +142,8 @@ docs/*
 !docs/MEDIA_API_CN.md
 !docs/PRIVATE_CUSTOMIZATION_CN.md
 !docs/PRODUCTION_OPERATIONS_CN.md
+!docs/PRIVATE_RELEASE_RUNBOOK_CN.md
+!docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md
 !docs/LINK_CARDS_CN.md
 !docs/PRODUCTION_DEPLOYMENT_*_CN.md
 !docs/ASYNC_IMAGE_TASKS.md

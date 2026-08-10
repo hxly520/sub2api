@@ -81,16 +81,16 @@ func TestGitHubReleaseClientAPIRequestAuthorization(t *testing.T) {
 
 func TestGitHubReleaseClientRedirectAuthorization(t *testing.T) {
 	tests := []struct {
-		name     string
-		url      string
-		wantAuth string
+		name      string
+		url       string
+		wantError bool
 	}{
-		{name: "same HTTPS authority", url: "https://api.github.com/redirected", wantAuth: "Bearer update-secret"},
-		{name: "HTTP", url: "http://api.github.com/redirected"},
-		{name: "subdomain", url: "https://sub.api.github.com/redirected"},
-		{name: "userinfo", url: "https://user@api.github.com/redirected"},
-		{name: "custom port", url: "https://api.github.com:8443/redirected"},
-		{name: "different host", url: "https://example.com/redirected"},
+		{name: "same HTTPS authority", url: "https://api.github.com/redirected"},
+		{name: "HTTP", url: "http://api.github.com/redirected", wantError: true},
+		{name: "subdomain", url: "https://sub.api.github.com/redirected", wantError: true},
+		{name: "userinfo", url: "https://user@api.github.com/redirected", wantError: true},
+		{name: "custom port", url: "https://api.github.com:8443/redirected", wantError: true},
+		{name: "different host", url: "https://example.com/redirected", wantError: true},
 	}
 
 	checkRedirect := githubAPICheckRedirect(nil)
@@ -100,8 +100,13 @@ func TestGitHubReleaseClientRedirectAuthorization(t *testing.T) {
 			require.NoError(t, err)
 			req.Header.Set("Authorization", "Bearer update-secret")
 
-			require.NoError(t, checkRedirect(req, nil))
-			require.Equal(t, tt.wantAuth, req.Header.Get("Authorization"))
+			err = checkRedirect(req, nil)
+			if tt.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "Bearer update-secret", req.Header.Get("Authorization"))
 		})
 	}
 }
@@ -131,6 +136,47 @@ func TestGitHubReleaseClientDoesNotAuthorizeDownloads(t *testing.T) {
 	for _, header := range headers {
 		require.Empty(t, header.Get("Authorization"))
 	}
+}
+
+func TestGitHubReleaseClientAuthorizesPrivateAssetAPI(t *testing.T) {
+	client := newTestGitHubReleaseClient()
+	client.updateGitHubToken = "update-secret"
+
+	var headers []http.Header
+	transport := githubReleaseRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		headers = append(headers, req.Header.Clone())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("asset")),
+			Request:    req,
+		}, nil
+	})
+	client.downloadHTTPClient.Transport = transport
+
+	dest := filepath.Join(t.TempDir(), "asset")
+	assetURL := "https://api.github.com/repos/hxly520/sub2api/releases/assets/42"
+	require.NoError(t, client.DownloadFile(context.Background(), assetURL, dest, 100))
+	_, err := client.FetchChecksumFile(context.Background(), assetURL)
+	require.NoError(t, err)
+	require.Len(t, headers, 2)
+	for _, header := range headers {
+		require.Equal(t, "Bearer update-secret", header.Get("Authorization"))
+		require.Equal(t, "application/octet-stream", header.Get("Accept"))
+	}
+}
+
+func TestGitHubDownloadRedirectPolicy(t *testing.T) {
+	check := githubDownloadCheckRedirect(nil)
+	req, err := http.NewRequest(http.MethodGet, "https://release-assets.githubusercontent.com/asset", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer update-secret")
+	require.NoError(t, check(req, nil))
+	require.Empty(t, req.Header.Get("Authorization"))
+
+	untrusted, err := http.NewRequest(http.MethodGet, "https://example.com/asset", nil)
+	require.NoError(t, err)
+	require.Error(t, check(untrusted, nil))
 }
 
 type githubReleaseRoundTripFunc func(*http.Request) (*http.Response, error)

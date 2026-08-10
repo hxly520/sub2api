@@ -119,7 +119,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库基线为官方 Sub2API Release `v0.1.169` 与私有兼容层；当前新增关键节点为 credit 审计修复 `1a4a690dd`、最终消费阶梯 `1d8d50522` 和冲正净额展示 `fc7ea1fe5`。`backend/cmd/server/VERSION=0.1.169`，后续官方升级仍须逐项保留二开契约。
+- 当前仓库源码基线为官方 Sub2API Release `v0.1.172`、标签后已审热修复与私有兼容层，`backend/cmd/server/VERSION=0.1.172`；生产运行身份仍以本文件第 0.8 节的容器、不可变镜像与 OCI revision 为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页和独立工作台契约。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
@@ -200,7 +200,7 @@
 - `video.52token.org`
 - `points.52token.org`
 
-活动业务域名的目标清单只允许上述 `52token.org` 系列。`gpt-codex.top` 及其子域名已经淘汰，不应作为生产入口、回滚入口或仓库外依赖。`2026-08-01 08:29 CST` 只读执行 `nginx -T` 时仍发现 `/etc/nginx/conf.d/sub2api.conf`、`sub2api-api.conf`、`sub2api-images.conf` 加载了旧域名 server block；本轮按只读边界未修改或 reload Nginx，已作为配置漂移记录。下一次 Nginx 维护必须先备份并移除这些旧 block 和对应证书引用，通过 `nginx -t` 后再平滑 reload；在此之前不得宣称旧域名已清理，也不得把它写入新的积分 Origin、前端配置或发布说明。
+活动业务域名的目标清单只允许上述 `52token.org` 系列。`gpt-codex.top` 及其子域名已经淘汰，不应作为生产入口、回滚入口或仓库外依赖。`2026-08-01 08:29 CST` 只读执行 `nginx -T` 时仍发现 `/etc/nginx/conf.d/sub2api.conf`、`sub2api-api.conf`、`sub2api-images.conf` 加载了旧域名 server block；维护者后续已报告人工处理，但仓库尚未记录处理后的 `nginx -T`、证书引用和线上响应复核，因此当前状态记为“已处理、待只读验收”。下一次服务器盘点必须确认旧 server block 与证书引用均不存在、`nginx -t` 通过且旧域名不再响应；在此之前不得把旧域名写入新的积分 Origin、前端配置或发布说明。
 
 主要链路：
 
@@ -303,6 +303,8 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ## 9. 版本升级与镜像发布
 
+本节保留生产事实和人工切换边界；私有 GitHub Release、`update-manifest.json`、后台二进制热更新、优雅重启/自动恢复及 Compose 双路径的标准流程见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)。在线更新不等于镜像更新：它不会改变镜像 digest、OCI 创建时间、Compose/Nginx、宿主 exact-root 页面、积分服务或工作台，分类为 `image-update-required` 时后台必须拒绝安装。
+
 1. 从完整克隆的当前私有 `main` 创建 `codex/upgrade-vX.Y.Z-*`。
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
 3. 解决协议、调度、四种图片模式、媒体计费、提链 Key 鉴权/计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 与 `docs/LINK_CARDS_CN.md` 中的完整门禁。
@@ -312,7 +314,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.1.169-1a4a690dd999`，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0 节及链接记录的第 0、11.14、11.15、11.16 节为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.172-7fe54f0856ee`，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0.8 节及链接记录的第 11.14、11.15、11.16 节为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
@@ -326,7 +328,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ### 9.2 独立积分系统发布与安全边界
 
-积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算、全体积分中心/签到门禁、昨日原始消费四阶梯、冲正净额展示和双精确父 Origin；当前积分服务为 `v0.1.169-b64a0110ab2c`，Sub2API 为 `v0.1.169-1a4a690dd999`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
+积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算、全体积分中心/签到门禁、昨日原始消费四阶梯、冲正净额展示和双精确父 Origin；当前积分服务为 `v0.1.169-b64a0110ab2c`，Sub2API 为 `0.1.172-7fe54f0856ee`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
 
 1. 优先由 GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。CI runner 受计费门禁时可使用受控本机构建和标准 archive，但仍须把镜像推送 GHCR 并分别记录 registry digest、archive SHA256 和服务器加载后的 image ID。
    第 2-4 步只适用于空白新环境或经审计的灾难恢复。当前生产角色、schema 和密钥均已存在，普通积分镜像更新不得重跑 bootstrap 或重新生成密钥。

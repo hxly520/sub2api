@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAppStore } from '@/stores/app'
 import { getPublicSettings } from '@/api/auth'
+import { checkUpdates } from '@/api/admin/system'
 import type { PublicSettings } from '@/types'
 
 function createDeferred<T>() {
@@ -78,6 +79,7 @@ describe('useAppStore', () => {
     vi.useFakeTimers()
     localStorage.clear()
     vi.mocked(getPublicSettings).mockReset()
+    vi.mocked(checkUpdates).mockReset()
     // 清除 window.__APP_CONFIG__
     delete (window as any).__APP_CONFIG__
   })
@@ -85,6 +87,40 @@ describe('useAppStore', () => {
   afterEach(() => {
     vi.useRealTimers()
     localStorage.clear()
+  })
+
+  describe('版本更新管理', () => {
+    it('缓存私有发布源、镜像和热更新策略', async () => {
+      vi.mocked(checkUpdates).mockResolvedValue({
+        current_version: '0.1.172-52t.1',
+        latest_version: '0.1.173-52t.1',
+        has_update: true,
+        cached: false,
+        build_type: 'release',
+        repository: 'hxly520/sub2api',
+        docker_image: 'ghcr.io/hxly520/sub2api',
+        channel: 'stable',
+        hot_update_policy: 'image-update-required',
+        hot_update_allowed: false,
+        hot_update_reasons: ['container layout changed']
+      })
+      const store = useAppStore()
+
+      const fresh = await store.fetchVersion()
+      const cached = await store.fetchVersion()
+
+      expect(checkUpdates).toHaveBeenCalledTimes(1)
+      expect(fresh?.repository).toBe('hxly520/sub2api')
+      expect(cached).toMatchObject({
+        repository: 'hxly520/sub2api',
+        docker_image: 'ghcr.io/hxly520/sub2api',
+        channel: 'stable',
+        hot_update_policy: 'image-update-required',
+        hot_update_allowed: false,
+        hot_update_reasons: ['container layout changed']
+      })
+      expect(store.hotUpdateAllowed).toBe(false)
+    })
   })
 
   // --- Toast 消息管理 ---

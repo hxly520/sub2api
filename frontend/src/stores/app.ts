@@ -44,6 +44,12 @@ export const useAppStore = defineStore('app', () => {
   const hasUpdate = ref<boolean>(false)
   const buildType = ref<string>('source')
   const releaseInfo = ref<ReleaseInfo | null>(null)
+  const updateRepository = ref<string>('')
+  const updateDockerImage = ref<string>('')
+  const updateChannel = ref<string>('')
+  const hotUpdatePolicy = ref<string>('image-update-required')
+  const hotUpdateAllowed = ref<boolean>(false)
+  const hotUpdateReasons = ref<string[]>([])
 
   // Auto-incrementing ID for toasts
   let toastIdCounter = 0
@@ -250,6 +256,12 @@ export const useAppStore = defineStore('app', () => {
         has_update: hasUpdate.value,
         build_type: buildType.value,
         release_info: releaseInfo.value || undefined,
+        repository: updateRepository.value,
+        docker_image: updateDockerImage.value,
+        channel: updateChannel.value,
+        hot_update_policy: hotUpdatePolicy.value,
+        hot_update_allowed: hotUpdateAllowed.value,
+        hot_update_reasons: hotUpdateReasons.value,
         cached: true
       }
     }
@@ -267,6 +279,12 @@ export const useAppStore = defineStore('app', () => {
       hasUpdate.value = data.has_update
       buildType.value = data.build_type || 'source'
       releaseInfo.value = data.release_info || null
+      updateRepository.value = data.repository || ''
+      updateDockerImage.value = data.docker_image || ''
+      updateChannel.value = data.channel || ''
+      hotUpdatePolicy.value = data.hot_update_policy || 'image-update-required'
+      hotUpdateAllowed.value = data.hot_update_allowed === true
+      hotUpdateReasons.value = data.hot_update_reasons || []
       versionLoaded.value = true
       return data
     } catch (error) {
@@ -465,6 +483,12 @@ export const useAppStore = defineStore('app', () => {
     hasUpdate,
     buildType,
     releaseInfo,
+    updateRepository,
+    updateDockerImage,
+    updateChannel,
+    hotUpdatePolicy,
+    hotUpdateAllowed,
+    hotUpdateReasons,
 
     // Computed
     hasActiveToasts,

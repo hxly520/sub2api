@@ -196,7 +196,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.25.7, Gin, Ent |
+| Backend | Go 1.26.5, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -217,6 +217,8 @@ Nginx drops headers containing underscores by default (e.g. `session_id`), which
 
 ## Deployment
 
+> This repository is the private `hxly520/sub2api` customization line. Production updates, private Releases, GHCR images, and rollback gates are defined in the [private release runbook](docs/PRIVATE_RELEASE_RUNBOOK_CN.md) and [deployment guide](deploy/README.md). Do not overwrite this build with the upstream installer.
+
 ### Method 1: Script Installation (Recommended)
 
 One-click installation script that downloads pre-built binaries from GitHub Releases.
@@ -231,7 +233,12 @@ One-click installation script that downloads pre-built binaries from GitHub Rele
 #### Installation Steps
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN="$(gh auth token)"
+gh api -H "Accept: application/vnd.github.raw+json" \
+  "/repos/hxly520/sub2api/contents/deploy/install.sh?ref=main" > install.sh
+sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN bash install.sh install
+unset UPDATE_GITHUB_TOKEN
 ```
 
 The script will:
@@ -281,7 +288,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # Uninstall
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
+sudo bash install.sh uninstall -y
 ```
 
 ---
@@ -304,7 +311,12 @@ Use the automated deployment script for easy setup:
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # Download and run deployment preparation script
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN="$(gh auth token)"
+gh api -H "Accept: application/vnd.github.raw+json" \
+  "/repos/hxly520/sub2api/contents/deploy/docker-deploy.sh?ref=main" > docker-deploy.sh
+bash docker-deploy.sh
+unset UPDATE_GITHUB_TOKEN
 
 # Start services
 docker compose up -d
@@ -326,7 +338,7 @@ If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api/deploy
 
 # 2. Copy environment configuration
@@ -456,7 +468,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple-silicon Macs running macOS 26 can run the full Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
 
 ```bash
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -473,7 +485,7 @@ Build and run from source code for development or customization.
 
 #### Prerequisites
 
-- Go 1.21+
+- Go 1.26.5+
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+
@@ -482,7 +494,7 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api
 
 # 2. Install pnpm (if not already installed)

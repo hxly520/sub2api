@@ -83,7 +83,12 @@ type systemUpdateErrorEnvelope struct {
 	Message string `json:"message"`
 }
 
-func newSystemHandlerTestRouter(t *testing.T, updateSvc *systemHandlerUpdateServiceStub, repo *memoryIdempotencyRepoStub) *gin.Engine {
+func newSystemHandlerTestRouter(
+	t *testing.T,
+	updateSvc *systemHandlerUpdateServiceStub,
+	repo *memoryIdempotencyRepoStub,
+	scheduleRestart ...func(time.Duration) error,
+) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	service.SetDefaultIdempotencyCoordinator(nil)
@@ -96,10 +101,14 @@ func newSystemHandlerTestRouter(t *testing.T, updateSvc *systemHandlerUpdateServ
 		SystemOperationTTL: time.Minute,
 	})
 	handler := NewSystemHandler(updateSvc, lockSvc)
+	if len(scheduleRestart) > 0 {
+		handler.scheduleRestart = scheduleRestart[0]
+	}
 
 	router := gin.New()
 	router.POST("/api/v1/admin/system/update", handler.PerformUpdate)
 	router.POST("/api/v1/admin/system/rollback", handler.Rollback)
+	router.POST("/api/v1/admin/system/restart", handler.RestartService)
 	router.GET("/api/v1/admin/system/rollback-versions", handler.GetRollbackVersions)
 	return router
 }
@@ -278,6 +287,50 @@ func TestSystemHandlerRollbackWithDisallowedVersionReturnsBadRequest(t *testing.
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, 1, updateSvc.rollbackToCall)
+}
+
+func TestSystemHandlerRestartReturnsErrorWhenSchedulingFails(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{}
+	repo := newMemoryIdempotencyRepoStub()
+	scheduleErr := errors.New("restart unsupported")
+	callCount := 0
+	router := newSystemHandlerTestRouter(t, updateSvc, repo, func(delay time.Duration) error {
+		callCount++
+		require.Equal(t, 500*time.Millisecond, delay)
+		return scheduleErr
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/restart", nil)
+	req.Header.Set("Idempotency-Key", "restart-unsupported")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, 1, callCount)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusFailedRetryable)
+}
+
+func TestSystemHandlerRestartReturnsSuccessAfterScheduling(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{}
+	repo := newMemoryIdempotencyRepoStub()
+	callCount := 0
+	router := newSystemHandlerTestRouter(t, updateSvc, repo, func(delay time.Duration) error {
+		callCount++
+		require.Equal(t, 500*time.Millisecond, delay)
+		return nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/restart", nil)
+	req.Header.Set("Idempotency-Key", "restart-scheduled")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, callCount)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusSucceeded)
+	var body systemUpdateResponseEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "Service restart initiated", body.Data.Message)
 }
 
 func TestSystemHandlerGetRollbackVersions(t *testing.T) {

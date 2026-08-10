@@ -187,7 +187,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的当前代码基线为 Sub2API `v0.1.169`（官方 release commit `26d894ef4f50645a4bf1030e378ac892f17d0223` 加私有兼容层），源码 `VERSION=0.1.169`；截至 `2026-08-01 01:04 CST`，生产环境已由维护者手工切换为 `v0.1.169-f79803bb73d6`，后续候选镜像的构建、上传或服务器缓存仍不代表生产容器已经切换，自动化不得替换或重启 Sub2API。私有分支在官方基线上保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
+本仓库的当前代码基线为 Sub2API `v0.1.172`（官方 release commit `155c494964c3ea6ecc31f52679525c1034bf0f16`、标签后官方热修复与私有兼容层），源码 `backend/cmd/server/VERSION=0.1.172`；截至 `2026-08-09 00:33 CST`，生产环境已由维护者手工切换为 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`。后续候选镜像的构建、上传或服务器缓存仍不代表生产容器已经切换，自动化不得替换或重启 Sub2API。私有分支在官方基线上保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
 - [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)
@@ -215,7 +215,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.25.7, Gin, Ent |
+| 后端 | Go 1.26.5, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -236,6 +236,8 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 
 ## 部署方式
 
+> 本仓库是 `hxly520/sub2api` 私有二开主线。生产更新、私有 Release、GHCR 镜像和回滚门禁以 [私有发布手册](docs/PRIVATE_RELEASE_RUNBOOK_CN.md) 与 [部署说明](deploy/README.md) 为准；不要使用官方仓库的安装脚本覆盖二开版本。
+
 ### 方式一：脚本安装（推荐）
 
 一键安装脚本，自动从 GitHub Releases 下载预编译的二进制文件。
@@ -250,7 +252,12 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 #### 安装步骤
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN="$(gh auth token)"
+gh api -H "Accept: application/vnd.github.raw+json" \
+  "/repos/hxly520/sub2api/contents/deploy/install.sh?ref=main" > install.sh
+sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN bash install.sh install
+unset UPDATE_GITHUB_TOKEN
 ```
 
 脚本会自动：
@@ -300,7 +307,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # 卸载
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
+sudo bash install.sh uninstall -y
 ```
 
 ---
@@ -323,7 +330,12 @@ curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # 下载并运行部署准备脚本
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+export UPDATE_REPOSITORY=hxly520/sub2api
+export UPDATE_GITHUB_TOKEN="$(gh auth token)"
+gh api -H "Accept: application/vnd.github.raw+json" \
+  "/repos/hxly520/sub2api/contents/deploy/docker-deploy.sh?ref=main" > docker-deploy.sh
+bash docker-deploy.sh
+unset UPDATE_GITHUB_TOKEN
 
 # 启动服务
 docker compose up -d
@@ -345,7 +357,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api/deploy
 
 # 2. 复制环境配置文件
@@ -487,7 +499,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
 
 ```bash
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -504,7 +516,7 @@ cd sub2api/deploy
 
 #### 前置条件
 
-- Go 1.21+
+- Go 1.26.5+
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+
@@ -513,7 +525,7 @@ cd sub2api/deploy
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/hxly520/sub2api.git
 cd sub2api
 
 # 2. 安装 pnpm（如果还没有安装）

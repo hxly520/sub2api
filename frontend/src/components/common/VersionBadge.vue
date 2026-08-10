@@ -114,6 +114,29 @@
                 </p>
               </div>
 
+              <!-- Private release source and deployment target -->
+              <div
+                v-if="updateRepository || updateDockerImage"
+                class="mb-4 space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] dark:border-dark-700 dark:bg-dark-900/60"
+              >
+                <div v-if="updateRepository" class="flex items-center gap-2">
+                  <span class="w-14 flex-shrink-0 text-gray-400 dark:text-dark-500">{{ t('version.repository') }}</span>
+                  <span class="min-w-0 truncate font-mono text-gray-600 dark:text-dark-300">{{ updateRepository }}</span>
+                </div>
+                <div v-if="updateChannel" class="flex items-center gap-2">
+                  <span class="w-14 flex-shrink-0 text-gray-400 dark:text-dark-500">{{ t('version.channel') }}</span>
+                  <span class="text-gray-600 dark:text-dark-300">{{ updateChannel }}</span>
+                </div>
+                <div v-if="hotUpdatePolicy" class="flex items-center gap-2">
+                  <span class="w-14 flex-shrink-0 text-gray-400 dark:text-dark-500">{{ t('version.policy') }}</span>
+                  <span class="text-gray-600 dark:text-dark-300">{{ hotUpdatePolicyLabel }}</span>
+                </div>
+                <div v-if="updateDockerImage" class="flex items-center gap-2">
+                  <span class="w-14 flex-shrink-0 text-gray-400 dark:text-dark-500">{{ t('version.image') }}</span>
+                  <span class="min-w-0 truncate font-mono text-gray-600 dark:text-dark-300">{{ updateDockerImage }}</span>
+                </div>
+              </div>
+
               <!-- Priority 1: Update error (must check before hasUpdate) -->
               <div v-if="updateError" class="space-y-2">
                 <div
@@ -292,7 +315,7 @@
               </div>
 
               <!-- Priority 4: Update available for release build - show update button -->
-              <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
+              <div v-else-if="hasUpdate && isReleaseBuild && hotUpdateAllowed" class="space-y-2">
                 <!-- Update info card -->
                 <div
                   class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
@@ -343,6 +366,59 @@
                 </button>
 
                 <!-- View release link -->
+                <a
+                  v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
+                  :href="releaseInfo.html_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+                >
+                  {{ t('version.viewChangelog') }}
+                  <Icon name="externalLink" size="xs" :stroke-width="2" />
+                </a>
+              </div>
+
+              <!-- A release marked image-update-required must be applied with Compose. -->
+              <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
+                <div
+                  class="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20"
+                >
+                  <div
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50"
+                  >
+                    <Icon name="cube" size="sm" :stroke-width="2" class="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      {{ t('version.composeUpdateRequired') }}
+                    </p>
+                    <p class="mt-0.5 text-xs text-blue-600/80 dark:text-blue-400/80">
+                      {{ t('version.composeUpdateHint') }}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  v-if="hotUpdateReasons.length"
+                  class="rounded-lg border border-gray-200 bg-gray-50 p-2 text-[11px] text-gray-500 dark:border-dark-700 dark:bg-dark-900/60 dark:text-dark-400"
+                >
+                  <p class="mb-1 font-medium text-gray-600 dark:text-dark-300">{{ t('version.composeReasons') }}</p>
+                  <ul class="list-disc space-y-0.5 pl-4">
+                    <li v-for="reason in hotUpdateReasons" :key="reason">{{ reason }}</li>
+                  </ul>
+                </div>
+
+                <code
+                  class="block select-all whitespace-pre-wrap break-all rounded-lg bg-gray-900 p-2.5 font-mono text-[10px] leading-relaxed text-gray-100"
+                  >{{ composeUpdateCommand }}</code
+                >
+                <button
+                  @click="copyToClipboard(composeUpdateCommand)"
+                  class="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-dark-700 dark:text-dark-300 dark:hover:bg-dark-700"
+                >
+                  <Icon :name="copied ? 'check' : 'copy'" size="xs" :stroke-width="2" />
+                  {{ copied ? t('version.copied') : t('version.copyCommand') }}
+                </button>
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
                   :href="releaseInfo.html_url"
@@ -532,7 +608,7 @@
                                   class="flex items-center gap-0.5 rounded-md bg-gray-200/70 p-0.5 dark:bg-dark-600/70"
                                 >
                                   <button
-                                    v-for="tab in manualTabs"
+                                    v-for="tab in rollbackManualTabs"
                                     :key="tab.key"
                                     @click="manualTab = tab.key"
                                     class="rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
@@ -583,7 +659,15 @@
                               {{ rollbackError }}
                             </p>
 
+                            <div
+                              v-if="!selectedRollbackHotUpdateAllowed"
+                              class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700 dark:border-blue-800/50 dark:bg-blue-900/20 dark:text-blue-300"
+                            >
+                              {{ t('version.rollbackComposeOnly') }}
+                            </div>
+
                             <button
+                              v-else
                               @click="handleRollback"
                               :disabled="rollingBack"
                               class="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -651,10 +735,6 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
-
 const { t } = useI18n()
 
 const props = defineProps<{
@@ -676,6 +756,24 @@ const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
+const updateRepository = computed(() => appStore.updateRepository)
+const updateDockerImage = computed(() => appStore.updateDockerImage)
+const updateChannel = computed(() => appStore.updateChannel)
+const hotUpdatePolicy = computed(() => appStore.hotUpdatePolicy)
+const hotUpdateAllowed = computed(() => appStore.hotUpdateAllowed)
+const hotUpdateReasons = computed(() => appStore.hotUpdateReasons)
+const hotUpdatePolicyLabel = computed(() => {
+  switch (hotUpdatePolicy.value) {
+    case 'hot-update-safe':
+      return t('version.policyHotSafe')
+    case 'image-update-recommended':
+      return t('version.policyImageRecommended')
+    case 'image-update-required':
+      return t('version.policyImageRequired')
+    default:
+      return hotUpdatePolicy.value
+  }
+})
 
 // Update process states (local to this component)
 const updating = ref(false)
@@ -707,22 +805,68 @@ const manualTabs = computed(() => [
   { key: 'docker' as const, label: t('version.deployDocker') }
 ])
 
+const selectedRollbackInfo = computed(() =>
+  rollbackVersions.value.find((item) => item.version === selectedRollbackVersion.value)
+)
+const selectedRollbackHotUpdateAllowed = computed(
+  () => selectedRollbackInfo.value?.hot_update_allowed !== false
+)
+const rollbackManualTabs = computed(() =>
+  selectedRollbackHotUpdateAllowed.value
+    ? manualTabs.value
+    : manualTabs.value.filter((tab) => tab.key === 'docker')
+)
+
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
   const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
+  const repository = safeUpdateRepository.value
+  return [
+    `: "\${UPDATE_GITHUB_TOKEN:?set UPDATE_GITHUB_TOKEN first}"`,
+    `printf 'header = "Authorization: Bearer %s"\\n' "$UPDATE_GITHUB_TOKEN" \\`,
+    `  | curl -q --globoff --config - --fail --silent --show-error \\`,
+    `      -H "Accept: application/vnd.github.raw+json" \\`,
+    `      "https://api.github.com/repos/${repository}/contents/deploy/install.sh?ref=${tag}" \\`,
+    `  | sudo bash -s -- rollback ${tag}`
+  ].join('\n')
 })
 
 const dockerRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
+  const image = safeUpdateDockerImage.value
   return [
     `# ${t('version.dockerEditCompose')}`,
-    `image: ${DOCKER_IMAGE}:${selectedRollbackVersion.value}`,
+    `image: ${image}:${selectedRollbackVersion.value}`,
     '',
     `# ${t('version.dockerRecreate')}`,
-    'docker compose up -d'
+    'docker compose up -d --no-deps sub2api'
   ].join('\n')
 })
+
+const composeUpdateCommand = computed(() => {
+  const image = safeUpdateDockerImage.value
+  const version = latestVersion.value || '<latest-tag>'
+  return [
+    `# ${t('version.composePinImage')}`,
+    `export SUB2API_IMAGE=${image}:${version}`,
+    '',
+    'docker compose pull sub2api',
+    `# ${t('version.dockerRecreate')}`,
+    'docker compose up -d --no-deps sub2api'
+  ].join('\n')
+})
+
+const safeUpdateRepository = computed(() =>
+  /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(updateRepository.value)
+    ? updateRepository.value
+    : 'hxly520/sub2api'
+)
+
+const safeUpdateDockerImage = computed(() =>
+  /^[A-Za-z0-9][A-Za-z0-9._/@:-]*$/.test(updateDockerImage.value)
+    ? updateDockerImage.value
+    : 'ghcr.io/hxly520/sub2api'
+)
 
 const activeManualCommand = computed(() =>
   manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
@@ -816,6 +960,8 @@ function selectRollbackVersion(version: string) {
   if (rollingBack.value) return
   rollbackError.value = ''
   selectedRollbackVersion.value = selectedRollbackVersion.value === version ? '' : version
+  const selected = rollbackVersions.value.find((item) => item.version === selectedRollbackVersion.value)
+  manualTab.value = selected?.hot_update_allowed === false ? 'docker' : 'script'
 }
 
 function formatPublishedAt(publishedAt: string): string {
@@ -827,7 +973,12 @@ function formatPublishedAt(publishedAt: string): string {
 
 async function handleRollback() {
   if (!isAdmin.value) return
-  if (rollingBack.value || !selectedRollbackVersion.value) return
+  if (
+    rollingBack.value ||
+    !selectedRollbackVersion.value ||
+    !selectedRollbackHotUpdateAllowed.value
+  )
+    return
 
   rollingBack.value = true
   rollbackError.value = ''

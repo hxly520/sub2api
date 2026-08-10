@@ -73,6 +73,9 @@ func main() {
 		}
 		return
 	}
+	if preparePendingUpdateBoot() {
+		return
+	}
 
 	// Check if setup is needed
 	if setup.NeedsSetup() {
@@ -171,6 +174,7 @@ func runMainServer() {
 	}()
 
 	log.Printf("Server started on %s", app.Server.Addr)
+	confirmPendingUpdateWhenHealthy(app.Server)
 
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)

@@ -2,6 +2,8 @@
 
 本文档是本私有分支的维护入口。它记录官方 Sub2API 之外的兼容扩展、代码入口、不可破坏约束和升级流程，供后续维护者在合并官方新版本时使用。
 
+自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。私有 Release、在线热更新、Compose 更新和回退的完整操作边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本的已完成/待处理状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。
+
 ## 1. 维护原则
 
 1. 官方能力是基线。OpenAI Responses/Chat Completions、Anthropic Messages、Gemini、Codex、Claude、账号池、订阅、计费和管理后台的原有行为必须继续可用。
@@ -15,7 +17,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库候选基线：官方 `v0.1.172` 及官方标签后的 `upstream/main=cc67b1aca` 热修复，`backend/cmd/server/VERSION=0.1.172`。私有兼容分支为 `codex/upgrade-v0.1.172-compat`；最近一次兼容合并提交为 `35c73a669`，额度卡公共会话/防爆破修复提交为 `d8e380220`。本轮保留媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节区分。
+- 当前仓库候选基线：官方 `v0.1.172` 及官方标签后的 `upstream/main=cc67b1aca` 热修复，`backend/cmd/server/VERSION=0.1.172`。当前私有候选工作分支为 `codex/final-v0.1.172-compat`；最终发布身份必须以 annotated 私有 Tag 的 `^{commit}`、`update-manifest.json.source_commit` 和构建产物内嵌 revision 三者一致为准。本轮保留媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节区分。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
@@ -209,7 +211,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前源码候选提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，文档提交为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，基线为 `v0.1.172`，并保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护。生产已于 2026-08-09 手工切换并开放全体用户，实际开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节为准。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.1.172` 私有候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护，具体提交由本次私有 Release Tag 和 manifest 固定，不再把旧候选哈希写成当前源码。生产已于 2026-08-09 手工切换并开放全体用户，实际开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节为准。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。
@@ -236,9 +238,9 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
-- Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。两套入口必须同步采用生图参考稿确定的冷灰/电蓝数据化风格、左文右图主视觉和一致的信息层级，不能只改 Vue 页面后把生产根路径遗留为旧版。
+- Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。两套入口必须同步采用生图参考稿确定的冷灰/电蓝数据化风格、左文右图主视觉和一致的信息层级，不能只改 Vue 页面后把生产根路径遗留为旧版。当前首屏和后续功能区统一使用宽版心，首屏不再绘制左右纵向装饰线，主视觉按桌面、平板和移动端稳定比例放大；主视觉使用透明服务拓扑 SVG，不再使用带画布底色的位图。
 - 上传 Logo 的同源图片入口为 `GET /api/v1/settings/logo`：只接受后台 `site_logo` 中不超过 2 MiB 且真实文件签名一致的 PNG/JPEG/WebP/GIF Base64 Data URI，响应设置 `nosniff`；后台上传控件同步只接受这四类栅格格式。异常值、伪造类型、SVG、AVIF 或未配置时重定向到 `/logo.svg`。公开首页和积分嵌入页统一使用该上传 Logo，不复制品牌素材。
-- 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。`frontend/src/views/HomeView.vue`、其主视觉资源和 `deploy/public-landing/index.html` 必须作为同一次首页改版审查；静态 exact-root 应保持单文件自包含或把新增资产纳入原子发布清单。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
+- 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。`frontend/src/views/HomeView.vue`、`frontend/src/components/home/HomeTechVisual.vue` 和 `deploy/public-landing/index.html` 必须作为同一次首页改版审查；静态 exact-root 应保持单文件自包含或把新增资产纳入原子发布清单。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
 - Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
 - 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
 - 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。
@@ -279,7 +281,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 官方基线为 tag `v0.1.172`，并继续合入 `upstream/main=cc67b1aca` 的版本、依赖安全和 OpenAI 路由提示修复；源码版本固定为 `0.1.172`。合并采用官方非冲突变更加私有冲突段兼容移植，重新生成 Ent/Wire，不覆盖额度卡、积分、媒体和首页功能。
 - 关键兼容点包括 `FailoverState` 同时保留媒体非幂等重放边界与官方利润门状态、Responses/Chat/Anthropic/Gemini/WS 的请求级定价时间、媒体端点利润门豁免、OpenAI 上游响应模型审计，以及官方 Codex 路由提示。公共额度卡 404 和 Redis fail-close 激活保护作为独立私有中间件保留。
 - 迁移 runner 按完整 filename 和 checksum 识别迁移；生产已有私有 `194_link_cards.sql` 不改名、不重编号、不改 checksum，官方同号 `194/195` 缺失部分独立追加。回归测试位于 `backend/internal/repository/migrations_runner_notx_test.go`。
-- 本地验证门禁：`go test ./... -run '^$'`、额度卡激活限流测试、额度卡 API/页面 Vitest 定向测试均通过；前端全量和镜像构建须在推送 `main` 后继续执行。GitHub Actions 只发布带版本和 commit 的候选镜像，Sub2API 服务器容器不由自动化切换。
+- 发布前门禁包括后端 unit/default 编译测试、`go vet`、双平台构建、额度卡激活限流、前端 ESLint/typecheck/Vitest/生产构建，以及 Release/Compose/安装脚本夹具。GitHub Actions 只发布版本、Tag commit、manifest source commit 和二进制 revision 一致的候选镜像；Sub2API 服务器容器不由自动化切换。
+- 官方 `v0.1.173` 尚未进入本节的“已完成”范围。其差异、同号迁移风险和待办矩阵记录在 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md)，完成兼容合并与全量门禁前不得创建私有生产 Release。
 
 ### 5.1 v0.1.169 历史合并兼容结论
 
@@ -379,6 +382,8 @@ go build ./cmd/server
 收费媒体真实测试应使用最小数量并保存任务 ID、时间窗和 usage 对照。禁止为了“多试几次”自动循环创建付费媒体任务。
 
 ### 6.3 构建、上线与回滚
+
+私有发布固定使用 annotated Tag `vX.Y.Z-52t.N`。后台二进制热更新与 Compose/GHCR 是并存但不等价的两条路径；首个私有 Release、容器/入口/Nginx/积分/宿主静态资源变化、未审迁移和分叉历史必须走 Compose。分类、checksum、manifest、健康确认和回退步骤统一按 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md) 执行。
 
 1. 先在 GitHub PR 完成 CI、安全扫描和人工 diff 审查。
 2. 构建带 commit 的不可变镜像标签，并记录 digest；浮动版本标签不能作为唯一回滚点。

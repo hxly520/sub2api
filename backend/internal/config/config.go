@@ -161,7 +161,61 @@ type UpdateConfig struct {
 	// ProxyURL 用于访问 GitHub 的代理地址
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
-	ProxyURL string `mapstructure:"proxy_url"`
+	ProxyURL        string `mapstructure:"proxy_url"`
+	Repository      string `mapstructure:"repository"`
+	DockerImage     string `mapstructure:"docker_image"`
+	Channel         string `mapstructure:"channel"`
+	InPlaceEnabled  bool   `mapstructure:"in_place_enabled"`
+	RequireChecksum bool   `mapstructure:"require_checksum"`
+	RequireManifest bool   `mapstructure:"require_manifest"`
+}
+
+func validateUpdateConfig(config UpdateConfig) error {
+	if repository := strings.TrimSpace(config.Repository); repository != "" {
+		parts := strings.Split(repository, "/")
+		if repository != config.Repository || len(parts) != 2 || !validUpdateIdentifier(parts[0]) || !validUpdateIdentifier(parts[1]) {
+			return fmt.Errorf("update.repository must be an owner/repository pair")
+		}
+	}
+	if image := strings.TrimSpace(config.DockerImage); image != "" {
+		if image != config.DockerImage || len(image) > 255 || !validDockerImageReference(image) {
+			return fmt.Errorf("update.docker_image contains unsupported characters")
+		}
+	}
+	if channel := strings.TrimSpace(config.Channel); channel != "" {
+		if channel != config.Channel || len(channel) > 64 || !validUpdateIdentifier(channel) {
+			return fmt.Errorf("update.channel contains unsupported characters")
+		}
+	}
+	return nil
+}
+
+func validUpdateIdentifier(value string) bool {
+	if value == "" || value == "." || value == ".." || len(value) > 100 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validDockerImageReference(value string) bool {
+	for index, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '.' || char == '_' || char == '-' ||
+			char == '/' || char == ':' || char == '@' {
+			if index > 0 || ((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+				continue
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // PointsSystemConfig controls the trust boundary between Sub2API and the
@@ -2625,6 +2679,12 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.session_idle_timeout_minutes", 0)
 	viper.SetDefault("gateway.user_message_queue.mode", "")
 	viper.SetDefault("update.proxy_url", "")
+	viper.SetDefault("update.repository", "hxly520/sub2api")
+	viper.SetDefault("update.docker_image", "ghcr.io/hxly520/sub2api")
+	viper.SetDefault("update.channel", "stable")
+	viper.SetDefault("update.in_place_enabled", true)
+	viper.SetDefault("update.require_checksum", true)
+	viper.SetDefault("update.require_manifest", true)
 
 	// sticky_escape_enabled is the one exception to the zero-value rule: its
 	// effective default is true, applied post-unmarshal via a viper.IsSet guard.
@@ -2687,6 +2747,9 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if err := validateUpdateConfig(c.Update); err != nil {
+		return err
+	}
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)
