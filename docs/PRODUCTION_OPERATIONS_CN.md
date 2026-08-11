@@ -4,9 +4,9 @@
 
 最新生产事实以本文件第 0 节及 [2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 第 0、11.14、11.15、11.16 节为准。[2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留首次部署证据；后续排障不得把其中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
-## 0. 2026-08-02 当前生产事实
+## 0. 2026-08-11 当前生产事实
 
-- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999`，revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`，healthy、restart count `0`。points credit/reversal 的非空审计正文已真实验收，兼容触发器与函数已经删除。
+- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.172-52t.1`，revision `17cc682d26795abc8f5ea16f4d3cf33366c0a676`，容器 `d531995c1f35...`、image ID `be179a20cb42...`，启动于 `2026-08-11 07:19:32 CST`，healthy、restart count `0`。私有 Release、GHCR digest、宿主首页和帮助中心状态见第 0.9 节。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
 - 积分中心与签到门禁均为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。当前 policy v7 于 `2026-08-02` 生效，按昨日原始成功余额消费使用 `1%-5% / 2%-5% / 3%-5% / 4%-5%` 四档，最低消费 `1 U`、每日一次、三个金额 cap 为 `NULL`；原 v5 保持不可变并于 `2026-08-03` 接管。
 - 用户 1 原 `3.08 U` 已通过 reversal `12c061b4-380c-5119-8aec-26a500ef6590` 真正扣回并标记 `reversed`；新 grant `7d779e12-d5dd-4f09-a944-ff0eac93cf18` 按 `[50,100) U` 的 `3%-5%` 档实发 `3.11 U` 且为 `settled`。真实用户接口的今日赠送和累计赠送均为净 `3.11 U`，旧记录仅作为已冲正审计保留。
@@ -116,10 +116,18 @@
 - 真实网关验收：活动提链 Key `api_keys.id=161` 请求 `/v1/models` 返回 `200`（3 个模型）。验收前后该卡仍为 `active`，发行金额 `10.00000000`、退款 `0`、在途预留 `0`；全站提链资金负数计数为 `0`，在途预留合计为 `0`。API `/health=200`，额度卡 `/card=200`，`/login` 继续 `302` 到 `/card`。
 - 重要边界：开启用户中心门禁不会停止已激活提链 Key 的网关请求；网关仍按 Key 状态、原生用户/分组权限、并发、RPM、额度和原生计费链路控制。若需紧急停止已发行 Key，必须在管理员控制台冻结 Key 或撤销授权分组后再对账，不能只依赖入口开关。
 
+### 0.9 2026-08-11 私有 Release 切换与公开静态页面同步
+
+- 维护者已手工切换 Sub2API 到 `ghcr.io/hxly520/sub2api:0.1.172-52t.1`。多架构 GHCR digest 为 `sha256:9fbcc6f14374b0a010f3bbe70ba5f0c94ecc634616de3cc48bafca50dc2d87a6`，运行 image ID 为 `sha256:be179a20cb42064686580d4bb1d0e5f87f6c5933c78f3d08d3b23cc3c7bae0c2`，OCI revision 为 `17cc682d26795abc8f5ea16f4d3cf33366c0a676`。容器 `d531995c1f35...` 当前 healthy、restart `0`。
+- 根首页并不由镜像直接提供。Nginx exact-root 仍读取 `/home/api/sub2api-deploy/public/index.html`，因此已把同 Release 的 `public-landing-index.html` 原子部署到该路径；线上 SHA256 为 `e09a1c17aa999373f44b7e16d6ed0d74e238acaae846aece625feeb25820b368`，旧文件备份为 `/home/api/sub2api-deploy/backups/homepage/index.html.20260811-112651.bak`。
+- 帮助中心源码提交 `fe952f1bc` 将页面统一为公开首页的冷白/电蓝风格，并新增新手、积分、提链、额度卡使用、分销和自动发货模板。宿主 `/home/api/sub2api-deploy/help/index.html` 已原子替换，SHA256 为 `8aa5dd4edb9b61c0f137d06b1105e2633ee80491ddf34e70b3dab3da174ec8b7`，旧文件备份为 `/home/api/sub2api-deploy/backups/help/index.html.20260811-120439.bak`。
+- `api.52token.org` 与 `52token.org` 的根首页和 `/help/` 均通过本机 TLS 源站与 Cloudflare 公网双重 SHA256 核对；帮助页标题为“52Token 帮助中心”，5 个新增角色锚点齐全。Playwright 在 `1440x900` 和 `390x844` 下均为 `clientWidth=scrollWidth`，上传 Logo、积分、提链和分销章节正常渲染。
+- 两次静态页面替换都先执行 `nginx -t` 并保留原文件，未 reload Nginx、未重启或替换 Sub2API/积分/PostgreSQL/Redis/工作台容器，也未修改数据库。后续 Release 必须同时携带 `public-landing-index.html`、`public-help-index.html` 和各自 SHA256；切换镜像不能代替这两个宿主文件的原子发布。
+
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库源码基线为官方 Sub2API Release `v0.1.172`、标签后已审热修复与私有兼容层，`backend/cmd/server/VERSION=0.1.172`；生产运行身份仍以本文件第 0.8 节的容器、不可变镜像与 OCI revision 为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页和独立工作台契约。
+- 当前仓库源码基线为官方 Sub2API Release `v0.1.172`、标签后已审热修复与私有兼容层，`backend/cmd/server/VERSION=0.1.172-52t.1`；生产运行身份仍以本文件第 0.9 节的容器、不可变镜像与 OCI revision 为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
