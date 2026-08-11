@@ -195,17 +195,21 @@ jobs:
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
 
-      - name: Upload update policy and public landing assets
+      - name: Upload update policy and public static assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           cp deploy/public-landing/index.html public-landing-index.html
           sha256sum public-landing-index.html > public-landing-index.html.sha256
+          cp deploy/public-help/index.html public-help-index.html
+          sha256sum public-help-index.html > public-help-index.html.sha256
           gh release upload "${TAG_NAME}" \
             update-manifest.json \
             public-landing-index.html \
             public-landing-index.html.sha256 \
+            public-help-index.html \
+            public-help-index.html.sha256 \
             --clobber
 
       # Update DockerHub description

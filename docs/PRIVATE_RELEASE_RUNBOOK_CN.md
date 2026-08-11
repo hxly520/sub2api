@@ -2,12 +2,11 @@
 
 本文说明 `hxly520/sub2api` 的两种版本更新方式。默认不直接操作生产；服务器上的 Sub2API 镜像由维护者在人工窗口切换。所有命令中的主机、项目名、路径、版本和凭据均为占位符。
 
-## 1. 当前基线（2026-08-10）
+## 1. 当前基线（2026-08-11）
 
-- 私有仓库：`hxly520/sub2api`，当前候选分支为 `codex/final-v0.1.172-compat`，源码 `backend/cmd/server/VERSION` 为 `0.1.172`。
+- 私有仓库：`hxly520/sub2api`，`main` 当前版本为 `0.1.172-52t.1`；首个私有 Release `v0.1.172-52t.1` 已建立 GHCR、二进制 updater 和宿主静态页面资产基线。
 - 官方 `v0.1.172` 已完成私有兼容合并；官方 `v0.1.173`（tag commit `29009f0b2ea14edf3b11ae2564fb617ff91a03b4`）已读取但尚未合并到私有主线。它包含 Grok/xAI、被动渠道监控、音频/搜索计费和迁移 `194-220` 等大范围变化，不能直接热更新或直接覆盖私有代码。
-- 当前没有可复用的私有 `v*-52t.*` Release。首个私有 Release 必须先走一次 Compose 镜像更新，建立镜像、可写 `/app`、回滚备份和 updater 基线；完成后才考虑二进制热更新。
-- 私有版本 Tag 采用 `vX.Y.Z-52t.N`；当前 `0.1.172` 基线的首个候选应为 `v0.1.172-52t.1`。Tag 必须是 annotated tag，同一官方基线内的 `N` 单调递增；不得在尚未合并官方版本时提前占用它的版本号。
+- 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
 
 ## 2. 发布前门禁
 
@@ -43,7 +42,7 @@ Manifest 的 `policy` 只有三种值：`hot-update-safe`、`image-update-recomm
 
 ## 3. GitHub Actions 发布
 
-工作流 `.github/workflows/release.yml` 只接受私有 Tag。它在同一 Tag checkout，构建嵌入前端的 Linux/Windows/macOS 二进制和 Linux 多架构 GHCR 镜像，上传 `checksums.txt`、`update-manifest.json`、`public-landing-index.html` 及其独立 SHA256，并保留完整 commit/revision。发布不使用 `latest` 作为回滚点。
+工作流 `.github/workflows/release.yml` 只接受私有 Tag。它在同一 Tag checkout，构建嵌入前端的 Linux/Windows/macOS 二进制和 Linux 多架构 GHCR 镜像，上传 `checksums.txt`、`update-manifest.json`、`public-landing-index.html`、`public-help-index.html` 及两份静态页各自的独立 SHA256，并保留完整 commit/revision。发布不使用 `latest` 作为回滚点。
 
 GoReleaser 固定为工作流中记录的精确版本，不能改回浮动 `~> v2`。升级发布工具前必须在同一版本运行配置检查和隔离镜像构建；当前 `dockers`/`docker_manifests` 仍是已验证的多架构发布路径，GoReleaser 对它们的淘汰提示是已知待办，不得在没有 GHCR 双架构验证时直接迁移到 `dockers_v2`。
 
@@ -53,9 +52,10 @@ GoReleaser 固定为工作流中记录的精确版本，不能改回浮动 `~> v
 
 ```bash
 gh release view vX.Y.Z-52t.N --repo hxly520/sub2api
-gh release download vX.Y.Z-52t.N --repo hxly520/sub2api --pattern 'checksums.txt' --pattern 'update-manifest.json' --pattern 'public-landing-index.html*'
+gh release download vX.Y.Z-52t.N --repo hxly520/sub2api --pattern 'checksums.txt' --pattern 'update-manifest.json' --pattern 'public-landing-index.html*' --pattern 'public-help-index.html*'
 sha256sum checksums.txt update-manifest.json
 sha256sum --check public-landing-index.html.sha256
+sha256sum --check public-help-index.html.sha256
 jq -e --arg v 'X.Y.Z-52t.N' '.schema_version == 1 and .version == $v and (.policy != "")' update-manifest.json
 docker buildx imagetools inspect ghcr.io/hxly520/sub2api:X.Y.Z-52t.N
 ```
@@ -77,6 +77,8 @@ docker buildx imagetools inspect ghcr.io/hxly520/sub2api:X.Y.Z-52t.N
 热更新只替换二进制及其内嵌前端，不更新 Docker 基础层、`deploy/docker-entrypoint.sh`、Compose、Nginx、宿主 exact-root 页面、积分镜像或独立工作台。上述任一项变化都按 Compose/人工运维处理。
 
 未登录首页必须随同一私有 Tag 验收，但宿主 exact-root 仍单独发布。先从该 Tag 下载并校验 `public-landing-index.html`，备份宿主 `/home/api/sub2api-deploy/public/index.html`，再在同目录原子替换；最后核对 Release 资产、本地文件、宿主文件和线上 `/`、`/index.html` 的 SHA256 一致。此步骤不重启 Sub2API，也不能由后台二进制热更新代替。
+
+帮助中心同样是宿主静态资产。先校验 `public-help-index.html.sha256`，备份宿主 `/home/api/sub2api-deploy/help/index.html`，再原子替换并核对线上 `/help/` 的 SHA256、标题、目录锚点、桌面和移动端布局。帮助页必须保持无 JavaScript、无表单、无密钥输入面，不得因为切换 Sub2API 镜像而误判为已更新。
 
 热更新写入的是当前容器可写层，不会创建新镜像，也不会刷新镜像 OCI 创建时间或 digest。`docker restart` 会保留该层，但 `docker compose up --force-recreate`、删除容器或迁移主机会重新从 Compose 所指镜像创建，届时会回到旧镜像内的二进制。热更新验收通过后，维护者应把 `SUB2API_IMAGE`/Compose 引用预先钉到同一私有 Release tag 或 digest，并只运行 `docker compose config --quiet` 验证；不要在非切换窗口执行 `up`。这样后续计划内重建不会静默降回旧版本。
 

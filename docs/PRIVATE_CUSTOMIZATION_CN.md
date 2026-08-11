@@ -238,9 +238,12 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 - CC Switch API Key 导入兼容：`backend/internal/service/ccswitch_import.go`、`frontend/src/utils/ccswitchImport.ts`。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
+- 帮助中心必须覆盖三类角色：注册自用用户、提链额度卡创建者和无需注册的额度卡使用者。公开积分说明只展示消费结算口径、次日 `00:05`、签到资格和“最高可达昨日实际消费金额 10%”的活动上限，不暴露后台阶梯区间；实际资格和到账金额始终以当日生效策略为准。
+- 提链帮助必须说明余额先扣后创建、批量金额为单张金额乘数量、`预充值金额 / 创建时倍率 = 1x 对外额度`、待激活退款、欠费充值自动恢复、完整 Key 安全和创建者积分归属。分销示例和自动发货模板只能使用 `CARD_KEY`、`MODEL` 等占位符，不写入真实 Key，不使用“永久”“无限”“官方授权”等不可验证承诺。
 - Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。两套入口必须同步采用生图参考稿确定的冷灰/电蓝数据化风格、左文右图主视觉和一致的信息层级，不能只改 Vue 页面后把生产根路径遗留为旧版。当前首屏和后续功能区统一使用宽版心，首屏不再绘制左右纵向装饰线，主视觉按桌面、平板和移动端稳定比例放大；主视觉使用透明服务拓扑 SVG，不再使用带画布底色的位图。
 - 上传 Logo 的同源图片入口为 `GET /api/v1/settings/logo`：只接受后台 `site_logo` 中不超过 2 MiB 且真实文件签名一致的 PNG/JPEG/WebP/GIF Base64 Data URI，响应设置 `nosniff`；后台上传控件同步只接受这四类栅格格式。异常值、伪造类型、SVG、AVIF 或未配置时重定向到 `/logo.svg`。公开首页和积分嵌入页统一使用该上传 Logo，不复制品牌素材。
 - 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。`frontend/src/views/HomeView.vue`、`frontend/src/components/home/HomeTechVisual.vue` 和 `deploy/public-landing/index.html` 必须作为同一次首页改版审查；静态 exact-root 应保持单文件自包含或把新增资产纳入原子发布清单。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
+- `/help/` 从宿主 `/home/api/sub2api-deploy/help/index.html` 提供，发布边界与 exact-root 相同。Release 必须携带 `public-help-index.html` 和独立 SHA256；生产部署先备份再原子替换，核对线上 SHA256、目录锚点、静态安全契约和移动端无横向溢出，不重启 Sub2API。
 - Cloudflare/Nginx 边界：`deploy/CLOUDFLARE_52TOKEN.md`、`deploy/CLOUDFLARE_ABUSE_REMEDIATION.md`、`deploy/nginx/`。
 - 图片/视频 Edge Worker：`deploy/video-edge-worker/`；源站 Nginx 对媒体域名返回 404，只有 Worker 精确接管加密内容路径。
 - 二开镜像发布：`.github/workflows/cachecompat-image.yml`；版本必须来自源码 VERSION，镜像必须同时记录完整 commit 与 digest，默认不发布 `latest`。

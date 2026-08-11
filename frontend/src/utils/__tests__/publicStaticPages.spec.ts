@@ -97,6 +97,57 @@ describe('public landing page entry contract', () => {
   })
 })
 
+describe('public help center entry contract', () => {
+  const html = readPublicPage('deploy/public-help/index.html')
+  const document = new JSDOM(html).window.document
+
+  it('covers the beginner, points, link-card, card-user and distribution journeys', () => {
+    for (const id of ['start', 'points', 'link-cards', 'card-users', 'distribution']) {
+      expect(document.getElementById(id)).not.toBeNull()
+    }
+
+    const hrefs = new Set(
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map((link) =>
+        link.getAttribute('href'),
+      ),
+    )
+    for (const entryPoint of ['/points', '/link-cards', 'https://key.52token.org/card']) {
+      expect(hrefs).toContain(entryPoint)
+    }
+  })
+
+  it('keeps every table-of-contents anchor unique and resolvable', () => {
+    const ids = Array.from(document.querySelectorAll<HTMLElement>('[id]')).map(
+      (element) => element.id,
+    )
+    expect(new Set(ids).size).toBe(ids.length)
+
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.sidebar a[href^="#"]')) {
+      expect(document.querySelector(link.hash)).not.toBeNull()
+    }
+  })
+
+  it('publishes the reward ceiling without exposing the administrator tier table', () => {
+    const copy = document.body.textContent || ''
+    expect(copy).toContain('最高可达昨日实际消费金额的 10%')
+    expect(copy).toContain('并非每次签到固定获得 10%')
+    for (const privateTier of ['1%-5%', '2%-5%', '3%-5%', '4%-5%']) {
+      expect(copy).not.toContain(privateTier)
+    }
+  })
+
+  it('keeps resale examples templated and free of live credentials', () => {
+    const copy = document.body.textContent || ''
+    expect(copy).toContain('8 / 0.08 = 100U')
+    expect(copy).toContain('CARD_KEY')
+    expect(copy).toContain('https://api.52token.org/v1')
+    expect(copy).toContain('https://key.52token.org')
+    expect(document.querySelector('img.brand-logo')?.getAttribute('src')).toBe(
+      '/api/v1/settings/logo',
+    )
+  })
+})
+
 describe('public static page Nginx security contract', () => {
   const rootLocations = readPublicPage('deploy/nginx/52token-public-root.inc.example')
   const securityHeaders = readPublicPage(

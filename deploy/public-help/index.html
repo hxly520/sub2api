@@ -6,30 +6,32 @@
     <meta name="robots" content="noindex, nofollow, noarchive" />
     <meta
       name="description"
-      content="52Token 客户端手动配置、图片生成和视频任务接口教程。"
+      content="52Token 新手入门、积分中心、提链额度卡、客户端配置与内容生成帮助中心。"
     />
-    <title>52Token 帮助文档</title>
+    <title>52Token 帮助中心</title>
     <style>
       :root {
         color-scheme: light;
-        --page: #f6f8fa;
+        --page: #f5f8fc;
         --surface: #ffffff;
-        --surface-soft: #f1f5f7;
-        --ink: #17212b;
-        --body: #52606d;
-        --muted: #72808e;
-        --line: #dfe6eb;
-        --accent: #0f766e;
-        --accent-strong: #0b5f59;
-        --accent-soft: #e5f4f1;
-        --blue: #245b9e;
-        --blue-soft: #eaf1f8;
+        --surface-soft: #f1f5f9;
+        --ink: #101828;
+        --body: #475569;
+        --muted: #64748b;
+        --line: #dbe3ee;
+        --accent: #2563eb;
+        --accent-strong: #1d4ed8;
+        --accent-soft: #dbeafe;
+        --blue: #2563eb;
+        --blue-soft: #eff6ff;
         --amber: #8c5314;
         --amber-soft: #fff5df;
         --red: #9b3a39;
         --red-soft: #fceeed;
-        --code: #24414b;
-        --code-bg: #edf3f4;
+        --code: #1e3a5f;
+        --code-bg: #edf4ff;
+        --night: #111318;
+        --shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
       }
 
       * {
@@ -48,7 +50,7 @@
         background: var(--page);
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
+          "Microsoft YaHei", sans-serif;
         font-size: 15px;
         line-height: 1.65;
         letter-spacing: 0;
@@ -61,7 +63,13 @@
 
       a:hover,
       a:focus-visible {
-        text-decoration: underline;
+        color: var(--accent-strong);
+      }
+
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, 0.28);
+        outline-offset: 3px;
       }
 
       code {
@@ -79,18 +87,19 @@
         top: 0;
         z-index: 20;
         border-bottom: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.97);
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(12px);
       }
 
       .topbar-inner,
       .layout,
       .footer-inner {
-        width: min(1240px, calc(100% - 40px));
+        width: min(1376px, calc(100% - 64px));
         margin: 0 auto;
       }
 
       .topbar-inner {
-        min-height: 64px;
+        min-height: 68px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -100,7 +109,7 @@
       .brand {
         display: inline-flex;
         align-items: center;
-        gap: 11px;
+        gap: 10px;
         color: var(--ink);
         font-weight: 700;
       }
@@ -110,15 +119,28 @@
         text-decoration: none;
       }
 
-      .brand-mark {
+      .brand-logo {
         width: 34px;
         height: 34px;
-        display: inline-grid;
-        place-items: center;
-        border-radius: 8px;
-        color: #ffffff;
-        background: var(--accent);
-        font-size: 14px;
+        flex: none;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        object-fit: contain;
+        background: #ffffff;
+        padding: 2px;
+      }
+
+      .brand-product {
+        color: var(--ink);
+        font-size: 15px;
+      }
+
+      .brand-section {
+        border-left: 1px solid var(--line);
+        padding-left: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
       }
 
       .top-actions {
@@ -128,13 +150,13 @@
       }
 
       .button {
-        min-height: 36px;
+        min-height: 40px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 7px 13px;
+        padding: 8px 14px;
         color: var(--ink);
         background: var(--surface);
         font-size: 14px;
@@ -143,9 +165,13 @@
 
       .button:hover,
       .button:focus-visible {
-        border-color: #b8c4cd;
+        border-color: #aebed2;
         background: var(--surface-soft);
         text-decoration: none;
+      }
+
+      .button:active {
+        transform: translateY(1px);
       }
 
       .button.primary {
@@ -156,10 +182,10 @@
 
       .layout {
         display: grid;
-        grid-template-columns: 250px minmax(0, 1fr);
-        gap: 40px;
+        grid-template-columns: 272px minmax(0, 1fr);
+        gap: 48px;
         align-items: start;
-        padding: 42px 0 72px;
+        padding: 38px 0 96px;
       }
 
       .sidebar {
@@ -168,14 +194,21 @@
         max-height: calc(100vh - 116px);
         overflow: auto;
         border-right: 1px solid var(--line);
-        padding-right: 22px;
+        padding-right: 24px;
       }
 
       .sidebar-title {
-        margin: 0 0 12px;
+        margin: 0 9px 10px;
         color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .sidebar-group {
+        margin: 20px 9px 7px;
+        color: #94a3b8;
         font-size: 11px;
-        font-weight: 720;
+        font-weight: 700;
       }
 
       .sidebar nav {
@@ -185,8 +218,8 @@
 
       .sidebar a {
         display: block;
-        border-radius: 6px;
-        padding: 7px 9px;
+        border-radius: 7px;
+        padding: 8px 9px;
         color: var(--body);
         font-size: 13px;
       }
@@ -198,6 +231,11 @@
         text-decoration: none;
       }
 
+      .sidebar a.featured {
+        color: var(--accent-strong);
+        font-weight: 650;
+      }
+
       .sidebar .sub {
         padding-left: 21px;
         color: var(--muted);
@@ -205,12 +243,20 @@
 
       .content {
         min-width: 0;
-        max-width: 900px;
+        max-width: 1040px;
       }
 
       .document-head {
-        padding-bottom: 30px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 290px;
+        gap: 40px;
+        align-items: end;
+        padding: 30px 0 36px;
         border-bottom: 1px solid var(--line);
+      }
+
+      .document-copy {
+        min-width: 0;
       }
 
       .eyebrow {
@@ -231,12 +277,13 @@
 
       h1 {
         margin: 0;
-        font-size: 36px;
-        line-height: 1.22;
-        font-weight: 730;
+        max-width: 760px;
+        font-size: 42px;
+        line-height: 1.16;
+        font-weight: 760;
       }
 
-      .document-head > p {
+      .document-copy > p {
         max-width: 720px;
         margin: 14px 0 0;
         color: var(--body);
@@ -249,8 +296,32 @@
         font-size: 12px;
       }
 
+      .document-route {
+        border-left: 2px solid var(--accent);
+        padding: 4px 0 4px 20px;
+      }
+
+      .document-route strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .document-route a {
+        display: block;
+        margin: 6px 0;
+        color: var(--body);
+        font-size: 13px;
+      }
+
+      .document-route a:hover,
+      .document-route a:focus-visible {
+        color: var(--accent-strong);
+      }
+
       .section {
-        padding: 42px 0 8px;
+        scroll-margin-top: 92px;
+        padding: 52px 0 10px;
       }
 
       .section + .section {
@@ -259,14 +330,14 @@
 
       h2 {
         margin: 0 0 12px;
-        font-size: 25px;
+        font-size: 27px;
         line-height: 1.3;
         font-weight: 710;
       }
 
       h3 {
         margin: 30px 0 10px;
-        font-size: 18px;
+        font-size: 19px;
         line-height: 1.4;
         font-weight: 680;
       }
@@ -282,12 +353,280 @@
         color: var(--body);
       }
 
+      .section-kicker {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .lead {
+        max-width: 780px;
+        margin-bottom: 22px;
+        font-size: 16px;
+      }
+
+      .role-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 22px 0 26px;
+      }
+
+      .role-item {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 20px;
+        background: var(--surface);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+      }
+
+      .role-index {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 28px;
+        border-radius: 7px;
+        color: var(--accent-strong);
+        background: var(--accent-soft);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .role-item strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 16px;
+      }
+
+      .role-item p {
+        margin: 0;
+        font-size: 13px;
+      }
+
+      .role-item a {
+        display: inline-block;
+        margin-top: 16px;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .fact-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 22px 0 26px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .fact {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .fact + .fact {
+        border-left: 1px solid var(--line);
+      }
+
+      .fact strong {
+        display: block;
+        color: var(--ink);
+        font-size: 17px;
+      }
+
+      .fact span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .reward-note {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 24px;
+        align-items: center;
+        margin: 24px 0;
+        border-left: 3px solid var(--accent);
+        padding: 18px 22px;
+        background: var(--blue-soft);
+      }
+
+      .reward-value {
+        color: var(--accent-strong);
+        font-size: 42px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .reward-note strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--ink);
+      }
+
+      .reward-note p {
+        margin: 0;
+        font-size: 13px;
+      }
+
+      .plain-flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 22px 0 26px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .flow-step {
+        position: relative;
+        min-width: 0;
+        padding: 20px 18px 22px;
+      }
+
+      .flow-step + .flow-step {
+        border-left: 1px solid var(--line);
+      }
+
+      .flow-step span {
+        display: block;
+        margin-bottom: 16px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .flow-step strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 14px;
+      }
+
+      .flow-step p {
+        margin: 0;
+        font-size: 12px;
+      }
+
+      .formula {
+        margin: 20px 0;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 18px 20px;
+        background: var(--blue-soft);
+      }
+
+      .formula code {
+        display: block;
+        margin: 8px 0;
+        border-radius: 6px;
+        padding: 12px 14px;
+        color: #ffffff;
+        background: #1e3a5f;
+        font-size: 14px;
+      }
+
+      .formula p {
+        margin-bottom: 0;
+        font-size: 13px;
+      }
+
+      .economics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 20px 0 26px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .economics div {
+        padding: 17px;
+      }
+
+      .economics div + div {
+        border-left: 1px solid var(--line);
+      }
+
+      .economics span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .economics strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 18px;
+      }
+
+      .template-stack {
+        margin: 18px 0 26px;
+      }
+
+      .template-stack details {
+        margin: 8px 0;
+      }
+
+      pre {
+        max-width: 100%;
+        overflow-x: auto;
+        margin: 10px 0 0;
+        border: 1px solid #cbd8e8;
+        border-radius: 7px;
+        padding: 16px;
+        color: #dbeafe;
+        background: #132033;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      pre code {
+        padding: 0;
+        color: inherit;
+        background: transparent;
+        font-size: inherit;
+      }
+
+      .checklist {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 28px;
+        margin: 18px 0 24px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .checklist li {
+        position: relative;
+        padding: 9px 0 9px 28px;
+        color: var(--body);
+      }
+
+      .checklist li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 13px;
+        width: 15px;
+        height: 15px;
+        border: 1px solid #93b7f4;
+        border-radius: 4px;
+        background: #eff6ff;
+        box-shadow: inset 0 0 0 4px #eff6ff;
+      }
+
       .notice {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
         gap: 12px;
         margin: 18px 0;
-        border: 1px solid #c9e2dd;
+        border: 1px solid #bfdbfe;
         border-radius: 8px;
         padding: 15px 17px;
         background: var(--accent-soft);
@@ -359,7 +698,7 @@
         height: 28px;
         display: grid;
         place-items: center;
-        border: 1px solid #bcded8;
+        border: 1px solid #93b7f4;
         border-radius: 50%;
         color: var(--accent-strong);
         background: var(--accent-soft);
@@ -511,49 +850,155 @@
         .topbar-inner,
         .layout,
         .footer-inner {
-          width: min(1240px, calc(100% - 28px));
+          width: min(1376px, calc(100% - 28px));
         }
 
         .layout {
           grid-template-columns: 1fr;
-          gap: 24px;
-          padding-top: 24px;
+          gap: 28px;
+          padding-top: 0;
         }
 
         .sidebar {
-          position: static;
+          position: sticky;
+          top: 68px;
+          z-index: 12;
           max-height: none;
-          overflow: visible;
+          overflow: hidden;
           border-right: 0;
           border-bottom: 1px solid var(--line);
-          padding: 0 0 18px;
+          padding: 10px 0;
+          background: rgba(245, 248, 252, 0.96);
+          backdrop-filter: blur(10px);
         }
 
         .sidebar nav {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          display: flex;
+          gap: 5px;
+          overflow-x: auto;
+          scrollbar-width: thin;
+          padding-bottom: 2px;
         }
 
+        .sidebar-title,
+        .sidebar-group {
+          display: none;
+        }
+
+        .sidebar a,
         .sidebar .sub {
-          padding-left: 9px;
+          flex: none;
+          padding: 7px 10px;
+          white-space: nowrap;
+        }
+
+        .document-head {
+          grid-template-columns: 1fr;
+          gap: 24px;
+          padding-top: 28px;
+        }
+
+        .section {
+          scroll-margin-top: 132px;
+        }
+
+        .document-route {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 6px 16px;
+        }
+
+        .document-route strong {
+          grid-column: 1 / -1;
+        }
+
+        .role-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .fact-strip,
+        .plain-flow,
+        .economics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .fact:nth-child(3),
+        .fact:nth-child(4),
+        .flow-step:nth-child(3),
+        .flow-step:nth-child(4),
+        .economics div:nth-child(3),
+        .economics div:nth-child(4) {
+          border-top: 1px solid var(--line);
+        }
+
+        .fact:nth-child(3),
+        .flow-step:nth-child(3),
+        .economics div:nth-child(3) {
+          border-left: 0;
         }
       }
 
       @media (max-width: 680px) {
         h1 {
-          font-size: 29px;
+          font-size: 32px;
         }
 
         h2 {
-          font-size: 22px;
+          font-size: 24px;
         }
 
-        .sidebar nav,
+        .role-grid,
         .compat-grid {
           grid-template-columns: 1fr;
         }
 
+        .topbar-inner {
+          gap: 10px;
+        }
+
+        .brand-section {
+          display: none;
+        }
+
         .top-actions .button:first-child {
           display: none;
+        }
+
+        .top-actions .button {
+          padding-inline: 11px;
+          font-size: 13px;
+        }
+
+        .document-route {
+          grid-template-columns: 1fr;
+        }
+
+        .fact-strip,
+        .economics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .plain-flow,
+        .reward-note,
+        .checklist {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-step + .flow-step {
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+
+        .reward-note {
+          gap: 12px;
+        }
+
+        .reward-value {
+          font-size: 36px;
+        }
+
+        .role-index {
+          margin-bottom: 18px;
         }
 
         .footer-inner {
@@ -562,6 +1007,11 @@
           justify-content: center;
           text-align: center;
         }
+
+        .footer-links {
+          flex-wrap: wrap;
+          justify-content: center;
+        }
       }
     </style>
   </head>
@@ -569,8 +1019,9 @@
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="/">
-          <span class="brand-mark" aria-hidden="true">52</span>
-          <span>52Token 帮助文档</span>
+          <img class="brand-logo" src="/api/v1/settings/logo" alt="52Token" />
+          <span class="brand-product">52Token</span>
+          <span class="brand-section">帮助中心</span>
         </a>
         <nav class="top-actions" aria-label="页面入口">
           <a class="button" href="/">返回首页</a>
@@ -581,8 +1032,15 @@
 
     <div class="layout">
       <aside class="sidebar" aria-label="文档导航">
-        <div class="sidebar-title">目录</div>
+        <div class="sidebar-title">帮助目录</div>
         <nav>
+          <span class="sidebar-group">开始使用</span>
+          <a class="featured" href="#start">第一次使用</a>
+          <a class="featured" href="#points">积分中心</a>
+          <a class="featured" href="#link-cards">提链中心</a>
+          <a class="featured" href="#card-users">额度卡使用</a>
+          <a class="featured" href="#distribution">分销与自动发货</a>
+          <span class="sidebar-group">技术接入</span>
           <a href="#security">安全与准备</a>
           <a href="#endpoints">域名与端点</a>
           <a href="#clients">客户端手动配置</a>
@@ -600,13 +1058,302 @@
 
       <main class="content">
         <header class="document-head">
-          <span class="eyebrow">手动配置教程</span>
-          <h1>API 接入、生图与视频任务</h1>
-          <p>
-            本页仅通过静态文字、字段表和编号步骤说明配置方法。页面不读取输入、不调用外部网络、不提供自动安装命令或可执行文件。
-          </p>
-          <div class="updated">更新日期：2026-07-17</div>
+          <div class="document-copy">
+            <span class="eyebrow">52Token 新手帮助中心</span>
+            <h1>从第一次登录，到发行自己的额度卡</h1>
+            <p>
+              按使用角色找到最短路径，了解消费积分、签到奖励、提链额度卡和客户端配置。所有资金、额度与使用记录都以控制台实时结果为准。
+            </p>
+            <div class="updated">更新日期：2026-08-11</div>
+          </div>
+          <div class="document-route" aria-label="推荐阅读顺序">
+            <strong>推荐阅读顺序</strong>
+            <a href="#start">01 选择使用方式</a>
+            <a href="#points">02 了解积分返利</a>
+            <a href="#link-cards">03 创建额度卡</a>
+          </div>
         </header>
+
+        <section class="section" id="start">
+          <span class="section-kicker">快速开始</span>
+          <h2>先确认你是哪种使用者</h2>
+          <p class="lead">
+            52Token 同时服务自用账号、额度卡创建者和收到额度卡的使用者。角色不同，入口也不同，不需要把所有功能都学一遍。
+          </p>
+          <div class="role-grid">
+            <article class="role-item">
+              <span class="role-index" aria-hidden="true">01</span>
+              <strong>注册后自己使用</strong>
+              <p>登录控制台，创建普通密钥，查看余额、用量、积分与请求记录。</p>
+              <a href="/login">登录控制台</a>
+            </article>
+            <article class="role-item">
+              <span class="role-index" aria-hidden="true">02</span>
+              <strong>创建并销售额度卡</strong>
+              <p>进入提链中心，选择已授权分组，用自己的余额批量发行预充值 Key。</p>
+              <a href="/link-cards">查看提链中心</a>
+            </article>
+            <article class="role-item">
+              <span class="role-index" aria-hidden="true">03</span>
+              <strong>收到额度卡直接使用</strong>
+              <p>无需注册账号，在额度卡中心输入完整 Key，激活后查看额度和调用记录。</p>
+              <a href="https://key.52token.org/card">打开额度卡中心</a>
+            </article>
+          </div>
+
+          <h3>注册用户第一次使用</h3>
+          <ol class="steps">
+            <li>完成注册并登录，在控制台确认当前余额和可用分组。</li>
+            <li>自用时创建普通密钥；需要发行额度卡时进入“提链中心”。</li>
+            <li>先做一次小额请求，在使用记录中核对模型、Token、费用和延迟。</li>
+          </ol>
+          <div class="notice">
+            <span class="notice-mark" aria-hidden="true">i</span>
+            <div>
+              <strong>入口看不到时先检查功能开关</strong>
+              <p>积分中心和提链中心都由管理员统一开放。功能关闭时菜单会自动隐藏，不代表账号异常。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="points">
+          <span class="section-kicker">消费积分与签到奖励</span>
+          <h2>成功消费形成积分，次日签到有机会获得余额奖励</h2>
+          <p class="lead">
+            积分用于记录账户持续使用情况。系统只统计已成功结算的余额消费，不把充值、失败请求、退款或冻结金额当成有效消费。
+          </p>
+
+          <div class="fact-strip" aria-label="积分规则摘要">
+            <div class="fact"><strong>10:1</strong><span>默认每消费 1U 形成 10 积分，实际比例以当日策略为准</span></div>
+            <div class="fact"><strong>00:05</strong><span>默认在次日结算前一自然日的成功消费</span></div>
+            <div class="fact"><strong>自然日</strong><span>昨日范围为 00:00 至 24:00，不跨天累计签到资格</span></div>
+            <div class="fact"><strong>每日一次</strong><span>签到开启且满足资格时，当天只能领取一次</span></div>
+          </div>
+
+          <div class="reward-note">
+            <div class="reward-value">最高 10%</div>
+            <div>
+              <strong>活动奖励上限按昨日实际消费金额计算</strong>
+              <p>满足签到条件时，余额奖励最高可达昨日实际消费金额的 10%。具体资格、随机结果和到账金额以当日积分中心显示及生效策略为准，并非每次签到固定获得 10%。</p>
+            </div>
+          </div>
+
+          <h3>如何查看和签到</h3>
+          <ol class="steps">
+            <li>登录后从左侧菜单打开“积分中心”，查看总积分、昨日积分和消费曲线。</li>
+            <li>每日 00:05 后刷新页面，确认前一自然日消费已经结算。</li>
+            <li>签到功能开放且满足最低消费条件时，点击“今日签到”。</li>
+            <li>以页面返回的到账结果为准，可在“签到奖励记录”中再次核对。</li>
+          </ol>
+
+          <h3>积分与余额的区别</h3>
+          <ul class="checklist">
+            <li>消费积分是活跃度记录，不等同于现金余额。</li>
+            <li>总积分累计保留，昨日积分只对应前一自然日。</li>
+            <li>签到奖励到账后才进入可用余额。</li>
+            <li>策略调整按生效日期执行，不回改已结算记录。</li>
+            <li>失败、取消或已退款消费不会重复产生积分。</li>
+            <li>异常状态不要连续点击，先刷新奖励记录确认结果。</li>
+          </ul>
+
+          <div class="notice warning">
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>奖励展示不公开后台随机区间</strong>
+              <p>用户页面只展示是否具备资格和最终到账金额。阶梯、随机范围与风控上限仅由管理员维护，避免被篡改或利用。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="link-cards">
+          <span class="section-kicker">注册用户发行工具</span>
+          <h2>提链中心把账户余额转换成可独立交付的额度卡</h2>
+          <p class="lead">
+            提链 Key 本身就是额度卡卡密。创建者先从自己的余额预充值，购买者收到完整 Key 后无需注册 52Token，即可在额度卡中心激活和使用。
+          </p>
+
+          <div class="plain-flow" aria-label="额度卡发行流程">
+            <div class="flow-step"><span>01</span><strong>选择分组</strong><p>只能选择管理员授权且当前账号有权使用的分组。</p></div>
+            <div class="flow-step"><span>02</span><strong>设置金额与数量</strong><p>批量创建按单张金额乘数量计算，余额不足时整批不生成。</p></div>
+            <div class="flow-step"><span>03</span><strong>余额先扣再创建</strong><p>服务端在同一资金事务中扣款、生成 Key 和写入流水。</p></div>
+            <div class="flow-step"><span>04</span><strong>复制并交付</strong><p>新卡为待激活状态，购买者首次输入完整 Key 后自动激活。</p></div>
+          </div>
+
+          <div class="formula">
+            <strong>额度换算公式</strong>
+            <code>对外 1x 可用额度 = 单张预充值金额 / 创建时有效分组倍率</code>
+            <p>例如创建时使用 <code>0.08x</code> 分组，单张预充值 <code>8U</code>，则对外显示 <code>8 / 0.08 = 100U</code> 的 1x 可用额度。</p>
+          </div>
+
+          <h3>创建一张额度卡</h3>
+          <ol class="steps">
+            <li>登录后进入“提链中心”，在创建区选择可用分组。</li>
+            <li>填写单张充值金额和创建数量，先核对页面计算的总扣款。</li>
+            <li>提交后等待成功结果，再从“我的额度卡”列表复制完整 Key。</li>
+            <li>把完整 Key 交付给购买者，提醒其前往 <code>key.52token.org</code> 激活。</li>
+            <li>后续需要续费时，由创建者在提链中心找到该 Key 并充值。</li>
+          </ol>
+
+          <h3>状态与可执行操作</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>状态</th><th>含义</th><th>创建者可以做什么</th></tr></thead>
+              <tbody>
+                <tr><td>待激活</td><td>已预充值但购买者尚未在额度卡中心激活</td><td>复制、充值；零使用时可退款并销毁 Key</td></tr>
+                <tr><td>使用中</td><td>已激活且仍有可用额度</td><td>查看记录、充值，不支持自行退款</td></tr>
+                <tr><td>欠费</td><td>最后一笔后扣请求可能使余额低于零，后续请求被拒绝</td><td>充值覆盖欠费后自动恢复，无需手动启用</td></tr>
+                <tr><td>冻结</td><td>管理员暂停该 Key 的调用</td><td>联系管理员处理，充值不会绕过冻结</td></tr>
+                <tr><td>已退款或撤销</td><td>Key 已失效</td><td>不可再次激活或调用</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="card-users">
+          <span class="section-kicker">购买者快速接入</span>
+          <h2>收到额度卡后，无需注册即可查看额度和请求记录</h2>
+          <p class="lead">
+            购买者只需要完整 Key。额度卡中心不会提供充值、退款、编辑或创建者资料，这些操作由创建者或管理员处理。
+          </p>
+
+          <ol class="steps">
+            <li>打开 <a href="https://key.52token.org/card">key.52token.org</a>，确认浏览器地址和 HTTPS 证书正常。</li>
+            <li>输入完整额度卡 Key，点击“验证并激活”。连续输错会触发临时安全锁定。</li>
+            <li>激活后查看剩余额度、分组名称、Token、缓存、费用、类型和延迟记录。</li>
+            <li>从额度详情页复制完整 Key，并按接入教程填写 API Base 和模型名称。</li>
+            <li>额度耗尽后联系销售者充值，充值足额后 Key 会自动恢复使用。</li>
+          </ol>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>项目</th><th>填写内容</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>额度卡中心</td><td><code>https://key.52token.org</code></td><td>用于激活、查额度和查看使用记录</td></tr>
+                <tr><td>API Base</td><td><code>https://api.52token.org/v1</code></td><td>客户端只需填写到 <code>/v1</code></td></tr>
+                <tr><td>API Key</td><td><code>CARD_KEY</code></td><td>填写收到的完整额度卡 Key</td></tr>
+                <tr><td>模型</td><td><code>MODEL</code></td><td>使用额度详情页教程中当前分组可用的完整名称</td></tr>
+                <tr><td>请求格式</td><td>流式</td><td>长任务建议保持流式，避免客户端误判超时</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="notice danger">
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <div>
+              <strong>完整 Key 等同于余额凭证</strong>
+              <p>不要在聊天群、评价截图、公开笔记或商品主图中展示完整 Key。如怀疑泄露，请立即联系销售者或平台管理员冻结处理。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="distribution">
+          <span class="section-kicker">分销与自动发货</span>
+          <h2>用清晰额度、自动交付和可查记录建立稳定的销售体验</h2>
+          <p class="lead">
+            创建者可以在闲鱼、小红书等渠道销售预充值额度卡。商品描述应聚焦无需注册、额度透明、使用记录可查和售后边界清楚，不使用“永久免费”“绝对稳定”或“官方授权”等无法持续保证的表述。
+          </p>
+
+          <h3>100U 额度卡的示例账目</h3>
+          <div class="economics" aria-label="额度卡示例账目">
+            <div><span>创建成本</span><strong>8 元</strong></div>
+            <div><span>发行分组</span><strong>0.08x</strong></div>
+            <div><span>对外额度</span><strong>100U</strong></div>
+            <div><span>销售定价</span><strong>10 元，毛差 2 元</strong></div>
+          </div>
+          <p>
+            示例按 <code>8 / 0.08 = 100U</code> 换算。实际净收益还应扣除交易平台费用、退款损耗和售后成本。下游额度卡成功产生的消费记录归属创建者账户，符合积分策略的部分会在次日结算为创建者消费积分，以积分中心实际记录为准。
+          </p>
+
+          <h3>发布商品前的检查清单</h3>
+          <ul class="checklist">
+            <li>先用一张小额卡完成激活和请求测试。</li>
+            <li>商品规格明确写清 1x 额度，不混用创建成本。</li>
+            <li>自动发货只发送对应订单的一张完整 Key。</li>
+            <li>商品主图和公开描述不展示任何真实 Key。</li>
+            <li>写明数字商品交付后退款和售后处理边界。</li>
+            <li>保留订单号、交付时间和提链中心资金记录。</li>
+          </ul>
+
+          <h3>可直接调整的文案模板</h3>
+          <div class="template-stack">
+            <details open>
+              <summary>商品标题与短卖点</summary>
+              <div class="details-body">
+                <pre><code>标题示例 1：100U 智能工具额度卡｜自动发货｜用量可查｜无需注册
+标题示例 2：即买即用额度卡 100U｜独立查询页｜记录透明
+
+短卖点：
+• 付款后自动交付，收到即可激活
+• 无需注册额外账号，完整 Key 直接接入
+• 剩余额度和每次使用记录随时可查
+• 额度不足可联系销售者续费</code></pre>
+              </div>
+            </details>
+
+            <details>
+              <summary>商品详情描述</summary>
+              <div class="details-body">
+                <pre><code>【商品内容】
+100U 1x 口径预充值额度卡一张。
+
+【交付方式】
+付款后自动发送完整额度卡 Key 和激活地址，无需等待人工发货。
+
+【使用方式】
+1. 打开 https://key.52token.org
+2. 输入完整 Key 并激活
+3. 查看剩余额度、使用记录和接入教程
+4. 客户端 API Base 填写 https://api.52token.org/v1
+
+【使用特点】
+无需额外注册；额度清晰；Token、费用和延迟记录可查；用完可联系续费。
+
+【售后说明】
+请先用小请求完成配置验证。因客户端配置问题可提供接入说明；已激活并产生消耗的数字额度按实际使用记录处理。
+
+【重要提醒】
+完整 Key 等同于余额凭证，请勿公开、转发或截图展示。</code></pre>
+              </div>
+            </details>
+
+            <details>
+              <summary>自动发货内容</summary>
+              <div class="details-body">
+                <pre><code>您的 52Token 额度卡已自动发货。
+
+额度规格：100U
+激活地址：https://key.52token.org
+额度卡 Key：CARD_KEY
+API Base：https://api.52token.org/v1
+
+首次使用：打开激活地址，输入完整 Key。激活成功后即可查看额度、复制 Key 和阅读接入教程。
+
+安全提醒：请勿把完整 Key 发布到评价、群聊或公开截图中。额度不足时请凭订单号联系本店续费。</code></pre>
+              </div>
+            </details>
+
+            <details>
+              <summary>常见售后回复</summary>
+              <div class="details-body">
+                <pre><code>激活失败：请确认复制的是完整 Key，并检查前后是否带空格。连续输错后请等待页面提示的解锁时间再试。
+
+看不到额度：请刷新额度详情页；仍异常时提供订单号和脱敏 Key，完整 Key 不要发到公开聊天。
+
+客户端无法连接：请确认 API Base 为 https://api.52token.org/v1，Key 使用完整额度卡 Key，并从额度详情页选择可用模型。
+
+显示欠费：最后一笔请求可能形成后扣欠费，请联系销售者充值。足额充值后会自动恢复，无需重新激活。</code></pre>
+              </div>
+            </details>
+          </div>
+
+          <div class="notice warning">
+            <span class="notice-mark" aria-hidden="true">i</span>
+            <div>
+              <strong>遵守销售平台的数字商品规则</strong>
+              <p>不同平台对自动发货、虚拟商品、退款和宣传用语的要求不同。发布前应核对当前规则，真实描述额度、交付方式和售后范围，不冒用第三方品牌或承诺未提供的能力。</p>
+            </div>
+          </div>
+        </section>
 
         <section class="section" id="security">
           <h2>安全与准备</h2>
@@ -995,9 +1742,11 @@
 
     <footer>
       <div class="footer-inner">
-        <span>&copy; 2026 52Token. 保留所有权利。</span>
+        <span>&copy; 2026 52Token. 帮助内容以控制台实时状态为准。</span>
         <div class="footer-links">
           <a href="/">首页</a>
+          <a href="/points">积分中心</a>
+          <a href="/link-cards">提链中心</a>
           <a href="/login">控制台</a>
         </div>
       </div>

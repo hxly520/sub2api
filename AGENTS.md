@@ -28,12 +28,12 @@
 - 媒体创建最多提交一次；确定失败或空结果退款，状态未知不能擅自退款。文本容量拒绝只能按精确错误文案进行有限重试，不能把一般 5xx、超时或断流当作可重放。
 - 额度卡和余额变更必须使用服务端鉴权、幂等键、事务和审计。客户端参数不是金额事实源；任何资金异常先停入口、对账和保留证据。
 - 用户积分与管理员控制台必须严格隔离。关闭服务端开关时用户入口/API 同时隐藏和拒绝；策略修改按既定次日生效规则处理，不能由浏览器提交生效时间。
-- 公开首页只面向未登录访客，登录后的 Dashboard 不随首页改版改变。根路径静态页面由 Nginx 宿主文件单独发布，不能误以为替换 Sub2API 镜像会更新它。
+- 公开首页只面向未登录访客，登录后的 Dashboard 不随首页改版改变。根路径首页和 `/help/` 帮助中心都由 Nginx 宿主文件单独发布，不能误以为替换 Sub2API 镜像会更新它们。
 - 生产服务器不编译 Go、前端或 Docker 镜像。镜像由 GitHub Actions 或受控本机构建，服务器只拉取/导入经过记录的不可变 tag/digest；Sub2API 容器切换由维护者在窗口内手工执行。
 
 ## 发布选择
 
-私有发布 Tag 固定为 `vX.Y.Z-52t.N`，并使用 annotated tag。发布工作流会生成二进制、`checksums.txt`、`update-manifest.json`、带独立 SHA256 的公开首页资产和 GHCR 镜像：
+私有发布 Tag 固定为 `vX.Y.Z-52t.N`，并使用 annotated tag。发布工作流会生成二进制、`checksums.txt`、`update-manifest.json`、带独立 SHA256 的公开首页与帮助中心资产，以及 GHCR 镜像：
 
 - `hot-update-safe`：后台可下载经 checksum、manifest、大小、版本号和完整 source commit/revision 校验的二进制，走短暂优雅重启；镜像不自动替换。
 - `image-update-recommended`：允许热更新，但维护者应在窗口内同步 Compose 镜像。
