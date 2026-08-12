@@ -49,15 +49,17 @@ func (b *openAIRequestRetryBudget) tryPoolRetry(
 		return false
 	}
 	b.poolRetryCounts[account.ID]++
+	retryDelay := sameAccountRetryDelayFor(failoverErr, b.poolRetryCounts[account.ID])
 	if logger != nil {
 		logger.Warn("openai.pool_mode_retry",
 			zap.Int64("account_id", account.ID),
 			zap.Int("upstream_status", failoverErr.StatusCode),
 			zap.Int("retry_count", b.poolRetryCounts[account.ID]),
 			zap.Int("retry_limit", limit),
+			zap.Duration("retry_delay", retryDelay),
 		)
 	}
-	return sleepWithContext(ctx, sameAccountRetryDelay)
+	return sleepWithContext(ctx, retryDelay)
 }
 
 func (b *openAIRequestRetryBudget) tryConsumeIfAllowed(allowed bool, account *service.Account, failoverErr *service.UpstreamFailoverError) bool {

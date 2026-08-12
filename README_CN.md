@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.25.7-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -187,7 +187,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的当前代码基线为 Sub2API `v0.1.172`（官方 release commit `155c494964c3ea6ecc31f52679525c1034bf0f16`、标签后官方热修复与私有兼容层），源码 `backend/cmd/server/VERSION=0.1.172`；截至 `2026-08-09 00:33 CST`，生产环境已由维护者手工切换为 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`。后续候选镜像的构建、上传或服务器缓存仍不代表生产容器已经切换，自动化不得替换或重启 Sub2API。私有分支在官方基线上保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
+本仓库的当前候选代码基线为 Sub2API `v0.1.175`（官方 annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`，源码 commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`），源码 `backend/cmd/server/VERSION=0.1.175`。官方 tag 树内的 `VERSION` 仍为 `0.1.173`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮包含数据库迁移、Ent schema、前端和二进制变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
 - [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)

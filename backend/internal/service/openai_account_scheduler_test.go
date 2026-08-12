@@ -196,6 +196,22 @@ func (c *schedulerTestGatewayCache) CompareAndSetSessionAccountID(ctx context.Co
 	return true, nil
 }
 
+func (c *schedulerTestGatewayCache) SetGrokVideoPendingBilling(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+
+func (c *schedulerTestGatewayCache) GetGrokVideoPendingBilling(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *schedulerTestGatewayCache) ClaimGrokVideoBilled(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (c *schedulerTestGatewayCache) ReleaseGrokVideoBilled(context.Context, string) error {
+	return nil
+}
+
 type schedulerTestGatewayCacheWithoutCAS struct {
 	delegate *schedulerTestGatewayCache
 }
@@ -214,6 +230,22 @@ func (c *schedulerTestGatewayCacheWithoutCAS) RefreshSessionTTL(ctx context.Cont
 
 func (c *schedulerTestGatewayCacheWithoutCAS) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {
 	return c.delegate.DeleteSessionAccountID(ctx, groupID, sessionHash)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) SetGrokVideoPendingBilling(ctx context.Context, key string, payload []byte, ttl time.Duration) error {
+	return c.delegate.SetGrokVideoPendingBilling(ctx, key, payload, ttl)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) GetGrokVideoPendingBilling(ctx context.Context, key string) ([]byte, error) {
+	return c.delegate.GetGrokVideoPendingBilling(ctx, key)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) ClaimGrokVideoBilled(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	return c.delegate.ClaimGrokVideoBilled(ctx, key, ttl)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) ReleaseGrokVideoBilled(ctx context.Context, key string) error {
+	return c.delegate.ReleaseGrokVideoBilled(ctx, key)
 }
 
 func newSchedulerTestOpenAIWSV2Config() *config.Config {

@@ -156,3 +156,6 @@ aicodex
 output/
 # Local browser automation artifacts
 frontend/.playwright-cli/
+
+# Vitest / Vite cache at repo root
+.vite/

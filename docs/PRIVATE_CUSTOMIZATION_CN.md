@@ -17,12 +17,12 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库候选基线：官方 `v0.1.172` 及官方标签后的 `upstream/main=cc67b1aca` 热修复，`backend/cmd/server/VERSION=0.1.172`。当前私有候选工作分支为 `codex/final-v0.1.172-compat`；最终发布身份必须以 annotated 私有 Tag 的 `^{commit}`、`update-manifest.json.source_commit` 和构建产物内嵌 revision 三者一致为准。本轮保留媒体冻结、积分同库、公开首页、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节区分。
+- 当前仓库兼容候选基线：官方 annotated tag `v0.1.175`（tag object `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`），merge-base 为 `cc67b1aca1d3b590609abef2fcd3a6ca31c5c651`，私有工作分支为 `codex/upgrade-v0.1.175-compat`，`backend/cmd/server/VERSION=0.1.175`。官方 tag 树内的 `VERSION` 仍是 `0.1.173`，因此发布审计必须同时核对 tag object、peeled commit、私有 `VERSION`、Release manifest 和镜像 revision，不能只看一个版本字符串。当前只是已通过本地门禁的未发布兼容候选，尚无最终私有 merge commit、Tag、镜像或生产切换。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 区分。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
-- 官方升级补丁记录：`68d8f122e` 同步版本号至 `0.1.172`，`8ad0a5ff5` 将 `nanoid` 升至 `3.3.17`，`cc67b1aca` 合入 OAuth 路由提示修复。官方 `194_add_usage_log_upstream_response_model.sql`、私有 `194_link_cards.sql` 和官方 `195_add_usage_log_upstream_model_mismatch_index_notx.sql` 按完整文件名独立迁移，不能按数字前缀覆盖。
+- 官方升级补丁记录：本轮从 `cc67b1aca` 合入到官方 `v0.1.175` peeled commit `93c32fa1a`。官方 `194_add_usage_log_upstream_response_model.sql`、官方 `194_channel_monitor_v2.sql` 与私有 `194_link_cards.sql` 三份同号迁移按完整文件名和 checksum 独立执行；官方 `195-206`、`217-220` 迁移也原名保留，不能按数字前缀覆盖、重命名或合并。该迁移、Ent schema、前端资产和二进制跨度使本轮发布策略固定为 `image-update-required`，不得使用后台热更新替代 Compose 镜像切换。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
 私有主线谱系：
@@ -211,7 +211,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.1.172` 私有候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护，具体提交由本次私有 Release Tag 和 manifest 固定，不再把旧候选哈希写成当前源码。生产已于 2026-08-09 手工切换并开放全体用户，实际开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节为准。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.1.175` 兼容候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护，具体提交必须由最终私有 Release Tag 和 manifest 固定，不能把未提交工作树或旧候选哈希写成已发布源码。生产已于 2026-08-09 手工开放全体用户，实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。
@@ -279,13 +279,15 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.172 当前合并兼容结论
+### 5.0 v0.1.175 当前兼容候选结论
 
-- 官方基线为 tag `v0.1.172`，并继续合入 `upstream/main=cc67b1aca` 的版本、依赖安全和 OpenAI 路由提示修复；源码版本固定为 `0.1.172`。合并采用官方非冲突变更加私有冲突段兼容移植，重新生成 Ent/Wire，不覆盖额度卡、积分、媒体和首页功能。
-- 关键兼容点包括 `FailoverState` 同时保留媒体非幂等重放边界与官方利润门状态、Responses/Chat/Anthropic/Gemini/WS 的请求级定价时间、媒体端点利润门豁免、OpenAI 上游响应模型审计，以及官方 Codex 路由提示。公共额度卡 404 和 Redis fail-close 激活保护作为独立私有中间件保留。
-- 迁移 runner 按完整 filename 和 checksum 识别迁移；生产已有私有 `194_link_cards.sql` 不改名、不重编号、不改 checksum，官方同号 `194/195` 缺失部分独立追加。回归测试位于 `backend/internal/repository/migrations_runner_notx_test.go`。
-- 发布前门禁包括后端 unit/default 编译测试、`go vet`、双平台构建、额度卡激活限流、前端 ESLint/typecheck/Vitest/生产构建，以及 Release/Compose/安装脚本夹具。GitHub Actions 只发布版本、Tag commit、manifest source commit 和二进制 revision 一致的候选镜像；Sub2API 服务器容器不由自动化切换。
-- 官方 `v0.1.173` 尚未进入本节的“已完成”范围。其差异、同号迁移风险和待办矩阵记录在 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md)，完成兼容合并与全量门禁前不得创建私有生产 Release。
+- 官方基线为 annotated tag `v0.1.175`，tag object 为 `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit 为 `93c32fa1a2450351561abc46156d2e28cb5f74ca`，merge-base 为 `cc67b1aca1d3b590609abef2fcd3a6ca31c5c651`。官方 tag 树内 `VERSION=0.1.173`，私有候选明确设置为 `0.1.175`；最终发布仍须以私有 annotated Tag、manifest source commit 与镜像内 revision 三者一致为准。
+- 官方 Grok/xAI OAuth、团队/模型配额、音频/搜索/视频计费、Gemini 图片输出统计、上游响应模型计费、被动渠道监控 V2、注册限制、凭证清理、Codex 指纹和前端管理能力均已合入。Wire 同时注入官方渠道监控 V2 与私有媒体冻结核销；Gateway Cache 同时保留官方 Grok 视频结算 claim 与私有粘性 CAS；`/videos` 只保留一套平台分派路由。
+- 私有媒体创建仍只提交一次。Grok 异步视频在创建前冻结，创建成功保持 `dispatched`，完成查询首次幂等结算；普通余额与提链卡都保留请求级价格快照和余额冻结事务。官方 `response_model` 计费先执行，私有媒体冻结报价封顶随后执行，不能因上游实际价格更高二次追扣。
+- OpenAI 空 `response.completed`、metadata-only 断流和缺正式终态继续进入安全 failover；结构化 reasoning/item 进度只解除首输出超时，不提前记录 TTFT 或提交账号响应，真实可见输出才记录 TTFT。Responses、Chat、Messages 与 WebSocket 保留精确容量错误的有界重试；Messages 继续继承池内同账号指数退避。
+- 迁移 runner 按完整 filename 和 checksum 识别迁移。官方 `194_add_usage_log_upstream_response_model.sql`、`194_channel_monitor_v2.sql` 与私有 `194_link_cards.sql` 三份同号文件共存，官方 `195-206`、`217-220` 原名保留。由于包含 forward-only 数据库迁移、Ent schema、前端资产和二进制变更，发布策略是 `image-update-required`，不得在线热更新。
+- 本地门禁已通过：`go test ./... -count=1`、`go test ./... -run '^$'`、`go vet ./...`、前端 ESLint、typecheck、全量 Vitest 和生产 build。当前未创建最终 merge commit、私有 Tag、Release 或镜像，也未连接、替换或重启生产服务。
+- 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时，接近边界的完成查询存在时序风险。发布前必须保留 24 小时运维观察和幂等结算测试；长期方案应把 pending 结算状态持久化到任务表，而不是简单延长冻结时间。
 
 ### 5.1 v0.1.169 历史合并兼容结论
 
