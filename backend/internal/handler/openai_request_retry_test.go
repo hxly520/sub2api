@@ -208,7 +208,7 @@ func TestOpenAIRequestRetryBudget_PoolRetryOnlyHandlesCapacityRejections(t *test
 		Platform: service.PlatformOpenAI,
 		Type:     service.AccountTypeAPIKey,
 		Credentials: map[string]any{
-			"pool_mode": true,
+			"pool_mode":             true,
 			"pool_mode_retry_count": 1,
 		},
 	}

@@ -4,7 +4,7 @@
 
 ## 1. 当前基线（2026-08-12）
 
-- 私有仓库：`hxly520/sub2api`，已发布 `main` 基线仍为 `0.1.172-52t.1`；本地分支 `codex/upgrade-v0.1.175-compat` 已完成官方 `v0.1.175` 兼容和全量门禁，但尚未形成最终私有提交、Tag、Release、镜像或生产切换。不得把本地工作树状态写成已发布版本。
+- 私有仓库：`hxly520/sub2api`，`main` 已推进到官方 `v0.1.175` 兼容线；双父合并提交为 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba`，首轮记录提交为 `7b62c8b3536768dceed593fce54f39f07296f63f`。`v0.1.175-52t.1` 因 GitHub CI 发现编译、lint 和容量重试请求体稳定性问题而取消，未创建 GitHub Release，也未产生该版本 GHCR 镜像；该 Tag 只保留为作废审计点，不能部署或移动。修复候选必须使用递增版本 `v0.1.175-52t.2`，并在全部门禁通过后发布。生产容器是否切换仍只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的运行态记录为准。
 - 官方 `v0.1.175` annotated tag object 为 `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit 为 `93c32fa1a2450351561abc46156d2e28cb5f74ca`，tag 树内 `VERSION=0.1.173`；私有候选 `VERSION=0.1.175`。本轮包含 Grok/xAI、被动渠道监控 V2、音频/搜索/视频计费、响应模型计费和迁移 `194-220`，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
 
@@ -16,6 +16,7 @@
 2. 阅读 [`PRIVATE_CUSTOMIZATION_CN.md`](PRIVATE_CUSTOMIZATION_CN.md)、[`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 和额度卡/积分文档；逐项标记官方新增路由、计费、迁移、配置、前端和容器差异。
 3. 官方同类能力取官方实现，私有功能保留为兼容层；生成代码、Ent schema、Wire 和迁移按源码意图重新生成，不手工拼接。
 4. 运行后端/积分/前端全量门禁和 `git diff --check`。未通过的测试不能进入 Tag。
+5. 私有 Release 工作流会再次调用完整 CI；只有脚本、后端单元/集成、前端、积分、视频边缘 Worker 和 `golangci-lint` 全部成功，才允许构建二进制与镜像。不得绕过该门禁手工补发同一失败 Tag。
 
 ### 2.2 Tag 与分类
 

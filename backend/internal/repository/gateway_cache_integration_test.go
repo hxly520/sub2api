@@ -112,7 +112,7 @@ func (s *GatewayCacheSuite) TestCompareAndDeleteSessionAccountID() {
 	require.NoError(s.T(), err)
 	require.True(s.T(), deleted)
 	_, err = s.cache.GetSessionAccountID(s.ctx, groupID, session)
-	require.True(s.T(), errors.Is(err, redis.Nil), "expected redis.Nil after matching compare-and-delete")
+	require.True(s.T(), errors.Is(err, service.ErrStickySessionNotFound), "expected ErrStickySessionNotFound after matching compare-and-delete")
 }
 
 func (s *GatewayCacheSuite) TestCompareAndSetSessionAccountID() {

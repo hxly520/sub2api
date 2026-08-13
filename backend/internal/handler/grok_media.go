@@ -550,7 +550,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				}
 			}
 		} else if shouldRecordGrokMediaUsage(endpoint, requestModel, result) {
-			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID, mediaPricingSnapshot, mediaHold)
+			if err := recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID, mediaPricingSnapshot, mediaHold); err != nil {
+				reqLog.Warn("grok_media.immediate_usage_record_failed", zap.String("request_id", requestID), zap.Error(err))
+			}
 		}
 		reqLog.Debug("grok_media.request_completed", zap.Int64("account_id", account.ID))
 		return

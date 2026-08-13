@@ -11,7 +11,7 @@
 | `v0.1.169` | `26d894ef4f50645a4bf1030e378ac892f17d0223` | completed (historical) | 私有 `3da18b9dd` 合并；保留官方安全修复、定价资源和调度语义，积分/额度卡独立兼容。 |
 | `v0.1.172` | `155c494964c3ea6ecc31f52679525c1034bf0f16` | completed (historical) | 私有 `d6cfece20` 合并，`62d636672` 合入 tag 后官方热修复。 |
 | `v0.1.173` | `29009f0b2ea14edf3b11ae2564fb617ff91a03b4` | superseded by candidate | 其 Grok/xAI、渠道监控 V2、计费、注册限制与迁移变化已由 `v0.1.175` 兼容候选整体吸收。 |
-| `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | compatibility verified; release pending | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；私有双父合并提交 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba` 已通过本地全量门禁，Tag、镜像与生产发布待完成。 |
+| `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | merged; corrected release pending | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；私有双父合并提交 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba`。首个 `v0.1.175-52t.1` 候选因 CI 失败而取消且无 Release/GHCR 产物；修复后只能发布递增的 `.2`。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
 
@@ -48,7 +48,7 @@
 - 官方 Grok/xAI、渠道监控 V2、响应模型计费、Gemini 图片统计、音频/搜索/视频价格、注册/凭证安全和 Codex 指纹能力保留；私有积分、提链、媒体冻结、容量精确重试、首页/帮助和私有更新源均保留。
 - OpenAI 首输出状态机同时满足三条约束：空完成响应 failover；metadata-only EOF 不写下游并返回 `UpstreamFailoverError`；reasoning/item 结构进度解除超时但不提前记录 TTFT。旧身份测试夹具已补真实 output/usage，生产空响应保护没有放宽。
 - 三份 `194` 迁移按完整文件名共存：`194_add_usage_log_upstream_response_model.sql`、`194_channel_monitor_v2.sql`、`194_link_cards.sql`。官方 `195-206`、`217-220` 也原名保留，发布策略固定为 `image-update-required`。
-- 验证证据：后端 `go test ./... -count=1`、编译门禁与 `go vet ./...` 通过；前端 ESLint、typecheck、全量 Vitest 与生产 build 通过；`git diff --check` 通过。尚未构建镜像或验证数据库迁移后的生产冒烟，因此状态是“兼容已验证、发布待完成”，不是已上线。
+- 首轮验证曾通过本地门禁，但 Tag CI 暴露了两处测试调用签名落后、Grok usage 错误未处理、格式问题，以及容量重试重新生成 Codex 指纹导致请求体变化。`v0.1.175-52t.1` Release 已取消且无 GHCR 产物；修复候选需重新执行完整门禁，不能沿用首轮结论。生产数据库迁移和上线冒烟仍待维护者在 Compose 窗口完成。
 
 ## 3. v0.1.175 兼容矩阵与发布缺口
 
@@ -62,7 +62,7 @@
 | 迁移 | 官方 `194-206`、`217-220` | 私有 `194_link_cards.sql` 同号 | completed in source；按完整 filename/checksum 共存，部署必须 Compose |
 | 账号/用户 | 邮箱域名限量、声明列、OAuth、凭证清理 | 积分 ACL 与提链创建者权限不得扩大 | completed in candidate；后端与前端门禁通过 |
 | 前端/管理 | 监控 V2、Grok 管理、模型价格矩阵 | 积分、提链、首页和帮助不得覆盖 | completed in candidate；lint/typecheck/Vitest/build 通过 |
-| 发布 | Tag、manifest、镜像、数据库迁移与人工切换 | 不能把本地候选误当生产 | pending：合并提交已完成，尚未打 Tag、构建镜像或部署 |
+| 发布 | Tag、manifest、镜像、数据库迁移与人工切换 | 不能把失败候选误当生产 | pending：`.1` 已取消且无 Release/GHCR 镜像；修复门禁通过后创建 `.2`，生产仍由维护者手工切换 |
 
 ### v0.1.175 发布门禁
 

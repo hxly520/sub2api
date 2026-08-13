@@ -4,7 +4,7 @@
 
 > 历史生产状态（2026-08-08）：维护者当时手工运行的是 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`，`194_link_cards.sql` 已应用且用户 1 的 0.08x 资金验收完成；这段记录只描述历史运行态。
 
-> 当前源码候选状态（2026-08-12）：私有分支 `codex/upgrade-v0.1.175-compat` 已兼容官方 `v0.1.175` peeled commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`，`backend/cmd/server/VERSION=0.1.175`。额度卡公共会话 404 修复、Redis fail-close 激活保护、原生使用记录、刷新并发收口、首行悬停保护和资金事务均已通过本地全量门禁；当前尚无最终私有提交、Tag 或候选镜像，也未变更生产容器。最终发布必须使用 `image-update-required` 的不可变镜像并由维护者手工切换。
+> 当前源码候选状态（2026-08-12）：私有分支 `codex/upgrade-v0.1.175-compat` 已兼容官方 `v0.1.175` peeled commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`，双父合并提交为 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba`，`backend/cmd/server/VERSION=0.1.175`。首个私有 `v0.1.175-52t.1` 因 CI 门禁失败已取消，未创建 Release 或 GHCR 镜像；修复候选必须使用 `.2` 并重新通过全量门禁。额度卡公共会话、Redis fail-close、原生使用记录、刷新并发、悬停保护和资金事务契约继续保留；本轮未变更生产容器，最终发布仍是 `image-update-required` 并由维护者手工切换。
 
 > 当前生产状态（2026-08-09）：维护者已手工切换 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`。提链门禁已正式开放全体已认证注册用户：`link_cards_enabled=true`、`link_cards_development_mode=false`；开发名单 `[1]` 与旧兼容键 `link_cards_rollout_user_id=1` 仅作休眠回滚值保留，不构成用户限制。完整只读验收、活动卡资金基线和回滚目录见 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0.8 节。
 

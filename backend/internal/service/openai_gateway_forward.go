@@ -426,14 +426,24 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+			var fpIDs *codexFingerprintIDs
+			fingerprintResolved := false
+			if c != nil {
+				if cached, ok := c.Get("codex_fingerprint_ids"); ok {
+					fpIDs, _ = cached.(*codexFingerprintIDs)
+					fingerprintResolved = true
+				}
+			}
+			if !fingerprintResolved {
+				fpIDs = resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+			}
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
 				}
 			}
 			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用
-			if c != nil && fpIDs != nil {
+			if c != nil && !fingerprintResolved {
 				c.Set("codex_fingerprint_ids", fpIDs)
 			}
 		}

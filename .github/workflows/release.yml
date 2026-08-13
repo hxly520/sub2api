@@ -16,8 +16,12 @@ permissions:
   packages: write
 
 jobs:
+  quality-gate:
+    uses: ./.github/workflows/backend-ci.yml
+
   # Update VERSION file with tag version
   update-version:
+    needs: quality-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,6 +54,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
+    needs: quality-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
