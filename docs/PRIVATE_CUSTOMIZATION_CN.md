@@ -17,7 +17,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前仓库兼容候选基线：官方 annotated tag `v0.1.175`（tag object `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`），merge-base 为 `cc67b1aca1d3b590609abef2fcd3a6ca31c5c651`，私有工作分支为 `codex/upgrade-v0.1.175-compat`，双父合并提交为 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba`，`backend/cmd/server/VERSION=0.1.175`。官方 tag 树内的 `VERSION` 仍是 `0.1.173`，因此发布审计必须同时核对 tag object、peeled commit、私有 `VERSION`、Release manifest 和镜像 revision。首个 `v0.1.175-52t.1` 因 CI 失败已取消且无 Release/GHCR 镜像，只保留作废审计点；修复候选使用 `.2`。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 区分。
+- 当前仓库兼容候选基线：官方 annotated tag `v0.1.176`（tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`），私有工作分支为 `codex/upgrade-v0.1.176-compat`，`backend/cmd/server/VERSION=0.1.176`。官方 tag 树内的 `VERSION` 仍是 `0.1.175`，因此发布审计必须同时核对 tag object、peeled commit、私有 `VERSION`、Release manifest 和镜像 revision。首个私有候选使用 `v0.1.176-52t.1`，必须在 GitHub 全量门禁通过后发布。官方新增 Grok 4.6/订阅档位识别、分组逐模型定价、长上下文阶梯开关和 `/x_search`；本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 区分。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
@@ -279,15 +279,15 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.175 当前兼容候选结论
+### 5.0 v0.1.176 当前兼容候选结论
 
-- 官方基线为 annotated tag `v0.1.175`，tag object 为 `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit 为 `93c32fa1a2450351561abc46156d2e28cb5f74ca`，merge-base 为 `cc67b1aca1d3b590609abef2fcd3a6ca31c5c651`。官方 tag 树内 `VERSION=0.1.173`，私有候选明确设置为 `0.1.175`；最终发布仍须以私有 annotated Tag、manifest source commit 与镜像内 revision 三者一致为准。
-- 官方 Grok/xAI OAuth、团队/模型配额、音频/搜索/视频计费、Gemini 图片输出统计、上游响应模型计费、被动渠道监控 V2、注册限制、凭证清理、Codex 指纹和前端管理能力均已合入。Wire 同时注入官方渠道监控 V2 与私有媒体冻结核销；Gateway Cache 同时保留官方 Grok 视频结算 claim 与私有粘性 CAS；`/videos` 只保留一套平台分派路由。
+- 官方基线为 annotated tag `v0.1.176`，tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`。官方 tag 树内 `VERSION=0.1.175`，私有候选最终应设置为 `0.1.176`；最终发布仍须以私有 annotated Tag、manifest source commit 与镜像内 revision 三者一致为准。
+- 官方 Grok 4.6/JWT 订阅档位、分组逐模型定价、长上下文阶梯开关、原生 `/x_search`、渠道缓存失效与定价冲突修复均已合入。Wire 同时注入官方渠道监控 V2 与私有媒体冻结核销；Gateway Cache 同时保留官方 Grok 视频结算 claim 与私有粘性 CAS；`/videos` 只保留一套平台分派路由，私有媒体路由继续完整保留。
 - 私有媒体创建仍只提交一次。Grok 异步视频在创建前冻结，创建成功保持 `dispatched`，完成查询首次幂等结算；普通余额与提链卡都保留请求级价格快照和余额冻结事务。官方 `response_model` 计费先执行，私有媒体冻结报价封顶随后执行，不能因上游实际价格更高二次追扣。
 - OpenAI 空 `response.completed`、metadata-only 断流和缺正式终态继续进入安全 failover；结构化 reasoning/item 进度只解除首输出超时，不提前记录 TTFT 或提交账号响应，真实可见输出才记录 TTFT。Responses、Chat、Messages 与 WebSocket 保留精确容量错误的有界重试；Messages 继续继承池内同账号指数退避。
-- 迁移 runner 按完整 filename 和 checksum 识别迁移。官方 `194_add_usage_log_upstream_response_model.sql`、`194_channel_monitor_v2.sql` 与私有 `194_link_cards.sql` 三份同号文件共存，官方 `195-206`、`217-220` 原名保留。由于包含 forward-only 数据库迁移、Ent schema、前端资产和二进制变更，发布策略是 `image-update-required`，不得在线热更新。
-- 本地门禁已通过：`go test ./... -count=1`、`go test ./... -run '^$'`、`go vet ./...`、前端 ESLint、typecheck、全量 Vitest 和生产 build。当前未创建最终 merge commit、私有 Tag、Release 或镜像，也未连接、替换或重启生产服务。
-- 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时，接近边界的完成查询存在时序风险。发布前必须保留 24 小时运维观察和幂等结算测试；长期方案应把 pending 结算状态持久化到任务表，而不是简单延长冻结时间。
+- 迁移 runner 按完整 filename 和 checksum 识别迁移。官方 `194-206`、`217-220` 原名保留，私有 `194_link_cards.sql` 与官方同号文件独立共存；新增 `221_group_model_pricing.sql` 创建分组长上下文开关和逐模型定价 JSONB。由于包含 forward-only 数据库迁移、Ent schema、前端资产和二进制变更，发布策略是 `image-update-required`，不得在线热更新。
+- 本地完整门禁已通过：后端全量测试和 vet、积分服务全量测试和 vet、前端 ESLint/typecheck/全量 Vitest/生产 build、视频边缘 Worker 测试及差异检查均成功；GitHub CI、私有 Tag、Release 和镜像仍按发布流程逐项完成。生产 Sub2API 仍只能由维护者手工切换。
+- 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时；长上下文定价必须同时满足分组开关与账号能力，接近边界的完成查询和价格切换仍需发布前观察。
 
 ### 5.1 v0.1.169 历史合并兼容结论
 

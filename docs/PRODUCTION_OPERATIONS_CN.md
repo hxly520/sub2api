@@ -93,6 +93,12 @@
 - 前端复核 `LinkCardsView` 与 `LinkCardsConsoleView` 共 `6/6` 个 Vitest 用例通过，`vue-tsc --noEmit` 通过；用户页继续由标准 `AppLayout` 承载，不再隐藏 Sub2API 左侧导航。切换后日志共检查 3,384 行，未发现 panic/fatal、提链错误或迁移错误。
 - 日志中另有 `gpt-5.6`、`gpt-5.6-luna` 的 `no available accounts supporting model (... channel pricing restriction)` 503，同时其他请求仍有 200 成功记录；这是上游账号池/渠道定价可用性问题，不是本次镜像、迁移或提链资金链路异常，应按账号池单独排查。
 
+### 0.10 2026-08-13 v0.1.176 兼容候选只读交接
+
+- 当前本地候选工作分支为 `codex/upgrade-v0.1.175-compat`，正在合入官方 `v0.1.176`；官方 annotated tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`。合并冲突已解决但尚未形成最终 merge commit，不能视为生产版本，也未执行服务器替换、重启或迁移。
+- 官方本轮新增 Grok 4.6/JWT 订阅档位、分组逐模型定价、长上下文阶梯开关和 `/x_search`；私有媒体路由、冻结/退款、积分、额度卡/提链、首页/帮助和容量错误精确重试均保留。新增迁移 `221_group_model_pricing.sql`，发布策略固定为 `image-update-required`，须由维护者备份数据库后用 Compose/GHCR 手工切换。
+- 本地验证：后端 `go test ./... -count=1`、`go vet ./...`、golangci-lint 2.9.0、服务/协议/路由定向测试通过；积分系统 `go test ./... -count=1`、`go vet ./...` 通过；前端 lint、typecheck、生产 build 和关键 Vitest 66/66 通过。前端全量 Vitest 仍有既有 `AccountsView.selectAllResults.spec.ts` 异步 teardown 未处理 rejection，未发现 v0.1.176 合并引入的失败断言；最终 CI 仍为发布前置条件。
+
 ### 0.6 2026-08-08 额度卡费用只读审计与悬停修复
 
 - 当前候选代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，基线为 `v0.1.172`。本轮只修改仓库代码、测试和文档；没有替换或重启生产 Sub2API、积分、PostgreSQL、Redis 或生图工作台容器，也没有执行新的生产迁移。

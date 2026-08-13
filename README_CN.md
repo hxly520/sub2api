@@ -167,6 +167,16 @@
 <td><a href="https://hao.ai">hao.ai</a> 是面向开发者与团队的高速、稳定大模型统一 API 网关。通过一个 API Key 和统一接口，即可接入 GPT、Claude、xAI Grok 等主流模型，兼容 OpenAI、Anthropic 等常用协议与 SDK。平台提供模型路由、故障回退、团队管理及完整调用日志，模型价格低至官方参考价的 1.5 折，帮助用户更简单、更稳定、更低成本地构建 AI 应用。</td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://www.swiftproxy.net/?ref=sub2api"><img src="assets/partners/logos/swiftprox.png" alt="Swiftproxy" width="150"></a></td>
+<td>Swiftproxy 是面向开发者的高性能代理解决方案，提供稳定可靠的住宅代理和静态住宅代理服务。拥有 9000 万+ 纯净住宅 IP，覆盖全球，支持灵活轮换和精准地理定位，帮助网页抓取、AI 自动化、浏览器自动化、SEO 监控和多账号管理等项目突破访问限制，提升工作流效率。支持 HTTP(S) 和 SOCKS5 协议，兼容 Playwright、Selenium、Puppeteer 等主流自动化工具，动态代理流量用完为止永不过期，支持免费测试 — <a href="https://www.swiftproxy.net/?ref=sub2api">立即开始免费测试</a>！</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://www.duckip.cn/?keyword=cu7oog6y"><img src="assets/partners/logos/duckip.png" alt="DuckIP" width="150"></a></td>
+<td><a href="https://www.duckip.cn/?keyword=cu7oog6y">DuckIP</a> - 9000 万+ 全球住宅网络资源，覆盖 195+ 国家和地区，支持轮换和粘性会话，适用于公共数据采集、RAG 更新、模型评估和多区域数据工作负载。🟢住宅代理 - 8 折优惠；🟢静态住宅代理 - ¥50.00/IP 起；🟢无限住宅代理 - ¥19.8/小时 起。✅免费领取 500M 试用流量。</td>
+</tr>
+
 </table>
 
 ## 项目概述
@@ -187,7 +197,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的当前候选代码基线为 Sub2API `v0.1.175`（官方 annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`，源码 commit `93c32fa1a2450351561abc46156d2e28cb5f74ca`），源码 `backend/cmd/server/VERSION=0.1.175`。官方 tag 树内的 `VERSION` 仍为 `0.1.173`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮包含数据库迁移、Ent schema、前端和二进制变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
+本仓库的当前候选代码基线为 Sub2API `v0.1.176`（官方 annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，源码 commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`），源码 `backend/cmd/server/VERSION=0.1.176`。官方 tag 树内的 `VERSION` 仍为 `0.1.175`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮新增分组逐模型定价、长上下文定价开关和原生 `x_search` 路由，并包含数据库迁移、Ent schema、前端和二进制变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
 - [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)

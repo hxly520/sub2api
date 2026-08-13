@@ -744,6 +744,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			Ctx:                       ctx,
 			Model:                     billingModel,
 			GroupID:                   &gid,
+			Group:                     apiKey.Group,
 			Tokens:                    tokens,
 			RequestCount:              1,
 			RateMultiplier:            multiplier,
@@ -812,6 +813,18 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	videoCount := openAIVideoUsageCount(result)
 	resolution := NormalizeVideoBillingResolutionOrDefault(openAIVideoUsageResolution(result))
 	durationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(openAIVideoUsageDurationSeconds(result))
+	resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey)
+	if resolved != nil && resolved.Source == PricingSourceGroup && resolved.Mode == BillingModeVideo {
+		gid := apiKey.Group.ID
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
+			Ctx: ctx, Model: billingModel, GroupID: &gid, Group: apiKey.Group,
+			UsageUnits: float64(videoCount * durationSeconds), SizeTier: resolution,
+			RateMultiplier: multiplier, Resolver: s.resolver, Resolved: resolved,
+		})
+		if err == nil {
+			return cost
+		}
+	}
 	groupConfig := videoPriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredVideoPrice(apiKey, billingModel, resolution) {
 		return s.billingService.CalculateVideoCost(billingModel, resolution, videoCount, durationSeconds, groupConfig, multiplier)
@@ -835,13 +848,16 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
+			Group:          apiKey.Group,
 			RequestCount:   requestCount,
+			UsageUnits:     float64(requestCount),
 			SizeTier:       resolution,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,
 			Resolved:       resolved,
 		})
 		if err == nil {
+			cost.BillingMode = string(resolved.Mode)
 			return cost
 		}
 		logger.LegacyPrintf("service.openai_gateway", "Calculate video channel cost failed: %v", err)

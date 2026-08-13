@@ -134,6 +134,55 @@ func TestForwardOpenAIVideoJSONTaskMapsCompatibilityAliasToUnifiedVideosAndDefau
 	require.Equal(t, 1, result.VideoCount)
 }
 
+func TestForwardOpenAIVideoMinimaxH32KPassesUnifiedJSONProtocol(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"minimax-h3-2k","prompt":"city at night","duration":15,"aspect_ratio":"16:9","resolution":"2k","reference_image_urls":["https://media.test/1.png","https://media.test/2.png","https://media.test/3.png","https://media.test/4.png","https://media.test/5.png"],"reference_audios":["https://media.test/1.mp3","https://media.test/2.mp3","https://media.test/3.mp3"]}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          721,
+		Name:        "openai-minimax-video",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://video-upstream.test/v1",
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"minimax-video-task-123","status":"queued"}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	parsed, err := svc.ParseOpenAIVideoRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, "minimax-h3-2k", parsed.Model)
+	require.Equal(t, "2k", parsed.Resolution)
+	require.Equal(t, 15, parsed.DurationSeconds)
+	require.Equal(t, 5, parsed.ReferenceImageCount)
+	require.Equal(t, 3, parsed.ReferenceAudioCount)
+	require.Zero(t, parsed.ReferenceVideoCount)
+
+	result, err := svc.ForwardVideo(context.Background(), c, account, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, "https://video-upstream.test/v1/videos", upstream.lastReq.URL.String())
+	require.Equal(t, http.MethodPost, upstream.lastReq.Method)
+	require.JSONEq(t, string(body), string(upstream.lastBody))
+	require.Equal(t, "minimax-video-task-123", result.ResponseID)
+	require.Equal(t, "minimax-h3-2k", result.Model)
+	require.Equal(t, "minimax-h3-2k", result.UpstreamModel)
+	require.Equal(t, "2k", result.VideoResolution)
+	require.Equal(t, 15, result.VideoDurationSeconds)
+}
+
 func TestForwardOpenAIVideoJSONTaskSupportsPluralVideosGenerationsPath(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)

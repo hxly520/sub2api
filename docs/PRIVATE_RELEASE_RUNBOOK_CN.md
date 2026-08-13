@@ -2,10 +2,10 @@
 
 本文说明 `hxly520/sub2api` 的两种版本更新方式。默认不直接操作生产；服务器上的 Sub2API 镜像由维护者在人工窗口切换。所有命令中的主机、项目名、路径、版本和凭据均为占位符。
 
-## 1. 当前基线（2026-08-12）
+## 1. 当前基线（2026-08-13）
 
-- 私有仓库：`hxly520/sub2api`，`main` 已推进到官方 `v0.1.175` 兼容线；双父合并提交为 `d92c707b81a81f2883bdcf2bc57a875851b0f9ba`，首轮记录提交为 `7b62c8b3536768dceed593fce54f39f07296f63f`。`v0.1.175-52t.1` 因 GitHub CI 发现编译、lint 和容量重试请求体稳定性问题而取消，未创建 GitHub Release，也未产生该版本 GHCR 镜像；该 Tag 只保留为作废审计点，不能部署或移动。修复候选必须使用递增版本 `v0.1.175-52t.2`，并在全部门禁通过后发布。生产容器是否切换仍只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的运行态记录为准。
-- 官方 `v0.1.175` annotated tag object 为 `b898c60c422d1de059968c56aca22f6643f1fed4`，peeled commit 为 `93c32fa1a2450351561abc46156d2e28cb5f74ca`，tag 树内 `VERSION=0.1.173`；私有候选 `VERSION=0.1.175`。本轮包含 Grok/xAI、被动渠道监控 V2、音频/搜索/视频计费、响应模型计费和迁移 `194-220`，发布策略固定为 `image-update-required`，后台热更新不得安装。
+- 私有仓库：`hxly520/sub2api`，当前工作分支 `codex/upgrade-v0.1.176-compat` 已完成官方 `v0.1.176` 双父兼容合并和本地全量门禁。首个私有 Tag 为 `v0.1.176-52t.1`，必须在 GitHub 全量门禁通过后发布；生产容器是否切换仍只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的运行态记录为准。
+- 官方 `v0.1.176` annotated tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`，tag 树内 `VERSION=0.1.175`；私有候选最终 `VERSION=0.1.176`。本轮包含 Grok 4.6/JWT 订阅档位、原生 `/x_search`、分组逐模型定价、长上下文开关和迁移 `221_group_model_pricing.sql`，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
 
 ## 2. 发布前门禁

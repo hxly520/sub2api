@@ -134,8 +134,8 @@
             </div>
           </div>
 
-          <!-- Token intervals -->
-          <div class="mt-3">
+          <!-- Token intervals (channel-only; group long-context uses official presets) -->
+          <div v-if="!hideTokenIntervals" class="mt-3">
             <div class="flex items-center justify-between">
               <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('admin.channels.form.intervals') }}
@@ -219,7 +219,7 @@
                   : t('admin.channels.form.imageTiers')
               }}
             </label>
-            <button type="button" @click="addImageTier" class="text-xs text-primary-600 hover:text-primary-700">
+            <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
               + {{ t('admin.channels.form.addTier') }}
             </button>
           </div>
@@ -253,10 +253,13 @@ import channelsAPI from '@/api/admin/channels'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entry: PricingFormEntry
   platform?: string
-}>()
+  hideTokenIntervals?: boolean
+}>(), {
+  hideTokenIntervals: false,
+})
 
 const emit = defineEmits<{
   update: [entry: PricingFormEntry]
@@ -293,7 +296,7 @@ function addInterval() {
   emit('update', { ...props.entry, intervals })
 }
 
-function addImageTier() {
+function addMediaTier() {
   const intervals = [...(props.entry.intervals || [])]
   const labels = defaultMediaTierLabels(props.entry.billing_mode)
   intervals.push({
