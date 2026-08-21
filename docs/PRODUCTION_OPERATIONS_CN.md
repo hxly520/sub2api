@@ -457,3 +457,10 @@ cat POINTS_APP_PSQL_VARS points-system/deploy/shared-database-users-email-rollba
 - 文档可记录主机、端口、镜像、commit、非敏感路径和“密钥已配置”状态。
 - 任何包含原始环境变量、日志、数据库行或 `nginx -T` 全量输出的文件都不得提交。
 - 凭据发生轮换时，只更新外部密码管理系统；本文档不记录旧值或新值。
+
+## 13. 渠道监控定时开关（2026-08-21）
+
+- 服务器已有脚本 `/home/api/sub2api-deploy/sub2api-monitor-switch/sub2api-monitor-switch.sh`，源码归档在 [`deploy/sub2api-monitor-switch/`](../deploy/sub2api-monitor-switch/)。脚本写入同一 Sub2API 数据库的 `settings.channel_monitor_enabled`，只控制渠道监控/探测任务，不修改 `channels.status`，也不关闭模型请求入口。
+- 服务器时区为 `Asia/Shanghai`。root crontab 安装两条幂等任务：每天 `00:00` 执行 `off`，每天 `08:00` 执行 `on`；脚本自身使用锁目录防止并发执行，日志写入 `/var/log/sub2api-monitor-switch.log`。
+- 当前生产容器、PostgreSQL、Redis 和 Nginx 不需要因该定时任务重启或 reload。检查命令：`sub2api-monitor-switch.sh status`、`crontab -l`、`tail -n 50 /var/log/sub2api-monitor-switch.log`。
+- 若后续需求改为“关闭所有渠道请求”，必须另行设计 `channels.status` 的状态快照、缓存失效和人工恢复边界，不能复用本脚本。
