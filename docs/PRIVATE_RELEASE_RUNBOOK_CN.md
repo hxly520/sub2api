@@ -2,10 +2,10 @@
 
 本文说明 `hxly520/sub2api` 的两种版本更新方式。默认不直接操作生产；服务器上的 Sub2API 镜像由维护者在人工窗口切换。所有命令中的主机、项目名、路径、版本和凭据均为占位符。
 
-## 1. 当前基线（2026-08-13）
+## 1. 当前基线（2026-08-26）
 
-- 私有仓库：`hxly520/sub2api`，当前工作分支 `codex/upgrade-v0.1.176-compat` 已完成官方 `v0.1.176` 双父兼容合并和本地全量门禁。首个私有 Tag 为 `v0.1.176-52t.1`，必须在 GitHub 全量门禁通过后发布；生产容器是否切换仍只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的运行态记录为准。
-- 官方 `v0.1.176` annotated tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`，tag 树内 `VERSION=0.1.175`；私有候选最终 `VERSION=0.1.176`。本轮包含 Grok 4.6/JWT 订阅档位、原生 `/x_search`、分组逐模型定价、长上下文开关和迁移 `221_group_model_pricing.sql`，发布策略固定为 `image-update-required`，后台热更新不得安装。
+- 私有仓库：`hxly520/sub2api`，工作分支 `codex/upgrade-v0.1.176-compat` 已完成官方 `v0.1.176` 双父兼容合并；私有 Tag `v0.1.176-52t.1` 已发布并由维护者切换生产。`2026-08-26` 长上下文计费热修复只在后续源码分支，尚未创建新 Tag、镜像或切换生产；运行态仍只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的记录为准。
+- 官方 `v0.1.176` annotated tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`，tag 树内 `VERSION=0.1.175`；当前私有源码 `VERSION=0.1.176-52t.1`，创建下一发布时再与新私有 Tag 同步。本轮原始升级包含 Grok 4.6/JWT 订阅档位、原生 `/x_search`、分组逐模型定价、长上下文开关和迁移 `221_group_model_pricing.sql`，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
 
 ## 2. 发布前门禁

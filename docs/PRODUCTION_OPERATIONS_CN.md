@@ -4,9 +4,9 @@
 
 最新生产事实以本文件第 0 节及 [2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 第 0、11.14、11.15、11.16 节为准。[2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留首次部署证据；后续排障不得把其中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
-## 0. 2026-08-11 当前生产事实
+## 0. 当前生产事实（Sub2API 更新至 2026-08-26，其余条目按各自日期）
 
-- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.172-52t.1`，revision `17cc682d26795abc8f5ea16f4d3cf33366c0a676`，容器 `d531995c1f35...`、image ID `be179a20cb42...`，启动于 `2026-08-11 07:19:32 CST`，healthy、restart count `0`。私有 Release、GHCR digest、宿主首页和帮助中心状态见第 0.9 节。
+- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；`2026-08-26` 只读复核时容器 healthy、未重启。该镜像仍包含长上下文认证快照缺字段问题，修复只存在于后续源码候选，尚未构建或切换；证据和边界见第 0.11 节。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
 - 积分中心与签到门禁均为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。当前 policy v7 于 `2026-08-02` 生效，按昨日原始成功余额消费使用 `1%-5% / 2%-5% / 3%-5% / 4%-5%` 四档，最低消费 `1 U`、每日一次、三个金额 cap 为 `NULL`；原 v5 保持不可变并于 `2026-08-03` 接管。
 - 用户 1 原 `3.08 U` 已通过 reversal `12c061b4-380c-5119-8aec-26a500ef6590` 真正扣回并标记 `reversed`；新 grant `7d779e12-d5dd-4f09-a944-ff0eac93cf18` 按 `[50,100) U` 的 `3%-5%` 档实发 `3.11 U` 且为 `settled`。真实用户接口的今日赠送和累计赠送均为净 `3.11 U`，旧记录仅作为已冲正审计保留。
@@ -99,6 +99,16 @@
 - 官方本轮新增 Grok 4.6/JWT 订阅档位、分组逐模型定价、长上下文阶梯开关和 `/x_search`；私有媒体路由、冻结/退款、积分、额度卡/提链、首页/帮助和容量错误精确重试均保留。新增迁移 `221_group_model_pricing.sql`，发布策略固定为 `image-update-required`，须由维护者备份数据库后用 Compose/GHCR 手工切换。
 - 本地验证：后端 `go test ./... -count=1`、`go vet ./...`、golangci-lint 2.9.0、服务/协议/路由定向测试通过；积分系统 `go test ./... -count=1`、`go vet ./...` 通过；前端 lint、typecheck、生产 build 和关键 Vitest 66/66 通过。前端全量 Vitest 仍有既有 `AccountsView.selectAllResults.spec.ts` 异步 teardown 未处理 rejection，未发现 v0.1.176 合并引入的失败断言；最终 CI 仍为发布前置条件。
 
+### 0.11 2026-08-26 GPT-5.6 长上下文计费只读复核与修复候选
+
+- 生产 Sub2API 仍为 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`，检查期间保持 healthy、未重启；未修改服务器、数据库、Redis、价格、账号、镜像或历史账单。
+- 数据库分组 `20` 的 `long_context_pricing_enabled=true`。OpenAI 账号共 `68` 个，其中 `17` 个账号开关开启、`51` 个关闭；分组开关与账号开关按官方后续规则应为 OR，而生产镜像仍使用旧 AND 逻辑。
+- API Key `15` 的 Redis 认证快照为 `version=20`，分组对象缺少 `long_context_pricing_enabled` 和 `model_pricing`。旧镜像每次回源仍生成相同残缺结构，约 300 秒 TTL 不能自愈；缓存还原后分组开关落为 `false`。
+- `usage_logs.id=600134` 的普通输入 `16,169`、缓存读取 `281,344`，计费上下文合计 `297,513`，超过 `272,000`。实际仍按基础档记录 `total=0.227937`、`actual=0.02735244` 且 `long_context_billing_applied=false`；按当前官方 GPT-5.6 规则应为输入/缓存读取 `2x`、输出 `1.5x`，对应 `total=0.452664`、`actual=0.05431968`。近 7 天 `68,685` 条 GPT-5.6-sol 中有 `685` 条超过阈值且标志均为 false；约 `32.03` 的差额仅是只读审计估算，不能据此自动改账。
+- 分组 `20` 的 `model_pricing` 为 SQL `NULL`，不存在会因 `v21` 快照恢复而重新生效的分组覆盖价。渠道逐模型价格 `id=711` 当前 flat 字段为空且区间数为 `0`；相关管理员审计表明 `2026-08-26 22:35-22:36 CST` 已把自定义价格清空。因此当前低计费不是分组/渠道高档或重复计费造成，而是官方内置长上下文倍率没有生效。
+- 源码候选回移官方 `674570ca1` 和 `5b2a386ed` 的必要部分：认证快照双向保存分组长上下文/模型价格，私有版本提升为 `v21` 强制淘汰残缺 `v20`，并采用分组或账号任一开启的 OR 语义。渠道显式区间继续优先且不叠加官方倍率；未引入无关的 Fast/Flex 和后续价卡结构。
+- 候选已通过认证快照 JSON 往返、`v20` 淘汰、四种开关组合、渠道区间不重复叠加，以及上述生产同型 token/缓存/倍率定向测试。新 Tag、CI、镜像、服务器缓存和生产人工切换均未执行；旧历史账单不会因新快照版本自动变化。
+
 ### 0.6 2026-08-08 额度卡费用只读审计与悬停修复
 
 - 当前候选代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，基线为 `v0.1.172`。本轮只修改仓库代码、测试和文档；没有替换或重启生产 Sub2API、积分、PostgreSQL、Redis 或生图工作台容器，也没有执行新的生产迁移。
@@ -133,7 +143,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库源码基线为官方 Sub2API Release `v0.1.172`、标签后已审热修复与私有兼容层，`backend/cmd/server/VERSION=0.1.172-52t.1`；生产运行身份仍以本文件第 0.9 节的容器、不可变镜像与 OCI revision 为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
+- 当前仓库维护基线为官方 Sub2API Release `v0.1.176` 与私有兼容层，工作分支 `backend/cmd/server/VERSION=0.1.176-52t.1`；生产运行同版本的旧镜像，长上下文热修复候选尚未上线，精确状态以第 0.11 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
@@ -328,7 +338,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.172-7fe54f0856ee`，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0.8 节及链接记录的第 11.14、11.15、11.16 节为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c` 和 `0.1.172-7fe54f0856ee`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.176-52t.1`，长上下文修复候选尚未上线，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0、0.11 节及链接记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 

@@ -12,7 +12,7 @@
 | `v0.1.172` | `155c494964c3ea6ecc31f52679525c1034bf0f16` | completed (historical) | 私有 `d6cfece20` 合并，`62d636672` 合入 tag 后官方热修复。 |
 | `v0.1.173` | `29009f0b2ea14edf3b11ae2564fb617ff91a03b4` | superseded by candidate | 其 Grok/xAI、渠道监控 V2、计费、注册限制与迁移变化已由 `v0.1.175` 兼容候选整体吸收。 |
 | `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | completed (historical) | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；由 `v0.1.176` 兼容线承接。 |
-| `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | merged; release pending | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；双父合并和本地全量门禁已完成。首个私有发布使用 `v0.1.176-52t.1`；本轮迁移/Ent/前端/二进制变化固定为 `image-update-required`。 |
+| `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed; production hotfix pending | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已在生产运行。`2026-08-26` 从官方后续提交回移长上下文认证快照与开关语义修复，下一不可变发布仍待构建和人工切换。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`，官方 `v0.1.176` tag 树内的 `VERSION` 仍为 `0.1.175`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
 
@@ -20,9 +20,11 @@
 
 - 本轮从私有 `v0.1.175` 兼容收口点合入官方 annotated tag `v0.1.176`，官方 tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`；合并过程中保留私有媒体路由并接入官方 `/x_search`。
 - 官方 Grok 4.6/订阅档位识别、Grok 模型配额、分组逐模型定价、长上下文阶梯开关和原生 `x_search` 按官方实现优先；私有缓存、账号调度、媒体冻结/核销、积分、额度卡/提链、首页/帮助和协议终态回归继续保留。
-- 视频计费沿用官方分组/渠道逐模型定价解析；旧视频字段保持兼容。`minimax-h3-2k` 继续由现有视频分组、倍率和 `/v1/videos` 透传链路承载，不新增专属模型族或计费规则；回归测试覆盖 `2k`、15 秒、5 图和 3 音频统一 JSON 请求。长上下文计费仅在分组开关和账号能力同时开启时使用阶梯价格，避免存量分组静默改变计费。
+- 视频计费沿用官方分组/渠道逐模型定价解析；旧视频字段保持兼容。`minimax-h3-2k` 继续由现有视频分组、倍率和 `/v1/videos` 透传链路承载，不新增专属模型族或计费规则；回归测试覆盖 `2k`、15 秒、5 图和 3 音频统一 JSON 请求。
+- 长上下文阶梯采用官方 `5b2a386ed` 的 OR 语义：分组开关或账号开关任一开启即生效，账号 `false` 不否决已开启的分组。渠道显式区间仍优先且不再叠加官方倍率；两者都关闭时只选择最低渠道区间或内置基础价。
+- 官方 `674570ca1` 补齐认证快照中的 `LongContextPricingEnabled` 与 `ModelPricing`。私有 `v20` 已用于提链及 search/audio/video 字段，因此兼容实现使用 `v21`，使旧 Redis 快照立即失效并从数据库重建；不需要清空 Redis，也不修改数据库或历史账单。
 - 新增 `backend/migrations/221_group_model_pricing.sql`，与既有迁移按完整文件名和 checksum 独立执行。由于数据库、Ent schema、前端和二进制均有变化，本轮发布策略为 `image-update-required`，不得使用后台热更新代替 Compose/GHCR 镜像切换。
-- 本地门禁已通过：后端 `go test ./... -count=1` 与 `go vet ./...`、积分服务 `go test ./... -count=1` 与 `go vet ./...`、前端 ESLint/typecheck/全量 Vitest/生产 build、视频边缘 Worker 全量测试和 `git diff --check`。私有 Release、GHCR digest 和生产切换仍为 `pending`，不得把候选状态写成生产已切换。
+- 原 `v0.1.176-52t.1` 发布门禁已通过并由维护者完成生产切换。`2026-08-26` 热修复已通过认证快照、开关矩阵、渠道区间和生产同型 GPT-5.6 长上下文定向测试；新 Release、GHCR digest 和生产切换仍为 `pending`，不得把源码修复状态写成已上线。
 
 ## 2. 已完成合并结论
 

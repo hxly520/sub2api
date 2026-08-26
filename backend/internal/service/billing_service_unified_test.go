@@ -178,6 +178,58 @@ func TestCalculateCostUnified_GPT56ChannelIntervalsDoNotStackLongContextTier(t *
 	require.InDelta(t, float64(tokens.OutputTokens)*45e-6, cost.OutputCost, 1e-12)
 }
 
+func TestCalculateCostUnified_ChannelIntervalsRespectGroupOrAccountToggle(t *testing.T) {
+	resolver := newResolverWithChannelPlatform(t, "openai", []ChannelModelPricing{{
+		Platform:    "openai",
+		Models:      []string{"gpt-5.6-sol"},
+		BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(272000), InputPrice: testPtrFloat64(5e-6), OutputPrice: testPtrFloat64(30e-6)},
+			{MinTokens: 272000, InputPrice: testPtrFloat64(10e-6), OutputPrice: testPtrFloat64(45e-6)},
+		},
+	}})
+	groupID := int64(100)
+	tokens := UsageTokens{InputTokens: 300000, OutputTokens: 1000}
+
+	groupOff := false
+	groupOn := true
+	accountOn := true
+	accountOff := false
+
+	// A group opt-in enables the higher interval even when the account switch
+	// is explicitly off.
+	groupEnabled, err := resolver.billingService.CalculateCostUnified(CostInput{
+		Ctx: context.Background(), Model: "gpt-5.6-sol", GroupID: &groupID,
+		Group: &Group{LongContextPricingEnabled: groupOn}, Tokens: tokens,
+		RateMultiplier: 1, Resolver: resolver, LongContextBillingEnabled: &accountOff,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 300000*10e-6, groupEnabled.InputCost, 1e-12)
+	require.InDelta(t, 1000*45e-6, groupEnabled.OutputCost, 1e-12)
+
+	// An account opt-in enables the higher interval even when the group switch
+	// is off.
+	accountEnabled, err := resolver.billingService.CalculateCostUnified(CostInput{
+		Ctx: context.Background(), Model: "gpt-5.6-sol", GroupID: &groupID,
+		Group: &Group{LongContextPricingEnabled: groupOff}, Tokens: tokens,
+		RateMultiplier: 1, Resolver: resolver, LongContextBillingEnabled: &accountOn,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 300000*10e-6, accountEnabled.InputCost, 1e-12)
+	require.InDelta(t, 1000*45e-6, accountEnabled.OutputCost, 1e-12)
+
+	// With both switches off, the interval list remains intact but the lowest
+	// tier is selected.
+	groupDisabled, err := resolver.billingService.CalculateCostUnified(CostInput{
+		Ctx: context.Background(), Model: "gpt-5.6-sol", GroupID: &groupID,
+		Group: &Group{LongContextPricingEnabled: groupOff}, Tokens: tokens,
+		RateMultiplier: 1, Resolver: resolver, LongContextBillingEnabled: &accountOff,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 300000*5e-6, groupDisabled.InputCost, 1e-12)
+	require.InDelta(t, 1000*30e-6, groupDisabled.OutputCost, 1e-12)
+}
+
 func TestCalculateCostUnified_PerRequestMode(t *testing.T) {
 	// Set up a ChannelService with a per-request pricing channel
 	cs := newTestChannelServiceWithCache(t, &channelCache{
