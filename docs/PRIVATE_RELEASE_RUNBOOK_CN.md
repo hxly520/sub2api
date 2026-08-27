@@ -4,7 +4,7 @@
 
 ## 1. 当前基线（2026-08-28）
 
-- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，当前候选版本为 `0.1.183-52t.4`。`.4` 尚未创建不可变 Tag、Release、CI 产物或 GHCR 镜像；上一 `.2` 的提交、run、digest 和服务器缓存只作为历史证据保留。`v0.1.183-52t.3` 指向 `aa6a0d05e5a17e355723672a6cddfd5de2d0dc92`，GitHub run `33103107425` 因 8 个已脱离官方链路的旧二开未使用函数触发 lint 门禁而失败，未生成 Release 或 GHCR 镜像，禁止重跑或改写该 Tag。生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
+- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，当前候选版本为 `0.1.183-52t.4`。发布提交与 annotated Tag 均为 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`；GitHub run `33105459243`、Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。上一 `.2` 的提交、run、digest 和服务器缓存只作为历史证据保留。`v0.1.183-52t.3` 指向 `aa6a0d05e5a17e355723672a6cddfd5de2d0dc92`，GitHub run `33103107425` 因 8 个已脱离官方链路的旧二开未使用函数触发 lint 门禁而失败，未生成 Release 或 GHCR 镜像，禁止重跑或改写该 Tag。生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
 - 官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`；当前私有源码 `VERSION=0.1.183-52t.4`。本轮官方网关、计费、重试和协议终态按官方实现优先恢复；保留私有积分、提链/额度卡、媒体冻结、生图/视频、长上下文计费、首页/帮助、私有更新源和精确容量兼容约束。客户端断开禁止重放，仅做有界 usage drain；OAuth 429 恢复窗口受请求级重试预算约束；Codex turn-state 上限 `48 KiB`，Nginx 响应头缓冲为 `128k`。
 - 官方新增 `222-230` 迁移；两份 `225`、两份 `226` 与此前三份 `194` 均按完整文件名和 checksum 共存。候选跨越 forward-only 迁移、Ent/生成代码、前端和二进制，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
@@ -113,7 +113,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --no-deps sub2
 
 对于独立 points 或 `infinite-canvas`，使用各自 Compose 服务和不可变镜像，先完成对应 schema/浏览器本地数据备份；更新它们不能重启 Sub2API。
 
-`v0.1.183-52t.4` 的自动化边界止于发布并核验 `ghcr.io/hxly520/sub2api:0.1.183-52t.4` 的不可变 digest；当前 digest、CI run、Release 和服务器缓存均为 `pending`。可以把镜像拉取或归档到服务器缓存，但不得执行 `docker compose up`、替换容器、触发生产迁移或调整业务配置。维护者在人工窗口完成数据库备份、旧镜像回滚点和 migration filename/checksum 核对后，才执行单服务 Compose 切换。
+`v0.1.183-52t.4` 的自动化边界止于发布并核验 `ghcr.io/hxly520/sub2api:0.1.183-52t.4` 的不可变 digest。GitHub run `33105459243` 已通过，Release 和服务器缓存已完成；manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`，服务器 amd64 image ID 为 `sha256:3a7d99a2655717de1fdc4952c2d78ec25bdb02f543820ce9a6b6e47f353f7518`，OCI revision 为 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`。未执行 `docker compose up`、替换容器、触发生产迁移或调整业务配置。维护者在人工窗口完成数据库备份、旧镜像回滚点和 migration filename/checksum 核对后，才执行单服务 Compose 切换。
 
 ## 6. 回退
 
