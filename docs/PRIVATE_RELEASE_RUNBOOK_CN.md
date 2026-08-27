@@ -4,7 +4,7 @@
 
 ## 1. 当前基线（2026-08-27）
 
-- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，当前候选版本为 `0.1.183-52t.2`。`v0.1.183-52t.1` 已推送不可变 Tag，但质量门禁失败，Release 和 GHCR 镜像均未创建；`.2` 分支更新、Tag、Release 和镜像仍待完成。生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
+- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，当前候选版本为 `0.1.183-52t.2`。`v0.1.183-52t.1` 已推送不可变 Tag，但质量门禁失败，Release 和 GHCR 镜像均未创建；`.2` 已从提交 `cc2165e5fd6a14685700eb6c3607a5fb51baee09` 发布，GitHub run `33069107472` 全绿，GHCR manifest digest 为 `sha256:effb2f50b8a3da0f9b525eef5a852f2e2cdf6fdaa4daacbcc580e285886cb622`。生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
 - 官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`；当前私有源码 `VERSION=0.1.183-52t.2`。本轮吸收官方插件、国产供应商、复合分组、渠道监控配额模式、分组用量汇总、Fast/Flex、渠道倍率、分时段/仅工作日定价、OpenAI Responses/WS 和调度修复，同时保留私有积分、提链、媒体冻结、视频、首页/帮助、私有更新源和容量精确重试。
 - 官方新增 `222-230` 迁移；两份 `225`、两份 `226` 与此前三份 `194` 均按完整文件名和 checksum 共存。候选跨越 forward-only 迁移、Ent/生成代码、前端和二进制，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。

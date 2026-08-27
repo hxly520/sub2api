@@ -17,7 +17,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。官方远端只用于获取基线，不直接向官方远端推送二开提交。
-- 当前维护候选为官方 annotated tag `v0.1.183`（tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`）与完整私有兼容层；工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，`backend/cmd/server/VERSION=0.1.183-52t.2`。`v0.1.183-52t.1` Tag 已推送但质量门禁失败，未创建 Release 或 GHCR 镜像；修复后的 `.2` 已通过本地完整门禁，分支更新、`.2` Tag、Release 和镜像仍待完成。生产仍运行私有 `v0.1.176-52t.1`；各状态必须分开记录。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验、容量精确重试和额度卡/提链功能；生产容器仍只由维护者手工切换，精确状态以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
+- 当前维护候选为官方 annotated tag `v0.1.183`（tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`）与完整私有兼容层；工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，发布提交为 `cc2165e5fd6a14685700eb6c3607a5fb51baee09`，`backend/cmd/server/VERSION=0.1.183-52t.2`。`v0.1.183-52t.1` Tag 已推送但质量门禁失败，没有 Release 或镜像；修复后的 `.2` 已通过本地和 GitHub run `33069107472` 全部门禁，Release 与 GHCR 多架构镜像均已发布。生产仍运行私有 `v0.1.176-52t.1`；各状态必须分开记录。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验、容量精确重试和额度卡/提链功能；生产容器仍只由维护者手工切换，精确状态以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 历史部署事实（截至 `2026-08-02`）：当时全体签到开放，Sub2API 为 `0.1.169-1a4a690dd999`、积分服务为 `0.1.169-b64a0110ab2c`，两者均 healthy；该段仅保留旧验收证据。当前生产版本、门禁和 OCI revision 以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；后续仍不能只看仓库 `main` 或服务器镜像缓存，自动化不得替换或重启 Sub2API。
@@ -282,13 +282,13 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 5.0 v0.1.183 兼容候选基线
 
-- 官方基线为 annotated tag `v0.1.183`，tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`。双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 保留私有起点与官方 peeled commit 两个父节点。失败候选 `v0.1.183-52t.1` 已有不可变 Tag，但没有 Release 或镜像；当前修复候选为 `v0.1.183-52t.2`，其 Tag、Release、GHCR 镜像和服务器缓存均尚未完成，生产仍运行 `v0.1.176-52t.1`，不得把其中任一状态单独写成已上线。
+- 官方基线为 annotated tag `v0.1.183`，tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`。双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 保留私有起点与官方 peeled commit 两个父节点。失败候选 `v0.1.183-52t.1` 已有不可变 Tag，但没有 Release 或镜像；修复候选 `v0.1.183-52t.2` 已从 `cc2165e5fd6a14685700eb6c3607a5fb51baee09` 发布，GHCR digest 为 `sha256:effb2f50b8a3da0f9b525eef5a852f2e2cdf6fdaa4daacbcc580e285886cb622`，并已只拉入服务器缓存。生产切换尚未完成，生产仍运行 `v0.1.176-52t.1`，不得把镜像发布或缓存单独写成已上线。
 - 官方插件出站传输、Kimi/Zhipu/DeepSeek 一等供应商、复合分组、渠道监控配额模式、分组用量汇总、Codex 指纹种子、OpenAI Responses/WS 与调度修复按官方结构保留。官方已经提供同类抽象时，私有能力只作为兼容约束和测试移植，不再维护平行入口。
 - 官方 Fast/Flex service tier、渠道倍率、分时时段与仅工作日配置共用统一 Token 计费链路。私有 `v21` 认证快照继续双向保存分组长上下文开关和逐模型价格；分组或账号任一开启即按 OR 语义启用长上下文阶梯，渠道显式区间优先且不重复叠加官方倍率。GPT-5.6 生产同型条件固定为：账号 `openai_long_context_billing_enabled=true` 可在分组开关关闭时独立启用；渠道没有显式区间价；未缓存输入、cache write 和 cache read 的合计严格大于 `272000`。命中后未缓存输入、cache write、cache read 均按 `2x`，输出按 `1.5x`，分组倍率只乘一次，使用记录必须标记 `long_context_billing_applied=true`。`backend/internal/service/openai_gpt56_long_context_billing_test.go` 覆盖 HTTP Responses、WebSocket HTTP bridge 与 WebSocket v2；Fast/Flex、分时倍率、长上下文档位和提链换算仍须用同一费用分项矩阵验证。
 - Wire、路由、仓储和前端继续保留积分/签到、提链/额度卡、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有在线更新源、跨协议正式终态和精确容量错误有界重试。媒体创建仍最多提交一次；普通余额和提链卡继续保留请求级价格快照、余额事务及失败/未知终态边界。
 - 迁移 runner 按完整 filename 和 checksum 识别迁移。私有 `173-179`、`192-194`、此前官方 `194-221` 与本轮官方 `222-230` 全部原名保留；三份 `194`、两份 `225`、两份 `226` 独立共存。任何同号文件都不得按数字前缀覆盖、重命名或合并。
 - 本轮包含 forward-only 数据库迁移、Ent/生成代码、后端、前端和发布资产，固定为 `image-update-required`。`v0.1.183-52t.2` annotated Tag message 必须包含 `[image-update-required]`；后台在线热更新必须拒绝安装，GitHub Actions 只构建不可变 GHCR 镜像，生产 Sub2API 只由维护者在人工窗口使用 Compose 切换。候选 Tag 必须与默认分支保持祖先关系；Release 成功后只能在维护者确认生产切换后把完整发布树快进到默认分支并同步版本，禁止在旧代码树上单独提交新 `VERSION`。
-- 发布前必须重新执行 `git diff --check`、Go `1.27.0` 后端 `go test ./... -count=1` 与 `go vet ./...`、Go `1.27.0` 积分系统全量测试、前端 lint/typecheck/Vitest/build，以及长上下文（含上述三种 Responses transport）、Fast/Flex、分时定价、提链资金、媒体冻结、视频和容量重试定向回归。最终 CI、Release manifest、镜像 digest、数据库备份、人工切换和生产冒烟均按实际结果留证；当前未完成项保持 `pending`。
+- 发布前门禁及 GitHub run `33069107472` 已完成；Release manifest、附件校验和、amd64/arm64 manifest 与 OCI revision 已复核，服务器缓存已完成且未改变运行容器。数据库备份、人工切换和生产冒烟仍须按实际结果留证，当前未完成项保持 `pending`。
 - 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时；接近长上下文阈值的请求应同时核对输入、缓存读取/写入和输出分项。历史低计费记录不会因 `v21` 缓存重建自动回写，任何追溯处理必须另行对账和明确审批。
 
 ### 5.1 v0.1.169 历史合并兼容结论

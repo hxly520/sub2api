@@ -13,19 +13,19 @@
 | `v0.1.173` | `29009f0b2ea14edf3b11ae2564fb617ff91a03b4` | superseded by candidate | 其 Grok/xAI、渠道监控 V2、计费、注册限制与迁移变化已由 `v0.1.175` 兼容候选整体吸收。 |
 | `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | completed (historical) | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；由 `v0.1.176` 兼容线承接。 |
 | `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed (current production) | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已在生产运行。`2026-08-26` 识别的长上下文认证快照与开关语义修复已由 `v0.1.183` 候选承接，生产仍待维护者人工切换。 |
-| `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | candidate `v0.1.183-52t.2`; local validation completed; release/production pending | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。`v0.1.183-52t.1` 的质量门禁失败，未创建 Release 或 GHCR 镜像；修复后的 `.2` 已通过本地完整门禁，私有 Tag、GitHub CI/Release、GHCR digest 和维护者人工 Compose 切换仍须分别留证。 |
+| `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | released candidate `v0.1.183-52t.2`; production pending | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。`v0.1.183-52t.1` 的质量门禁失败且没有 Release 或镜像；修复后的 `.2` 源码为 `cc2165e5fd6a14685700eb6c3607a5fb51baee09`，GitHub run `33069107472` 全绿，GHCR digest 为 `sha256:effb2f50b8a3da0f9b525eef5a852f2e2cdf6fdaa4daacbcc580e285886cb622`，维护者人工 Compose 切换仍待完成。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`，官方 `v0.1.176` tag 树内的 `VERSION` 仍为 `0.1.175`，官方 `v0.1.183` tag 树内的 `VERSION` 仍为 `0.1.182`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
 
 ### v0.1.183
 
-- 本轮工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，官方 tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，merge-base 为官方 `v0.1.176` peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`。最终源码合并节点 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 的两个父提交依次为该私有起点与官方 peeled commit。`v0.1.183-52t.1` Tag 已推送到提交 `6d46eebe501ee5a816c8b51fee37390146c06662`，但质量门禁失败，未创建 Release 或 GHCR 镜像；修复候选版本为 `0.1.183-52t.2`，最终发布身份仍以 `.2` annotated Tag、manifest source commit 和 OCI revision 三者一致为准。
+- 本轮工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，官方 tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，merge-base 为官方 `v0.1.176` peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`。最终源码合并节点 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 的两个父提交依次为该私有起点与官方 peeled commit。`v0.1.183-52t.1` Tag 已推送到提交 `6d46eebe501ee5a816c8b51fee37390146c06662`，但质量门禁失败，未创建 Release 或 GHCR 镜像；`v0.1.183-52t.2` annotated Tag 指向 `cc2165e5fd6a14685700eb6c3607a5fb51baee09`，manifest source commit 与 amd64/arm64 OCI revision 均与之完全一致。
 - 官方插件出站传输、国产供应商 Kimi/Zhipu/DeepSeek 一等支持、复合分组、渠道监控配额模式、分组用量汇总、Codex 指纹种子、OpenAI Responses/WS 与调度修复按官方实现优先。官方 Fast/Flex service tier、渠道倍率和分时段/仅工作日定价继续共用统一计费解析，不另建私有旁路。
 - 私有积分/签到与同库隔离、提链/额度卡资金账本和后扣准入、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有 Release 热更新源、跨协议终态校验和精确容量拒绝有界重试均保留。发生同类实现冲突时使用官方入口、结构和调度语义，再移植私有约束及回归测试。
 - API Key 认证快照继续使用私有 `v21`，双向保存 `LongContextPricingEnabled` 与 `ModelPricing`。长上下文按分组开关或账号开关任一开启的 OR 语义生效；渠道显式区间优先，不能再叠加官方长上下文倍率。生产同型 GPT-5.6 回归固定验证：账号 `openai_long_context_billing_enabled=true` 即使分组开关关闭也可启用；渠道无显式区间价且未缓存输入、cache write、cache read 合计严格大于 `272000` 时，三类输入费用均为 `2x`、输出费用为 `1.5x`，分组倍率只在总费用上乘一次，并写入 `long_context_billing_applied=true`。`backend/internal/service/openai_gpt56_long_context_billing_test.go` 覆盖 HTTP Responses、WebSocket HTTP bridge 与 WebSocket v2；Fast/Flex、分时倍率和长上下文档位仍须通过同一费用明细验证，禁止重复计费。
 - 官方新增迁移 `222-230` 均原名保留；`225_backfill_codex_fingerprint_seed.sql` 与 `225_channel_model_time_pricing.sql`、`226_add_usage_log_effective_model_indexes_notx.sql` 与 `226_channel_monitor_quota_mode.sql` 分别同号共存。此前三份 `194` 及私有 `173-179`、`192-194` 继续保留，迁移 runner 只按完整文件名和 checksum 判定，不得按数字前缀覆盖、改名或合并。
 - 本轮跨越数据库迁移、Ent/生成代码、后端、前端和发布资产，固定为 `image-update-required`。私有 Tag `v0.1.183-52t.2` 的 message 必须包含 `[image-update-required]`；后台热更新不得安装，GitHub Actions 只能构建并发布不可变 GHCR 镜像，生产 Sub2API 必须由维护者在备份和回滚点确认后手动执行 Compose 切换。Release 工作流必须先证明 Tag 与默认分支存在祖先关系，并校验 Tag 树内 `VERSION` 完全一致；发布过程不得修改或推进代表当前生产版本的 `main`。
-- `2026-08-27` 本地门禁已通过：`git diff --check`、Go `1.27.0` 后端 `go test ./... -count=1` 与 `go vet ./...`、Go `1.27.0` 积分系统 `go test ./... -count=1` 与 `go vet ./...`、前端 lint/typecheck/全量 Vitest/生产 build、发布脚本夹具，以及计费、提链、媒体、容量与协议定向回归。两项流式时序测试另连续复跑 20 轮通过。生产仍运行 `v0.1.176-52t.1`；最终 GitHub CI、Release、镜像 digest、服务器缓存和生产冒烟仍为 `pending`，不得写成已上线。
+- `2026-08-27` 本地门禁及 GitHub run `33069107472` 的质量、安全、版本、前端和 Release 门禁均已通过。Release 附件与独立 SHA256 已复核；`update-manifest.json` 为 `image-update-required`，source commit 为 `cc2165e5fd6a14685700eb6c3607a5fb51baee09`；GHCR manifest digest 为 `sha256:effb2f50b8a3da0f9b525eef5a852f2e2cdf6fdaa4daacbcc580e285886cb622`，包含 `linux/amd64` 与 `linux/arm64`。镜像已只拉入服务器缓存且运行容器身份未变。生产仍运行 `v0.1.176-52t.1`；数据库备份、人工 Compose 切换和生产冒烟仍为 `pending`，不得写成已上线。
 
 ### v0.1.176
 
@@ -78,12 +78,12 @@
 
 | 范围 | 官方变化 | 私有风险 | 处理状态 |
 | --- | --- | --- | --- |
-| 官方协议与调度 | Responses/WS、容量恢复、OpenAI/Kimi/Antigravity 状态与复合分组修复 | 私有终态、粘性、容量精确重试不得放宽或重复重放 | source merged；本地定向与全量门禁通过；GitHub CI pending |
-| 国产供应商与插件 | Kimi/Zhipu/DeepSeek 多协议、配额/余额监控、OAuth 出站插件 | 不得绕过分组、账号、凭据和私有响应脱敏边界 | source merged；本地路由/权限/插件及全量回归通过；GitHub CI pending |
-| 计费 | Fast/Flex、渠道倍率、分时时段/工作日、上下文阶梯和统一 Token 路径 | `v21` 快照、OR 开关、渠道区间优先、提链倍率和媒体报价不能重复计费 | source merged；本地计费矩阵及全量门禁通过；GitHub CI pending |
+| 官方协议与调度 | Responses/WS、容量恢复、OpenAI/Kimi/Antigravity 状态与复合分组修复 | 私有终态、粘性、容量精确重试不得放宽或重复重放 | source merged；本地定向与 GitHub 全量门禁通过 |
+| 国产供应商与插件 | Kimi/Zhipu/DeepSeek 多协议、配额/余额监控、OAuth 出站插件 | 不得绕过分组、账号、凭据和私有响应脱敏边界 | source merged；本地路由/权限/插件及 GitHub 全量门禁通过 |
+| 计费 | Fast/Flex、渠道倍率、分时时段/工作日、上下文阶梯和统一 Token 路径 | `v21` 快照、OR 开关、渠道区间优先、提链倍率和媒体报价不能重复计费 | source merged；本地计费矩阵及 GitHub 全量门禁通过 |
 | 迁移 | 官方 `222-230`，其中 `225`、`226` 各有同号文件 | 私有 `173-179`、`192-194` 与三份 `194` 不得丢失或改 checksum | source merged；按完整 filename/checksum 共存；数据库演练 pending |
-| 产品与前端 | 模型广场、渠道监控、插件和管理页面 | 积分、提链、首页/帮助和嵌入导航不得覆盖 | source merged；本地 lint/typecheck/全量 Vitest/build 通过；GitHub CI pending |
-| 发布 | Tag、manifest、GHCR、数据库备份和人工切换 | 不能把源码候选或镜像构建误当生产 | pending；`v0.1.183-52t.2` 必须标记 `[image-update-required]`，生产只允许维护者手动 Compose 切换 |
+| 产品与前端 | 模型广场、渠道监控、插件和管理页面 | 积分、提链、首页/帮助和嵌入导航不得覆盖 | source merged；本地与 GitHub 前端门禁通过 |
+| 发布 | Tag、manifest、GHCR、数据库备份和人工切换 | 不能把源码候选或镜像构建误当生产 | Tag/Release/GHCR/服务器缓存 completed；策略为 `image-update-required`；备份及维护者手动 Compose 切换 pending |
 
 ### v0.1.183 发布门禁
 
