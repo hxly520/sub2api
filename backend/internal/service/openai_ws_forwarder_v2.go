@@ -66,7 +66,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	turnState := ""
 	turnMetadata := ""
 	if c != nil && c.Request != nil {
-		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
+		turnState = normalizeOpenAICodexTurnState(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
@@ -301,7 +301,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
-	handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+	handshakeTurnState := normalizeOpenAICodexTurnState(lease.HandshakeHeader(openAIWSTurnStateHeader))
 	logOpenAIWSModeDebug(
 		"handshake account_id=%d conn_id=%s has_turn_state=%v turn_state_len=%d",
 		account.ID,

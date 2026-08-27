@@ -64,8 +64,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 在分流到 passthrough / Codex transform / 原生 ChatCompletions 之前统一修正
 	// 显式为 null 的工具 Schema type，否则 upstream 的 400 会被归一成可重试的 502，
 	// 同一份坏定义在账号池里反复重放。
-	sanitizedToolBody, toolSchemaSanitized, toolSchemaErr := sanitizeOpenAIResponsesToolSchemasForPlatform(body, account.Platform)
-	if toolSchemaErr != nil {
+	if sanitizedToolBody, toolSchemaSanitized, toolSchemaErr := sanitizeOpenAIResponsesToolSchemasForPlatform(body, account.Platform); toolSchemaErr != nil {
 		return nil, toolSchemaErr
 	} else if toolSchemaSanitized {
 		body = sanitizedToolBody
@@ -147,6 +146,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
 	}
+
+	// CN 供应商 anthropic 协议账号：/v1/responses 入站是交叉协议组合
+	// （Responses 客户端 × Anthropic 上游），转成 Anthropic 请求走原生端点。
+	// 不能落到下面的 raw-CC 分支——其 URL 构造会把 anthropic base 当 CC base 用。
 	if account.IsAnthropicProtocol() {
 		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
 	}
@@ -339,9 +342,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	instructions := gjson.GetBytes(body, "instructions")
 	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
-	// Accounts explicitly marked as upstream relays own their default prompt
-	// policy. Avoid injecting a second full Codex prompt while retaining all
-	// other gateway compatibility, cache, tool, and billing behavior.
+	// Explicit relay accounts already provide their own upstream prompt policy.
+	// Injecting the full Codex instructions here would duplicate that policy.
 	if instructionsEmpty && !compatMessagesBridge && !nativeDeepSeekResponses && !account.IsOpenAIUpstreamRelay() {
 		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
 	}
@@ -371,6 +373,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
 		markPatchSet("reasoning.effort", "none")
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "text.format.type").String()) == "json_schema" ||
+		strings.TrimSpace(gjson.GetBytes(body, "response_format.type").String()) == "json_schema" {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if normalizeOpenAIResponseFormatSchemas(decoded) {
+			markDecodedModified()
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized Responses JSON schema compatibility")
+		}
 	}
 
 	imageIntent = imageIntent || IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, nil) || isOpenAIImageGenerationModel(upstreamModel)
@@ -477,9 +490,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if currentClientPromptCacheKey, ok := decoded["prompt_cache_key"].(string); ok {
 			clientPromptCacheKey = currentClientPromptCacheKey
 		}
+		// Account namespace is orthogonal to fingerprint convergence: preserve
+		// each client's identity cardinality, but never reuse it across OAuth
+		// credentials after scheduler failover.
 		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
 			markDecodedModified()
 		}
+		stageCodexFingerprintIDs(c, nil)
 		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
 		// fingerprintIDs 在此处解析，后续 buildUpstreamRequest 中使用同一份。
 		if !isCompactRequest {
@@ -487,27 +504,27 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := stagedCodexFingerprintIDs(c, account)
-			if fpIDs == nil {
-				fpIDs = resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
-			}
+			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
 				}
 			}
-			// Always replace the attempt-scoped value, including nil, so a
-			// failover to a non-converged account cannot reuse stale IDs.
+			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用。
+			// 无条件覆写（含 nil）：failover 从收敛账号切到 off 账号时，上一
+			// 账号的 IDs 不得残留（stageCodexFingerprintIDs 注释）。
 			stageCodexFingerprintIDs(c, fpIDs)
-		} else {
-			stageCodexFingerprintIDs(c, nil)
 		}
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
 		}
 		if strings.TrimSpace(clientPromptCacheKey) != "" {
+			// The body now carries an account-scoped value. Keep the original here
+			// so the header builder derives the same namespace exactly once.
 			promptCacheKey = clientPromptCacheKey
 		} else if currentPromptCacheKey, ok := decoded["prompt_cache_key"].(string); ok && currentPromptCacheKey != "" {
+			// Fingerprint convergence may inject a default key when the client did
+			// not provide one; preserve that existing fallback.
 			promptCacheKey = currentPromptCacheKey
 		} else if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
@@ -576,29 +593,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
-	if account.UsesOpenAICodexProtocol() {
-		decoded, decodeErr := ensureReqBody()
-		if decodeErr != nil {
-			return nil, decodeErr
-		}
-		if input, ok := decoded["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
-			decoded,
-			input,
-			strings.TrimSpace(firstNonEmptyString(decoded["previous_response_id"])) != "",
-		) {
-			markDecodedModified()
-		}
-	}
-	if reqBody != nil || openAIResponsesInputMayNeedTruncation(body) {
-		decoded, decodeErr := ensureReqBody()
-		if decodeErr != nil {
-			return nil, decodeErr
-		}
-		if truncateOpenAIResponsesInputText(decoded) {
-			markDecodedModified()
-		}
-	}
-
 	if rawTier := requestView.ServiceTier; rawTier != "" {
 		if normTier := normalizedOpenAIServiceTierValue(rawTier); normTier != "" {
 			action, errMsg := s.evaluateOpenAIFastPolicy(ctx, account, upstreamModel, normTier)
@@ -622,6 +616,29 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					markPatchSet("service_tier", normTier)
 				}
 			}
+		}
+	}
+
+	if account.UsesOpenAICodexProtocol() {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if input, ok := decoded["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
+			decoded,
+			input,
+			strings.TrimSpace(firstNonEmptyString(decoded["previous_response_id"])) != "",
+		) {
+			markDecodedModified()
+		}
+	}
+	if reqBody != nil || openAIResponsesInputMayNeedTruncation(body) {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if truncateOpenAIResponsesInputText(decoded) {
+			markDecodedModified()
 		}
 	}
 
@@ -651,14 +668,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		promptCacheKey = requestPromptCacheKey
 	}
 	if (account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount) && !imageIntent && promptCacheKey == "" {
-		// A client-provided session signal is authoritative. Keep its tool order so
-		// compatibility mode never changes explicit client semantics. Stateless
-		// third-party requests are canonicalized to keep their actual cache prefix
-		// stable when the client rebuilds the same tool registry in a new order.
+		// Stateless compatibility requests need a stable cache namespace. Keep an
+		// explicit client session authoritative and derive only when none exists.
 		_, clientToolsAdapted := openAIResponsesClientToolMapping(c)
 		if explicitOpenAISessionID(c, body) == "" && !clientToolsAdapted {
-			// Stateless compatibility requests are canonicalized so a rebuilt tool
-			// registry does not churn the derived cache key.
 			canonicalBody, changed, canonicalErr := canonicalizeOpenAICompatToolOrder(body)
 			if canonicalErr != nil {
 				return nil, canonicalErr
@@ -670,10 +683,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 		if autoKey := deriveAutoPromptCacheKeyFromBody(c, body, upstreamModel, getAPIKeyIDFromContext(c)); autoKey != "" {
-			var injectErr error
-			body, injectErr = sjson.SetBytes(body, "prompt_cache_key", autoKey)
-			if injectErr != nil {
-				return nil, fmt.Errorf("inject prompt cache key: %w", injectErr)
+			body, err = sjson.SetBytes(body, "prompt_cache_key", autoKey)
+			if err != nil {
+				return nil, fmt.Errorf("inject prompt cache key: %w", err)
 			}
 			requestView = newOpenAIRequestView(body)
 			reqBody = nil
@@ -685,6 +697,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			)
 		}
 	}
+	// Run after orphan-output filtering and all request-map rebuilds so a
+	// compaction trigger cannot remain ahead of surviving history items.
 	if normalizedBody, changed, normalizeErr := NormalizeCompactionTriggerInputOrder(body); normalizeErr != nil {
 		return nil, fmt.Errorf("normalize compaction trigger order: %w", normalizeErr)
 	} else if changed {
@@ -712,7 +726,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
 	}
-
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -736,10 +749,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			reqStream,
 			hasPreviousResponseID,
 		)
-		maxAttempts := openAIWSAutomaticAttemptLimit(account)
-		if imageIntent {
-			maxAttempts = 1
-		}
+		maxAttempts := openAIWSReconnectRetryLimit + 1
 		wsAttempts := 0
 		var wsResult *OpenAIForwardResult
 		var wsErr error
@@ -820,7 +830,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				c,
 				account,
 				wsReqBody,
-				promptCacheKey,
+				clientPromptCacheKey,
 				token,
 				wsDecision,
 				isCodexCLI,
@@ -849,10 +859,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			// previous_response_not_found 说明续链锚点不可用：
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
-			if !imageIntent && !account.IsPoolMode() && reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
+			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
 				continue
 			}
-			if !imageIntent && !account.IsPoolMode() && reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
+			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
 				continue
 			}
 			if retryable && attempt < maxAttempts {
@@ -991,7 +1001,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Send request
 		upstreamStart := time.Now()
-		resp, err := s.doOpenAIUpstreamWithFirstResponseBudget(ctx, c, account, upstreamReq, proxyURL, false)
+		resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if headerGuard != nil && headerGuard.stopHeaderWait() {
 			if resp != nil && resp.Body != nil {
@@ -1010,7 +1020,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if headerGuard != nil {
 				headerGuard.close()
 			}
-			return nil, err
+			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
+			// a failover so the handler switches to a healthy account, and temporarily
+			// unschedule the account on durable faults (e.g. rejected proxy credentials).
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
 		if headerGuard != nil {
 			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: headerGuard.close}
@@ -1035,7 +1048,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			if !imageIntent && !account.IsPoolMode() && !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
+			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
 				decoded, decodeErr := ensureReqBody()
 				if decodeErr != nil {
 					return nil, decodeErr
@@ -1100,15 +1113,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 
 				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				return nil, newOpenAIUpstreamFailoverError(
+				return nil, s.newOpenAIAccountFailoverError(
+					account,
 					resp.StatusCode,
 					resp.Header,
 					respBody,
 					upstreamMsg,
+					shouldDisable,
 					!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				)
 			}
-			return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
+			return s.handleErrorResponse(ctx, resp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
 		}
 		defer func() { _ = resp.Body.Close() }()
 
@@ -1135,33 +1150,41 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var imageOutputSizes []string
 		if reqStream {
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
-			if signal, ok := asOpenAICompactFallbackSignal(err); ok {
-				if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
-					c, account, requestedModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
-				); retry {
-					s.appendOpenAICompactFallbackRetryOps(c, account, resp, signal.payload, signal.message, false)
-					body = retryBody
-					requestView = newOpenAIRequestView(body)
-					reqBody = nil
-					upstreamModel = fallbackModel
-					compactModelFallbackRetried = true
-					SetOpsUpstreamModel(c, fallbackModel)
-					continue
-				}
-				if resp.Body != nil {
-					_ = resp.Body.Close()
-				}
-				compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
-				if s.shouldFailoverOpenAIUpstreamResponse(compactResp.StatusCode, signal.message, compactBody) {
-					shouldDisable := s.handleFailoverSideEffects(ctx, compactResp, account, compactBody, upstreamModel)
-					return nil, s.newOpenAIAccountFailoverError(
-						account, compactResp.StatusCode, compactResp.Header, compactBody, signal.message, shouldDisable,
-						!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(compactResp.StatusCode) || isOpenAITransientProcessingError(compactResp.StatusCode, signal.message, compactBody)),
-					)
-				}
-				return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
-			}
 			if err != nil && (streamResult == nil || !streamResult.clientDisconnected) {
+				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
+					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
+						c, account, requestedModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
+					); retry {
+						s.appendOpenAICompactFallbackRetryOps(c, account, resp, signal.payload, signal.message, false)
+						body = retryBody
+						requestView = newOpenAIRequestView(body)
+						upstreamModel = fallbackModel
+						compactModelFallbackRetried = true
+						SetOpsUpstreamModel(c, fallbackModel)
+						continue
+					}
+					if resp.Body != nil {
+						_ = resp.Body.Close()
+					}
+					compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
+					if s.shouldFailoverOpenAIUpstreamResponse(compactResp.StatusCode, signal.message, compactBody) {
+						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+							Platform:           account.Platform,
+							AccountID:          account.ID,
+							AccountName:        account.Name,
+							UpstreamStatusCode: compactResp.StatusCode,
+							UpstreamRequestID:  compactResp.Header.Get("x-request-id"),
+							Kind:               "failover",
+							Message:            signal.message,
+						})
+						shouldDisable := s.handleFailoverSideEffects(ctx, compactResp, account, compactBody, upstreamModel)
+						return nil, s.newOpenAIAccountFailoverError(
+							account, compactResp.StatusCode, compactResp.Header, compactBody, signal.message, shouldDisable,
+							!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(compactResp.StatusCode) || isOpenAITransientProcessingError(compactResp.StatusCode, signal.message, compactBody)),
+						)
+					}
+					return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
+				}
 				return nil, err
 			}
 			streamErr = err
@@ -1181,7 +1204,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					); retry {
 						body = retryBody
 						requestView = newOpenAIRequestView(body)
-						reqBody = nil
 						upstreamModel = fallbackModel
 						compactModelFallbackRetried = true
 						SetOpsUpstreamModel(c, fallbackModel)
@@ -1202,10 +1224,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
 		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
-		if streamErr == nil && account.Type == AccountTypeOAuth && !account.IsShadow() {
+		if streamErr == nil && account.UsesOpenAICodexProtocol() && !account.IsShadow() {
 			if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 				s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 			}
+		} else if account.IsShadow() && account.ParentAccountID != nil {
+			notifyOpenAIAutoReset(*account.ParentAccountID)
 		}
 
 		if usage == nil {
@@ -1237,6 +1261,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			forwardResult.ImageOutputSizes = imageOutputSizes
 			forwardResult.BillingModel = imageBillingModel
 		}
+		// Grok-native web_search / x_search / tool_search tool invocations (per-1k pricing).
+		// Token cost still applies separately when usage is present; search is additive only
+		// when search_price_per_1k is configured (nil price → $0 from CalculateSearchCost).
 		if searchCount > 0 && account != nil && account.IsGrok() {
 			forwardResult.SearchCount = searchCount
 		}
@@ -1249,6 +1276,8 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 		return false
 	}
 	if account.IsCNProvider() {
+		// CN 的显式协议配置优先于异步探针 Extra；adaptive 仅 DeepSeek 有原生
+		// Responses，Kimi/GLM 回退 Chat Completions。
 		switch account.GetAPIProtocol() {
 		case APIProtocolChatCompletions:
 			return true
@@ -1259,13 +1288,6 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 		}
 	}
 	return !openai_compat.ShouldUseResponsesAPI(account.Extra)
-}
-
-func openAIWSAutomaticAttemptLimit(account *Account) int {
-	if account != nil && account.IsPoolMode() {
-		return 1
-	}
-	return openAIWSReconnectRetryLimit + 1
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
@@ -1300,6 +1322,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		targetURL = openaiPlatformAPIURL
 	}
 	targetURL = appendOpenAIResponsesRequestPathSuffix(targetURL, openAIResponsesRequestPathSuffix(c))
+
+	// DeepSeek 原生 Responses 端点为无状态实现：强制 store=false、清除
+	// previous_response_id，避免携带状态字段被上游拒绝。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
@@ -1338,6 +1363,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			}
 		}
 	}
+	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
+	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
 	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
@@ -1387,18 +1414,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("user-agent", customUA)
 	}
 
-	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为 Codex CLI。
+	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为规范 Codex 身份。
 	// 用于网关未透传/改写 User-Agent 时，仍能命中 Codex 侧识别逻辑。
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", CodexCanonicalUserAgent())
 	}
 
+	// 账号 namespace 不改变客户端身份基数，但确保 scheduler failover 后不会把
+	// 同一组 Codex IDs 发送给另一份 OAuth 凭据。可选指纹收敛随后仍可覆盖这些值。
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
-	if c != nil {
-		applyStagedCodexFingerprintHeaders(c, account, req.Header)
-	}
+	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
@@ -1413,6 +1440,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	// x-codex-beta-features：按真实 Codex 的会话级行为补注（在账号级覆写之后，
+	// 保证不被覆盖丢失）。
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")

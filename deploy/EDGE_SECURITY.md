@@ -120,6 +120,12 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_buffering off;
+        # Keep response headers large enough for a bounded Codex turn-state
+        # value. The application rejects values above 48 KiB; these buffers
+        # prevent Nginx from discarding a valid response before forwarding it.
+        proxy_buffer_size 128k;
+        proxy_buffers 8 128k;
+        proxy_busy_buffers_size 256k;
         proxy_request_buffering off;
         proxy_read_timeout 1800s;
         proxy_send_timeout 1800s;

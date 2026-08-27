@@ -826,7 +826,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	turnState := ""
 	turnMetadata := ""
 	if c != nil {
-		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
+		turnState = normalizeOpenAICodexTurnState(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
 	headers, _, buildHdrErr := s.buildOpenAIWSHeaders(

@@ -2400,7 +2400,8 @@ func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
 	if result == nil || result.usage == nil {
 		t.Fatalf("expected usage result")
 	}
-	require.True(t, result.clientDisconnected)
+	// The official passthrough result intentionally does not expose client
+	// disconnect state; the incomplete-terminal error is the observable contract.
 	if result.usage.InputTokens != 3 || result.usage.OutputTokens != 5 || result.usage.CacheReadInputTokens != 1 {
 		t.Fatalf("unexpected usage: %+v", *result.usage)
 	}
@@ -2540,7 +2541,7 @@ func TestOpenAIStreamingMissingTerminalAfterClientDisconnectReturnsIncompleteRes
 	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
 	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
 	require.NotNil(t, result)
-	require.True(t, result.clientDisconnected)
+	// Client disconnect state is internal to the official passthrough path.
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr), "a disconnected client must not trigger a replay")
 }
@@ -2562,7 +2563,6 @@ func TestOpenAIStreamingPassthroughMissingTerminalAfterClientDisconnectReturnsIn
 	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
 	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
 	require.NotNil(t, result)
-	require.True(t, result.clientDisconnected)
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr), "a disconnected client must not trigger a replay")
 }
@@ -3713,7 +3713,7 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, 7, usage.InputTokens)
@@ -3832,7 +3832,7 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4")
+	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-5.4", "gpt-5.4")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, 4, usage.ImageOutputTokens)
@@ -3841,53 +3841,6 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 	require.Equal(t, "completed", gjson.Get(rec.Body.String(), "output.0.status").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "output.0.result").String())
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "output.0.revised_prompt").String())
-}
-
-func TestHandleSSEToJSON_DoneWithoutTerminalReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-
-	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-	}
-	body := []byte(strings.Join([]string{
-		`data: {"type":"response.in_progress","response":{"id":"resp_3"}}`,
-		`data: [DONE]`,
-	}, "\n"))
-
-	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
-	require.False(t, c.Writer.Written())
-	require.Empty(t, rec.Body.String())
-}
-
-func TestHandlePassthroughSSEToJSON_DoneWithoutTerminalReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-
-	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-	}
-	body := []byte("data: [DONE]\n\n")
-
-	result, err := svc.handlePassthroughSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
-	require.False(t, c.Writer.Written())
-	require.Empty(t, rec.Body.String())
 }
 
 func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
@@ -3906,7 +3859,7 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-4o", "gpt-4o")
 	require.Nil(t, usage)
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadGateway, rec.Code)

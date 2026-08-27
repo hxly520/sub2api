@@ -13,7 +13,12 @@ import (
 // 不透明 blob，客户端在同一回合的后续请求中原样回带（codex-rs 侧从
 // /responses SSE、/responses/compact JSON 与 WS 握手三种响应中捕获，见
 // codex-api/src/sse/responses.rs 与 endpoint/compact.rs）。
-const openAICodexTurnStateHeader = "x-codex-turn-state"
+const (
+	openAICodexTurnStateHeader = "x-codex-turn-state"
+	// Keep enough room for normal Codex state while preventing one opaque
+	// value from exhausting Go/Nginx response-header buffers.
+	openAICodexTurnStateMaxBytes = 48 * 1024
+)
 
 // turn-state blob 是上游在"出站身份"（含 #5553 指纹收敛改写后的
 // installation/session/thread 标识）下铸造的，同账号回放自洽；跨账号回放
@@ -96,7 +101,29 @@ func extractOpenAICodexTurnState(upstream http.Header) string {
 	if upstream == nil {
 		return ""
 	}
-	return strings.TrimSpace(upstream.Get(openAICodexTurnStateHeader))
+	return normalizeOpenAICodexTurnState(upstream.Get(openAICodexTurnStateHeader))
+}
+
+func normalizeOpenAICodexTurnState(value string) string {
+	state := strings.TrimSpace(value)
+	if state == "" || len(state) > openAICodexTurnStateMaxBytes {
+		return ""
+	}
+	return state
+}
+
+// sanitizeOpenAICodexTurnStateHeader applies the same bound to a copied header
+// map before it is retained in a WebSocket bridge result or session cache.
+func sanitizeOpenAICodexTurnStateHeader(headers http.Header) {
+	if headers == nil {
+		return
+	}
+	canonical := http.CanonicalHeaderKey(openAICodexTurnStateHeader)
+	state := normalizeOpenAICodexTurnState(headers.Get(canonical))
+	headers.Del(canonical)
+	if state != "" {
+		headers.Set(canonical, state)
+	}
 }
 
 // noteOpenAICodexTurnStateProvenance 记录（下游会话 → 铸造账号）。
@@ -123,7 +150,9 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 	if s == nil || h == nil || account == nil {
 		return
 	}
-	if strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) == "" {
+	state := normalizeOpenAICodexTurnState(h.Get(openAICodexTurnStateHeader))
+	if state == "" {
+		h.Del(openAICodexTurnStateHeader)
 		return
 	}
 	seed := openAICodexTurnStateSeed(c)

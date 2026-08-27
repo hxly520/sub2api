@@ -173,6 +173,9 @@ func openAIStreamEventIsTerminal(data string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if trimmed == "[DONE]" {
+		return true
+	}
 	return openAIStreamEventTypeIsTerminal(gjson.Get(trimmed, "type").String())
 }
 
@@ -181,6 +184,9 @@ func openAIStreamEventIsTerminalWithType(data, eventType string) bool {
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" {
 		return false
+	}
+	if trimmed == "[DONE]" {
+		return true
 	}
 	return openAIStreamEventTypeIsTerminal(eventType)
 }

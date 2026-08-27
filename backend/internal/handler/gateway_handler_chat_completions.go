@@ -47,12 +47,11 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	// Read request body
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
-		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.chatCompletionsErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
+		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
 
@@ -82,7 +81,6 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
-	imageIntent := service.IsImageGenerationIntent("/v1/chat/completions", reqModel, body)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -166,9 +164,6 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	if groupPlatform == service.PlatformGemini {
 		fs = NewFailoverState(h.maxAccountSwitchesGemini, false)
-	}
-	if imageIntent {
-		fs.DisableAutomaticReplay()
 	}
 
 	for {
@@ -299,15 +294,6 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 
 		if err != nil {
-			if result != nil && result.ClientDisconnect {
-				accountFailure := !service.IsStreamIncompleteAfterClientDisconnect(err)
-				reqLog.Info("gateway.cc.client_disconnected_after_upstream_error",
-					zap.Int64("account_id", account.ID),
-					zap.Bool("account_failure", accountFailure),
-					zap.Error(err),
-				)
-				return
-			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

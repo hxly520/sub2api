@@ -301,11 +301,16 @@ func (s *OpenAIGatewayService) getOpenAICompatSessionTurnState(_ context.Context
 	if !ok || strings.TrimSpace(binding.TurnState) == "" {
 		return ""
 	}
+	state := normalizeOpenAICodexTurnState(binding.TurnState)
+	if state == "" {
+		s.openaiCompatSessionResponses.Delete(key)
+		return ""
+	}
 	if !binding.ExpiresAt.IsZero() && time.Now().After(binding.ExpiresAt) {
 		s.openaiCompatSessionResponses.Delete(key)
 		return ""
 	}
-	return strings.TrimSpace(binding.TurnState)
+	return state
 }
 
 func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Context, c *gin.Context, account *Account, promptCacheKey, turnState string) {
@@ -313,7 +318,7 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 		return
 	}
 	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
-	state := strings.TrimSpace(turnState)
+	state := normalizeOpenAICodexTurnState(turnState)
 	if key == "" || state == "" {
 		return
 	}

@@ -15,8 +15,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// ResponsesInputTokens handles native OpenAI POST /v1/responses/input_tokens
-// without entering the generation or usage-recording pipeline.
+// ResponsesInputTokens handles native OpenAI POST
+// /v1/responses/input_tokens requests without routing them through the normal
+// Responses generation and usage-recording pipeline.
 func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -28,7 +29,9 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
 		return
 	}
-	reqLog := requestLogger(c, "handler.openai_gateway.responses_input_tokens",
+	reqLog := requestLogger(
+		c,
+		"handler.openai_gateway.responses_input_tokens",
 		zap.Int64("user_id", subject.UserID),
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
@@ -88,13 +91,18 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 		forwardBody = h.gatewayService.ReplaceModelInBody(body, routingModel)
 	}
 
+	// Token counting is not billed, so it must not be excluded by the profit gate.
 	c.Request = c.Request.WithContext(service.WithOpenAIProfitControlSuppressed(c.Request.Context()))
 	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	requestStart := time.Now()
 	account, err := h.gatewayService.SelectAccountForTokenCount(
-		c.Request.Context(), apiKey.GroupID, sessionHash, routingModel,
-		service.OpenAIEndpointCapabilityChatCompletions, requestPlatform,
+		c.Request.Context(),
+		apiKey.GroupID,
+		sessionHash,
+		routingModel,
+		service.OpenAIEndpointCapabilityChatCompletions,
+		requestPlatform,
 	)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	if err != nil {
@@ -164,8 +172,7 @@ func (h *OpenAIGatewayHandler) GrokCountTokens(c *gin.Context) {
 }
 
 // CountTokens handles Anthropic-compatible POST /v1/messages/count_tokens for OpenAI groups.
-// It validates billing and routes to an OpenAI token-count bridge without taking concurrency slots
-// or recording usage.
+// It validates billing and routes to an OpenAI token-count bridge without recording usage.
 func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -186,7 +193,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	if apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+	if !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -198,12 +205,11 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
-		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
 	if len(body) == 0 {
@@ -226,7 +232,9 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 
 	reqModel := parsedReq.Model
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
-	if !compositeTargetPlatformAllowed(c, apiKey, reqModel, service.PlatformOpenAI) {
+	// composite+grok 在路由层已分流到 GrokCountTokens，这里可达的目标平台是
+	// openai 与 CN 供应商；CN 账号由 ForwardCountTokensAsAnthropic 本地估算。
+	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
@@ -260,18 +268,12 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	if preferredMappedModel != "" {
 		currentRoutingModel = preferredMappedModel
 	}
-	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		openAIAccountScheduleSelectionContext(c, currentRoutingModel),
+	account, err := h.gatewayService.SelectAccountForTokenCount(
+		c.Request.Context(),
 		apiKey.GroupID,
-		"",
 		sessionHash,
 		currentRoutingModel,
-		nil,
-		service.OpenAIUpstreamTransportAny,
 		service.OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		false,
 		openAICompatibleRequestPlatform(c.Request.Context(), apiKey),
 	)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
@@ -285,7 +287,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		h.anthropicErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
 		return
 	}
-	if selection == nil || selection.Account == nil {
+	if account == nil {
 		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimited(c)
@@ -294,11 +296,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
-	account := selection.Account
 	setOpsSelectedAccount(c, account.ID, account.Platform)
-	if selection.Acquired && selection.ReleaseFunc != nil {
-		defer selection.ReleaseFunc()
-	}
 	forwardBody := mappedBodyForMessages(channelMapping.Mapped, channelMapping.MappedModel)
 	defaultMappedModel := preferredMappedModel
 

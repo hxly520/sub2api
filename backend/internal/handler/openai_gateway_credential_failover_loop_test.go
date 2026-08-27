@@ -637,7 +637,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 	})
 
-	t.Run("500 stops without replaying a possibly accepted request", func(t *testing.T) {
+	t.Run("500 then 429 permits one healthy followup", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_500_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -646,8 +646,8 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801}, upstream.accountHits())
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 	})
 
 	t.Run("OAuth 429 then API-key failure cannot bypass the bound", func(t *testing.T) {

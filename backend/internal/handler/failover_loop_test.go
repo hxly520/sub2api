@@ -65,13 +65,14 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 	})
 }
 
-func TestSameAccountRetryAllowedUsesDeadlineInsteadOfPoolCount(t *testing.T) {
+func TestSameAccountRetryAllowedStillHonorsPoolCountWithDeadline(t *testing.T) {
 	err := &service.UpstreamFailoverError{
 		RetryableOnSameAccount:   true,
 		SameAccountRetryDeadline: time.Now().Add(time.Minute),
 	}
-	require.True(t, sameAccountRetryAllowed(err, 100, 0))
-	require.True(t, sameAccountRetryAllowed(err, 100, maxSameAccountRetries))
+	require.False(t, sameAccountRetryAllowed(err, 100, 0))
+	require.False(t, sameAccountRetryAllowed(err, 100, maxSameAccountRetries))
+	require.True(t, sameAccountRetryAllowed(err, maxSameAccountRetries-1, maxSameAccountRetries))
 	err.SameAccountRetryDeadline = time.Now().Add(-time.Second)
 	require.False(t, sameAccountRetryAllowed(err, 0, 100))
 }
@@ -390,7 +391,7 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 		require.Zero(t, fs.SwitchCount)
 	})
 
-	t.Run("OAuth deadline存在时不按普通计数切换", func(t *testing.T) {
+	t.Run("OAuth deadline不绕过请求级重试上限", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, true)
 		fs.SameAccountRetryCount[100] = maxSameAccountRetries
@@ -400,10 +401,10 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 
 		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
 
-		require.False(t, fs.ForceCacheBilling)
-		require.Zero(t, fs.SwitchCount)
-		require.Equal(t, maxSameAccountRetries+1, fs.SameAccountRetryCount[100])
-		require.Empty(t, mock.calls)
+		require.True(t, fs.ForceCacheBilling)
+		require.Equal(t, 1, fs.SwitchCount)
+		require.Equal(t, maxSameAccountRetries, fs.SameAccountRetryCount[100])
+		require.Len(t, mock.calls, 1)
 	})
 
 	t.Run("同账号重试耗尽并实际切换时设置ForceCacheBilling", func(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,6 +250,27 @@ func TestWriteOpenAIPassthroughResponseHeaders_RelaysAndClearsTurnState(t *testi
 	// 上游缺失时清除残留（failover 换号防串扰）
 	writeOpenAIPassthroughResponseHeaders(dst, http.Header{"Content-Type": []string{"application/json"}}, nil)
 	require.Empty(t, dst.Get("X-Codex-Turn-State"))
+}
+
+func TestOpenAICodexTurnState_BoundsHeaderAndStoredState(t *testing.T) {
+	oversized := strings.Repeat("x", openAICodexTurnStateMaxBytes+1)
+	if got := normalizeOpenAICodexTurnState(oversized); got != "" {
+		t.Fatalf("oversized state must be rejected, got %d bytes", len(got))
+	}
+
+	dst := http.Header{}
+	writeOpenAIPassthroughResponseHeaders(dst, http.Header{
+		"X-Codex-Turn-State": []string{oversized},
+	}, nil)
+	if got := dst.Get(openAICodexTurnStateHeader); got != "" {
+		t.Fatalf("oversized state must not be forwarded, got %d bytes", len(got))
+	}
+
+	store := NewOpenAIWSStateStore(nil)
+	store.BindSessionTurnState(1, "session", oversized, time.Minute)
+	if _, ok := store.GetSessionTurnState(1, "session"); ok {
+		t.Fatal("oversized state must not be retained in the session store")
+	}
 }
 
 func TestWriteOpenAIPassthroughResponseHeaders_RelaysReasoningIncluded(t *testing.T) {

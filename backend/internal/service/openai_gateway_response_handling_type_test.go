@@ -16,7 +16,7 @@ func TestOpenAIStreamEventIsTerminalWithTypeMatchesExistingSemantics(t *testing.
 	}{
 		{name: "empty", data: "", want: false},
 		{name: "whitespace", data: " \t ", want: false},
-		{name: "done marker is not a Responses terminal event", data: " [DONE] ", want: false},
+		{name: "done", data: " [DONE] ", want: true},
 		{name: "JSON outer whitespace", data: " \n\t {\"type\":\"response.completed\"} \r\n", want: true},
 		{name: "completed", data: `{"type":"response.completed"}`, want: true},
 		{name: "response done", data: `{"type":"response.done"}`, want: true},

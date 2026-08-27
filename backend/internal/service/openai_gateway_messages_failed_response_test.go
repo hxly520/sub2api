@@ -77,39 +77,6 @@ func TestForwardAsAnthropic_StreamingResponseFailed_ReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "upstream response failed")
 }
 
-func TestForwardAsAnthropic_NonSuccessTerminalStatusesReturnErrors(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, test := range []struct {
-		name, eventType, status string
-	}{
-		{name: "incomplete", eventType: "response.incomplete", status: "incomplete"},
-		{name: "cancelled", eventType: "response.cancelled", status: "cancelled"},
-		{name: "canceled", eventType: "response.canceled", status: "canceled"},
-	} {
-		for _, stream := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/stream=%t", test.name, stream), func(t *testing.T) {
-				body := []byte(fmt.Sprintf(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":%t}`, stream))
-				rec := httptest.NewRecorder()
-				c, _ := gin.CreateTestContext(rec)
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
-				c.Request.Header.Set("Content-Type", "application/json")
-				payload := fmt.Sprintf(`{"type":"%s","response":{"id":"resp_terminal","object":"response","status":"%s","output":[],"usage":{"input_tokens":2,"output_tokens":0,"total_tokens":2}}}`, test.eventType, test.status)
-				upstream := &httpUpstreamRecorder{resp: &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-					Body:       io.NopCloser(strings.NewReader("data: " + payload + "\n\n")),
-				}}
-				svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
-
-				_, err := svc.ForwardAsAnthropic(context.Background(), c, rawChatCompletionsTestAccount(), body, "", "")
-
-				require.Error(t, err)
-				require.NotContains(t, rec.Body.String(), "event: message_stop")
-			})
-		}
-	}
-}
-
 func TestForwardAsAnthropic_StreamingBareErrorAfterOutputIsVisible(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

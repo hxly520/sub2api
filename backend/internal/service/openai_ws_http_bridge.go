@@ -533,6 +533,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			FirstTokenMs:                  firstTokenMs,
 			ClientDisconnect:              clientDisconnected,
 		}
+		sanitizeOpenAICodexTurnStateHeader(result.ResponseHeaders)
 		if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 			result.wsReplayInput = replayInput
 			result.wsReplayInputExists = true

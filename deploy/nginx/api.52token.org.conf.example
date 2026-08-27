@@ -76,6 +76,12 @@ server {
         proxy_set_header Connection $sub2api_connection_upgrade;
 
         proxy_buffering off;
+        # Codex may return an opaque turn-state header. Keep a bounded,
+        # dedicated response-header budget so large state cannot be dropped by
+        # the edge while ordinary SSE remains unbuffered.
+        proxy_buffer_size 128k;
+        proxy_buffers 8 128k;
+        proxy_busy_buffers_size 256k;
         proxy_request_buffering off;
         proxy_cache off;
         proxy_no_cache 1;

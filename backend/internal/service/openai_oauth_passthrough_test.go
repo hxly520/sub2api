@@ -22,7 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"go.uber.org/zap"
 )
 
 func f64p(v float64) *float64 { return &v }
@@ -568,48 +567,6 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstruction
 	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Empty(t, upstream.lastReq.Header.Get("originator"))
-}
-
-func TestForwardAsAnthropic_OAuthCanonicalizesOnlyDigestSessionTools(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	tests := []struct {
-		name           string
-		promptCacheKey string
-		wantFirstTool  string
-	}{
-		{name: "gateway digest session", wantFirstTool: "alpha"},
-		{name: "explicit client cache key", promptCacheKey: "client-key", wantFirstTool: "zeta"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body := []byte(`{"model":"gpt-5.6-luna","max_tokens":128,"messages":[{"role":"user","content":"inspect"}],"tools":[{"name":"zeta","description":"z","input_schema":{"type":"object"}},{"name":"alpha","description":"a","input_schema":{"type":"object"}}],"stream":false}`)
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
-			c.Request.Header.Set("Content-Type", "application/json")
-			c.Set("api_key", &APIKey{ID: 101})
-
-			upstream := &httpUpstreamRecorder{resp: &http.Response{
-				StatusCode: http.StatusBadRequest,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"capture"}}`)),
-			}}
-			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-			account := &Account{
-				ID: 124, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
-				Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
-				Status:      StatusActive, Schedulable: true,
-			}
-
-			result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, tt.promptCacheKey, "gpt-5.6-luna")
-			require.Error(t, err)
-			require.Nil(t, result)
-			require.Equal(t, tt.wantFirstTool, gjson.GetBytes(upstream.lastBody, "tools.0.name").String())
-			require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
-		})
-	}
 }
 
 type openAIPassthroughFailoverRepo struct {
@@ -2713,15 +2670,11 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamingSetsFirstTokenMs(t *test
 
 func TestOpenAIGatewayService_OAuthPassthrough_StreamClientDisconnectStillCollectsUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	logSink, restore := captureStructuredLog(t)
-	defer restore()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
-	groupID := int64(20)
-	c.Set("api_key", &APIKey{ID: 15, GroupID: &groupID, User: &User{ID: 1}})
 	// 首次写入成功，后续写入失败，模拟客户端中途断开。
 	c.Writer = &failingGinWriter{ResponseWriter: c.Writer, failAfter: 1}
 
@@ -2760,11 +2713,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamClientDisconnectStillCollec
 		RateMultiplier: f64p(1),
 	}
 
-	ctx := logger.IntoContext(context.Background(), logger.With(
-		zap.String("request_id", "req-client-disconnect"),
-		zap.String("client_request_id", "client-req-disconnect"),
-	))
-	result, err := svc.Forward(ctx, c, account, originalBody)
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Stream)
@@ -2773,14 +2722,6 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamClientDisconnectStillCollec
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 7, result.Usage.OutputTokens)
 	require.Equal(t, 3, result.Usage.CacheReadInputTokens)
-	require.True(t, logSink.ContainsMessage("openai.responses_client_disconnected"))
-	require.True(t, logSink.ContainsFieldValue("stage", "passthrough_stream_write"))
-	require.True(t, logSink.ContainsFieldValue("user_id", "1"))
-	require.True(t, logSink.ContainsFieldValue("api_key_id", "15"))
-	require.True(t, logSink.ContainsFieldValue("group_id", "20"))
-	require.True(t, logSink.ContainsFieldValue("account_id", "123"))
-	require.True(t, logSink.ContainsFieldValue("request_id", "req-client-disconnect"))
-	require.True(t, logSink.ContainsFieldValue("client_request_id", "client-req-disconnect"))
 }
 
 func TestOpenAIGatewayService_StreamingMissingTerminalPropagatesClientDisconnectResult(t *testing.T) {
@@ -3034,32 +2975,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_InfoWhenStreamEndsWithoutDone(t *
 
 	_, err := svc.Forward(context.Background(), c, account, originalBody)
 	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
-	require.True(t, logSink.ContainsMessage("上游流在未收到终止事件时结束，疑似断流"))
-	require.True(t, logSink.ContainsMessageAtLevel("上游流在未收到终止事件时结束，疑似断流", "info"))
+	require.True(t, logSink.ContainsMessage("上游流在未收到 [DONE] 时结束，疑似断流"))
+	require.True(t, logSink.ContainsMessageAtLevel("上游流在未收到 [DONE] 时结束，疑似断流", "info"))
 	require.True(t, logSink.ContainsFieldValue("upstream_request_id", "rid-truncate"))
-}
-
-func TestOpenAIGatewayService_OAuthPassthrough_DoneWithoutTerminalReturnsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
-
-	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}}}
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "X-Request-Id": []string{"rid-done-only"}},
-		Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
-	}
-
-	_, err := svc.handleStreamingResponsePassthrough(
-		c.Request.Context(), resp, c, &Account{ID: 655}, time.Now(), "gpt-5.2", "gpt-5.2",
-	)
-
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
-	require.False(t, c.Writer.Written(), "[DONE] alone is not a Responses terminal event and remains safe to replay")
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_DefaultFiltersTimeoutHeaders(t *testing.T) {

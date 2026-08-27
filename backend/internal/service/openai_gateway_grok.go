@@ -218,13 +218,15 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
 		}
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
-		if err != nil && (streamResult == nil || !streamResult.clientDisconnected) {
+		if err != nil {
+			if streamResult == nil {
+				return nil, err
+			}
 			return nil, err
 		}
 		streamErr = err
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
-		clientDisconnected = streamResult.clientDisconnected
 		responseID = strings.TrimSpace(streamResult.responseID)
 		searchCount = streamResult.searchCount
 		imageCount = streamResult.imageCount

@@ -2082,7 +2082,7 @@ func (s *openAIWSUsageHandlerChannelRepoStub) GetGroupPlatforms(ctx context.Cont
 	return out, nil
 }
 
-func TestOpenAIResponses_APIKeyPassthroughPool5xxDoesNotReplayUncertainRequest(t *testing.T) {
+func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(4203)
 	accounts := []service.Account{
@@ -2166,7 +2166,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxDoesNotReplayUncertainRequest(t
 
 	h.Responses(c)
 
-	require.Equal(t, []int64{9910}, upstream.calls())
+	require.Equal(t, []int64{9910, 9910, 9911}, upstream.calls())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
@@ -2554,7 +2554,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	require.Empty(t, accountRepo.rateLimitedIDs, "pool-mode 429 must not disable the whole upstream pool")
 }
 
-func TestOpenAIResponsesWebSocket_FirstOutputTimeoutDoesNotReplayUncertainRequest(t *testing.T) {
+func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClientForOneFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2724,30 +2724,40 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutDoesNotReplayUncertainReques
 	cancelWrite()
 	require.NoError(t, err)
 
-	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
-	_, _, readErr := clientConn.Read(readCtx)
+	var eventTypes []string
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 6*time.Second)
+	for {
+		_, event, readErr := clientConn.Read(readCtx)
+		require.NoError(t, readErr)
+		eventType := gjson.GetBytes(event, "type").String()
+		eventTypes = append(eventTypes, eventType)
+		if eventType == "response.completed" {
+			require.Equal(t, "resp_ws_timeout_b", gjson.GetBytes(event, "response.id").String())
+			break
+		}
+	}
 	cancelRead()
-	require.Error(t, readErr)
-	require.Equal(t, coderws.StatusTryAgainLater, coderws.CloseStatus(readErr))
+	require.Contains(t, eventTypes, "response.output_text.delta")
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 
 	select {
 	case <-handlerDone:
 	case <-time.After(3 * time.Second):
-		t.Fatal("websocket handler did not finish after first-output timeout")
+		t.Fatal("websocket handler did not finish after healthy failover turn")
 	}
 	select {
 	case <-firstHitCh:
 	case <-time.After(3 * time.Second):
-		t.Fatal("first upstream did not receive request")
+		t.Fatal("first upstream did not receive replayable request")
 	}
 	select {
 	case <-secondHitCh:
-		t.Fatal("second upstream received an unsafe replay")
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(3 * time.Second):
+		t.Fatal("second upstream did not receive replayed request")
 	}
 	require.Equal(t, int32(1), firstConnections.Load())
-	require.Equal(t, int32(0), secondConnections.Load())
-	require.NotContains(t, accountRepo.rateLimitedIDs, int64(9913), "unused fallback account must not be penalized")
+	require.Equal(t, int32(1), secondConnections.Load())
+	require.NotContains(t, accountRepo.rateLimitedIDs, int64(9913), "healthy failover account must not be penalized")
 }
 
 func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSUsageLogCase) openAIResponsesWSUsageLogResult {

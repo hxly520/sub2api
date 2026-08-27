@@ -308,7 +308,7 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 
 func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration) {
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
-	state := strings.TrimSpace(turnState)
+	state := normalizeOpenAICodexTurnState(turnState)
 	if key == "" || state == "" {
 		return
 	}
@@ -335,10 +335,11 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHa
 	s.sessionToTurnStateMu.RLock()
 	binding, ok := s.sessionToTurnState[key]
 	s.sessionToTurnStateMu.RUnlock()
-	if !ok || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
+	state := normalizeOpenAICodexTurnState(binding.turnState)
+	if !ok || now.After(binding.expiresAt) || state == "" {
 		return "", false
 	}
-	return binding.turnState, true
+	return state, true
 }
 
 func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID int64, sessionHash string) {

@@ -94,10 +94,11 @@ func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCo
 		}
 		return retryCount < retryLimit
 	}
-	// OAuth 429 explicitly opts into a deadline window. It is intentionally not
-	// bounded by the ordinary/default pool retry count.
+	// A deadline extends the time in which a transient OAuth 429 may be retried,
+	// but it never removes the request-local retry budget. Without this bound a
+	// single account can replay the same request until the two-minute deadline.
 	if !failoverErr.SameAccountRetryDeadline.IsZero() {
-		return true
+		return retryLimit > 0 && retryCount < retryLimit
 	}
 	return retryLimit > 0 && retryCount < retryLimit
 }
@@ -112,6 +113,12 @@ func sameAccountRetryDeadlineAllows(failoverErr *service.UpstreamFailoverError) 
 // overriding an explicit account setting of zero (which disables retries).
 func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
 	if account == nil {
+		return 0
+	}
+	// OAuth 429 retry windows are metadata for pooled accounts. A dedicated
+	// account must switch credentials instead of replaying the same request in
+	// a deadline loop.
+	if failoverErr != nil && !failoverErr.SameAccountRetryDeadline.IsZero() && !account.IsPoolMode() {
 		return 0
 	}
 	limit := account.GetPoolModeRetryCount()

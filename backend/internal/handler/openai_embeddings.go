@@ -48,12 +48,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		logRequestBodyReadFailure(reqLog, c.Request, err)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", requestBodyReadFailureMessage(err))
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
 	if len(body) == 0 {
@@ -110,7 +109,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	retryBudget := openAIRequestRetryBudget{}
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
@@ -125,7 +123,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	for {
 		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			openAIAccountScheduleSelectionContext(c, reqModel),
+			c.Request.Context(),
 			apiKey.GroupID,
 			"",
 			"",
@@ -146,10 +144,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
-			if retryOpenAIModelCapacitySelection(reqLog, "embeddings", &retryBudget,
-				failedAccountIDs, lastFailoverErr) {
-				continue
-			}
 			if len(failedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
 				if !cls.ModelNotFound {
@@ -166,10 +160,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			if retryOpenAIModelCapacitySelection(reqLog, "embeddings", &retryBudget,
-				failedAccountIDs, lastFailoverErr) {
-				continue
-			}
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -177,7 +167,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
 			return
 		}
-		retryBudget.markReplaySelectionSucceeded()
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
@@ -226,7 +215,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), false, nil, err)
 				if failoverClientGone(c) {
 					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
@@ -234,17 +223,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					)
 					return
 				}
-				if !retryBudget.tryConsume(account, failoverErr) {
-					h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
-					reqLog.Warn("openai_embeddings.automatic_replay_suppressed",
-						zap.Int64("account_id", account.ID),
-						zap.Int("upstream_status", failoverErr.StatusCode),
-						zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
-					)
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
-				h.gatewayService.MaybeBlockOpenAIAccountAfterFailoverError(account, failoverErr)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
@@ -259,13 +237,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					zap.Int("switch_count", switchCount),
 					zap.Int("max_switches", maxAccountSwitches),
 				)
-				if !retryBudget.waitBeforeReplay(c.Request.Context(), reqLog, "embeddings", account, failoverErr) {
-					failoverClientGone(c)
-					return
-				}
 				continue
 			}
-			h.reportOpenAIAccountScheduleResult(c, account, reqModel, false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), false, nil, err)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -276,7 +250,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 
-		h.reportOpenAIAccountScheduleResult(c, account, reqModel, true, nil)
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), true, nil)
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		inboundEndpoint := GetInboundEndpoint(c)
