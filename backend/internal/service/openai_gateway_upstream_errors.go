@@ -142,17 +142,6 @@ func isOpenAIModelAtCapacityError(upstreamMsg string, upstreamBody []byte) bool 
 	return false
 }
 
-func isOpenAIFailedResponseModelAtCapacity(upstreamBody []byte) bool {
-	if len(upstreamBody) == 0 || !gjson.ValidBytes(upstreamBody) {
-		return false
-	}
-	status := strings.TrimSpace(gjson.GetBytes(upstreamBody, "status").String())
-	if status == "" {
-		status = strings.TrimSpace(gjson.GetBytes(upstreamBody, "response.status").String())
-	}
-	return strings.EqualFold(status, "failed") && isOpenAIModelAtCapacityError("", upstreamBody)
-}
-
 func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	if upstreamStatusCode < http.StatusBadRequest {
 		return false

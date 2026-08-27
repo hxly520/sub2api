@@ -17,7 +17,6 @@ import (
 )
 
 type openAIFirstResponseTimeoutContextKey struct{}
-type openAIFirstResponseEarlyFlushContextKey struct{}
 
 // openAIFirstResponseBudget is shared by the upstream round trip and the SSE
 // reader. The deadline starts lazily immediately before the selected account's
@@ -63,23 +62,6 @@ func openAIFirstResponseBudgetFromContext(ctx context.Context) *openAIFirstRespo
 		return nil
 	}
 	return budget
-}
-
-// WithOpenAIFirstResponseEarlyFlush preserves the original low-latency behavior
-// when no useful failover target or retry budget remains.
-func WithOpenAIFirstResponseEarlyFlush(ctx context.Context) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, openAIFirstResponseEarlyFlushContextKey{}, true)
-}
-
-func openAIFirstResponseEarlyFlushFromContext(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	enabled, _ := ctx.Value(openAIFirstResponseEarlyFlushContextKey{}).(bool)
-	return enabled
 }
 
 const (
@@ -340,14 +322,6 @@ func openAIStreamPayloadCountsAsFirstResponse(payload string) bool {
 		return openAIStreamJSONValueHasContent(gjson.Get(trimmed, "error"))
 	}
 	return openAIResponsesPayloadStartsSemanticOutput(trimmed, eventType)
-}
-
-func openAIStreamPayloadStartsReplayUnsafeOutput(payload string) bool {
-	eventType := strings.TrimSpace(gjson.Get(payload, "type").String())
-	if eventType == "response.failed" || eventType == "error" {
-		return false
-	}
-	return openAIStreamPayloadCountsAsFirstResponse(payload)
 }
 
 func openAIStreamJSONValueHasContent(value gjson.Result) bool {

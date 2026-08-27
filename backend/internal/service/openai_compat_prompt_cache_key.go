@@ -290,26 +290,3 @@ func canonicalizeOpenAICompatToolOrder(body []byte) ([]byte, bool, error) {
 	}
 	return updated, changed, nil
 }
-
-// canonicalizeAnthropicCompatToolOrder applies the same set-style ordering to
-// the parsed Messages request. Callers use it only for gateway-derived digest
-// sessions; explicit client cache/session anchors keep the original order.
-func canonicalizeAnthropicCompatToolOrder(req *apicompat.AnthropicRequest) (bool, error) {
-	if req == nil || len(req.Tools) <= 1 {
-		return false, nil
-	}
-	raw, err := json.Marshal(req.Tools)
-	if err != nil {
-		return false, fmt.Errorf("marshal anthropic tools: %w", err)
-	}
-	canonical := normalizeCompatToolSeedJSON(raw)
-	if canonical == "" || canonical == normalizeCompatSeedJSON(raw) {
-		return false, nil
-	}
-	var tools []apicompat.AnthropicTool
-	if err := json.Unmarshal([]byte(canonical), &tools); err != nil {
-		return false, fmt.Errorf("unmarshal canonical anthropic tools: %w", err)
-	}
-	req.Tools = tools
-	return true, nil
-}

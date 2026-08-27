@@ -84,6 +84,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
 		body = cappedBody
 	}
+	imageIntent := service.IsImageGenerationIntentForPlatform(
+		"/v1/chat/completions",
+		reqModel,
+		body,
+		openAICompatibleRequestPlatform(c.Request.Context(), apiKey),
+	)
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -337,6 +343,15 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, nil), false, nil, err)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
+					if imageIntent {
+						reqLog.Warn("openai_chat_completions.automatic_replay_suppressed",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+						)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}

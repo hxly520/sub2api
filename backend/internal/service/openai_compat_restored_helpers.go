@@ -10,28 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// openAIStreamDataStartsProgress identifies structural upstream progress that
-// is sufficient to commit a streamed attempt, without treating a preamble or
-// failed event as usable output.
-func openAIStreamDataStartsProgress(data, eventType string) bool {
-	trimmed := strings.TrimSpace(data)
-	if trimmed == "" || trimmed == "[DONE]" {
-		return false
-	}
-	eventType = strings.TrimSpace(eventType)
-	switch eventType {
-	case "response.failed":
-		return false
-	case "error":
-		payload := []byte(trimmed)
-		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload))
-	case "response.output_item.added", "response.content_part.added", "response.reasoning_summary_part.added":
-		return openAIStreamAddedEventStartsClientOutput([]byte(trimmed), eventType)
-	default:
-		return !openAIStreamEventIsPreamble(eventType) && !openAIStreamEventTypeIsTerminal(eventType)
-	}
-}
-
 // writeChatStreamUpstreamFailure terminates an already-started Chat
 // Completions SSE response with an explicit error frame.
 func writeChatStreamUpstreamFailure(c *gin.Context, message string) error {
