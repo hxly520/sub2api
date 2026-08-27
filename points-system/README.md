@@ -727,6 +727,15 @@ spend or points.
 
 ## Development
 
+The service requires Go `1.27.0`; `go.mod` and the builder image in
+`Dockerfile` must stay on the same version. Its image is the repository's
+fourth Go build target and deliberately uses `points-system/`, not the
+repository root, as the Docker build context:
+
+```bash
+docker build -f points-system/Dockerfile points-system
+```
+
 ```bash
 go mod tidy
 gofmt -w .

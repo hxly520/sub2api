@@ -2,9 +2,18 @@ name: Security Scan
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   schedule:
     - cron: '0 3 * * 1'
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: 'Ref to scan when called by a release workflow'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -15,6 +24,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -35,10 +46,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: backend/go.mod
+          go-version-file: points-system/go.mod
           check-latest: false
           cache-dependency-path: points-system/go.sum
       - name: Run govulncheck
@@ -51,6 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
         with:

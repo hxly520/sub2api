@@ -207,15 +207,14 @@ release:
     docker pull ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:{{ .Version }}
     ```
 
-    **Private repository install (Linux):**
+    **Public repository install (Linux):**
     ```bash
     export UPDATE_REPOSITORY={{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}
-    export UPDATE_GITHUB_TOKEN="$(gh auth token)"
-    gh api -H "Accept: application/vnd.github.raw+json" \
-      "/repos/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}/contents/deploy/install.sh?ref=v{{ .Version }}" > install.sh
-    sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN \
+    curl --fail --silent --show-error --location \
+      "https://raw.githubusercontent.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}/v{{ .Version }}/deploy/install.sh" \
+      --output install.sh
+    sudo --preserve-env=UPDATE_REPOSITORY \
       bash install.sh install --version v{{ .Version }}
-    unset UPDATE_GITHUB_TOKEN
     ```
 
     **Manual download:**

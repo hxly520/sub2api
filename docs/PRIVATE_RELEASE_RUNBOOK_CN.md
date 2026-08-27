@@ -1,10 +1,10 @@
-# 私有 Release 与双更新运行手册
+# 52Token 二开 Release 与双更新运行手册
 
 本文说明 `hxly520/sub2api` 的两种版本更新方式。默认不直接操作生产；服务器上的 Sub2API 镜像由维护者在人工窗口切换。所有命令中的主机、项目名、路径、版本和凭据均为占位符。
 
 ## 1. 当前基线（2026-08-27）
 
-- 私有仓库：`hxly520/sub2api`。工作分支 `codex/upgrade-v0.1.183-compat` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，候选版本为 `0.1.183-52t.1`。生产仍运行私有 `v0.1.176-52t.1`；候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
+- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，候选版本为 `0.1.183-52t.1`。该分支、二开 Tag、Release 和 GHCR 镜像尚未推送或创建；生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
 - 官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`；当前私有源码 `VERSION=0.1.183-52t.1`。本轮吸收官方插件、国产供应商、复合分组、渠道监控配额模式、分组用量汇总、Fast/Flex、渠道倍率、分时段/仅工作日定价、OpenAI Responses/WS 和调度修复，同时保留私有积分、提链、媒体冻结、视频、首页/帮助、私有更新源和容量精确重试。
 - 官方新增 `222-230` 迁移；两份 `225`、两份 `226` 与此前三份 `194` 均按完整文件名和 checksum 共存。候选跨越 forward-only 迁移、Ent/生成代码、前端和二进制，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
@@ -19,7 +19,7 @@
 4. 运行后端/积分/前端全量门禁和 `git diff --check`。未通过的测试不能进入 Tag。
 5. 私有 Release 工作流会再次调用完整 CI；只有脚本、后端单元/集成、前端、积分、视频边缘 Worker 和 `golangci-lint` 全部成功，才允许构建二进制与镜像。不得绕过该门禁手工补发同一失败 Tag。
 
-`v0.1.183-52t.1` 还必须定向验证以下矩阵后才能创建 Tag：API Key `v21` 快照 JSON/L1/L2 往返、长上下文分组/账号 OR 开关、渠道显式区间不重复计费、Fast/Flex 实际 service tier、分时时段和工作日、提链资金守恒与欠费准入、媒体冻结释放/核销、统一视频路由、精确容量拒绝有界重试、积分桥接、首页/帮助和用户/管理员导航。定向测试不能替代后端、积分和前端全量门禁。
+`v0.1.183-52t.1` 还必须定向验证以下矩阵后才能创建 Tag：API Key `v21` 快照 JSON/L1/L2 往返；GPT-5.6 在账号 `openai_long_context_billing_enabled=true`、渠道无显式区间价、未缓存输入加 cache write/read 严格大于 `272000` 时，输入及两类缓存 `2x`、输出 `1.5x`、分组倍率只乘一次且日志为 `long_context_billing_applied=true`；该规则须覆盖 HTTP Responses、WebSocket HTTP bridge 和 WebSocket v2。其余门禁包括长上下文分组/账号 OR 开关、渠道显式区间不重复计费、Fast/Flex 实际 service tier、分时时段和工作日、提链资金守恒与欠费准入、媒体冻结释放/核销、统一视频路由、精确容量拒绝有界重试、积分桥接、首页/帮助和用户/管理员导航。定向测试不能替代后端、积分和前端全量门禁。
 
 ### 2.2 Tag 与分类
 
@@ -50,13 +50,15 @@ Manifest 的 `policy` 只有三种值：`hot-update-safe`、`image-update-recomm
 
 ## 3. GitHub Actions 发布
 
-工作流 `.github/workflows/release.yml` 只接受私有 Tag。它在同一 Tag checkout，构建嵌入前端的 Linux/Windows/macOS 二进制和 Linux 多架构 GHCR 镜像，上传 `checksums.txt`、`update-manifest.json`、`public-landing-index.html`、`public-help-index.html` 及两份静态页各自的独立 SHA256，并保留完整 commit/revision。手工触发时输入的 `tag` 会通过 `checkout_ref` 传入复用的 `backend-ci.yml`，质量门禁与后续构建因此固定在同一 Tag；未提供该输入的普通 push/PR 仍使用事件 SHA。发布不使用 `latest` 作为回滚点。
+工作流 `.github/workflows/release.yml` 只接受 `vX.Y.Z-52t.N` 二开 Tag。它在同一 Tag checkout，先复用 `backend-ci.yml` 与 `security-scan.yml` 完成质量和安全门禁，再构建嵌入前端的 Linux/Windows/macOS 二进制和 Linux 多架构 GHCR 镜像，上传 `checksums.txt`、`update-manifest.json`、`public-landing-index.html`、`public-help-index.html` 及两份静态页各自的独立 SHA256，并保留完整 commit/revision。独立 CI/安全扫描的 `push` 只接受 `main`，因此候选分支或二开 Tag 不会额外启动重复流水线；Tag push 只触发一次 Release，普通 PR 仍执行两套独立门禁。失败时优先对同一不可变 Tag 的 run 执行 `Re-run`。由于 Actions UI 的手工触发默认读取默认分支上的工作流定义，本轮 `main` 尚未快进时不得从 UI 直接 dispatch；确需手工触发必须使用 `gh workflow run release.yml --ref vX.Y.Z-52t.N -f tag=vX.Y.Z-52t.N`，确保工作流定义、`checkout_ref`、门禁和构建均来自同一 Tag。发布不使用 `latest` 作为回滚点。
+
+Go 构建基线同时约束 `backend/go.mod` 与 `points-system/go.mod`，当前均为 `1.27.0`。四个 Go Dockerfile 必须一并审查：仓库根 `Dockerfile`、`deploy/Dockerfile`、`backend/Dockerfile` 使用仓库根上下文，`points-system/Dockerfile` 由 `points-image.yml` 以 `points-system/` 为独立上下文构建。改变 Go 版本或复制路径时，不能只验证主镜像而漏掉积分镜像。
 
 GoReleaser 固定为工作流中记录的精确版本，不能改回浮动 `~> v2`。它会同时推送精确版本、主/次版本和 `latest` 别名；生产和回滚只能使用精确私有 Tag 或 digest，不能把可变别名当作不可变产物。升级发布工具前必须在同一版本运行配置检查和隔离镜像构建；当前 `dockers`/`docker_manifests` 仍是已验证的多架构发布路径，GoReleaser 对它们的淘汰提示是已知待办，不得在没有 GHCR 双架构验证时直接迁移到 `dockers_v2`。
 
 推荐人工批准 Tag 发布；不要让每个 `main` 提交自动创建 Release。GoReleaser 创建 Release 后才上传更新 manifest 和两份静态页；若后续上传失败，Release 可能暂时缺少这些资产，updater 会按 fail-closed 处理，需在发布日志中补传并复核完整性。网络或 runner 失败时，先修复 CI，不要在生产服务器编译。
 
-私有仓库 Actions 分钟、计费或支出上限耗尽时，先记录未分配 runner 的 run ID 和状态。默认做法是恢复 Actions 额度并对同一不可变 Tag 重跑；维护者已明确批准公开仓库时，也可以在提交前完成敏感信息与历史凭据审计后把仓库长期设为公开，再使用公共 runner。禁止仅为一次构建反复切换可见性。确需本机构建时，按本手册同等执行全量门禁、标准镜像归档、revision/SHA256/digest 回读和服务器仅导入边界，不能把“工作流未启动”写成 CI 通过。
+`2026-08-27` 已完成全历史凭据审计并按维护者授权将仓库长期设为公开，Release 使用公共 runner，不再依赖私有仓库 Actions 分钟。禁止仅为一次构建反复切换可见性；若公开 runner 未分配，先记录 run ID 和状态，再对同一不可变 Tag 重跑。确需本机构建时，按本手册同等执行全量门禁、标准镜像归档、revision/SHA256/digest 回读和服务器仅导入边界，不能把“工作流未启动”写成 CI 通过。
 
 发布后只读核对：
 
@@ -70,7 +72,7 @@ jq -e --arg v 'X.Y.Z-52t.N' '.schema_version == 1 and .version == $v and (.polic
 docker buildx imagetools inspect ghcr.io/hxly520/sub2api:X.Y.Z-52t.N
 ```
 
-私有仓库 Release API 和 GHCR 拉取使用分离的只读凭据：`UPDATE_GITHUB_TOKEN` 只授予私有 Release/asset 读取；服务器 Docker 登录只授予 GHCR `read:packages`。Token 不写入 Compose、日志、命令参数或本仓库。
+公开 Release/asset 的读取不强制配置 `UPDATE_GITHUB_TOKEN`；需要提高 GitHub API 限额时可使用只读 token。GHCR 包若保持私有，服务器 Docker 登录只授予 `read:packages`。两类 Token 都不得写入 Compose、日志、命令参数或本仓库。
 
 ## 4. 方式 A：后台二进制热更新
 

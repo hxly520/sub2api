@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing private tag to release (for example v0.1.183-52t.1)'
+        description: 'Existing 52Token tag to release (for example v0.1.183-52t.1)'
         required: true
         type: string
 
@@ -59,9 +59,15 @@ jobs:
     with:
       checkout_ref: ${{ github.event.inputs.tag || github.ref }}
 
+  security-gate:
+    needs: validate-release-source
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      checkout_ref: ${{ github.event.inputs.tag || github.ref }}
+
   # The release source must already carry the exact immutable version.
   validate-version:
-    needs: quality-gate
+    needs: [quality-gate, security-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -97,7 +103,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
-    needs: quality-gate
+    needs: [quality-gate, security-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

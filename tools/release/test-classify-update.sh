@@ -5,6 +5,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 classifier="${script_dir}/classify-update.sh"
 tag_validator="${script_dir}/validate-private-tag.sh"
 workflow="${script_dir}/../../.github/workflows/release.yml"
+backend_workflow="${script_dir}/../../.github/workflows/backend-ci.yml"
+security_workflow="${script_dir}/../../.github/workflows/security-scan.yml"
 fixture="$(mktemp -d)"
 trap 'rm -rf "${fixture}"' EXIT
 
@@ -44,6 +46,8 @@ assert_policy() {
 
 grep -Fq 'bash tools/release/validate-private-tag.sh "${tag}"' "${workflow}"
 grep -Fq 'needs: validate-release-source' "${workflow}"
+grep -Fq 'uses: ./.github/workflows/security-scan.yml' "${workflow}"
+grep -Fq 'needs: [quality-gate, security-gate]' "${workflow}"
 grep -Fq 'git merge-base --is-ancestor "${DEFAULT_COMMIT}" "${TAG_COMMIT}"' "${workflow}"
 grep -Fq 'git merge-base --is-ancestor "${TAG_COMMIT}" "${DEFAULT_COMMIT}"' "${workflow}"
 grep -Fq 'refusing an old-tag rerun or VERSION downgrade' "${workflow}"
@@ -56,6 +60,8 @@ if grep -Fq 'git fetch --tags --force' "${workflow}"; then
   echo "release workflow force-fetches mutable tags" >&2
   exit 1
 fi
+grep -A3 -F 'push:' "${backend_workflow}" | grep -Fq -- '- main'
+grep -A3 -F 'push:' "${security_workflow}" | grep -Fq -- '- main'
 bash "${tag_validator}" "v0.1.173-52t.1"
 for invalid_tag in \
   "v01.1.173-52t.1" \
