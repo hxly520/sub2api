@@ -169,7 +169,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		return true
 	}
 	if statusCode == http.StatusTooManyRequests {
-		s.markOpenAIOAuth429RateLimited(stateCtx, account, headers, responseBody)
+		// A configured model-scoped rule that does not match must retain the
+		// legacy account-level 429 fallback. Otherwise the generic OAuth retry
+		// window would leave a globally rate-limited account schedulable.
+		forceAccountBlock := hasTempUnschedulableRuleForStatus(account, statusCode)
+		s.markOpenAIOAuth429RateLimited(stateCtx, account, headers, responseBody, forceAccountBlock)
 	}
 	if s.rateLimitService == nil {
 		return false
@@ -215,7 +219,7 @@ func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []b
 	}
 }
 
-func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte, forceAccountBlock ...bool) {
 	if s == nil || !isOpenAIOAuthAccount(account) {
 		return
 	}
@@ -226,7 +230,9 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.recordOpenAIOAuth429()
 	disposition, resetAt := classifyOpenAIOAuth429(headers, responseBody)
-	if disposition == openAIOAuth429Transient && s.openAIOAuth429RetryWindowActive(account) {
+	forced := len(forceAccountBlock) > 0 && forceAccountBlock[0]
+	hasUpstreamSignal := s.rateLimitService != nil || len(headers) > 0 || len(responseBody) > 0
+	if disposition == openAIOAuth429Transient && !forced && hasUpstreamSignal && s.openAIOAuth429RetryWindowActive(account) {
 		return
 	}
 
@@ -240,6 +246,18 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.BlockAccountScheduling(account, cooldownUntil, "429")
 	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+}
+
+func hasTempUnschedulableRuleForStatus(account *Account, statusCode int) bool {
+	if account == nil || !account.IsTempUnschedulableEnabled() {
+		return false
+	}
+	for _, rule := range account.GetTempUnschedulableRules() {
+		if rule.ErrorCode == statusCode {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *Account, statusCode int, shouldDisable bool) bool {
@@ -647,6 +665,17 @@ func (s *OpenAIGatewayService) recordOpenAIOAuth429() {
 	s.openaiOAuth429WindowCount.Add(1)
 }
 
+func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
+	if s == nil {
+		return false
+	}
+	windowStart := s.openaiOAuth429WindowStartUnixNano.Load()
+	if windowStart == 0 || time.Since(time.Unix(0, windowStart)) >= openAIOAuth429StormWindow {
+		return false
+	}
+	return s.openaiOAuth429WindowCount.Load() >= openAIOAuth429StormThreshold
+}
+
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int, state *OpenAIOAuth429FailoverState) bool {
 	if failedSwitches < openAIOAuth429StormMaxAccountSwitches {
 		return false
@@ -671,8 +700,10 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 	if statusCode != http.StatusTooManyRequests || !isOpenAIOAuthAccount(account) {
 		return false
 	}
-	// Each OpenAI OAuth candidate has already consumed its full same-account
-	// retry window before reaching this switch point. A global storm is useful
-	// telemetry, but must not prevent trying the bounded next-account budget.
+	if s.isOpenAIOAuth429Storm() {
+		return true
+	}
+	// Outside a storm, each candidate has already consumed its same-account
+	// retry window, so retain the official bounded next-account budget.
 	return failedSwitches >= openAIOAuth429MaxAccountAttempts
 }

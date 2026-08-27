@@ -5,7 +5,7 @@ Sub2API is an AI API Gateway Platform for distributing and managing AI product s
 ## Quick Start
 
 ```bash
-export SUB2API_IMAGE=ghcr.io/hxly520/sub2api:0.1.183-52t.1  # pin the approved immutable release
+export SUB2API_IMAGE=ghcr.io/hxly520/sub2api:0.1.183-52t.2  # pin the approved immutable release
 # Authenticate once with a read:packages PAT when the GHCR package is private.
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 

@@ -91,7 +91,7 @@ export UPDATE_GITHUB_TOKEN='<read-only contents token>'
 ```bash
 # Start services
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-PRIVATE_RELEASE_VERSION=0.1.183-52t.1  # replace with the approved immutable private release
+PRIVATE_RELEASE_VERSION=0.1.183-52t.2  # replace with the approved immutable private release
 export SUB2API_IMAGE="ghcr.io/hxly520/sub2api:${PRIVATE_RELEASE_VERSION}"
 docker compose up -d
 
@@ -130,7 +130,7 @@ mkdir -p data postgres_data redis_data
 
 # Start all services using local directory version
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-PRIVATE_RELEASE_VERSION=0.1.183-52t.1  # replace with the approved immutable private release
+PRIVATE_RELEASE_VERSION=0.1.183-52t.2  # replace with the approved immutable private release
 export SUB2API_IMAGE="ghcr.io/hxly520/sub2api:${PRIVATE_RELEASE_VERSION}"
 docker compose -f docker-compose.local.yml up -d
 

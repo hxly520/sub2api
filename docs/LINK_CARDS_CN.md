@@ -4,9 +4,9 @@
 
 > 历史生产状态（2026-08-08）：维护者当时手工运行的是 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`，`194_link_cards.sql` 已应用且用户 1 的 0.08x 资金验收完成；这段记录只描述历史运行态。
 
-> 当前源码候选状态（2026-08-27）：私有分支 `codex/upgrade-v0.1.183-compat` 正在兼容官方 `v0.1.183` peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`，官方 tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`；候选版本为 `v0.1.183-52t.1`，尚未完成最终门禁、Release、GHCR 镜像和生产切换。额度卡公共会话、Redis fail-close、原生使用记录、刷新并发、悬停保护和资金事务契约继续保留；本轮未变更生产容器，发布策略仍为 `image-update-required` 并由维护者手工切换。
+> 当前源码候选状态（2026-08-27）：私有分支 `codex/upgrade-v0.1.183-compat` 已兼容官方 `v0.1.183` peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`，官方 tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`；当前候选版本为 `v0.1.183-52t.2`，本地完整门禁已通过，私有 Tag、Release、GHCR 镜像和生产切换仍待完成。`v0.1.183-52t.1` 已作为不可变失败 Tag 保留，其质量门禁失败且未创建 Release 或镜像。额度卡公共会话、Redis fail-close、原生使用记录、刷新并发、悬停保护和资金事务契约继续保留；本轮未变更生产容器，发布策略仍为 `image-update-required` 并由维护者手工切换。
 
-> 当前生产状态（截至本候选记录）：维护者仍运行私有 `v0.1.176-52t.1`；本轮 `v0.1.183-52t.1` 尚未切换。提链门禁的实际开关、全体用户开放状态、活动卡资金基线和回滚目录只以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的最新证据为准，候选源码或镜像不得被当作生产事实。
+> 当前生产状态（截至本候选记录）：维护者仍运行私有 `v0.1.176-52t.1`；本轮 `v0.1.183-52t.2` 尚未切换。提链门禁的实际开关、全体用户开放状态、活动卡资金基线和回滚目录只以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的最新证据为准，候选源码或镜像不得被当作生产事实。
 
 ## 1. 产品边界
 

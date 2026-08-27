@@ -6,7 +6,7 @@
 
 ## 0. 当前生产事实（运行态更新至 2026-08-26，候选交接更新至 2026-08-27，其余条目按各自日期）
 
-- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；`2026-08-26` 只读复核时容器 healthy、未重启。长上下文认证快照修复现已并入 `v0.1.183-52t.1` 源码候选，但候选尚未构建或切换；证据和边界见第 0.11、0.12 节。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
+- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；`2026-08-26` 只读复核时容器 healthy、未重启。长上下文认证快照修复现已并入 `v0.1.183-52t.2` 源码候选，但候选尚未构建或切换；失败候选 `.1` 没有 Release 或镜像。证据和边界见第 0.11、0.12 节。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
 - 积分中心与签到门禁均为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。当前 policy v7 于 `2026-08-02` 生效，按昨日原始成功余额消费使用 `1%-5% / 2%-5% / 3%-5% / 4%-5%` 四档，最低消费 `1 U`、每日一次、三个金额 cap 为 `NULL`；原 v5 保持不可变并于 `2026-08-03` 接管。
 - 用户 1 原 `3.08 U` 已通过 reversal `12c061b4-380c-5119-8aec-26a500ef6590` 真正扣回并标记 `reversed`；新 grant `7d779e12-d5dd-4f09-a944-ff0eac93cf18` 按 `[50,100) U` 的 `3%-5%` 档实发 `3.11 U` 且为 `settled`。真实用户接口的今日赠送和累计赠送均为净 `3.11 U`，旧记录仅作为已冲正审计保留。
@@ -111,11 +111,11 @@
 
 ### 0.12 2026-08-27 v0.1.183 兼容候选交接
 
-- 本地工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，候选 `backend/cmd/server/VERSION=0.1.183-52t.1`。官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，merge-base 为官方 `v0.1.176` peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`。双父合并节点 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 已完成且父提交依次为私有起点和官方 peeled commit；候选分支、私有 Tag、Release、GHCR 和生产切换仍未完成，必须按后续证据分别更新。
+- 本地工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，候选 `backend/cmd/server/VERSION=0.1.183-52t.2`。官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，merge-base 为官方 `v0.1.176` peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`。双父合并节点 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 已完成且父提交依次为私有起点和官方 peeled commit。失败候选 `v0.1.183-52t.1` Tag 指向 `6d46eebe501ee5a816c8b51fee37390146c06662`，GitHub run `33043259988` 在质量门禁失败，Release、前端构建和 GHCR 镜像步骤均未执行；`.2` 分支更新、Tag、Release、GHCR 和生产切换仍未完成，必须按后续证据分别更新。
 - 官方插件出站传输、Kimi/Zhipu/DeepSeek 一等支持、复合分组、渠道监控配额模式、分组用量汇总、Codex 指纹种子、Fast/Flex、渠道倍率、分时段/仅工作日定价及 OpenAI Responses/WS/调度修复按官方实现优先。私有积分/签到、提链/额度卡、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有更新源、跨协议终态和精确容量错误有界重试继续保留。
 - API Key 认证快照继续使用私有 `v21`，保存分组长上下文开关与逐模型价格。长上下文按分组或账号任一开启的 OR 语义生效；渠道显式区间优先且不得叠加官方长上下文倍率。GPT-5.6 生产同型回归验证账号 `openai_long_context_billing_enabled=true`、分组开关关闭、渠道无显式区间价时，未缓存输入加 cache write/read 严格超过 `272000` 后三类输入费用 `2x`、输出 `1.5x`、分组倍率只乘一次、日志 `long_context_billing_applied=true`；HTTP Responses、WebSocket HTTP bridge 和 WebSocket v2 均由 `backend/internal/service/openai_gpt56_long_context_billing_test.go` 覆盖。Fast/Flex、分时倍率、长上下文档位、提链换算和媒体价格快照仍须在发布前用同一费用明细矩阵复核，禁止重复计费。
 - 候选保留私有 `173-179`、`192-194` 和此前官方 `194-221`，新增官方 `222-230`。三份 `194`、两份 `225`、两份 `226` 必须按完整文件名和 checksum 独立共存；不得按数字前缀覆盖、重命名或合并，`_notx` 文件继续按非事务语义执行。
-- 发布分类固定为 `image-update-required`。私有 annotated Tag `v0.1.183-52t.1` 的 message 必须包含 `[image-update-required]`，GitHub Actions 完整门禁通过后才可构建和发布不可变 `ghcr.io/hxly520/sub2api:0.1.183-52t.1` 并记录 digest；后台在线热更新必须拒绝该版本。Release 必须先校验候选 Tag 与默认分支谱系及 Tag 树内 `VERSION`，并保持代表当前生产版本的 `main` 不变；分叉、旧 Tag 降级或版本不一致时失败关闭。
+- 发布分类固定为 `image-update-required`。私有 annotated Tag `v0.1.183-52t.2` 的 message 必须包含 `[image-update-required]`，GitHub Actions 完整门禁通过后才可构建和发布不可变 `ghcr.io/hxly520/sub2api:0.1.183-52t.2` 并记录 digest；后台在线热更新必须拒绝该版本。Release 必须先校验候选 Tag 与默认分支谱系及 Tag 树内 `VERSION`，并保持代表当前生产版本的 `main` 不变；分叉、旧 Tag 降级或版本不一致时失败关闭。
 - 截至本记录，本轮没有替换、重启或修改生产 Sub2API、PostgreSQL、Redis、Nginx，也没有拉取或加载 Sub2API 候选镜像。生产仍为 `v0.1.176-52t.1`。自动化最多构建并核验镜像或缓存归档；Sub2API 只能由维护者在数据库备份、迁移 checksum、旧镜像回滚点确认后手动执行单服务 Compose 切换。
 - `2026-08-27` 本地门禁已通过：`git diff --check`、Go `1.27.0` 后端 `go test ./... -count=1` 与 `go vet ./...`、Go `1.27.0` 积分系统 `go test ./... -count=1` 与 `go vet ./...`、前端 lint/typecheck/全量 Vitest/build、发布脚本夹具，以及长上下文、Fast/Flex、分时定价、提链资金、媒体冻结、视频、容量重试、首页/帮助定向回归。两项流式时序测试另连续 20 轮通过；最终 GitHub CI、Release、镜像 digest、服务器缓存和生产冒烟仍为 `pending`。
 - 生图工作台已独立升级到 `ghcr.io/hxly520/infinite-canvas:v0.16.0-52t.1`，manifest digest `sha256:8a26b1732aaa672811dcf4264fa30226a4171b63ef3db433e370dd1e132b9bcf`，OCI revision `e1a9fac6407d0894c0b5dc60fc6e4d0fefc2eee7`。Compose 备份为 `/home/api/sub2api-deploy/images/docker-compose.before-v0.16.0-52t.1-20260827-130407.yml`；只重建 `app` 服务并完成 HTTP 探活，Sub2API 容器 ID、启动时间和 restart count 前后完全一致。
@@ -154,7 +154,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库维护候选为官方 Sub2API Release `v0.1.183` 与完整私有兼容层，工作分支 `backend/cmd/server/VERSION=0.1.183-52t.1`；生产仍运行 `v0.1.176-52t.1`，精确状态以第 0、0.11、0.12 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
+- 当前仓库维护候选为官方 Sub2API Release `v0.1.183` 与完整私有兼容层，工作分支 `backend/cmd/server/VERSION=0.1.183-52t.2`；生产仍运行 `v0.1.176-52t.1`，精确状态以第 0、0.11、0.12 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
@@ -349,7 +349,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c` 和 `0.1.172-7fe54f0856ee`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.176-52t.1`，`v0.1.183-52t.1` 仍是未上线候选，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0、0.11、0.12 节及链接记录为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c` 和 `0.1.172-7fe54f0856ee`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.176-52t.1`，`v0.1.183-52t.1` 是未产出镜像的失败候选，`v0.1.183-52t.2` 是尚未上线的修复候选，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0、0.11、0.12 节及链接记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 

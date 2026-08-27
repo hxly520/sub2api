@@ -4,8 +4,8 @@
 
 ## 1. 当前基线（2026-08-27）
 
-- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，候选版本为 `0.1.183-52t.1`。该分支、二开 Tag、Release 和 GHCR 镜像尚未推送或创建；生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
-- 官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`；当前私有源码 `VERSION=0.1.183-52t.1`。本轮吸收官方插件、国产供应商、复合分组、渠道监控配额模式、分组用量汇总、Fast/Flex、渠道倍率、分时段/仅工作日定价、OpenAI Responses/WS 和调度修复，同时保留私有积分、提链、媒体冻结、视频、首页/帮助、私有更新源和容量精确重试。
+- 52Token 二开仓库：`hxly520/sub2api`，长期公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。工作分支 `codex/upgrade-v0.1.183-compat` 从二开起点 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183`，双父合并节点为 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c`，当前候选版本为 `0.1.183-52t.2`。`v0.1.183-52t.1` 已推送不可变 Tag，但质量门禁失败，Release 和 GHCR 镜像均未创建；`.2` 分支更新、Tag、Release 和镜像仍待完成。生产仍运行二开 `v0.1.176-52t.1`。候选源码、Tag、Release、GHCR 镜像、服务器缓存和生产切换必须分别记录，运行态只以维护者和 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 的证据为准。
+- 官方 `v0.1.183` annotated tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`；当前私有源码 `VERSION=0.1.183-52t.2`。本轮吸收官方插件、国产供应商、复合分组、渠道监控配额模式、分组用量汇总、Fast/Flex、渠道倍率、分时段/仅工作日定价、OpenAI Responses/WS 和调度修复，同时保留私有积分、提链、媒体冻结、视频、首页/帮助、私有更新源和容量精确重试。
 - 官方新增 `222-230` 迁移；两份 `225`、两份 `226` 与此前三份 `194` 均按完整文件名和 checksum 共存。候选跨越 forward-only 迁移、Ent/生成代码、前端和二进制，发布策略固定为 `image-update-required`，后台热更新不得安装。
 - 私有版本 Tag 采用 `vX.Y.Z-52t.N`；同一官方基线内的 `N` 单调递增。Tag 必须是 annotated tag，不得在尚未合并官方版本时提前占用它的版本号。
 
@@ -19,7 +19,7 @@
 4. 运行后端/积分/前端全量门禁和 `git diff --check`。未通过的测试不能进入 Tag。
 5. 私有 Release 工作流会再次调用完整 CI；只有脚本、后端单元/集成、前端、积分、视频边缘 Worker 和 `golangci-lint` 全部成功，才允许构建二进制与镜像。不得绕过该门禁手工补发同一失败 Tag。
 
-`v0.1.183-52t.1` 还必须定向验证以下矩阵后才能创建 Tag：API Key `v21` 快照 JSON/L1/L2 往返；GPT-5.6 在账号 `openai_long_context_billing_enabled=true`、渠道无显式区间价、未缓存输入加 cache write/read 严格大于 `272000` 时，输入及两类缓存 `2x`、输出 `1.5x`、分组倍率只乘一次且日志为 `long_context_billing_applied=true`；该规则须覆盖 HTTP Responses、WebSocket HTTP bridge 和 WebSocket v2。其余门禁包括长上下文分组/账号 OR 开关、渠道显式区间不重复计费、Fast/Flex 实际 service tier、分时时段和工作日、提链资金守恒与欠费准入、媒体冻结释放/核销、统一视频路由、精确容量拒绝有界重试、积分桥接、首页/帮助和用户/管理员导航。定向测试不能替代后端、积分和前端全量门禁。
+`v0.1.183-52t.2` 还必须定向验证以下矩阵后才能创建 Tag：API Key `v21` 快照 JSON/L1/L2 往返；GPT-5.6 在账号 `openai_long_context_billing_enabled=true`、渠道无显式区间价、未缓存输入加 cache write/read 严格大于 `272000` 时，输入及两类缓存 `2x`、输出 `1.5x`、分组倍率只乘一次且日志为 `long_context_billing_applied=true`；该规则须覆盖 HTTP Responses、WebSocket HTTP bridge 和 WebSocket v2。其余门禁包括长上下文分组/账号 OR 开关、渠道显式区间不重复计费、Fast/Flex 实际 service tier、分时时段和工作日、提链资金守恒与欠费准入、媒体冻结释放/核销、统一视频路由、精确容量拒绝有界重试、积分桥接、首页/帮助和用户/管理员导航。定向测试不能替代后端、积分和前端全量门禁。
 
 ### 2.2 Tag 与分类
 
@@ -46,7 +46,7 @@ bash tools/release/test-classify-update.sh
 
 Manifest 的 `policy` 只有三种值：`hot-update-safe`、`image-update-recommended`、`image-update-required`。它必须随 Release 作为 `update-manifest.json` 上传；缺少 manifest 或 checksum 时，生产 updater fail-closed，不安装缓存资产。
 
-本轮 `v0.1.183-52t.1` 必须使用上例的 `[image-update-required]` 标记，分类结果必须为 `image-update-required`。即使二进制、前端和所有测试通过，也不能改用后台热更新，因为官方 `222-230` 迁移及容器构建基线必须随不可变镜像交付。
+本轮 `v0.1.183-52t.2` 必须使用上例的 `[image-update-required]` 标记，分类结果必须为 `image-update-required`。即使二进制、前端和所有测试通过，也不能改用后台热更新，因为官方 `222-230` 迁移及容器构建基线必须随不可变镜像交付。
 
 ## 3. GitHub Actions 发布
 
@@ -113,7 +113,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --no-deps sub2
 
 对于独立 points 或 `infinite-canvas`，使用各自 Compose 服务和不可变镜像，先完成对应 schema/浏览器本地数据备份；更新它们不能重启 Sub2API。
 
-`v0.1.183-52t.1` 的自动化边界止于发布并核验 `ghcr.io/hxly520/sub2api:0.1.183-52t.1` 的不可变 digest；可以把镜像拉取或归档到服务器缓存，但不得执行 `docker compose up`、替换容器、触发生产迁移或调整业务配置。维护者在人工窗口完成数据库备份、旧镜像回滚点和 migration filename/checksum 核对后，才执行单服务 Compose 切换。
+`v0.1.183-52t.2` 的自动化边界止于发布并核验 `ghcr.io/hxly520/sub2api:0.1.183-52t.2` 的不可变 digest；可以把镜像拉取或归档到服务器缓存，但不得执行 `docker compose up`、替换容器、触发生产迁移或调整业务配置。维护者在人工窗口完成数据库备份、旧镜像回滚点和 migration filename/checksum 核对后，才执行单服务 Compose 切换。
 
 ## 6. 回退
 

@@ -602,7 +602,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	if tokenCost == nil {
 		if tokenBillingAttempted {
 			if lastErr == nil {
-				lastErr = errors.New("no non-empty billing model candidates")
+				lastErr = fmt.Errorf("%w: no non-empty billing model candidates", ErrModelPricingUnavailable)
 			}
 			return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing models %s: %w", strings.Join(billingModels, ","), lastErr)
 		}
@@ -610,8 +610,10 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if searchCost != nil {
 			return searchCost, nil
 		}
+		// Empty candidates mean that no authoritative price exists. Preserve the
+		// sentinel so RecordUsage writes an auditable zero-cost row.
 		if lastErr == nil {
-			lastErr = errors.New("openai usage billing model is empty")
+			lastErr = fmt.Errorf("%w: openai usage billing model is empty", ErrModelPricingUnavailable)
 		}
 		return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing models %s: %w", strings.Join(billingModels, ","), lastErr)
 	}

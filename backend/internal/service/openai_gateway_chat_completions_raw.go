@@ -71,9 +71,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	}
 	clientStream := gjson.GetBytes(body, "stream").Bool()
 
-	// 1b. Extract service tier from the raw body before any transformation.
-	serviceTier := extractOpenAIServiceTierFromBody(body)
-
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
 	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
@@ -108,7 +105,9 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, policyErr
 	}
 	upstreamBody = updatedBody
-	serviceTier = extractOpenAIServiceTierFromBody(upstreamBody)
+	// Extract the effective tier after policy normalization so billing matches
+	// the exact request sent upstream.
+	serviceTier := extractOpenAIServiceTierFromBody(upstreamBody)
 	if account.Platform == PlatformGrok {
 		strippedBody, stripErr := stripRedundantGrokChatViewImageTool(upstreamBody)
 		if stripErr != nil {
@@ -293,6 +292,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	defer firstResponseWatch.Stop()
 
 	var usage OpenAIUsage
+	sawUsageChunk := false
 	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	clientOutputStarted := false
@@ -416,6 +416,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				observer.ObserveOpenAI([]byte(payload), strings.TrimSpace(gjson.Get(payload, "type").String()))
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
+					sawUsageChunk = true
 				}
 				if openAIChatStreamPayloadStartsSemanticOutput(payload) {
 					semanticOutputObserved = true
@@ -429,7 +430,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				}
 			}
 		}
-		if terminalLine && !allOpenAIChatChoicesFinished(finishedChoices, expectedChoices) {
+		streamTerminalAccepted := allOpenAIChatChoicesFinished(finishedChoices, expectedChoices) ||
+			ollamaCloudRawChatCompletionsStreamAllowsMissingFinishReason(account, semanticOutputObserved, sawUsageChunk, expectedChoices)
+		if terminalLine && !streamTerminalAccepted {
 			// Do not emit a terminal sentinel for a truncated multi-choice stream;
 			// streamIncomplete will surface an explicit error instead.
 			break
@@ -471,7 +474,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		return resultWithUsage(), failoverErr
 	}
 	observeClientContextDisconnect()
-	if !sawDone || !allOpenAIChatChoicesFinished(finishedChoices, expectedChoices) {
+	streamTerminalAccepted := allOpenAIChatChoicesFinished(finishedChoices, expectedChoices) ||
+		ollamaCloudRawChatCompletionsStreamAllowsMissingFinishReason(account, semanticOutputObserved, sawUsageChunk, expectedChoices)
+	if !sawDone || !streamTerminalAccepted {
 		return streamIncomplete("OpenAI chat completions stream ended without finish_reason and [DONE]", nil)
 	}
 	if !clientDisconnected && !clientOutputStarted {
@@ -647,8 +652,13 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 
 func openAIChatResponseHasFinishReason(body []byte) bool {
 	choices := gjson.GetBytes(body, "choices")
-	if !choices.Exists() || !choices.IsArray() || len(choices.Array()) == 0 {
+	if !choices.Exists() || !choices.IsArray() {
 		return false
+	}
+	if len(choices.Array()) == 0 {
+		// Usage-only responses legitimately carry an empty choices array.
+		usage := gjson.GetBytes(body, "usage")
+		return usage.Exists() && usage.IsObject()
 	}
 	for _, choice := range choices.Array() {
 		finishReason := choice.Get("finish_reason")

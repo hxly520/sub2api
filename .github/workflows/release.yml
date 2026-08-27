@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing 52Token tag to release (for example v0.1.183-52t.1)'
+        description: 'Existing 52Token tag to release (for example v0.1.183-52t.2)'
         required: true
         type: string
 

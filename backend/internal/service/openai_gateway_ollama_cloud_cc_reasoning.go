@@ -69,6 +69,13 @@ func applyOllamaCloudRawChatCompletionsSSELine(account *Account, line string) st
 	return normalizeOllamaCloudChatCompletionsSSELine(line)
 }
 
+// Ollama Cloud can terminate a successful CC stream with choices carrying only
+// null finish_reason values. Require both output and usage before accepting the
+// provider's [DONE] as the terminal marker without a non-null finish reason.
+func ollamaCloudRawChatCompletionsStreamAllowsMissingFinishReason(account *Account, semanticOutputObserved, sawUsageChunk bool, expectedChoices int) bool {
+	return expectedChoices == 1 && isOllamaCloudRawChatCompletionsAccount(account) && semanticOutputObserved && sawUsageChunk
+}
+
 func normalizeOllamaCloudChatCompletionsRequest(body []byte) []byte {
 	if !gjson.ValidBytes(body) {
 		return body
