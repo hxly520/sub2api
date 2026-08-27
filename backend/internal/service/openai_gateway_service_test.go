@@ -115,7 +115,7 @@ func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Co
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
-func TestOpenAIGatewayService_ForwardAsAnthropic_TempUnschedulableReturnsFailoverWithoutCommit(t *testing.T) {
+func TestOpenAIGatewayService_ForwardAsAnthropic_CapacityShedReturnsRequestScopedFailoverWithoutCommit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
@@ -173,8 +173,10 @@ func TestOpenAIGatewayService_ForwardAsAnthropic_TempUnschedulableReturnsFailove
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusBadRequest, failoverErr.StatusCode)
 	require.True(t, failoverErr.ShouldRetryNextAccount())
-	require.Equal(t, account.ID, repo.modelRateLimitAccountID, "temporary unschedulability should exclude this account from reselection")
-	require.Equal(t, "gpt-5.4", repo.modelRateLimitKey)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.Zero(t, repo.modelRateLimitAccountID, "request-scoped capacity shedding must not change account health")
+	require.Empty(t, repo.modelRateLimitKey)
 	require.False(t, IsResponseCommitted(c))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Body.String())
@@ -204,22 +206,56 @@ func TestFailoverOpenAIUpstreamHTTPError_NilContextSkipsTempUnschedulablePolicy(
 			"temp_unschedulable_enabled": true,
 			"temp_unschedulable_rules": []any{map[string]any{
 				"error_code":       float64(http.StatusBadRequest),
-				"keywords":         []any{"servers are currently overloaded"},
+				"keywords":         []any{"custom temporary outage"},
 				"duration_minutes": float64(1),
 			}},
 		},
 	}
-	body := []byte(`{"error":{"message":"Our servers are currently overloaded."}}`)
+	body := []byte(`{"error":{"message":"Custom temporary outage."}}`)
 	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{}}
 
 	got := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), nil, account, resp, body,
-		"Our servers are currently overloaded.", "gpt-5.4",
+		"Custom temporary outage.", "gpt-5.4",
 	)
 
 	require.Nil(t, got)
 	require.Zero(t, repo.modelRateLimitAccountID)
 	require.Empty(t, repo.modelRateLimitKey)
+}
+
+func TestFailoverOpenAIUpstreamHTTPError_CustomTempUnschedulableKeepsAccountAndModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &tempUnschedulableOpenAIAccountRepo{}
+	svc := &OpenAIGatewayService{
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID: 5099, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{map[string]any{
+				"error_code":       float64(http.StatusBadRequest),
+				"keywords":         []any{"custom temporary outage"},
+				"duration_minutes": float64(1),
+			}},
+		},
+	}
+	body := []byte(`{"error":{"message":"Custom temporary outage."}}`)
+	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{}}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	got := svc.failoverOpenAIUpstreamHTTPError(
+		context.Background(), c, account, resp, body,
+		"Custom temporary outage.", "gpt-5.4",
+	)
+
+	require.NotNil(t, got)
+	require.Equal(t, account.ID, repo.modelRateLimitAccountID)
+	require.Equal(t, "gpt-5.4", repo.modelRateLimitKey)
+	require.False(t, IsResponseCommitted(c))
 }
 
 type groupAwareStubOpenAIAccountRepo struct {
@@ -626,6 +662,14 @@ func (c *canceledContextProbeGatewayCache) ReleaseGrokVideoBilled(context.Contex
 	return nil
 }
 
+func (c *canceledContextProbeGatewayCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *canceledContextProbeGatewayCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", ErrReasoningContentNotFound
+}
+
 func TestOpenAIGatewayService_GenerateExplicitSessionHash_SkipsContentFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &OpenAIGatewayService{}
@@ -799,6 +843,14 @@ func (c *stubGatewayCache) ClaimGrokVideoBilled(context.Context, string, time.Du
 
 func (c *stubGatewayCache) ReleaseGrokVideoBilled(context.Context, string) error {
 	return nil
+}
+
+func (c *stubGatewayCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *stubGatewayCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", ErrReasoningContentNotFound
 }
 
 func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {
@@ -1850,7 +1902,7 @@ func TestOpenAIStreamingResponseFailedBeforeOutputServerOverloadedCodeReturnsFai
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, http.StatusServiceUnavailable, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "Please retry later")
 	// 容量降载是请求级信号：非池模式账号也要先在同账号重试，且不得据此临时封禁账号。
 	// 否则单个被降载的请求会把整池账号逐个消耗掉，而降载因素在每个账号上都相同。
@@ -1967,7 +2019,8 @@ func TestOpenAIStreamingResponseFailedRateLimitDoesNotBlockAccountScheduling(t *
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.False(t, failoverErr.SameAccountRetryDeadline.IsZero())
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
@@ -3566,10 +3619,11 @@ func TestParseSSEUsage_SelectiveParsing(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	usage := &OpenAIUsage{InputTokens: 9, OutputTokens: 8, CacheReadInputTokens: 7}
 
-	// 非 completed 事件，不应覆盖 usage
+	// 非终止事件的部分 usage 按非零字段合并，避免异常中断时漏记；
+	// 未报告的缓存字段继续保留，最终终止事件再整体覆盖。
 	svc.parseSSEUsage(`{"type":"response.in_progress","response":{"usage":{"input_tokens":1,"output_tokens":2}}}`, usage)
-	require.Equal(t, 9, usage.InputTokens)
-	require.Equal(t, 8, usage.OutputTokens)
+	require.Equal(t, 1, usage.InputTokens)
+	require.Equal(t, 2, usage.OutputTokens)
 	require.Equal(t, 7, usage.CacheReadInputTokens)
 
 	// completed 事件，应提取 usage

@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -121,18 +121,6 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://console.claudeapi.com/agent/register/drTKjyn6wGLK061Z"><img src="assets/partners/logos/claudeapi.jpg" alt="claudeapi" width="150"></a></td>
-<td>感谢 Claude API 对本项目的赞助！ <a href="https://console.claudeapi.com/agent/register/drTKjyn6wGLK061Z">Claude API</a> 是专注 Claude 模型的官方渠道 API 服务商，基于 Anthropic 官方 Key 与 AWS Bedrock 官方渠道，提供稳定的 Claude Code 与 Agent 应用接入体验，支持 Claude 全系列模型，保留 Tool Use、长上下文等官方能力。服务非逆向、非降智，适合 Claude Code 深度用户、Agent 工程师与企业技术团队使用。通过<a href="https://console.claudeapi.com/agent/register/drTKjyn6wGLK061Z">[专属链接]</a>注册后联系客服，可领取免费测试额度，并支持开票和团队对接。
-</td>
-</tr>
-
-<tr>
-<td width="180"><a href="https://code0.ai/agent/register/LgpIgl9JHtVG53V1?utm_source=zcf&utm_medium=partner&utm_campaign=zcf_2026&utm_content=default"><img src="assets/partners/logos/code0.jpg" alt="code0" width="150"></a></td>
-<td>感谢 code0.ai 对本项目的赞助！ <a href="https://code0.ai/agent/register/LgpIgl9JHtVG53V1?utm_source=zcf&utm_medium=partner&utm_campaign=zcf_2026&utm_content=default">code0.ai</a> 是面向开发者与技术团队的 AI 编程工作台，聚合 Claude Code、Codex 等主流 Agent 编程能力，支持代码生成、项目理解、调试修复、代码审查与文档生成等常见研发场景。适合独立开发者、Agent 工程师、开源项目维护者和企业研发团队使用，支持开票和团队对接。通过<a href="https://code0.ai/agent/register/LgpIgl9JHtVG53V1?utm_source=zcf&utm_medium=partner&utm_campaign=zcf_2026&utm_content=default">[专属链接]</a>注册后联系客服，可领取免费测试额度，体验更高效的 AI 编程工作流。
-</td>
-</tr>
-
-<tr>
 <td width="180"><a href="https://nagora.ai/"><img src="assets/partners/logos/nagora.png" alt="Nagora" width="150"></a></td>
 <td><a href="https://nagora.ai/">Nagora</a> 是专为开发者和团队打造的多模型 AI API 网关。通过一个账户和一枚 API Key，即可统一调用 26+ 款主流文本与图像模型，兼容 OpenAI、Anthropic 与 Gemini 协议，并可无缝接入 Claude Code、Codex、Gemini CLI 等开发工具。平台提供智能路由、自动故障转移、透明计费与统一账单，同时支持预算、限速、并发控制，让个人开发、团队协作和生产环境中的 AI 调用更稳定、更可控。无需改造现有应用，只需替换 Base URL 与 API Key，最快 1 分钟即可完成接入。</td>
 </tr>
@@ -177,6 +165,11 @@
 <td><a href="https://www.duckip.cn/?keyword=cu7oog6y">DuckIP</a> - 9000 万+ 全球住宅网络资源，覆盖 195+ 国家和地区，支持轮换和粘性会话，适用于公共数据采集、RAG 更新、模型评估和多区域数据工作负载。🟢住宅代理 - 8 折优惠；🟢静态住宅代理 - ¥50.00/IP 起；🟢无限住宅代理 - ¥19.8/小时 起。✅免费领取 500M 试用流量。</td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://go.apimart.ai/gh-sub2api"><img src="assets/partners/logos/apimart.jpg" alt="APIMart" width="150"></a></td>
+<td>感谢 APIMart 赞助了本项目！<a href="https://go.apimart.ai/gh-sub2api">APIMart</a> 是专注于 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可生成 160+ 张图片。图片、视频一套异步 API 通吃：提交任务获取 ID，通过轮询或回调获取结果；批量生成上万张图片也不会超时，切换模型无需修改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-sub2api">此注册链接</a>注册即可开始使用。</td>
+</tr>
+
 </table>
 
 ## 项目概述
@@ -197,7 +190,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的当前候选代码基线为 Sub2API `v0.1.176`（官方 annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，源码 commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`），源码 `backend/cmd/server/VERSION=0.1.176`。官方 tag 树内的 `VERSION` 仍为 `0.1.175`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮新增分组逐模型定价、长上下文定价开关和原生 `x_search` 路由，并包含数据库迁移、Ent schema、前端和二进制变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
+本仓库的当前候选代码基线为 Sub2API `v0.1.183`（官方 annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`，源码 commit `e8cb019fabf8b55199436229044cbf9aa7a82564`），私有候选版本为 `v0.1.183-52t.1`，源码 `backend/cmd/server/VERSION=0.1.183-52t.1`。官方 tag 树内的 `VERSION` 仍为 `0.1.182`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮包含官方 `222-230` 迁移、Ent schema、后端、前端和插件等变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。当前生产仍为私有 `v0.1.176-52t.1`，直到维护者完成人工 Compose 切换前不得写成已上线。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
 
 - [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
 - [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)
@@ -212,6 +205,8 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 后续合并官方版本必须从当前私有 `main` 创建升级分支，再合并已发布的官方 Release tag；禁止从旧私有分支或官方 `main/latest` 覆盖生产树。升级前必须阅读二开维护指南、生产运维文档和积分结算口径，并完成其中的协议、缓存、调度、媒体、计费、积分与签到、未登录首页、可用渠道和支付回归。渠道价格、账号地址和生产凭据由运行时配置维护，不得写入源码或仓库文档。
 
+私有 Release Tag 可以从候选分支创建，但必须与默认分支保持祖先关系。发布工作流先校验谱系，成功后把完整 Release 树快进到默认分支并同步 `VERSION`；发生分叉或发布期间竞态时失败关闭，禁止只把旧 `main` 的版本文件改成新版本。仓库主线更新与生产容器切换仍是两件事，生产只由维护者在人工窗口切换。
+
 ## 生态项目
 
 围绕 Sub2API 的社区扩展与集成项目：
@@ -225,7 +220,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.5, Gin, Ent |
+| 后端 | Go 1.27.0, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -592,33 +587,6 @@ default:
   rate_multiplier: 1.0
 ```
 
-### Sora 功能状态（暂不可用）
-
-> ⚠️ 当前 Sora 相关功能因上游接入与媒体链路存在技术问题，暂时不可用。
-> 现阶段请勿在生产环境依赖 Sora 能力。
-> 文档中的 `gateway.sora_*` 配置仅作预留，待技术问题修复后再恢复可用。
-
-### Sora 媒体签名 URL（功能恢复后可选）
-
-当配置 `gateway.sora_media_signing_key` 且 `gateway.sora_media_signed_url_ttl_seconds > 0` 时，网关会将 Sora 输出的媒体地址改写为临时签名 URL（`/sora/media-signed/...`）。这样无需 API Key 即可在浏览器中直接访问，且具备过期控制与防篡改能力（签名包含 path + query）。
-
-```yaml
-gateway:
-  # /sora/media 是否强制要求 API Key（默认 false）
-  sora_media_require_api_key: false
-  # 媒体临时签名密钥（为空则禁用签名）
-  sora_media_signing_key: "your-signing-key"
-  # 临时签名 URL 有效期（秒）
-  sora_media_signed_url_ttl_seconds: 900
-```
-
-> 若未配置签名密钥，`/sora/media-signed` 将返回 503。  
-> 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
-
-访问策略说明：
-- `/sora/media`：内部调用或客户端携带 API Key 才能下载
-- `/sora/media-signed`：外部可访问，但有签名 + 过期控制
-
 `config.yaml` 还支持以下安全相关配置：
 
 - `cors.allowed_origins` 配置 CORS 白名单
@@ -826,11 +794,11 @@ sub2api/
 
 ## Star History
 
-<a href="https://star-history.com/#Wei-Shaw/sub2api&Date">
+<a href="https://star-history.dera.page/#Wei-Shaw/sub2api&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Wei-Shaw/sub2api&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Wei-Shaw/sub2api&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Wei-Shaw/sub2api&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=Wei-Shaw/sub2api&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=Wei-Shaw/sub2api&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=Wei-Shaw/sub2api&type=Date" />
  </picture>
 </a>
 

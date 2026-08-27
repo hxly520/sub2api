@@ -155,7 +155,7 @@ func TestHandleNonStreamingResponseModelCapacityFailedSSEReturnsFailover(t *test
 
 			var err error
 			if tt.passthrough {
-				_, err = svc.handleNonStreamingResponsePassthrough(c.Request.Context(), resp, c, "gpt-test", "gpt-test", account)
+				_, err = svc.handleNonStreamingResponsePassthrough(c.Request.Context(), resp, c, account, "gpt-test", "gpt-test")
 			} else {
 				_, err = svc.handleNonStreamingResponse(c.Request.Context(), resp, c, account, "gpt-test", "gpt-test")
 			}

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing private tag to release (for example v0.1.172-52t.1)'
+        description: 'Existing private tag to release (for example v0.1.183-52t.1)'
         required: true
         type: string
 
@@ -16,11 +16,51 @@ permissions:
   packages: write
 
 jobs:
-  quality-gate:
-    uses: ./.github/workflows/backend-ci.yml
+  validate-release-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
-  # Update VERSION file with tag version
-  update-version:
+      - name: Validate tag and default branch lineage
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          tag="${TAG_NAME}"
+          bash tools/release/validate-private-tag.sh "${tag}"
+          TAG_COMMIT="$(git rev-parse "${tag}^{commit}")"
+          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          DEFAULT_COMMIT="$(git rev-parse "refs/remotes/origin/${DEFAULT_BRANCH}")"
+
+          if git merge-base --is-ancestor "${DEFAULT_COMMIT}" "${TAG_COMMIT}"; then
+            echo "Release tag descends from the default branch and can be published safely."
+          elif git merge-base --is-ancestor "${TAG_COMMIT}" "${DEFAULT_COMMIT}"; then
+            VERSION=${TAG_NAME#v}
+            DEFAULT_VERSION="$(git show "${DEFAULT_COMMIT}:backend/cmd/server/VERSION" | tr -d '\r\n')"
+            if [ "${DEFAULT_VERSION}" != "${VERSION}" ]; then
+              echo "::error::Release tag is already behind ${DEFAULT_BRANCH}, whose VERSION is ${DEFAULT_VERSION}; refusing an old-tag rerun or VERSION downgrade."
+              exit 1
+            fi
+            echo "Release tag is already contained in the default branch at the same version."
+          else
+            echo "::error::Release tag ${TAG_NAME} and ${DEFAULT_BRANCH} have diverged; refusing to publish or rewrite the default branch."
+            exit 1
+          fi
+
+  quality-gate:
+    needs: validate-release-source
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      checkout_ref: ${{ github.event.inputs.tag || github.ref }}
+
+  # The release source must already carry the exact immutable version.
+  validate-version:
     needs: quality-gate
     runs-on: ubuntu-latest
     steps:
@@ -31,20 +71,23 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Validate private release tag
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="${TAG_NAME}"
           bash tools/release/validate-private-tag.sh "${tag}"
 
-      - name: Update VERSION file
+      - name: Validate VERSION file
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION=${{ github.event.inputs.tag }}
-            VERSION=${VERSION#v}
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
+          VERSION=${TAG_NAME#v}
+          SOURCE_VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION)
+          if [ "$SOURCE_VERSION" != "$VERSION" ]; then
+            echo "::error::Release tag ${TAG_NAME} contains VERSION=${SOURCE_VERSION}, expected ${VERSION}."
+            exit 1
           fi
-          echo "$VERSION" > backend/cmd/server/VERSION
-          echo "Updated VERSION file to: $VERSION"
+          echo "Validated VERSION file: $VERSION"
 
       - name: Upload VERSION artifact
         uses: actions/upload-artifact@v7
@@ -90,7 +133,7 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [update-version, build-frontend]
+    needs: [validate-version, build-frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -120,7 +163,7 @@ jobs:
 
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.5'
+          go version | grep -q 'go1.27.0'
 
       # Docker setup for GoReleaser
       - name: Set up QEMU
@@ -148,16 +191,20 @@ jobs:
       - name: Fetch tags with annotations
         run: |
           # 确保获取完整的 annotated tag 信息
-          git fetch --tags --force
+          git fetch --tags
+
+      - name: Verify immutable release checkout
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "${TAG_NAME}^{commit}")"
 
       - name: Get tag message
         id: tag_message
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_NAME=${{ github.event.inputs.tag }}
-          else
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-          fi
           echo "Processing tag: $TAG_NAME"
 
           # 获取完整的 tag message（跳过第一行标题）
@@ -168,16 +215,18 @@ jobs:
           echo "Tag message preview:"
           echo "$TAG_MESSAGE" | head -10
 
-          # 使用 EOF 分隔符处理多行内容
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # 使用随机分隔符处理多行内容，避免 tag 正文碰撞固定 EOF。
+          DELIMITER="TAG_MESSAGE_$(openssl rand -hex 16)"
+          echo "message<<${DELIMITER}" >> "$GITHUB_OUTPUT"
+          echo "$TAG_MESSAGE" >> "$GITHUB_OUTPUT"
+          echo "${DELIMITER}" >> "$GITHUB_OUTPUT"
 
       - name: Classify update safety
         id: update_policy
         shell: bash
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG_NAME="${{ github.event.inputs.tag || github.ref_name }}"
           bash tools/release/classify-update.sh "${TAG_NAME}" > update-manifest.json
           jq . update-manifest.json
           echo "policy=$(jq -r .policy update-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -236,6 +285,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
         continue-on-error: true
         run: |
           # 检查必要的环境变量
@@ -244,17 +295,11 @@ jobs:
             exit 0
           fi
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_NAME=${{ github.event.inputs.tag }}
-          else
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-          fi
           VERSION=${TAG_NAME#v}
           REPO="${{ github.repository }}"
           GHCR_IMAGE="ghcr.io/${REPO,,}"  # ${,,} converts to lowercase
 
           # 获取 tag message 内容并转义 Markdown 特殊字符
-          TAG_MESSAGE='${{ steps.tag_message.outputs.message }}'
           TAG_MESSAGE=$(echo "$TAG_MESSAGE" | sed 's/\([_*`\[]\)/\\\1/g')
 
           # 限制消息长度（Telegram 消息限制 4096 字符，预留空间给头尾固定内容）
@@ -302,36 +347,3 @@ jobs:
                 parse_mode: "Markdown",
                 disable_web_page_preview: true
               }')"
-
-  sync-version-file:
-    needs: [release]
-    if: ${{ needs.release.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout default branch
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Sync VERSION file to released tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION=${{ github.event.inputs.tag }}
-            VERSION=${VERSION#v}
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
-          fi
-
-          CURRENT_VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION || true)
-          if [ "$CURRENT_VERSION" = "$VERSION" ]; then
-            echo "VERSION file already matches $VERSION"
-            exit 0
-          fi
-
-          echo "$VERSION" > backend/cmd/server/VERSION
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/cmd/server/VERSION
-          git commit -m "chore: sync VERSION to ${VERSION} [skip ci]"
-          git push origin HEAD:${{ github.event.repository.default_branch }}

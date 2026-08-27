@@ -2,7 +2,7 @@
 
 本文是积分系统的实现约束，代码、数据库迁移、管理界面和后续版本合并均不得偏离。
 
-当前脱敏部署事实和人工切换边界见 [`../docs/PRODUCTION_DEPLOYMENT_20260731_CN.md`](../docs/PRODUCTION_DEPLOYMENT_20260731_CN.md)。
+当前脱敏部署事实和人工切换边界见 [`../docs/PRODUCTION_OPERATIONS_CN.md`](../docs/PRODUCTION_OPERATIONS_CN.md)；下文的带日期部署数字均为历史验收证据，不代表当前运行版本。
 
 ### 策略控制台的单策略规则
 
@@ -11,7 +11,7 @@
 - 策略表单不接受自定义生效日期。服务端强制每次保存只允许下一自然日生效；积分比例、刷新分钟、开放开关、签到开关、签到模式、阶梯和金额上限全部以该版本为准，修改不会影响当天已经结算的数据。
 - Sub2API 的 `POINTS_SYSTEM_ENABLED`/预览名单和积分服务的 `POINTS_USER_ACCESS_MODE`/预览名单是部署级安全门禁，不替代策略开关。全站开放必须同时将两端部署门禁切换为 all/enabled 并清空预览名单；任一门禁关闭时仍以 fail-closed 处理。
 
-## 0. 当前生产基线与入口契约
+## 0. 历史生产基线与入口契约（2026-08-02）
 
 - 截至 `2026-08-02 CST`，Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-fc7ea1fe59c0` / revision `fc7ea1fe59c02a2c133057d58dbf9f3cdfe5ece8`，容器 `82623a6cc8a0...`。两者均 healthy、restart count `0`。积分镜像的 GHCR digest、传输归档 SHA256、loaded image ID 分别为 `sha256:cf0daf901d5d039d3c9442885fac8f0dedb3766f98804073490c7db89b942943`、`1263b00c94c8f492d6b66825ad5850961aa466871f6f5a4f23ea7c80c73a8468`、`sha256:8232a67d8be787f6ea8693a25a0943cbf1e7d8e467afacce116b044fb53d832c`。自动化不得替换或重启 Sub2API；三类镜像标识必须分别记录，不能互相替代。
 - 两个服务复用 PostgreSQL 17.8 的同一个 `sub2api` 数据库。积分系统只写独立 `points` schema，当前共 21 张表、4 条积分迁移；`points_app` 写连接上限为 8，`points_usage_reader` 只读连接上限为 4 且只有 `usage_logs` 指定列权限。

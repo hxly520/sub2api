@@ -212,6 +212,14 @@ func (c *schedulerTestGatewayCache) ReleaseGrokVideoBilled(context.Context, stri
 	return nil
 }
 
+func (c *schedulerTestGatewayCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *schedulerTestGatewayCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", ErrReasoningContentNotFound
+}
+
 type schedulerTestGatewayCacheWithoutCAS struct {
 	delegate *schedulerTestGatewayCache
 }
@@ -246,6 +254,14 @@ func (c *schedulerTestGatewayCacheWithoutCAS) ClaimGrokVideoBilled(ctx context.C
 
 func (c *schedulerTestGatewayCacheWithoutCAS) ReleaseGrokVideoBilled(ctx context.Context, key string) error {
 	return c.delegate.ReleaseGrokVideoBilled(ctx, key)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) SetReasoningContent(ctx context.Context, itemID, content string, ttl time.Duration) error {
+	return c.delegate.SetReasoningContent(ctx, itemID, content, ttl)
+}
+
+func (c *schedulerTestGatewayCacheWithoutCAS) GetReasoningContent(ctx context.Context, itemID string) (string, error) {
+	return c.delegate.GetReasoningContent(ctx, itemID)
 }
 
 func newSchedulerTestOpenAIWSV2Config() *config.Config {

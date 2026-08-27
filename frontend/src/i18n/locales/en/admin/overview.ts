@@ -513,6 +513,8 @@ export default {
         statusLabel: 'Status',
         selectStatus: 'Select status',
         rpmLimit: 'Requests Per Minute (RPM)',
+        concurrencyPlaceholder: '0 = unlimited',
+        concurrencyHint: 'Max concurrent requests for this user; 0 = unlimited.',
         rpmLimitPlaceholder: '0 = unlimited',
         rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.'
       },
@@ -577,9 +579,7 @@ export default {
       failedToToggle: 'Failed to update user status',
       failedToLoadApiKeys: 'Failed to load user API keys',
       emailRequired: 'Please enter email',
-      concurrencyMin: 'Concurrency must be at least 1',
-      soraStorageQuota: 'Sora Storage Quota',
-      soraStorageQuotaHint: 'In GB, 0 means use group or system default quota',
+      concurrencyNonNegative: 'Concurrency cannot be negative; 0 = unlimited',
       amountRequired: 'Please enter a valid amount',
       insufficientBalance: 'Insufficient balance',
       adjustBalance: 'Adjust Balance',
@@ -821,6 +821,7 @@ export default {
         userStatus: 'Status'
       },
       usageToday: 'Today',
+      usageYesterday: 'Yesterday',
       usageTotal: 'Total',
       accountsAvailable: 'Avail:',
       accountsRateLimited: 'Limited:',
@@ -949,6 +950,9 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         grok: 'Grok',
+        kimi: 'Kimi',
+        zhipu: 'Zhipu GLM',
+        deepseek: 'DeepSeek',
         composite: 'Composite',
       },
       deleteConfirm:

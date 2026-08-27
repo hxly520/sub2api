@@ -198,7 +198,6 @@ func TestApplyMigrationsFS_Upstream194And195ApplyWhenPrivate194AlreadyApplied(t 
 		privateLinkCardMigration  = "194_link_cards.sql"
 		privateProductionChecksum = "7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4"
 	)
-
 	upstreamColumnsSQL, err := dbmigrations.FS.ReadFile(upstreamColumnsMigration)
 	require.NoError(t, err)
 	privateLinkCardSQL, err := dbmigrations.FS.ReadFile(privateLinkCardMigration)
@@ -210,43 +209,71 @@ func TestApplyMigrationsFS_Upstream194And195ApplyWhenPrivate194AlreadyApplied(t 
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-
 	prepareMigrationsBootstrapExpectations(mock)
-
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
-		WithArgs(upstreamColumnsMigration).
-		WillReturnError(sql.ErrNoRows)
+		WithArgs(upstreamColumnsMigration).WillReturnError(sql.ErrNoRows)
 	mock.ExpectBegin()
-	mock.ExpectExec("ALTER TABLE usage_logs").
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE usage_logs").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
-		WithArgs(upstreamColumnsMigration, sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+		WithArgs(upstreamColumnsMigration, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
-
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
 		WithArgs(privateLinkCardMigration).
 		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(privateProductionChecksum))
-
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
-		WithArgs(usageLogsUpstreamModelMismatchIndexMigration).
-		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SELECT EXISTS \\(").
-		WithArgs(usageLogsUpstreamModelMismatchIndex).
+		WithArgs(usageLogsUpstreamModelMismatchIndexMigration).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT EXISTS \\(").WithArgs(usageLogsUpstreamModelMismatchIndex).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectExec("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_upstream_model_mismatch_created_at").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
-		WithArgs(usageLogsUpstreamModelMismatchIndexMigration, sqlmock.AnyArg()).
+		WithArgs(usageLogsUpstreamModelMismatchIndexMigration, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	fsys := fstest.MapFS{
+		upstreamColumnsMigration:                     &fstest.MapFile{Data: upstreamColumnsSQL},
+		privateLinkCardMigration:                     &fstest.MapFile{Data: privateLinkCardSQL},
+		usageLogsUpstreamModelMismatchIndexMigration: &fstest.MapFile{Data: upstreamIndexSQL},
+	}
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_NonTransactionalMigration_EffectiveModelIndexesDropInvalidIndexesBeforeRetry(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs(usageLogsEffectiveModelIndexesMigration).
+		WillReturnError(sql.ErrNoRows)
+	for _, indexName := range []string{usageLogsEffectiveRequestedModelIndex, usageLogsEffectiveUpstreamModelIndex} {
+		mock.ExpectQuery("SELECT EXISTS \\(").
+			WithArgs(indexName).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS " + indexName).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+	mock.ExpectExec("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_effective_requested_model_created").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_effective_upstream_model_created").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
+		WithArgs(usageLogsEffectiveModelIndexesMigration, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
 		WithArgs(migrationsAdvisoryLockID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	fsys := fstest.MapFS{
-		upstreamColumnsMigration:                     &fstest.MapFile{Data: upstreamColumnsSQL},
-		privateLinkCardMigration:                     &fstest.MapFile{Data: privateLinkCardSQL},
-		usageLogsUpstreamModelMismatchIndexMigration: &fstest.MapFile{Data: upstreamIndexSQL},
+		usageLogsEffectiveModelIndexesMigration: &fstest.MapFile{Data: []byte(`
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_effective_requested_model_created
+    ON usage_logs ((COALESCE(NULLIF(BTRIM(requested_model), ''), model)), created_at DESC, id DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_effective_upstream_model_created
+    ON usage_logs ((COALESCE(NULLIF(BTRIM(upstream_model), ''), model)), created_at DESC, id DESC);
+`)},
 	}
 
 	err = applyMigrationsFS(context.Background(), db, fsys)

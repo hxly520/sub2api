@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
   workflow_call:
+    inputs:
+      checkout_ref:
+        description: 'Ref to test when called by a release workflow'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -13,11 +19,14 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Check deployment scripts
         run: |
           /bin/bash -n deploy/apple-container.sh
           /bin/bash deploy/tests/apple-container-test.sh
           /bin/sh deploy/tests/docker-compose-security-test.sh
+          /bin/sh deploy/tests/docker-compose-gateway-env-test.sh
           /bin/sh deploy/tests/docker-runtime-resources-test.sh
           /bin/sh deploy/test-caddyfile-cache.sh
 
@@ -25,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -33,7 +44,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.5'
+          go version | grep -q 'go1.27.0'
       - name: Unit tests
         working-directory: backend
         run: make test-unit
@@ -45,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -81,6 +94,8 @@ jobs:
       POINTS_TEST_DATABASE_URL: postgres://points_test:points_test@127.0.0.1:5432/points_test?sslmode=disable
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: points-system/go.mod
@@ -159,6 +174,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -171,6 +188,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -179,10 +198,10 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.5'
+          go version | grep -q 'go1.27.0'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.9
+          version: v2.13
           args: --timeout=30m
           working-directory: backend

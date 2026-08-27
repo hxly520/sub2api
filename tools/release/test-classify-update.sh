@@ -43,6 +43,19 @@ assert_policy() {
 }
 
 grep -Fq 'bash tools/release/validate-private-tag.sh "${tag}"' "${workflow}"
+grep -Fq 'needs: validate-release-source' "${workflow}"
+grep -Fq 'git merge-base --is-ancestor "${DEFAULT_COMMIT}" "${TAG_COMMIT}"' "${workflow}"
+grep -Fq 'git merge-base --is-ancestor "${TAG_COMMIT}" "${DEFAULT_COMMIT}"' "${workflow}"
+grep -Fq 'refusing an old-tag rerun or VERSION downgrade' "${workflow}"
+grep -Fq 'Release tag ${TAG_NAME} contains VERSION=${SOURCE_VERSION}, expected ${VERSION}.' "${workflow}"
+if grep -Fq 'sync-version-file:' "${workflow}" || grep -Fq 'git push origin "HEAD:refs/heads/${DEFAULT_BRANCH}"' "${workflow}"; then
+  echo "release workflow mutates the production-tracking default branch" >&2
+  exit 1
+fi
+if grep -Fq 'git fetch --tags --force' "${workflow}"; then
+  echo "release workflow force-fetches mutable tags" >&2
+  exit 1
+fi
 bash "${tag_validator}" "v0.1.173-52t.1"
 for invalid_tag in \
   "v01.1.173-52t.1" \

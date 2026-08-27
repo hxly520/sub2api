@@ -16,13 +16,13 @@
 ## 2. 上游基线与私有分层
 
 - 官方仓库：`Wei-Shaw/sub2api`。
-- 私有仓库：维护者自己的 fork；官方远端只用于获取基线，不直接向官方远端推送私有提交。
-- 当前维护基线为官方 annotated tag `v0.1.176`（tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`）和私有生产发布 `v0.1.176-52t.1`。工作分支 `codex/upgrade-v0.1.176-compat` 在该发布之上回移官方后续的长上下文计费修复，`backend/cmd/server/VERSION=0.1.176-52t.1`；修复源码完成不代表新镜像已上线。发布审计仍须同时核对 tag object、peeled commit、私有 `VERSION`、Release manifest 和镜像 revision。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验和额度卡/提链功能；生产容器仍由维护者手工切换，候选状态与生产状态必须按 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 区分。
+- 私有仓库：`hxly520/sub2api`；官方远端只用于获取基线，不直接向官方远端推送私有提交。
+- 当前维护候选为官方 annotated tag `v0.1.183`（tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`）与完整私有兼容层；工作分支为 `codex/upgrade-v0.1.183-compat`，私有起点为 `ceb2326d740235852d9d81bbca6bee669a342130`，`backend/cmd/server/VERSION=0.1.183-52t.1`。生产仍运行私有 `v0.1.176-52t.1`，源码候选、Release、镜像和生产状态必须分开记录。本轮继续保留媒体冻结、积分同库、公开首页与帮助、管理员积分配置入口、余额缓存并发保护、跨协议终态校验、容量精确重试和额度卡/提链功能；生产容器仍只由维护者手工切换，精确状态以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
-- 截至 `2026-08-02` 全体签到开放，生产 Sub2API 为 `0.1.169-1a4a690dd999` / revision `1a4a690dd999b669e2ce09522854ea157d7af984`，容器 `69a710a1ad0c...`；积分服务为 `0.1.169-b64a0110ab2c` / revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`。两者均 healthy、restart count `0`；积分镜像同时允许 `api.52token.org` 与 `52token.org` 两个精确父 Origin。后续仍必须以运行容器 OCI revision 为准，不能只看仓库 `main` 或服务器镜像缓存；自动化不得替换或重启 Sub2API，详见 [`PRODUCTION_DEPLOYMENT_20260731_CN.md`](PRODUCTION_DEPLOYMENT_20260731_CN.md)。
+- 历史部署事实（截至 `2026-08-02`）：当时全体签到开放，Sub2API 为 `0.1.169-1a4a690dd999`、积分服务为 `0.1.169-b64a0110ab2c`，两者均 healthy；该段仅保留旧验收证据。当前生产版本、门禁和 OCI revision 以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；后续仍不能只看仓库 `main` 或服务器镜像缓存，自动化不得替换或重启 Sub2API。
 - 版本来源：以 `backend/cmd/server/VERSION`、Git commit 和不可变镜像标签三者共同确认，不能只看前端版本文字。
-- 官方升级补丁记录：本轮从 `cc67b1aca` 合入到官方 `v0.1.175` peeled commit `93c32fa1a`。官方 `194_add_usage_log_upstream_response_model.sql`、官方 `194_channel_monitor_v2.sql` 与私有 `194_link_cards.sql` 三份同号迁移按完整文件名和 checksum 独立执行；官方 `195-206`、`217-220` 迁移也原名保留，不能按数字前缀覆盖、重命名或合并。该迁移、Ent schema、前端资产和二进制跨度使本轮发布策略固定为 `image-update-required`，不得使用后台热更新替代 Compose 镜像切换。
+- 官方升级补丁记录：本轮从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方 `v0.1.183` peeled commit `e8cb019fabf8b55199436229044cbf9aa7a82564`，merge-base 为官方 `v0.1.176` peeled commit `e803e3851c0a7e222cfadeafad7b8636ab959d11`。官方 `222-230` 原名保留，其中两份 `225` 与两份 `226` 按完整文件名和 checksum 共存；此前三份 `194` 与私有媒体、积分、提链迁移同样不得按数字前缀覆盖、重命名或合并。该迁移、Ent schema、前端资产和二进制跨度使本轮发布策略固定为 `image-update-required`，不得使用后台热更新替代 Compose 镜像切换。
 - 当前分支必须保留一个可定位的官方 merge-base。升级前先记录旧生产 commit、官方新 tip、数据库备份点和可回滚镜像。
 
 私有主线谱系：
@@ -211,7 +211,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.7 提链与额度卡中心
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.1.175` 兼容候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护，具体提交必须由最终私有 Release Tag 和 manifest 固定，不能把未提交工作树或旧候选哈希写成已发布源码。生产已于 2026-08-09 手工开放全体用户，实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.1.183` 兼容候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口和悬停面板视口保护，具体提交必须由最终私有 Release Tag 和 manifest 固定，不能把未提交工作树或旧候选哈希写成已发布源码。生产已于 2026-08-09 手工开放全体用户，实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 公共教程把 API Base 归一化为恰好一个 `/v1`，提供 Codex `/responses`、Claude `/messages` 和 OpenAI 兼容 `/chat/completions` 三种流式请求，以及 `~/.codex/config.toml`、`~/.codex/auth.json`、`~/.claude/settings.json`、`.env` 配置片段。片段只使用 `CARD_KEY`、`MODEL` 占位符。CCSwitch 仅显示客户端类型、`/v1` 端点、Key 和模型占位符的只读填写指引，不宣称一键导入。
@@ -257,6 +257,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 新增的非事务并发索引迁移，服务于全站到期冻结扫描，当前已进入生产。后续发布必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本，当前已进入生产；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
 - `194_link_cards.sql` 是提链/额度卡中心的 forward-only 私有迁移，已于 `2026-08-08` 进入生产，checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；应用后禁止改名、改号、删除或修改 checksum，只能追加后续迁移。
+- `v0.1.183` 候选继续原名保留官方 `222_group_usage_daily_rollups.sql` 至 `230_plugin_artifacts.sql`。其中 `225_backfill_codex_fingerprint_seed.sql` 与 `225_channel_model_time_pricing.sql`、`226_add_usage_log_effective_model_indexes_notx.sql` 与 `226_channel_monitor_quota_mode.sql` 分别同号；它们必须与三份 `194` 一样按完整文件名和 checksum 独立执行。`_notx` 文件继续使用非事务迁移语义，禁止因同号而改名、合并或覆盖。
 - 积分角色读取 Sub2API 用户表必须保持列级 allowlist：内部关联用 `id`、界面登录邮箱用 `email`、过滤软删除用 `deleted_at`。阶段 A 允许短期精确双读 `id/email/username/deleted_at`，仅用于新旧积分镜像兼容切换；新镜像验收后必须由阶段 B 收敛为 `id/email/deleted_at`。任何新增展示字段都必须先经过数据最小化审查，禁止把用户表整表授权给积分角色。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
@@ -279,17 +280,16 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ## 5. 官方版本升级流程
 
-### 5.0 v0.1.176 生产基线与长上下文热修复
+### 5.0 v0.1.183 兼容候选基线
 
-- 官方基线为 annotated tag `v0.1.176`，tag object 为 `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`，peeled commit 为 `e803e3851c0a7e222cfadeafad7b8636ab959d11`。官方 tag 树内 `VERSION=0.1.175`；私有 `v0.1.176-52t.1` 已发布并由维护者切换生产。后续热修复仍须使用新的私有 annotated Tag，并保持 manifest source commit 与镜像内 revision 一致。
-- 官方 Grok 4.6/JWT 订阅档位、分组逐模型定价、长上下文阶梯开关、原生 `/x_search`、渠道缓存失效与定价冲突修复均已合入。Wire 同时注入官方渠道监控 V2 与私有媒体冻结核销；Gateway Cache 同时保留官方 Grok 视频结算 claim 与私有粘性 CAS；`/videos` 只保留一套平台分派路由，私有媒体路由继续完整保留。
-- 私有媒体创建仍只提交一次。Grok 异步视频在创建前冻结，创建成功保持 `dispatched`，完成查询首次幂等结算；普通余额与提链卡都保留请求级价格快照和余额冻结事务。官方 `response_model` 计费先执行，私有媒体冻结报价封顶随后执行，不能因上游实际价格更高二次追扣。
-- OpenAI 空 `response.completed`、metadata-only 断流和缺正式终态继续进入安全 failover；结构化 reasoning/item 进度只解除首输出超时，不提前记录 TTFT 或提交账号响应，真实可见输出才记录 TTFT。Responses、Chat、Messages 与 WebSocket 保留精确容量错误的有界重试；Messages 继续继承池内同账号指数退避。
-- 迁移 runner 按完整 filename 和 checksum 识别迁移。官方 `194-206`、`217-220` 原名保留，私有 `194_link_cards.sql` 与官方同号文件独立共存；新增 `221_group_model_pricing.sql` 创建分组长上下文开关和逐模型定价 JSONB。由于包含 forward-only 数据库迁移、Ent schema、前端资产和二进制变更，发布策略是 `image-update-required`，不得在线热更新。
-- `2026-08-26` 回移官方 `674570ca1` 与 `5b2a386ed` 的必要计费修复：认证快照保存分组长上下文开关和逐模型价格；分组或账号任一开关开启即启用长上下文阶梯，账号关闭不能否决分组策略；渠道区间存在时仍只使用区间价格，防止重复叠加。
-- 私有认证快照版本从 `v20` 提升到 `v21`。`v20` 已承载提链和 search/audio/video 字段，不能照抄官方同号 `v20`；版本提升会使旧 L1/L2 Redis 快照失效并自动回源，不修改数据库，也不要求人工清空 Redis。以后新增任何鉴权热路径分组字段时必须同步更新 snapshot struct、双向映射、JSON 往返测试和版本号。
-- 原 `v0.1.176-52t.1` 的完整发布门禁已经通过。当前热修复已通过认证快照、OR 开关矩阵、渠道区间和生产同型 GPT-5.6 定向测试；GitHub CI、新 Tag、Release、镜像和人工生产切换仍需按发布流程逐项完成。
-- 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时；接近长上下文阈值的请求应同时核对输入、缓存读取/写入和输出分项。历史低计费记录不由缓存修复自动回写，任何追溯处理必须另行对账和明确审批。
+- 官方基线为 annotated tag `v0.1.183`，tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`。私有候选为 `v0.1.183-52t.1`；生产仍运行 `v0.1.176-52t.1`，不得把工作树、Tag、Release、GHCR 镜像或服务器缓存中的任一状态单独写成已上线。
+- 官方插件出站传输、Kimi/Zhipu/DeepSeek 一等供应商、复合分组、渠道监控配额模式、分组用量汇总、Codex 指纹种子、OpenAI Responses/WS 与调度修复按官方结构保留。官方已经提供同类抽象时，私有能力只作为兼容约束和测试移植，不再维护平行入口。
+- 官方 Fast/Flex service tier、渠道倍率、分时时段与仅工作日配置共用统一 Token 计费链路。私有 `v21` 认证快照继续双向保存分组长上下文开关和逐模型价格；分组或账号任一开启即按 OR 语义启用长上下文阶梯，渠道显式区间优先且不重复叠加官方倍率。Fast/Flex、分时倍率、长上下文档位和提链换算必须用同一费用分项矩阵验证。
+- Wire、路由、仓储和前端继续保留积分/签到、提链/额度卡、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有在线更新源、跨协议正式终态和精确容量错误有界重试。媒体创建仍最多提交一次；普通余额和提链卡继续保留请求级价格快照、余额事务及失败/未知终态边界。
+- 迁移 runner 按完整 filename 和 checksum 识别迁移。私有 `173-179`、`192-194`、此前官方 `194-221` 与本轮官方 `222-230` 全部原名保留；三份 `194`、两份 `225`、两份 `226` 独立共存。任何同号文件都不得按数字前缀覆盖、重命名或合并。
+- 本轮包含 forward-only 数据库迁移、Ent/生成代码、后端、前端和发布资产，固定为 `image-update-required`。`v0.1.183-52t.1` annotated Tag message 必须包含 `[image-update-required]`；后台在线热更新必须拒绝安装，GitHub Actions 只构建不可变 GHCR 镜像，生产 Sub2API 只由维护者在人工窗口使用 Compose 切换。候选 Tag 必须与默认分支保持祖先关系；Release 成功后只能把完整发布树快进到默认分支并同步版本，禁止在旧代码树上单独提交新 `VERSION`。
+- 发布前必须重新执行 `git diff --check`、后端 `go test ./... -count=1` 与 `go vet ./...`、积分系统全量测试、前端 lint/typecheck/Vitest/build，以及长上下文、Fast/Flex、分时定价、提链资金、媒体冻结、视频和容量重试定向回归。最终 CI、Release manifest、镜像 digest、数据库备份、人工切换和生产冒烟均按实际结果留证；当前未完成项保持 `pending`。
+- 已知边界：Grok pending billing Redis TTL 与异步媒体冻结窗口目前均为 24 小时；接近长上下文阈值的请求应同时核对输入、缓存读取/写入和输出分项。历史低计费记录不会因 `v21` 缓存重建自动回写，任何追溯处理必须另行对账和明确审批。
 
 ### 5.1 v0.1.169 历史合并兼容结论
 

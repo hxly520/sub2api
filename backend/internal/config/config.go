@@ -33,7 +33,7 @@ const (
 
 // DefaultCSPPolicy is the default Content-Security-Policy with nonce support
 // __CSP_NONCE__ will be replaced with actual nonce at request time by the SecurityHeaders middleware
-const DefaultCSPPolicy = "default-src 'self'; worker-src 'self' blob:; script-src 'self' __CSP_NONCE__ https://challenges.cloudflare.com https://*.alicdn.com https://static.cloudflareinsights.com https://turing.captcha.qcloud.com https://turing.captcha.gtimg.com https://ca.turing.captcha.qcloud.com https://global.turing.captcha.gtimg.com https://www.tycaptcha.com https://cloudcache.tencentcs.com https://*.stripe.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; style-src 'self' 'unsafe-inline' https://*.captcha.gtimg.com https://fonts.googleapis.com https://*.alicdn.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://turing.captcha.qcloud.com https://www.tycaptcha.com https://rce.tencentrio.com https:; frame-src https://challenges.cloudflare.com https://turing.captcha.qcloud.com https://ca.turing.captcha.qcloud.com https://www.tycaptcha.com https://*.stripe.com https://checkout.airwallex.com https://checkout-demo.airwallex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+const DefaultCSPPolicy = "default-src 'self'; worker-src 'self' blob:; script-src 'self' __CSP_NONCE__ https://challenges.cloudflare.com https://*.alicdn.com https://static.cloudflareinsights.com https://turing.captcha.qcloud.com https://turing.captcha.gtimg.com https://ca.turing.captcha.qcloud.com https://global.turing.captcha.gtimg.com https://www.tycaptcha.com https://cloudcache.tencentcs.com https://*.stripe.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; style-src 'self' 'unsafe-inline' https://*.captcha.gtimg.com https://fonts.googleapis.com https://*.alicdn.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://turing.captcha.qcloud.com https://www.tycaptcha.com https://rce.tencentrio.com https:; frame-src 'self' https://challenges.cloudflare.com https://turing.captcha.qcloud.com https://ca.turing.captcha.qcloud.com https://www.tycaptcha.com https://*.stripe.com https://checkout.airwallex.com https://checkout-demo.airwallex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 // UMQ（用户消息队列）模式常量
 const (
@@ -61,6 +61,10 @@ const (
 // 128 MB 可容纳 2-3 张 4K PNG（base64 膨胀 33%，单张 4K PNG 最坏约 67MB base64）。
 // 可通过 gateway.upstream_response_read_max_bytes 配置项覆盖。
 const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
+
+// DefaultModelsListReadMaxBytes 上游模型列表响应体的默认读取上限。
+// 可通过 gateway.models_list_read_max_bytes 配置项覆盖。
+const DefaultModelsListReadMaxBytes int64 = 8 * 1024 * 1024
 
 type Config struct {
 	Server                  ServerConfig                  `mapstructure:"server"`
@@ -101,6 +105,120 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
 	PointsSystem            PointsSystemConfig            `mapstructure:"points_system"`
+	Plugins                 PluginConfig                  `mapstructure:"plugins"`
+}
+
+// PointsSystemConfig controls the trust boundary between Sub2API and the
+// independently deployed points service. Monetary rules live in that service;
+// this block configures signed SSO and the idempotent credit bridge.
+type PointsSystemConfig struct {
+	Enabled          bool    `mapstructure:"enabled"`
+	PublicURL        string  `mapstructure:"public_url"`
+	MenuLabel        string  `mapstructure:"menu_label"`
+	PreviewUserIDs   []int64 `mapstructure:"preview_user_ids"`
+	LaunchKeyID      string  `mapstructure:"launch_key_id"`
+	LaunchSecret     string  `mapstructure:"launch_secret"`
+	CreditKeyID      string  `mapstructure:"credit_key_id"`
+	CreditSecret     string  `mapstructure:"credit_secret"`
+	LaunchTTLSeconds int     `mapstructure:"launch_ttl_seconds"`
+	ClockSkewSeconds int     `mapstructure:"clock_skew_seconds"`
+}
+
+func (c PointsSystemConfig) Active() bool { return c.Enabled && c.Configured() }
+
+func (c PointsSystemConfig) UserAccessAllowed(userID int64) bool {
+	if userID <= 0 || !c.Configured() {
+		return false
+	}
+	if c.Enabled {
+		return true
+	}
+	for _, id := range c.PreviewUserIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c PointsSystemConfig) Configured() bool {
+	if strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) || !validPointsKeyID(c.CreditKeyID) {
+		return false
+	}
+	if err := ValidateAbsoluteHTTPURL(c.PublicURL); err != nil {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(c.PublicURL))
+	if err != nil || u == nil || u.RawQuery != "" || u.User != nil {
+		return false
+	}
+	if c.LaunchTTLSeconds < 15 || c.LaunchTTLSeconds > 300 || c.ClockSkewSeconds < 5 || c.ClockSkewSeconds > 300 {
+		return false
+	}
+	lk, le := c.LaunchKey()
+	ck, ce := c.CreditKey()
+	return le == nil && ce == nil && len(lk) >= 32 && len(ck) >= 32
+}
+
+func (c PointsSystemConfig) LaunchKey() ([]byte, error) {
+	return decodePointsSystemSecret(c.LaunchSecret)
+}
+func (c PointsSystemConfig) CreditKey() ([]byte, error) {
+	return decodePointsSystemSecret(c.CreditSecret)
+}
+
+func decodePointsSystemSecret(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("secret is required")
+	}
+	if decoded, err := base64.RawURLEncoding.DecodeString(raw); err == nil {
+		return decoded, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("secret must be base64 or base64url")
+	}
+	return decoded, nil
+}
+
+func validPointsKeyID(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) == 0 || len(value) > 64 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+const maxPointsPreviewUserIDs = 10000
+
+func validatePointsPreviewUserIDs(userIDs []int64) error {
+	if len(userIDs) > maxPointsPreviewUserIDs {
+		return fmt.Errorf("points_system.preview_user_ids must contain at most %d user IDs", maxPointsPreviewUserIDs)
+	}
+	for _, id := range userIDs {
+		if id <= 0 {
+			return fmt.Errorf("points_system.preview_user_ids must contain only positive user IDs")
+		}
+	}
+	return nil
+}
+
+// PluginConfig 控制管理员手动上传的本地进程插件。
+// 默认不包含插件，也不允许安装未签名插件；TrustedPublishers 用于追加第三方发布者。
+type PluginConfig struct {
+	DataDir              string            `mapstructure:"data_dir"`
+	AllowUnsigned        bool              `mapstructure:"allow_unsigned"`
+	TrustedPublishers    map[string]string `mapstructure:"trusted_publishers"`
+	MaxUploadBytes       int64             `mapstructure:"max_upload_bytes"`
+	MaxUncompressedBytes int64             `mapstructure:"max_uncompressed_bytes"`
+	StartTimeoutSeconds  int               `mapstructure:"start_timeout_seconds"`
 }
 
 type LogConfig struct {
@@ -216,124 +334,6 @@ func validDockerImageReference(value string) bool {
 		return false
 	}
 	return true
-}
-
-// PointsSystemConfig controls the trust boundary between Sub2API and the
-// independently deployed points service. Reward rules and monetary limits live
-// in the points service database; this block only configures signed SSO and the
-// idempotent balance-credit bridge.
-type PointsSystemConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`
-	PublicURL string `mapstructure:"public_url"`
-	MenuLabel string `mapstructure:"menu_label"`
-	// PreviewUserIDs grants the user-facing points entry to a bounded list of
-	// users while the global switch remains disabled. The list is intentionally
-	// kept in the server configuration and is never returned by an API.
-	PreviewUserIDs   []int64 `mapstructure:"preview_user_ids"`
-	LaunchKeyID      string  `mapstructure:"launch_key_id"`
-	LaunchSecret     string  `mapstructure:"launch_secret"`
-	CreditKeyID      string  `mapstructure:"credit_key_id"`
-	CreditSecret     string  `mapstructure:"credit_secret"`
-	LaunchTTLSeconds int     `mapstructure:"launch_ttl_seconds"`
-	ClockSkewSeconds int     `mapstructure:"clock_skew_seconds"`
-}
-
-func (c PointsSystemConfig) Active() bool {
-	return c.Enabled && c.Configured()
-}
-
-// UserAccessAllowed reports whether a user may obtain a user-scoped points
-// launch ticket. A preview entry never bypasses bridge configuration checks:
-// the signed launch URL still requires a fully configured points integration.
-// When the global switch is enabled, all positive user IDs are allowed.
-func (c PointsSystemConfig) UserAccessAllowed(userID int64) bool {
-	if userID <= 0 || !c.Configured() {
-		return false
-	}
-	if c.Enabled {
-		return true
-	}
-	for _, previewUserID := range c.PreviewUserIDs {
-		if previewUserID == userID {
-			return true
-		}
-	}
-	return false
-}
-
-// Configured reports whether the signed bridge can be used by administrators
-// to finish policy setup. User access remains gated by UserAccessAllowed.
-func (c PointsSystemConfig) Configured() bool {
-	if strings.TrimSpace(c.PublicURL) == "" || !validPointsKeyID(c.LaunchKeyID) ||
-		!validPointsKeyID(c.CreditKeyID) {
-		return false
-	}
-	if err := ValidateAbsoluteHTTPURL(c.PublicURL); err != nil {
-		return false
-	}
-	pointsURL, err := url.Parse(strings.TrimSpace(c.PublicURL))
-	if err != nil || pointsURL == nil || pointsURL.RawQuery != "" || pointsURL.User != nil {
-		return false
-	}
-	if c.LaunchTTLSeconds < 15 || c.LaunchTTLSeconds > 300 ||
-		c.ClockSkewSeconds < 5 || c.ClockSkewSeconds > 300 {
-		return false
-	}
-	launchKey, launchErr := c.LaunchKey()
-	creditKey, creditErr := c.CreditKey()
-	return launchErr == nil && creditErr == nil && len(launchKey) >= 32 && len(creditKey) >= 32
-}
-
-func (c PointsSystemConfig) LaunchKey() ([]byte, error) {
-	return decodePointsSystemSecret(c.LaunchSecret)
-}
-
-func (c PointsSystemConfig) CreditKey() ([]byte, error) {
-	return decodePointsSystemSecret(c.CreditSecret)
-}
-
-func decodePointsSystemSecret(raw string) ([]byte, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, fmt.Errorf("secret is required")
-	}
-	if decoded, err := base64.RawURLEncoding.DecodeString(raw); err == nil {
-		return decoded, nil
-	}
-	decoded, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		return nil, fmt.Errorf("secret must be base64 or base64url")
-	}
-	return decoded, nil
-}
-
-func validPointsKeyID(value string) bool {
-	value = strings.TrimSpace(value)
-	if len(value) == 0 || len(value) > 64 {
-		return false
-	}
-	for _, char := range value {
-		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			(char >= '0' && char <= '9') || char == '-' || char == '_' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-const maxPointsPreviewUserIDs = 10000
-
-func validatePointsPreviewUserIDs(userIDs []int64) error {
-	if len(userIDs) > maxPointsPreviewUserIDs {
-		return fmt.Errorf("points_system.preview_user_ids must contain at most %d user IDs", maxPointsPreviewUserIDs)
-	}
-	for _, userID := range userIDs {
-		if userID <= 0 {
-			return fmt.Errorf("points_system.preview_user_ids must contain only positive user IDs")
-		}
-	}
-	return nil
 }
 
 type IdempotencyConfig struct {
@@ -1004,6 +1004,53 @@ type ProxyFallbackConfig struct {
 
 type ProxyProbeConfig struct {
 	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"` // 已禁用：禁止跳过 TLS 证书验证
+	// URLs 按优先级排列的自定义探测 URL 列表。
+	// 留空时使用内置默认列表（ip-api → ipify）。
+	// 某些 AI API 专用代理只允许访问特定域名，配置多个备选可提高探测成功率。
+	URLs []ProbeURLConfig `mapstructure:"urls"`
+}
+
+// ProbeURLConfig 描述一个探测端点及其响应解析方式。
+type ProbeURLConfig struct {
+	URL    string `mapstructure:"url"`
+	Parser string `mapstructure:"parser"` // "ip-api" / "ipify" / "chatgpt-trace"
+}
+
+func normalizeProxyProbeURLs(targets []ProbeURLConfig) ([]ProbeURLConfig, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	normalized := make([]ProbeURLConfig, 0, len(targets))
+	for i, target := range targets {
+		rawURL := strings.TrimSpace(target.URL)
+		parser := strings.ToLower(strings.TrimSpace(target.Parser))
+		if rawURL == "" {
+			return nil, fmt.Errorf("entry %d: url is required", i)
+		}
+		if parser == "" {
+			return nil, fmt.Errorf("entry %d: parser is required", i)
+		}
+		switch parser {
+		case "ip-api", "ipify", "chatgpt-trace":
+		default:
+			return nil, fmt.Errorf("entry %d: unsupported parser %q", i, target.Parser)
+		}
+
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" {
+			return nil, fmt.Errorf("entry %d: invalid url %q", i, target.URL)
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return nil, fmt.Errorf("entry %d: url scheme must be http or https", i)
+		}
+
+		normalized = append(normalized, ProbeURLConfig{
+			URL:    rawURL,
+			Parser: parser,
+		})
+	}
+	return normalized, nil
 }
 
 type BillingConfig struct {
@@ -1061,6 +1108,9 @@ type GatewayConfig struct {
 	// OpenAIResponseHeaderTimeout: OpenAI/Codex 上游等待响应头的超时时间（秒），0表示无超时
 	// OpenAI/Codex 请求可能在上游排队较久；默认不使用通用响应头超时截断。
 	OpenAIResponseHeaderTimeout int `mapstructure:"openai_response_header_timeout"`
+	// GrokResponseHeaderTimeout bounds the pre-first-byte wait for xAI/Grok.
+	// A zero value uses the provider-safe default instead of the generic gateway timeout.
+	GrokResponseHeaderTimeout int `mapstructure:"grok_response_header_timeout"`
 	// OpenAIFirstOutputTimeoutSeconds: native HTTP Responses 首个语义输出超时（秒），0表示禁用。
 	OpenAIFirstOutputTimeoutSeconds int `mapstructure:"openai_first_output_timeout_seconds"`
 	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
@@ -1072,6 +1122,8 @@ type GatewayConfig struct {
 	TextMaxBodySize int64 `mapstructure:"text_max_body_size"`
 	// 非流式上游响应体读取上限（字节），用于防止无界读取导致内存放大
 	UpstreamResponseReadMaxBytes int64 `mapstructure:"upstream_response_read_max_bytes"`
+	// 上游模型列表响应体读取上限（字节）
+	ModelsListReadMaxBytes int64 `mapstructure:"models_list_read_max_bytes"`
 	// 代理探测响应体读取上限（字节）
 	ProxyProbeResponseReadMaxBytes int64 `mapstructure:"proxy_probe_response_read_max_bytes"`
 	// Gemini 上游响应头调试日志开关（默认关闭，避免高频日志开销）
@@ -1123,8 +1175,7 @@ type GatewayConfig struct {
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
-	// VideoProxy: 媒体结果交付策略。origin 保持视频源站流式代理；edge 使用
-	// 自有边缘域名和加密令牌，让图片/视频上游地址不暴露给客户端。
+	// VideoProxy controls optional edge delivery for generated media.
 	VideoProxy VideoProxyConfig `mapstructure:"video_proxy"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
@@ -1205,6 +1256,10 @@ type GatewayConfig struct {
 
 	// Grok: Grok/xAI gateway scheduling and free-tier soft-gate settings.
 	Grok GatewayGrokConfig `mapstructure:"grok"`
+
+	// CNProviders: 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）的余额检测配置。
+	// 仅作用于 payg（按量付费）账号：周期探测余额，低于阈值则临时停调。
+	CNProviders GatewayCNProvidersConfig `mapstructure:"cn_providers"`
 }
 
 // GatewayGrokConfig holds Grok-specific gateway scheduling knobs.
@@ -1247,6 +1302,18 @@ type VideoProxyConfig struct {
 	EdgeBaseURL     string `mapstructure:"edge_base_url"`
 	EncryptionKey   string `mapstructure:"encryption_key"`
 	TokenTTLSeconds int    `mapstructure:"token_ttl_seconds"`
+}
+
+// GatewayCNProvidersConfig 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）的余额检测配置。
+//
+// 仅作用于 payg（按量付费）账号（kimi/deepseek 有公开余额端点；zhipu 无，仅靠响应式 429/402）。
+//   - balance_check_enabled: 是否启用周期余额检测（默认 true）
+//   - balance_threshold: 余额低于此值（账户货币单位，默认 0.5）触发临时停调
+//   - balance_check_interval_minutes: 余额检测周期（分钟，默认 10）
+type GatewayCNProvidersConfig struct {
+	BalanceCheckEnabled         bool    `mapstructure:"balance_check_enabled"`
+	BalanceThreshold            float64 `mapstructure:"balance_threshold"`
+	BalanceCheckIntervalMinutes int     `mapstructure:"balance_check_interval_minutes"`
 }
 
 type GatewayLiveConfig struct {
@@ -1909,6 +1976,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	// 环境变量支持
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	if tz, ok := os.LookupEnv("TZ"); ok && strings.TrimSpace(tz) != "" {
+		// AutomaticEnv 会先把 timezone 映射到 TIMEZONE；显式 Set 保证标准 TZ 变量优先。
+		viper.Set("timezone", strings.TrimSpace(tz))
+	}
 	if err := viper.BindEnv("server.enable_server_timing", "ENABLE_SERVER_TIMING"); err != nil {
 		return nil, fmt.Errorf("bind ENABLE_SERVER_TIMING: %w", err)
 	}
@@ -2020,10 +2091,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.Environment = strings.TrimSpace(cfg.Log.Environment)
 	cfg.Log.StacktraceLevel = strings.ToLower(strings.TrimSpace(cfg.Log.StacktraceLevel))
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
-	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	cfg.Gateway.VideoProxy.Mode = strings.ToLower(strings.TrimSpace(cfg.Gateway.VideoProxy.Mode))
 	cfg.Gateway.VideoProxy.EdgeBaseURL = strings.TrimRight(strings.TrimSpace(cfg.Gateway.VideoProxy.EdgeBaseURL), "/")
 	cfg.Gateway.VideoProxy.EncryptionKey = strings.TrimSpace(cfg.Gateway.VideoProxy.EncryptionKey)
+	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
 		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 		if err != nil {
@@ -2207,6 +2278,18 @@ func setDefaults() {
 	viper.SetDefault("billing.minimum_balance_reserve", 0.000001)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
+
+	// Independent points system bridge (rules are stored by the points service).
+	viper.SetDefault("points_system.enabled", false)
+	viper.SetDefault("points_system.public_url", "")
+	viper.SetDefault("points_system.menu_label", "积分中心")
+	viper.SetDefault("points_system.preview_user_ids", []int64{})
+	viper.SetDefault("points_system.launch_key_id", "v1")
+	viper.SetDefault("points_system.launch_secret", "")
+	viper.SetDefault("points_system.credit_key_id", "v1")
+	viper.SetDefault("points_system.credit_secret", "")
+	viper.SetDefault("points_system.launch_ttl_seconds", 60)
+	viper.SetDefault("points_system.clock_skew_seconds", 60)
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)
@@ -2420,6 +2503,14 @@ func setDefaults() {
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
 
+	// 本地进程插件。插件必须由管理员手动上传，项目默认不携带任何插件能力。
+	viper.SetDefault("plugins.data_dir", "")
+	viper.SetDefault("plugins.allow_unsigned", false)
+	viper.SetDefault("plugins.trusted_publishers", map[string]string{})
+	viper.SetDefault("plugins.max_upload_bytes", int64(128*1024*1024))
+	viper.SetDefault("plugins.max_uncompressed_bytes", int64(256*1024*1024))
+	viper.SetDefault("plugins.start_timeout_seconds", 15)
+
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
 
@@ -2478,22 +2569,10 @@ func setDefaults() {
 	viper.SetDefault("idempotency.cleanup_interval_seconds", 60)
 	viper.SetDefault("idempotency.cleanup_batch_size", 500)
 
-	// Independent points system integration. Monetary rules are intentionally
-	// not configured here; the points service stores versioned rules in its DB.
-	viper.SetDefault("points_system.enabled", false)
-	viper.SetDefault("points_system.public_url", "")
-	viper.SetDefault("points_system.menu_label", "积分中心")
-	viper.SetDefault("points_system.preview_user_ids", []int64{})
-	viper.SetDefault("points_system.launch_key_id", "v1")
-	viper.SetDefault("points_system.launch_secret", "")
-	viper.SetDefault("points_system.credit_key_id", "v1")
-	viper.SetDefault("points_system.credit_secret", "")
-	viper.SetDefault("points_system.launch_ttl_seconds", 60)
-	viper.SetDefault("points_system.clock_skew_seconds", 60)
-
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
+	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
@@ -2593,6 +2672,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_percent", 95)
 	viper.SetDefault("gateway.grok.free_quota_window_hours", 24)
 	viper.SetDefault("gateway.grok.free_quota_stats_cache_seconds", 60)
+	// 国产供应商余额检测（kimi/deepseek payg；zhipu 无余额端点，仅靠响应式 429/402）。
+	viper.SetDefault("gateway.cn_providers.balance_check_enabled", true)
+	viper.SetDefault("gateway.cn_providers.balance_threshold", 0.5)
+	viper.SetDefault("gateway.cn_providers.balance_check_interval_minutes", 10)
 	viper.SetDefault("gateway.image_concurrency.enabled", false)
 	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
@@ -2603,6 +2686,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
 	viper.SetDefault("gateway.text_max_body_size", int64(32*1024*1024))
 	viper.SetDefault("gateway.upstream_response_read_max_bytes", DefaultUpstreamResponseReadMaxBytes)
+	viper.SetDefault("gateway.models_list_read_max_bytes", DefaultModelsListReadMaxBytes)
 	viper.SetDefault("gateway.proxy_probe_response_read_max_bytes", int64(1024*1024))
 	viper.SetDefault("gateway.gemini_debug_response_headers", false)
 	viper.SetDefault("gateway.connection_pool_isolation", ConnectionPoolIsolationAccountProxy)
@@ -2798,6 +2882,20 @@ func (c *Config) Validate() error {
 	}
 	c.Security.ForwardedClientIPHeaders = forwardedClientIPHeaders
 	c.SetForwardedClientIPSettings(c.Security.TrustForwardedIPForAPIKeyACL, forwardedClientIPHeaders)
+	proxyProbeURLs, err := normalizeProxyProbeURLs(c.Security.ProxyProbe.URLs)
+	if err != nil {
+		return fmt.Errorf("security.proxy_probe.urls: %w", err)
+	}
+	c.Security.ProxyProbe.URLs = proxyProbeURLs
+	if c.Plugins.MaxUploadBytes <= 0 || c.Plugins.MaxUploadBytes > 1024*1024*1024 {
+		return fmt.Errorf("plugins.max_upload_bytes must be between 1 and 1073741824")
+	}
+	if c.Plugins.MaxUncompressedBytes < c.Plugins.MaxUploadBytes || c.Plugins.MaxUncompressedBytes > 2*1024*1024*1024 {
+		return fmt.Errorf("plugins.max_uncompressed_bytes must be between max_upload_bytes and 2147483648")
+	}
+	if c.Plugins.StartTimeoutSeconds < 1 || c.Plugins.StartTimeoutSeconds > 120 {
+		return fmt.Errorf("plugins.start_timeout_seconds must be between 1 and 120")
+	}
 	if c.Server.ReadHeaderTimeout < 1 || c.Server.ReadHeaderTimeout > 60 {
 		return fmt.Errorf("server.read_header_timeout must be between 1 and 60 seconds")
 	}
@@ -3409,6 +3507,9 @@ func (c *Config) Validate() error {
 	if c.Gateway.UpstreamResponseReadMaxBytes <= 0 {
 		return fmt.Errorf("gateway.upstream_response_read_max_bytes must be positive")
 	}
+	if c.Gateway.ModelsListReadMaxBytes <= 0 {
+		return fmt.Errorf("gateway.models_list_read_max_bytes must be positive")
+	}
 	if c.Gateway.ProxyProbeResponseReadMaxBytes <= 0 {
 		return fmt.Errorf("gateway.proxy_probe_response_read_max_bytes must be positive")
 	}
@@ -3418,11 +3519,11 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
 	}
+	if c.Gateway.GrokResponseHeaderTimeout < 0 || c.Gateway.GrokResponseHeaderTimeout > 1800 {
+		return fmt.Errorf("gateway.grok_response_header_timeout must be between 0-1800 seconds")
+	}
 	switch c.Gateway.VideoProxy.Mode {
 	case "", VideoProxyModeOrigin:
-		// Origin mode does not issue edge tokens. Keep zero-value Config values
-		// valid so the opt-in media feature cannot break existing deployments or
-		// tests that construct Config directly.
 	case VideoProxyModeEdge:
 		parsed, err := url.Parse(c.Gateway.VideoProxy.EdgeBaseURL)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -3857,8 +3958,8 @@ func (c *Config) Validate() error {
 		if err := ValidateAbsoluteHTTPURL(c.PointsSystem.PublicURL); err != nil {
 			return fmt.Errorf("points_system.public_url invalid: %w", err)
 		}
-		pointsURL, _ := url.Parse(strings.TrimSpace(c.PointsSystem.PublicURL))
-		if pointsURL != nil && (pointsURL.RawQuery != "" || pointsURL.User != nil) {
+		u, _ := url.Parse(strings.TrimSpace(c.PointsSystem.PublicURL))
+		if u != nil && (u.RawQuery != "" || u.User != nil) {
 			return fmt.Errorf("points_system.public_url must not include credentials or query parameters")
 		}
 		if len(strings.TrimSpace(c.PointsSystem.MenuLabel)) > 64 {

@@ -123,6 +123,10 @@ dockers:
       - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}"
 
 # Docker manifests for multi-arch support
+# The exact ``{{ .Version }}`` manifest is the release artifact.  The
+# ``latest`` and major/minor aliases below are convenience pointers and are
+# intentionally mutable; production Compose files must pin the exact tag or
+# digest and must never use an alias for rollback.
 docker_manifests:
   # DockerHub manifests (skipped if DOCKERHUB_USERNAME is 'skip')
   - name_template: "{{ .Env.DOCKERHUB_USERNAME }}/sub2api:{{ .Version }}"

@@ -474,8 +474,9 @@ func TestOpenAIGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputToke
 				PeakRateMultiplier: 3.0,
 			},
 		},
-		User:    &User{ID: 2004},
-		Account: &Account{ID: 3004},
+		User:      &User{ID: 2004},
+		Account:   &Account{ID: 3004},
+		PricingAt: time.Date(2026, time.August, 26, 12, 0, 0, 0, time.UTC),
 	})
 
 	require.NoError(t, err)
@@ -504,6 +505,71 @@ func TestOpenAIGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputToke
 	require.InDelta(t, expectedActual, userRepo.lastAmount, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_TimePricingUsesPricingAt(t *testing.T) {
+	groupID := int64(16)
+	requestStart := time.Date(2024, time.January, 2, 2, 0, 0, 0, time.UTC) // 上海 10:00
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAITokenImageChannelPricingResolverWithTimeForTest(t, groupID, "gpt-5.1", &ChannelTimePricing{
+		Timezone: "Asia/Shanghai",
+		Periods:  []ChannelTimePricingPeriod{{StartTime: "09:00", EndTime: "12:00", Multiplier: 2}},
+	})
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "openai_time_pricing_request_start",
+			Model:     "gpt-5.1",
+			Usage:     OpenAIUsage{InputTokens: 1000, OutputTokens: 500},
+		},
+		APIKey: &APIKey{ID: 1006, GroupID: i64p(groupID), Group: &Group{
+			ID: groupID, RateMultiplier: 0.8, SubscriptionType: SubscriptionTypeSubscription,
+		}},
+		User:      &User{ID: 2006},
+		Account:   &Account{ID: 3006},
+		PricingAt: requestStart,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	baseCost := 1000*3e-6 + 500*15e-6
+	require.InDelta(t, baseCost*2, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, baseCost*2*0.8, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.8, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_TimePricingUsesExplicitPricingAt(t *testing.T) {
+	groupID := int64(17)
+	pricingAt := time.Date(2024, time.January, 2, 0, 0, 0, 0, time.UTC) // 上海 08:00
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAITokenImageChannelPricingResolverWithTimeForTest(t, groupID, "gpt-5.1", &ChannelTimePricing{
+		Timezone: "Asia/Shanghai",
+		Periods:  []ChannelTimePricingPeriod{{StartTime: "09:00", EndTime: "12:00", Multiplier: 2}},
+	})
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "openai_time_pricing_explicit",
+			Model:     "gpt-5.1",
+			Usage:     OpenAIUsage{InputTokens: 1000, OutputTokens: 500},
+		},
+		APIKey: &APIKey{ID: 1007, GroupID: i64p(groupID), Group: &Group{
+			ID: groupID, RateMultiplier: 0.8, SubscriptionType: SubscriptionTypeSubscription,
+		}},
+		User:      &User{ID: 2007},
+		Account:   &Account{ID: 3007},
+		PricingAt: pricingAt,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	baseCost := 1000*3e-6 + 500*15e-6
+	require.InDelta(t, baseCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, baseCost*0.8, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.8, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
 func TestOpenAIGatewayServiceRecordUsage_IncludesEndpointMetadata(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -1083,7 +1149,7 @@ func TestOpenAIGatewayServiceRecordUsage_GPT56SeparatesCacheWriteForBillingAndSt
 	require.InDelta(t, usageRepo.lastLog.TotalCost*1.1, usageRepo.lastLog.ActualCost, 1e-12)
 }
 
-func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingDisabledByDefault(t *testing.T) {
+func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingDisabledWhenGroupAndAccountOff(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -1208,6 +1274,58 @@ func TestOpenAIGatewayServiceRecordUsage_GroupOrAccountLongContextAllows(t *test
 		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
 		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
 		require.InDelta(t, baseOutput*1.5, usageRepo.lastLog.OutputCost, 1e-10)
+	})
+}
+
+// openai_long_context_billing_enabled is an OpenAI-only account setting, so it
+// must not veto the official Grok >=200k ladder: a Grok account has no way to
+// ever set that flag, which would make the group toggle unreachable.
+func TestOpenAIGatewayServiceRecordUsage_GrokLongContextFollowsGroupToggleOnly(t *testing.T) {
+	baseInput := 250000 * 2e-6
+	baseOutput := 1000 * 6e-6
+
+	grokAccount := func(id int64) *Account {
+		return &Account{ID: id, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	}
+
+	t.Run("group on applies the official ladder", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID: "resp_grok_longctx_on",
+				Usage:     OpenAIUsage{InputTokens: 250000, OutputTokens: 1000},
+				Model:     "grok-4.5",
+				Duration:  time.Second,
+			},
+			APIKey:  openAIRecordUsageAPIKeyWithGroup(svc, 1030, true),
+			User:    &User{ID: 2030},
+			Account: grokAccount(3030),
+		})
+		require.NoError(t, err)
+		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
+		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, baseOutput*2, usageRepo.lastLog.OutputCost, 1e-10)
+	})
+
+	t.Run("group off keeps the base card", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID: "resp_grok_longctx_off",
+				Usage:     OpenAIUsage{InputTokens: 250000, OutputTokens: 1000},
+				Model:     "grok-4.5",
+				Duration:  time.Second,
+			},
+			APIKey:  openAIRecordUsageAPIKeyWithGroup(svc, 1031, false),
+			User:    &User{ID: 2031},
+			Account: grokAccount(3031),
+		})
+		require.NoError(t, err)
+		require.False(t, usageRepo.lastLog.LongContextBillingApplied)
+		require.InDelta(t, baseInput, usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, baseOutput, usageRepo.lastLog.OutputCost, 1e-10)
 	})
 }
 
@@ -2895,6 +3013,20 @@ func newOpenAITokenImageChannelPricingResolverForTest(t *testing.T, groupID int6
 	return NewModelPricingResolver(cs, NewBillingService(&config.Config{}, nil))
 }
 
+func newOpenAITokenImageChannelPricingResolverWithTimeForTest(
+	t *testing.T,
+	groupID int64,
+	model string,
+	timePricing *ChannelTimePricing,
+) *ModelPricingResolver {
+	t.Helper()
+	resolver := newOpenAITokenImageChannelPricingResolverForTest(t, groupID, model)
+	cached, ok := resolver.channelService.cache.Load().(*channelCache)
+	require.True(t, ok)
+	cached.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}].TimePricing = timePricing
+	return resolver
+}
+
 type openAIMediaPriceGroupRepoStub struct {
 	GroupRepository
 	group *Group
@@ -2923,6 +3055,7 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingUsesImageCoun
 		"gemini-image",
 		0.15,
 		1.0,
+		time.Time{},
 		nil,
 	)
 
@@ -2962,6 +3095,7 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingUsesSizeTier(
 		"gemini-image",
 		1.0,
 		1.0,
+		time.Time{},
 		nil,
 	)
 
@@ -2994,6 +3128,7 @@ func TestGatewayServiceCalculateRecordUsageCost_GroupImagePriceOverridesChannelI
 		"gemini-image",
 		1.0,
 		1.0,
+		time.Time{},
 		nil,
 	)
 
@@ -3057,6 +3192,7 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingNormalizesMis
 		"gemini-image",
 		1.0,
 		1.0,
+		time.Time{},
 		nil,
 	)
 
@@ -3064,4 +3200,65 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingNormalizesMis
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
 	require.InDelta(t, 0.44, cost.TotalCost, 1e-12)
 	require.InDelta(t, 0.44, cost.ActualCost, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ServiceTierDowngradedByUpstreamResponse(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	serviceTier := "priority"
+	usage := OpenAIUsage{InputTokens: 100, OutputTokens: 50}
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:                   "resp_service_tier_downgraded",
+			ServiceTier:                 &serviceTier,
+			UpstreamResponseServiceTier: "default",
+			Usage:                       usage,
+			Model:                       "gpt-5.4",
+			Duration:                    time.Second,
+		},
+		APIKey:  &APIKey{ID: 1017},
+		User:    &User{ID: 2017},
+		Account: &Account{ID: 3017},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.ServiceTier)
+	require.Equal(t, "default", *usageRepo.lastLog.ServiceTier, "usage log must record the tier actually billed")
+
+	baseCost, calcErr := svc.billingService.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 100, OutputTokens: 50}, 1.0)
+	require.NoError(t, calcErr)
+	require.InDelta(t, baseCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10, "a request served at default must not pay the priority price")
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ServiceTierNeverRaisedByUpstreamResponse(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	usage := OpenAIUsage{InputTokens: 100, OutputTokens: 50}
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:                   "resp_service_tier_not_raised",
+			UpstreamResponseServiceTier: "priority",
+			Usage:                       usage,
+			Model:                       "gpt-5.4",
+			Duration:                    time.Second,
+		},
+		APIKey:  &APIKey{ID: 1018},
+		User:    &User{ID: 2018},
+		Account: &Account{ID: 3018},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Nil(t, usageRepo.lastLog.ServiceTier)
+
+	baseCost, calcErr := svc.billingService.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 100, OutputTokens: 50}, 1.0)
+	require.NoError(t, calcErr)
+	require.InDelta(t, baseCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10)
 }

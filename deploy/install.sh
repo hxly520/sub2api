@@ -194,7 +194,7 @@ declare -A MSG_ZH=(
     ["cmd_uninstall"]="卸载 Sub2API"
     ["cmd_install_version"]="安装/回退到指定版本"
     ["cmd_list_versions"]="列出可用版本"
-    ["opt_version"]="指定要安装的私有版本号 (例如: v0.1.172-52t.1)"
+    ["opt_version"]="指定要安装的私有版本号 (例如: v0.1.183-52t.1)"
 
     # Server configuration
     ["server_config_title"]="服务器配置"
@@ -319,7 +319,7 @@ declare -A MSG_EN=(
     ["cmd_uninstall"]="Remove Sub2API"
     ["cmd_install_version"]="Install/rollback to a specific version"
     ["cmd_list_versions"]="List available versions"
-    ["opt_version"]="Specify a private version (e.g., v0.1.172-52t.1)"
+    ["opt_version"]="Specify a private version (e.g., v0.1.183-52t.1)"
 
     # Server configuration
     ["server_config_title"]="Server Configuration"

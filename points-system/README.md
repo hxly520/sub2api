@@ -3,8 +3,9 @@
 Independent points and check-in service for the Sub2API secondary deployment.
 The business contract is recorded in `PRODUCT_REQUIREMENTS_CN.md`; that file is
 the source of truth for future compatibility work.
-The current sanitized production handoff is recorded in
-`../docs/PRODUCTION_DEPLOYMENT_20260731_CN.md`.
+The current sanitized production handoff and version status are recorded in
+`../docs/PRODUCTION_OPERATIONS_CN.md`; dated deployment notes remain historical
+evidence only.
 
 ## Scope
 
@@ -21,7 +22,11 @@ Only server-recorded successful usage is accepted. A browser or push endpoint
 is never a usage fact source. Production reads Sub2API `usage_logs` through the
 dedicated, read-only `POINTS_USAGE_DATABASE_URL` connection.
 
-## Production Baseline (2026-08-02)
+## Historical Production Baseline (2026-08-02)
+
+The values in this section are preserved deployment evidence from 2026-08-02,
+not the current Sub2API runtime. For current versions, gates, images, and
+server state, use `../docs/PRODUCTION_OPERATIONS_CN.md`.
 
 - Sub2API runs `ghcr.io/hxly520/sub2api:0.1.169-1a4a690dd999`, OCI revision
   `1a4a690dd999b669e2ce09522854ea157d7af984`, container prefix
