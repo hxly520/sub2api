@@ -2,11 +2,11 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-最新生产事实以本文件第 0 节（含 0.12 候选交接）为准；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
+最新生产事实以本文件第 0 节（含 0.13 新版本切换与计费复核）为准；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
 ## 0. 当前生产事实（运行态与候选交接更新至 2026-08-28，其余条目按各自日期）
 
-- Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；`2026-08-28` 拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。官方网关语义与长上下文计费修复已随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存，但候选尚未切换；失败候选 `.3` 没有 Release 或镜像。证据和边界见第 0.11、0.12 节。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
+- 切换前只读快照：Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；当时拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。该快照已由 0.13 的实际运行态记录覆盖。官方网关语义与长上下文计费修复随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存；失败候选 `.3` 没有 Release 或镜像。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
 - 积分中心与签到门禁均为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。当前 policy v7 于 `2026-08-02` 生效，按昨日原始成功余额消费使用 `1%-5% / 2%-5% / 3%-5% / 4%-5%` 四档，最低消费 `1 U`、每日一次、三个金额 cap 为 `NULL`；原 v5 保持不可变并于 `2026-08-03` 接管。
 - 用户 1 原 `3.08 U` 已通过 reversal `12c061b4-380c-5119-8aec-26a500ef6590` 真正扣回并标记 `reversed`；新 grant `7d779e12-d5dd-4f09-a944-ff0eac93cf18` 按 `[50,100) U` 的 `3%-5%` 档实发 `3.11 U` 且为 `settled`。真实用户接口的今日赠送和累计赠送均为净 `3.11 U`，旧记录仅作为已冲正审计保留。
@@ -15,6 +15,14 @@
 - 最终 nonterminal/failed grant 为 0；Sub2API、PostgreSQL、Redis 的容器 ID和启动时间未因积分发布变化，Nginx 为 active。
 - 当前 `https://api.52token.org/points` 与 `https://52token.org/points` 都是有效父页面。生产以 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org` 保留 Logo 主来源，并以 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org` 增加第二精确父 Origin；CSP 和 ready/theme 消息只使用合并后的有限列表，不允许通配符。只配置其中一个会使另一个父站超时显示“积分中心暂时未就绪”。
 - 用户 1 已在 `390x844` 移动视口从根域完成真实 iframe 验收：无未就绪遮罩、资源和用户 API 全部成功、`clientWidth=scrollWidth=367` 且无控制台 WARN/ERROR。两个父站 `/points` 均为 `200`，积分 CSP 同时精确允许两个 Origin；后续任一父域、Nginx 或前端入口变更都必须重复桌面和移动验收。
+
+### 0.13 2026-08-28 新版本切换与 GPT-5.6 长上下文计费复核
+
+- 维护者已于 `2026-08-28 07:26:27 +08` 手工切换 Sub2API；当前容器 ID `8b066dc5dc95`，镜像 `ghcr.io/hxly520/sub2api:0.1.183-52t.4`，OCI revision `b21d92c5`，RepoDigest/manifest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`，状态 `healthy`，restart count `0`。本次核验只读，不修改数据库、配置或容器。
+- 截至 `2026-08-28 07:59:56 +08`，新容器启动后 `gpt-5.6-sol` 共 `138` 条使用记录，其中上下文（未缓存输入 + cache write + cache read）严格大于 `272000` 的 `8` 条，`long_context_billing_applied=true` 为 `8` 条，漏标记 `0` 条；阈值以下记录保持基础价格。8 条越线记录对应 `8` 个不同 `request_id`，每个在 `usage_billing_dedup` 中恰有 `1` 条，未发现重复计费键。
+- 最新越线记录 `usage_logs.id=616232`：上下文 `304631`；输入 `300791` 按基础价 `2x` 计 `3.007910`，缓存读取 `3840` 按基础价 `2x` 计 `0.003840`，输出 `2752` 按基础价 `1.5x` 计 `0.123840`，总费用 `3.135590`；分组倍率 `0.25x` 只在总费用上应用一次，实际扣费 `0.7838975`，标记为 `true`。
+- 当前承载流量的账号长上下文开关为 `true`，分组 `33` 开关为 `true`；渠道 `1` 的 GPT-5.6 显式价格为空，因此本次实际账单使用官方长上下文阶梯。切换后日志未发现长上下文或计费 `ERROR/FATAL`。
+- 本节只证明新版本切换后的新请求；旧版本历史账单未自动回写，历史补账需另行对账和审批。
 
 ### 0.1 2026-08-02 服务器空间只读盘点
 
