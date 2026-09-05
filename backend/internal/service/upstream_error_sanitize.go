@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -48,62 +47,6 @@ func sanitizeClientUpstreamErrorMessage(msg string) string {
 // handlers that render a final failover error after all accounts are exhausted.
 func SanitizeClientUpstreamErrorMessage(msg string) string {
 	return sanitizeClientUpstreamErrorMessage(msg)
-}
-
-// sanitizeUpstreamErrorResponseBody keeps the upstream JSON schema intact and
-// sanitizes every string value. Non-JSON bodies are reduced to sanitized text.
-func sanitizeUpstreamErrorResponseBody(body []byte) []byte {
-	if len(body) == 0 {
-		return body
-	}
-
-	var payload any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		sanitized := sanitizeClientUpstreamErrorMessage(string(body))
-		if sanitized == "" {
-			return []byte("Upstream request failed")
-		}
-		return []byte(sanitized)
-	}
-
-	sanitized, changed := sanitizeUpstreamErrorValue(payload)
-	if !changed {
-		return body
-	}
-	encoded, err := json.Marshal(sanitized)
-	if err != nil {
-		return body
-	}
-	return encoded
-}
-
-func sanitizeUpstreamErrorValue(value any) (any, bool) {
-	switch typed := value.(type) {
-	case string:
-		sanitized := sanitizeClientUpstreamErrorMessage(typed)
-		return sanitized, sanitized != typed
-	case []any:
-		changed := false
-		out := make([]any, len(typed))
-		for i, item := range typed {
-			out[i], changed = sanitizeUpstreamErrorChild(item, changed)
-		}
-		return out, changed
-	case map[string]any:
-		changed := false
-		out := make(map[string]any, len(typed))
-		for key, item := range typed {
-			out[key], changed = sanitizeUpstreamErrorChild(item, changed)
-		}
-		return out, changed
-	default:
-		return value, false
-	}
-}
-
-func sanitizeUpstreamErrorChild(value any, alreadyChanged bool) (any, bool) {
-	sanitized, changed := sanitizeUpstreamErrorValue(value)
-	return sanitized, alreadyChanged || changed
 }
 
 func trimUpstreamStackTrace(msg string) string {

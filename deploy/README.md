@@ -2,7 +2,7 @@
 
 > **52Token private fork:** production must pin an approved
 > `ghcr.io/hxly520/sub2api:<version>` tag or digest through `SUB2API_IMAGE`.
-> The current `v0.2.1-52t.1` candidate contains private migrations and product
+> The current `v0.2.1-52t.2` candidate contains private migrations and product
 > modules, so it must be deployed with Compose after a database backup; do not
 > use the upstream one-click installer or the in-app binary updater for this
 > candidate. See [`../docs/PRIVATE_RELEASE_RUNBOOK_CN.md`](../docs/PRIVATE_RELEASE_RUNBOOK_CN.md).

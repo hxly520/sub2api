@@ -7,7 +7,7 @@
 | 项目 | 状态 |
 | --- | --- |
 | 官方基线 | `v0.2.1`，commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.1`（最终 commit、Tag、Release、GHCR digest 在门禁完成前均为 pending） |
+| 私有候选 | `v0.2.1-52t.2`（最终 commit、Tag、Release、GHCR digest 在门禁完成前均为 pending） |
 | 生产基线 | `v0.1.183-52t.4`；本轮不自动替换、重启或连接生产服务器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
@@ -62,10 +62,10 @@ git diff --check
 ```bash
 git add -A
 git diff --cached --check
-git commit -m "chore(release): prepare v0.2.1-52t.1"
-git tag -a v0.2.1-52t.1 -m "private compatibility release v0.2.1-52t.1"
+git commit -m "chore(release): prepare v0.2.1-52t.2"
+git tag -a v0.2.1-52t.2 -m "private compatibility release v0.2.1-52t.2"
 git push origin codex/upgrade-v0.2.1-compat
-git push origin v0.2.1-52t.1
+git push origin v0.2.1-52t.2
 ```
 
 3. `.github/workflows/release.yml` 只接受现存的私有 Tag。它先确认名称格式、annotated Tag、精确 checkout commit、Tag 树内 `VERSION` 和默认分支祖先关系，再以同一个 `refs/tags/<tag>` 调用 `backend-ci.yml` 与 `security-scan.yml`。任何校验、质量或安全门禁失败都会阻止 GoReleaser 和镜像发布。

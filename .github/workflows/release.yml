@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing private tag to release (e.g., v0.2.1-52t.1)'
+        description: 'Existing private tag to release (e.g., v0.2.1-52t.2)'
         required: true
         type: string
       simple_release:

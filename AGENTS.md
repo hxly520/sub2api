@@ -39,7 +39,7 @@
 
 ## 版本与发布
 
-当前候选基线：官方 `v0.2.1` commit `ab99d56e9626e6cd731592dae8553c9758a0efa2`，私有候选 `v0.2.1-52t.1`，生产基线 `v0.1.183-52t.4`。本候选包含数据库迁移、Ent/生成代码、后端、前端和容器变化，发布策略为 `image-update-required`：先跑全量门禁，再由 GitHub Actions 构建 `ghcr.io/hxly520/sub2api:<version>`，最后由维护者备份并手工 Compose 切换。官方后台在线更新器只识别官方 Release，不可安装本私有候选。
+当前候选基线：官方 `v0.2.1` commit `ab99d56e9626e6cd731592dae8553c9758a0efa2`，私有候选 `v0.2.1-52t.2`，生产基线 `v0.1.183-52t.4`。本候选包含数据库迁移、Ent/生成代码、后端、前端和容器变化，发布策略为 `image-update-required`：先跑全量门禁，再由 GitHub Actions 构建 `ghcr.io/hxly520/sub2api:<version>`，最后由维护者备份并手工 Compose 切换。官方后台在线更新器只识别官方 Release，不可安装本私有候选。
 
 私有发布 Tag 必须是 `vX.Y.Z-52t.N` 格式的 annotated Tag，且 Tag 树内 `backend/cmd/server/VERSION` 必须等于去掉前导 `v` 的 Tag 值。Release 工作流始终以该精确 Tag 调用 `backend-ci.yml` 与 `security-scan.yml`；校验、质量或安全门禁失败不得发布，成功后也不得由工作流单独改写或推进 `main`。
 

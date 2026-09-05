@@ -3,7 +3,6 @@
 package service
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,21 +66,4 @@ func TestSanitizeUpstreamErrorMessage_InternalKeepsRedactedURLForOps(t *testing.
 	require.Contains(t, got, "https://example.com/v1/responses")
 	require.Contains(t, got, "access_token=***")
 	require.NotContains(t, got, "secret-value")
-}
-
-func TestSanitizeUpstreamErrorResponseBody_PreservesSchemaAndNumericFields(t *testing.T) {
-	body := []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"invalid model; see https://upstream.example/v1/models","code":400},"request_id":"req_public"}`)
-
-	got := sanitizeUpstreamErrorResponseBody(body)
-
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal(got, &payload))
-	require.Equal(t, "error", payload["type"])
-	errorPayload, ok := payload["error"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "invalid_request_error", errorPayload["type"])
-	require.Equal(t, float64(400), errorPayload["code"])
-	require.Contains(t, errorPayload["message"], "[upstream URL]")
-	require.NotContains(t, string(got), "upstream.example")
-	require.Equal(t, "req_public", payload["request_id"])
 }

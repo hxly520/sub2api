@@ -14,11 +14,11 @@
 | `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | completed (historical) | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；由 `v0.1.176` 兼容线承接。 |
 | `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed (historical) | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已由 `.4` 手工切换替代。 |
 | `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | `.4` released and current production | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。当前 `backend/cmd/server/VERSION=0.1.183-52t.4`，私有发布提交与 Tag 均指向 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者已于 `2026-08-28 07:26:27 +08` 完成人工切换，生产长上下文计费冒烟通过。`v0.1.183-52t.3` 因 lint 门禁失败且未生成 Release 或镜像，只保留失败证据。 |
-| `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.1` candidate / all release evidence pending | 从当前生产基线 `v0.1.183-52t.4` 升级。官方网关、协议、重试、计费、缓存和调度优先；保留积分、提链/额度卡、媒体冻结/核销、视频、TTFT、Codex 48 KiB 响应头保护、首页和帮助页。官方 `231-234` 与私有迁移按完整文件名/checksum 共存。本轮仅允许维护者手工 Compose 切换；测试、CI、Release、镜像、digest、生产切换均为 `pending`。 |
+| `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.2` candidate / all release evidence pending | 从当前生产基线 `v0.1.183-52t.4` 升级。官方网关、协议、重试、计费、缓存和调度优先；保留积分、提链/额度卡、媒体冻结/核销、视频、TTFT、Codex 48 KiB 响应头保护、首页和帮助页。官方 `231-234` 与私有迁移按完整文件名/checksum 共存。本轮仅允许维护者手工 Compose 切换；测试、CI、Release、镜像、digest、生产切换均为 `pending`。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`，官方 `v0.1.176` tag 树内的 `VERSION` 仍为 `0.1.175`，官方 `v0.1.183` tag 树内的 `VERSION` 仍为 `0.1.182`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
 
-### v0.2.1 / v0.2.1-52t.1 候选
+### v0.2.1 / v0.2.1-52t.2 候选
 
 > 本候选已把在线更新器和 GitHub Release 客户端恢复为官方 `v0.2.1`，发布工作流则在官方 GoReleaser 结构外保留私有 Tag/VERSION/CI 安全门禁。官方在线更新器只识别 `Wei-Shaw/sub2api` Release；私有候选仅通过当前仓库精确 annotated Tag/Actions 生成 GHCR 镜像，并由维护者手工 Compose 切换。下文旧版本中的私有 manifest/热更新记录仅是历史证据，不代表当前代码仍提供该能力。
 

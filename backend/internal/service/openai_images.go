@@ -914,6 +914,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			ImageSize:        parsed.SizeTier,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: nonStreamSizes,
+			MediaStatus:      mediaStatus,
 		}, nil
 	}
 }

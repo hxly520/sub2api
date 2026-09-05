@@ -2469,10 +2469,6 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	return compatible
 }
 
-func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonIgnoringAccountRuntimeBlock(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
-	return s.isAccountRequestCompatibleReasonWithRuntimeBlock(ctx, account, req, false)
-}
-
 // isAccountRequestCompatibleReason reports whether the account can serve the
 // request, and when it cannot, names the veto point. The reason feeds
 // openAISelectionFilterStats so that "no available accounts" errors state why
