@@ -11,15 +11,15 @@
 | 项目 | 当前记录 |
 | --- | --- |
 | 官方基线 | 官方 `v0.2.1`，源码 commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.2`；发布 commit、annotated Tag 和 Release 均为 `pending` |
+| 私有候选 | `v0.2.1-52t.2`；commit `102c921eeb09f75614313c8561f7cd0ca9d87e6e`，annotated Tag、Release、GHCR 镜像和 digest 已完成；生产切换 pending |
 | 生产基线 | `v0.1.183-52t.4`；本轮自动化不得替换、重启或切换生产 Sub2API |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用官方 `v0.2.1` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
 | 必须保留 | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
 | 数据库迁移 | 官方 `231-234` 与私有 `173-179`、`192-194` 等迁移按完整文件名和 checksum 共存；同号文件不得覆盖、改名、合并或按数字前缀去重 |
 | 发布方式 | 固定为 `image-update-required`，本轮必须由维护者在备份与回滚点确认后手工执行 Compose；后台热更新不适用 |
-| 验证与产物 | 后端/前端/积分/定向及全量测试：`pending`；GitHub Actions：`pending`；镜像：`pending`；镜像 digest/OCI revision：`pending`；生产切换与生产冒烟：`pending` |
+| 验证与产物 | 后端/前端/积分/定向及全量测试：completed；GitHub Actions run `33995383939`：completed；镜像：completed；manifest digest `sha256:90d4a5b70ea6155e12aaf90291b24ea128a74cf44596d80366203b5994462c80`、OCI revision：completed；生产切换与生产冒烟：`pending` |
 
-只有实际命令输出、CI run、Release 资产和 OCI 检查结果才能把上述 `pending` 改为完成；局部编译或单项测试不得替代最终候选的全量门禁。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
+只有实际命令输出、CI run、Release 资产和 OCI 检查结果才能把上述 `pending` 改为完成；本候选的源码、测试、CI、Release、镜像和 digest 已有对应证据，服务器拉取、生产切换与冒烟仍保持 `pending`，不能用构建证据代替生产证据。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
 
 ## 1. 维护原则
 
@@ -34,7 +34,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 52Token 二开仓库：`hxly520/sub2api`；仓库可按发布需要保持私有或公开，公开时也不得提交生产配置、凭据和请求数据。官方远端只用于获取基线，不直接向官方远端推送二开提交。
-- 当前维护候选为官方 `v0.2.1` commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` 与私有兼容层，工作分支为 `codex/upgrade-v0.2.1-compat`，生产基线为 `v0.1.183-52t.4`。候选 commit、Tag、GitHub Actions run、GHCR digest 和 OCI revision 在完成门禁前均为 `pending`。官方网关、协议、重试、缓存、计费和调度优先；仅保留积分、额度卡/提链、媒体冻结/核销、视频、TTFT、Codex 48 KiB 保护、首页和帮助页。
+- 当前维护候选为官方 `v0.2.1` commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` 与私有兼容层，工作分支为 `codex/upgrade-v0.2.1-compat`，生产基线为 `v0.1.183-52t.4`。候选 commit、Tag、GitHub Actions run `33995383939`、GHCR digest `sha256:90d4a5b70ea6155e12aaf90291b24ea128a74cf44596d80366203b5994462c80` 和 OCI revision 已完成；服务器拉取、生产切换和冒烟仍为 `pending`。官方网关、协议、重试、缓存、计费和调度优先；仅保留积分、额度卡/提链、媒体冻结/核销、视频、TTFT、Codex 48 KiB 保护、首页和帮助页。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 历史部署事实（截至 `2026-08-02`）：当时全体签到开放，Sub2API 为 `0.1.169-1a4a690dd999`、积分服务为 `0.1.169-b64a0110ab2c`，两者均 healthy；该段仅保留旧验收证据。当前生产版本、门禁和 OCI revision 以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；后续仍不能只看仓库 `main` 或服务器镜像缓存，自动化不得替换或重启 Sub2API。
@@ -98,7 +98,7 @@
 | 提示词归属 | OpenAI APIKey 账号可显式开启 `extra.openai_upstream_relay`。开启后不再由平台重复注入默认 Codex 基础提示词；客户端显式 `instructions` 原样保留，上游内部提示词由上游负责。默认关闭，维持官方兼容行为 | `backend/internal/service/account.go`、`openai_gateway_forward.go`、账号创建/编辑前端 | `account_openai_passthrough_test.go`、`openai_gateway_service_hotpath_test.go`、账号前端测试 |
 | Chat/Responses/Anthropic 工具流 | 保留 function/custom/freeform 工具、工具顺序归一、call id、thinking 和 terminal 事件 | `backend/internal/pkg/apicompat/`、`backend/internal/service/openai_gateway_*` | `chatcompletions_responses_bridge_*`、`openai_gateway_*_test.go` |
 | 跨协议流终态与断流保护 | Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 只有收到各自正式成功终态才可成功；EOF、读取错误、上游 SSE/WebSocket error 和缺终态不能静默返回成功 | `backend/internal/service/openai_gateway_response_handling.go`、`openai_gateway_chat_completions*.go`、`gateway_forward_as_chat_completions.go`、`gemini_*_compat_service.go`、`openai_ws_http_bridge.go`、`openai_ws_v2/` 及对应 handler | `openai_gateway_chat_completions*_test.go`、`gateway_forward_as_chat_completions_test.go`、`gemini_*_compat_service_test.go`、`openai_ws_*_test.go` |
-| 官方网关/计费/重试基线 | OpenAI Responses、Chat、Anthropic、Gemini、WS 转发、usage 结算和账号故障切换优先沿用官方 `v0.2.1` 入口；私有广泛请求重放与首响应故障切换旁路不再覆盖官方语义 | `backend/internal/handler/openai_gateway_handler.go`、`openai_chat_completions.go`、`backend/internal/service/openai_gateway_forward.go`、`openai_gateway_response_handling.go` | Responses/Chat/WS、计费和 failover 定向回归；`v0.2.1-52t.2` 全量门禁待完成 |
+| 官方网关/计费/重试基线 | OpenAI Responses、Chat、Anthropic、Gemini、WS 转发、usage 结算和账号故障切换优先沿用官方 `v0.2.1` 入口；私有广泛请求重放与首响应故障切换旁路不再覆盖官方语义 | `backend/internal/handler/openai_gateway_handler.go`、`openai_chat_completions.go`、`backend/internal/service/openai_gateway_forward.go`、`openai_gateway_response_handling.go` | Responses/Chat/WS、计费和 failover 定向回归；`v0.2.1-52t.2` 全量门禁已通过，生产切换待维护者执行 |
 | Codex turn-state 头部保护 | `x-codex-turn-state` 经过 trim 和单值 `48 KiB` 上限校验；空值或超限值被丢弃。Nginx API 示例使用 `128k` 响应头缓冲，避免合法上限被边缘层截断 | `backend/internal/service/openai_codex_turn_state.go`、`deploy/nginx/api.52token.org.conf.example`、`deploy/EDGE_SECURITY.md` | `openai_codex_turn_state_test.go`、Nginx 配置静态检查 |
 | OpenAI-compatible 账号 | 支持精确 Chat Completions URL、Responses/Chat 模式和可配置认证头 | `backend/internal/service/openai_compatible_auth.go`、账号配置与各 OpenAI 转发服务 | 账号探测、模型同步、Chat/Responses/Embeddings/Images 回归 |
 | Codex 模型清单 | 带 `client_version` 的请求优先使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey 账号按官方代理路径获取并复用缓存、ETag 与 singleflight。APIKey-only 分组全部失败时返回合法空远程清单，由 Codex 合并内置目录；OAuth 凭据损坏仍报错 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`openai_codex_models_handler_test.go`、`gateway_codex_models_test.go` |
