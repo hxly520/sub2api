@@ -664,11 +664,11 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 	})
 }
 
-func TestGrokMediaGenerationDoesNotReplayUpstreamRejections(t *testing.T) {
+func TestGrokMedia429CreationDoesNotReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("first 429 stops before selecting a healthy followup", func(t *testing.T) {
-		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_429")
+	t.Run("first 429 is returned without a second create", func(t *testing.T) {
+		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", bytes.NewBufferString(`{"model":"grok-imagine-video","prompt":"waves"}`))
@@ -678,11 +678,10 @@ func TestGrokMediaGenerationDoesNotReplayUpstreamRejections(t *testing.T) {
 
 		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801}, upstream.accountHits())
-		require.Equal(t, []int64{801}, repo.rateLimitedAccountIDs())
 	})
 
-	t.Run("429 never reaches a second or third account", func(t *testing.T) {
-		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "all_429")
+	t.Run("429 does not sweep the account pool", func(t *testing.T) {
+		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "all_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", bytes.NewBufferString(`{"model":"grok-imagine-video","prompt":"waves"}`))
@@ -692,7 +691,6 @@ func TestGrokMediaGenerationDoesNotReplayUpstreamRejections(t *testing.T) {
 
 		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801}, upstream.accountHits())
-		require.Equal(t, []int64{801}, repo.rateLimitedAccountIDs())
 		require.NotContains(t, recorder.Body.String(), "rate limited")
 	})
 }

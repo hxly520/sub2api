@@ -122,7 +122,7 @@ func (s *OpenAIGatewayService) ForwardOpenAIImageTaskStatus(
 		return s.handleOpenAIImagesErrorResponse(ctx, resp, c, account, requestModel)
 	}
 
-	usage, imageCount, outputSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(resp, c, false)
+	usage, imageCount, outputSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(ctx, resp, c, account, nil, false)
 	if err != nil {
 		return nil, err
 	}

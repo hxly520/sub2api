@@ -575,14 +575,14 @@ func (s *OpenAIGatewayService) blockGrokCredentialRuntime(account *Account, unti
 	mu.Lock()
 	before, hadBefore := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	installedGeneration, changed := s.blockAccountSchedulingLocked(account, until, reason)
-	installed, _ := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	installedBlock, installedOK := openAIAccountRuntimeBlockFromValue(installed)
+	installed, installedOK := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	installedUntil, isTime := installed.(time.Time)
 	mu.Unlock()
-	if !changed || !installedOK {
+	if !changed || !installedOK || !isTime {
 		return func() {}
 	}
 	if hadBefore {
-		if beforeBlock, ok := openAIAccountRuntimeBlockFromValue(before); ok && beforeBlock.Until.Equal(installedBlock.Until) {
+		if beforeUntil, ok := before.(time.Time); ok && beforeUntil.Equal(installedUntil) {
 			return func() {}
 		}
 	}
@@ -594,8 +594,8 @@ func (s *OpenAIGatewayService) blockGrokCredentialRuntime(account *Account, unti
 			return
 		}
 		current, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-		currentBlock, currentOK := openAIAccountRuntimeBlockFromValue(current)
-		if !ok || !currentOK || !currentBlock.Until.Equal(installedBlock.Until) {
+		currentUntil, isTime := current.(time.Time)
+		if !ok || !isTime || !currentUntil.Equal(installedUntil) {
 			return
 		}
 		if hadBefore {
@@ -647,6 +647,10 @@ func (s *OpenAIGatewayService) newGrokCredentialFailover(c *gin.Context, account
 		class.message = "Grok OAuth credentials are unavailable"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		// Credential acquisition happens before the inference transport opens,
+		// so the account binding is not evidence of an inference proxy route.
+		ProxyID:   nil,
+		ProxyName: opsProxyNameUnknown,
 		Platform:  PlatformGrok,
 		AccountID: account.ID,
 		Stage:     string(GatewayFailureStageAccountAuth),

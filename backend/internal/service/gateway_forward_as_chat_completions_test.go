@@ -3,7 +3,7 @@
 package service
 
 import (
-	"errors"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,16 +15,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type ccAnthropicFailWriter struct {
-	gin.ResponseWriter
-}
+func TestHandleCCBufferedFromAnthropic_ToolArgumentsAreValidJSON(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
 
-func (w *ccAnthropicFailWriter) Write(_ []byte) (int, error) {
-	return 0, errors.New("client disconnected")
-}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	resp := &http.Response{Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+		`event: message_start`,
+		`data: {"type":"message_start","message":{"id":"msg_tool","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","usage":{"input_tokens":10}}}`,
+		``,
+		`event: content_block_start`,
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"Paris\"}"}}`,
+		``,
+		`event: message_delta`,
+		`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}`,
+		``,
+	}, "\n")))}
 
-func (w *ccAnthropicFailWriter) WriteString(_ string) (int, error) {
-	return 0, errors.New("client disconnected")
+	_, err := (&GatewayService{}).handleCCBufferedFromAnthropic(resp, c, "gpt-5", "claude-sonnet-4.5", nil, time.Now())
+	require.NoError(t, err)
+
+	var body struct {
+		Choices []struct {
+			Message struct {
+				ToolCalls []struct {
+					Function struct {
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Choices, 1)
+	require.Len(t, body.Choices[0].Message.ToolCalls, 1)
+	args := body.Choices[0].Message.ToolCalls[0].Function.Arguments
+	require.JSONEq(t, `{"city":"Paris"}`, args)
 }
 
 func TestExtractCCReasoningEffortFromBody(t *testing.T) {
@@ -213,63 +246,4 @@ func TestHandleCCStreamingFromAnthropic_PreservesMessageStartCacheUsageAndReason
 	require.NotNil(t, result.ReasoningEffort)
 	require.Equal(t, "medium", *result.ReasoningEffort)
 	require.Contains(t, rec.Body.String(), `[DONE]`)
-}
-
-func TestHandleCCStreamingFromAnthropic_StopReasonIsFormalTerminal(t *testing.T) {
-	t.Parallel()
-	gin.SetMode(gin.TestMode)
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	resp := &http.Response{
-		Header: http.Header{"x-request-id": []string{"rid_cc_stream_stop_reason"}},
-		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
-			`event: message_start`,
-			`data: {"type":"message_start","message":{"id":"msg_stop_reason","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":8}}}`,
-			``,
-			`event: message_delta`,
-			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}`,
-			``,
-		}, "\n"))),
-	}
-
-	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), true)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 8, result.Usage.InputTokens)
-	require.Equal(t, 9, result.Usage.OutputTokens)
-	require.Contains(t, rec.Body.String(), "[DONE]")
-	require.Contains(t, rec.Body.String(), `"finish_reason":"stop"`)
-}
-
-func TestHandleCCStreamingFromAnthropic_ClientDisconnectStillDrainsTerminalUsage(t *testing.T) {
-	t.Parallel()
-	gin.SetMode(gin.TestMode)
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Writer = &ccAnthropicFailWriter{ResponseWriter: c.Writer}
-	resp := &http.Response{
-		Header: http.Header{"x-request-id": []string{"rid_cc_stream_disconnect"}},
-		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
-			`event: message_start`,
-			`data: {"type":"message_start","message":{"id":"msg_disconnect","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":10,"cache_read_input_tokens":2}}}`,
-			``,
-			`event: content_block_delta`,
-			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ignored"}}`,
-			``,
-			`event: message_delta`,
-			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":11}}`,
-			``,
-		}, "\n"))),
-	}
-
-	result, err := (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "model", "claude", nil, time.Now(), true)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.True(t, result.ClientDisconnect)
-	require.Equal(t, 10, result.Usage.InputTokens)
-	require.Equal(t, 11, result.Usage.OutputTokens)
-	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
-	require.Empty(t, rec.Body.String())
 }

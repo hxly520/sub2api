@@ -111,7 +111,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaNativeAnthropic(
 	}
 
 	proxyURL := ""
-	if account.Proxy != nil {
+	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
@@ -122,7 +122,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaNativeAnthropic(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	resp, err := s.doOpenAIUpstreamWithFirstTokenTiming(ctx, c, upstreamReq, proxyURL, account)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 	}
@@ -287,6 +287,7 @@ func (s *OpenAIGatewayService) handleResponsesBufferedFromNativeAnthropic(
 
 	return &OpenAIForwardResult{
 		RequestID:        requestID,
+		UpstreamHeaders:  resp.Header,
 		Usage:            claudeUsageToOpenAIUsage(&usage),
 		Model:            originalModel,
 		BillingModel:     billingModel,
@@ -326,7 +327,7 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	clientToolRestorer := apicompat.NewResponsesClientToolStreamRestorer(clientToolMapping)
 
 	var usage ClaudeUsage
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	firstChunk := true
 	clientDisconnected := false
 
@@ -340,6 +341,7 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
 			RequestID:        requestID,
+			UpstreamHeaders:  resp.Header,
 			Usage:            claudeUsageToOpenAIUsage(&usage),
 			Model:            originalModel,
 			BillingModel:     billingModel,
@@ -384,8 +386,10 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) {
 		if firstChunk {
 			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
+			if firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+			}
 		}
 
 		if event.Type == "message_delta" && event.Usage != nil {

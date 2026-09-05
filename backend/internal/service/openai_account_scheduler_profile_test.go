@@ -264,7 +264,7 @@ func TestOpenAIGatewayServiceFirstResponseTimeoutDoesNotCreateTTFTSample(t *test
 	require.Greater(t, errorRate, 0.0)
 }
 
-func TestOpenAIGatewayServiceRuntimeBlockedSingleTemporaryCandidateFailsOpen(t *testing.T) {
+func TestOpenAIGatewayServiceRuntimeBlockedSingleTemporaryCandidateFailsClosed(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
 	groupID := int64(9300)
@@ -285,10 +285,13 @@ func TestOpenAIGatewayServiceRuntimeBlockedSingleTemporaryCandidateFailsOpen(t *
 		context.Background(), &groupID, "", "", "gpt-5.6-luna", nil, OpenAIUpstreamTransportAny, false,
 	)
 
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.Equal(t, account.ID, selection.Account.ID)
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(&account))
+	// Runtime scheduling blocks are deliberately fail-closed.  The official
+	// scheduler must not silently clear a still-active block merely because the
+	// account is the only candidate; the caller can retry after the cooldown or
+	// explicitly clear the block when health has been re-established.
+	require.Error(t, err)
+	require.Nil(t, selection)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(&account))
 }
 
 func TestOpenAIGatewayServiceRuntimeBlockedPermanentCandidateStaysBlocked(t *testing.T) {

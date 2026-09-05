@@ -1,6 +1,6 @@
 # 官方版本兼容合并台账
 
-本文只记录可由 Git 历史、官方 Release tag、测试结果和脱敏部署证据复核的事实。`pending` 不得写成已完成；未完成版本不得创建生产候选或在线热更新 Release。
+本文只记录可由 Git 历史、官方 Release tag、测试结果和脱敏部署证据复核的事实。`pending` 不得写成已完成；源码候选可以继续验证，但门禁未完成前不得创建 Release、生产镜像或宣称已上线。
 
 ## 1. 版本总表
 
@@ -14,8 +14,20 @@
 | `v0.1.175` | `93c32fa1a2450351561abc46156d2e28cb5f74ca` | completed (historical) | annotated tag object `b898c60c422d1de059968c56aca22f6643f1fed4`；由 `v0.1.176` 兼容线承接。 |
 | `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed (historical) | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已由 `.4` 手工切换替代。 |
 | `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | `.4` released and current production | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。当前 `backend/cmd/server/VERSION=0.1.183-52t.4`，私有发布提交与 Tag 均指向 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者已于 `2026-08-28 07:26:27 +08` 完成人工切换，生产长上下文计费冒烟通过。`v0.1.183-52t.3` 因 lint 门禁失败且未生成 Release 或镜像，只保留失败证据。 |
+| `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.1` candidate / all release evidence pending | 从当前生产基线 `v0.1.183-52t.4` 升级。官方网关、协议、重试、计费、缓存和调度优先；保留积分、提链/额度卡、媒体冻结/核销、视频、TTFT、Codex 48 KiB 响应头保护、首页和帮助页。官方 `231-234` 与私有迁移按完整文件名/checksum 共存。本轮仅允许维护者手工 Compose 切换；测试、CI、Release、镜像、digest、生产切换均为 `pending`。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`，官方 `v0.1.176` tag 树内的 `VERSION` 仍为 `0.1.175`，官方 `v0.1.183` tag 树内的 `VERSION` 仍为 `0.1.182`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
+
+### v0.2.1 / v0.2.1-52t.1 候选
+
+> 本候选已把在线更新器和 GitHub Release 客户端恢复为官方 `v0.2.1`，发布工作流则在官方 GoReleaser 结构外保留私有 Tag/VERSION/CI 安全门禁。官方在线更新器只识别 `Wei-Shaw/sub2api` Release；私有候选仅通过当前仓库精确 annotated Tag/Actions 生成 GHCR 镜像，并由维护者手工 Compose 切换。下文旧版本中的私有 manifest/热更新记录仅是历史证据，不代表当前代码仍提供该能力。
+
+- 官方源码基线固定为 `v0.2.1` commit `ab99d56e9626e6cd731592dae8553c9758a0efa2`；升级前生产基线固定为 `v0.1.183-52t.4`。候选私有发布 commit、Tag、GitHub Actions run、GHCR digest 和 OCI revision 尚未形成，统一记录为 `pending`。
+- 官方优先范围为网关、协议转换、重试、计费、缓存和账号调度。私有代码不得在这些核心路径维护另一套广泛重放或计费旁路；只在官方入口接回积分、提链/额度卡、媒体冻结/释放/核销、视频、真实 TTFT、Codex turn-state 单值 `48 KiB` 限制、当前首页及帮助页所需的最小兼容逻辑。
+- 官方 `231-234` 迁移与私有 `173-179`、`192-194` 迁移继续按完整文件名和 checksum 共存。`231`、`232`、`233`、`234` 均存在同号文件的可能，迁移审查和执行不得按数字前缀覆盖、重命名、合并或跳过；数据库演练与生产迁移均为 `pending`。
+- 本轮包含官方迁移、后端/生成代码与前端跨度，策略固定为 `image-update-required`。后台二进制热更新不得安装该候选；自动化最多发布并核验不可变镜像，生产只允许维护者在数据库备份和回滚点确认后手工 Compose 切换。
+- `.github/workflows/release.yml` 只接受 `vX.Y.Z-52t.N` annotated Tag；Tag 树内 `backend/cmd/server/VERSION` 必须与 Tag 去掉前导 `v` 后一致，并先通过同一精确 Tag 的 `backend-ci.yml` 与 `security-scan.yml`。校验或门禁失败时不运行 GoReleaser、不发布 Release/GHCR，也不改写默认分支。
+- 当前证据状态：源码最终收口 `pending`；`git diff --check` `pending`；后端/前端/积分及保护模块定向与全量测试 `pending`；GitHub Actions `pending`；Release `pending`；GHCR 镜像 `pending`；digest/OCI revision `pending`；服务器拉取 `pending`；生产切换与冒烟 `pending`。任何一项均不得引用 `v0.1.183-52t.4` 的旧证据代替。
 
 ### v0.1.183
 

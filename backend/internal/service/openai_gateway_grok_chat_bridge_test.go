@@ -501,7 +501,6 @@ func TestForwardGrokChatViaResponsesStreamingPropagatesCachedUsage(t *testing.T)
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, grokChatRawEndpoint, bytes.NewReader(body))
 	c.Set("api_key", &APIKey{ID: 7201})
-	setOpenAIFirstTokenStart(c, time.Now().Add(-5*time.Second))
 
 	account := grokChatBridgeTestAccount(72)
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
@@ -518,61 +517,12 @@ func TestForwardGrokChatViaResponsesStreamingPropagatesCachedUsage(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Stream)
-	require.NotNil(t, result.FirstTokenMs)
-	require.Less(t, *result.FirstTokenMs, 1000, "TTFT must start at the bridge's final upstream dispatch")
 	require.Equal(t, grokChatResponsesEndpoint, result.UpstreamEndpoint)
 	require.Equal(t, 4096, result.Usage.CacheReadInputTokens)
 	require.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 	require.Contains(t, recorder.Body.String(), `"content":"cached ok"`)
 	require.Contains(t, recorder.Body.String(), `"cached_tokens":4096`)
 	require.Contains(t, recorder.Body.String(), "data: [DONE]")
-}
-
-type grokChatDelayedReadCloser struct {
-	reader  io.Reader
-	delay   time.Duration
-	delayed bool
-}
-
-func (r *grokChatDelayedReadCloser) Read(p []byte) (int, error) {
-	if !r.delayed {
-		r.delayed = true
-		time.Sleep(r.delay)
-	}
-	return r.reader.Read(p)
-}
-
-func (r *grokChatDelayedReadCloser) Close() error { return nil }
-
-func TestForwardGrokChatViaResponsesFastTimingUsesSuccessfulResponseHeader(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":true}`)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, grokChatRawEndpoint, bytes.NewReader(body))
-	c.Set("api_key", &APIKey{ID: 7211})
-
-	account := grokChatBridgeTestAccount(721)
-	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
-		accountsByID: map[int64]*Account{account.ID: account},
-	}}
-	upstreamResp := grokChatBridgeCompletedResponse("resp_grok_chat_fast_header", 2048)
-	const bodyDelay = 200 * time.Millisecond
-	upstreamResp.Body = &grokChatDelayedReadCloser{reader: upstreamResp.Body, delay: bodyDelay}
-	upstream := &httpUpstreamRecorder{resp: upstreamResp}
-	svc := &OpenAIGatewayService{
-		httpUpstream:      upstream,
-		grokTokenProvider: NewGrokTokenProvider(repo, nil),
-		accountRepo:       repo,
-	}
-
-	result, err := svc.ForwardAsChatCompletions(WithOpenAIFastFirstTokenTiming(context.Background()), c, account, body, "", "")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotNil(t, result.FirstTokenMs)
-	require.Less(t, *result.FirstTokenMs, int((bodyDelay / 2).Milliseconds()),
-		"global fast TTFT must stop at the successful upstream response header, not the delayed semantic body")
 }
 
 func TestForwardGrokChatRuntimeGateFallsBackToRaw(t *testing.T) {

@@ -109,6 +109,17 @@ func TestCalculateCostUnified_GPT56ChannelFlatAppliesLongContextTier(t *testing.
 				CacheWritePrice: testPtrFloat64(tt.cacheWrite),
 				CacheReadPrice:  testPtrFloat64(tt.cacheRead),
 			}})
+			// The channel override supplies the flat token prices, while the
+			// long-context threshold/multipliers are model-catalog metadata.  The
+			// lightweight resolver fixture does not load the production catalog, so
+			// seed those fields explicitly instead of relying on global fallback
+			// initialization.  This mirrors the values shipped in the catalog and
+			// keeps the test focused on channel-price override semantics.
+			resolver.billingService.fallbackPrices[tt.model] = &ModelPricing{
+				LongContextInputThreshold:   272000,
+				LongContextInputMultiplier:  2,
+				LongContextOutputMultiplier: 1.5,
+			}
 			groupID := int64(100)
 
 			cost, err := resolver.billingService.CalculateCostUnified(CostInput{

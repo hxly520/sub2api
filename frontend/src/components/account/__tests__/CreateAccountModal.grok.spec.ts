@@ -18,13 +18,6 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain("return 'xai-...'")
   })
 
-  it('persists OpenAI upstream relay mode separately from passthrough and TTFT', () => {
-    expect(source).toContain('data-testid="create-openai-upstream-relay-toggle"')
-    expect(source).toContain('extra.openai_upstream_relay = true')
-    expect(source).toContain("accountCategory.value === 'apikey'")
-    expect(source).not.toContain('extra.openai_first_response_enabled')
-  })
-
   it('exposes custom upstream URL and header override for the OAuth create flow', () => {
     expect(source).toContain('data-testid="grok-custom-base-url-toggle"')
     expect(source).toContain('data-testid="grok-custom-base-url-input"')

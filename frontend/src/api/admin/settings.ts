@@ -123,10 +123,8 @@ export type PaymentVisibleMethodSource =
   | ""
   | "official_alipay"
   | "easypay_alipay"
-  | "keyingpay_alipay"
   | "official_wxpay"
-  | "easypay_wxpay"
-  | "keyingpay_wxpay";
+  | "easypay_wxpay";
 export type WeChatConnectMode = "open" | "mp" | "mobile";
 
 export interface PaymentVisibleMethodSourceOption {
@@ -168,11 +166,6 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       labelZh: "易支付支付宝",
       labelEn: "EasyPay Alipay",
     },
-    {
-      value: "keyingpay_alipay",
-      labelZh: "可盈Pay 支付宝",
-      labelEn: "KeyingPay Alipay",
-    },
   ],
   wxpay: [
     { value: "", labelZh: "未配置", labelEn: "Not configured" },
@@ -185,11 +178,6 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       value: "easypay_wxpay",
       labelZh: "易支付微信",
       labelEn: "EasyPay WeChat Pay",
-    },
-    {
-      value: "keyingpay_wxpay",
-      labelZh: "可盈Pay 微信",
-      labelEn: "KeyingPay WeChat Pay",
     },
   ],
 };
@@ -204,8 +192,6 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     official: "official_alipay",
     easypay_alipay: "easypay_alipay",
     easypay: "easypay_alipay",
-    keyingpay_alipay: "keyingpay_alipay",
-    keyingpay: "keyingpay_alipay",
   },
   wxpay: {
     official_wxpay: "official_wxpay",
@@ -215,8 +201,6 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     official: "official_wxpay",
     easypay_wxpay: "easypay_wxpay",
     easypay: "easypay_wxpay",
-    keyingpay_wxpay: "keyingpay_wxpay",
-    keyingpay: "keyingpay_wxpay",
   },
 };
 const WECHAT_CONNECT_MODE_OPTIONS: WeChatConnectModeOption[] = [
@@ -637,6 +621,7 @@ export interface SystemSettings {
   allow_ungrouped_key_scheduling: boolean;
 
   // Gateway forwarding behavior
+  openai_ttft_mode: string;
   enable_fingerprint_unification: boolean;
   enable_metadata_passthrough: boolean;
   enable_cch_signing: boolean;
@@ -955,6 +940,7 @@ export interface UpdateSettingsRequest {
   min_claude_code_version?: string;
   max_claude_code_version?: string;
   allow_ungrouped_key_scheduling?: boolean;
+  openai_ttft_mode?: string;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;
   enable_cch_signing?: boolean;
@@ -1449,7 +1435,7 @@ export async function updateRectifierSettings(
  * Matches backend dto.OpenAIFastPolicyRule.
  */
 export interface OpenAIFastPolicyRule {
-  service_tier: "all" | "priority" | "flex";
+  service_tier: "all" | "priority" | "flex" | "ultrafast";
   action: "pass" | "filter" | "block" | "force_priority";
   scope: "all" | "oauth" | "apikey" | "bedrock";
   user_ids?: number[];

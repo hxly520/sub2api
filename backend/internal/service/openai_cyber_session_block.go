@@ -29,12 +29,6 @@ func CyberSessionExplicitBlockKey(apiKeyID int64, c *gin.Context, body []byte) s
 	return hashCyberSessionBlockKey(apiKeyID, explicitOpenAISessionID(c, body))
 }
 
-// CyberSessionBlockKey preserves the exact-session compatibility API used by
-// older handlers while the transcript-aware API handles newer request paths.
-func CyberSessionBlockKey(apiKeyID int64, c *gin.Context, body []byte) string {
-	return CyberSessionExplicitBlockKey(apiKeyID, c, body)
-}
-
 // CyberSessionTranscriptBlockKeys returns the exact full-request key followed
 // by an optional rewrite-tolerant context key. The latter is emitted only after
 // model-generated history has been observed.
@@ -166,24 +160,4 @@ func (s *OpenAIGatewayService) FindCyberSessionBlockedForRequest(ctx context.Con
 		return ""
 	}
 	return key
-}
-
-func (s *OpenAIGatewayService) IsCyberSessionBlocked(ctx context.Context, key string) bool {
-	if key == "" {
-		return false
-	}
-	enabled, _ := s.CyberSessionBlockRuntime(ctx)
-	if !enabled {
-		return false
-	}
-	store := s.cyberSessionBlockStore()
-	if store == nil {
-		return false
-	}
-	blockedKey, err := store.FindCyberSessionBlocked(ctx, []string{key})
-	if err != nil {
-		logger.LegacyPrintf("service.openai_gateway", "cyber session block read failed: err=%v", err)
-		return false
-	}
-	return blockedKey != ""
 }

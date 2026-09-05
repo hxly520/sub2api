@@ -26,8 +26,6 @@ type githubReleaseClientError struct {
 	err error
 }
 
-const maxReleaseMetadataSize = 2 * 1024 * 1024
-
 // NewGitHubReleaseClient 创建 GitHub Release 客户端
 // proxyURL 为空时直连 GitHub，支持 http/https/socks5/socks5h 协议
 // 代理配置失败时行为由 allowDirectOnProxyError 控制：
@@ -63,7 +61,6 @@ func NewGitHubReleaseClient(proxyURL string, allowDirectOnProxyError bool) servi
 		downloadClient = &http.Client{Timeout: 10 * time.Minute}
 	}
 	downloadClient = cloneHTTPClient(downloadClient)
-	downloadClient.CheckRedirect = githubDownloadCheckRedirect(downloadClient.CheckRedirect)
 
 	return &githubReleaseClient{
 		httpClient:         apiClient,
@@ -82,41 +79,8 @@ func isGitHubAPIURL(url *url.URL) bool {
 		strings.EqualFold(url.Host, "api.github.com")
 }
 
-func isAllowedGitHubDownloadURL(target *url.URL) bool {
-	if target == nil || !strings.EqualFold(target.Scheme, "https") || target.User != nil || target.Port() != "" {
-		return false
-	}
-	switch strings.ToLower(target.Hostname()) {
-	case "api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com":
-		return true
-	default:
-		return false
-	}
-}
-
 func githubAPICheckRedirect(previous func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("too many GitHub API redirects")
-		}
-		if !isGitHubAPIURL(req.URL) {
-			return fmt.Errorf("GitHub API redirect to untrusted URL: %s", req.URL.Redacted())
-		}
-		if previous != nil {
-			return previous(req, via)
-		}
-		return nil
-	}
-}
-
-func githubDownloadCheckRedirect(previous func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
-	return func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("too many GitHub asset redirects")
-		}
-		if !isAllowedGitHubDownloadURL(req.URL) {
-			return fmt.Errorf("GitHub asset redirect to untrusted URL: %s", req.URL.Redacted())
-		}
 		if !isGitHubAPIURL(req.URL) {
 			req.Header.Del("Authorization")
 		}
@@ -140,23 +104,6 @@ func (c *githubReleaseClient) newAPIRequest(ctx context.Context, url string) (*h
 	return req, nil
 }
 
-func (c *githubReleaseClient) newAssetRequest(ctx context.Context, rawURL string) (*http.Request, error) {
-	req, err := c.newAPIRequest(ctx, rawURL)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	return req, nil
-}
-
-func githubRepositoryAPIPath(repo string) (string, error) {
-	parts := strings.Split(strings.TrimSpace(repo), "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("invalid GitHub repository %q", repo)
-	}
-	return url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]), nil
-}
-
 func (c *githubReleaseClientError) FetchLatestRelease(ctx context.Context, repo string) (*service.GitHubRelease, error) {
 	return nil, c.err
 }
@@ -174,11 +121,7 @@ func (c *githubReleaseClientError) FetchChecksumFile(ctx context.Context, url st
 }
 
 func (c *githubReleaseClient) FetchLatestRelease(ctx context.Context, repo string) (*service.GitHubRelease, error) {
-	repoPath, err := githubRepositoryAPIPath(repo)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repoPath)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
 
 	req, err := c.newAPIRequest(ctx, url)
 	if err != nil {
@@ -210,11 +153,7 @@ func (c *githubReleaseClient) FetchRecentReleases(ctx context.Context, repo stri
 	if perPage > 100 {
 		perPage = 100 // GitHub API hard limit
 	}
-	repoPath, err := githubRepositoryAPIPath(repo)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=%d", repoPath, perPage)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=%d", repo, perPage)
 
 	req, err := c.newAPIRequest(ctx, url)
 	if err != nil {
@@ -240,7 +179,7 @@ func (c *githubReleaseClient) FetchRecentReleases(ctx context.Context, repo stri
 }
 
 func (c *githubReleaseClient) DownloadFile(ctx context.Context, url, dest string, maxSize int64) error {
-	req, err := c.newAssetRequest(ctx, url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -288,12 +227,12 @@ func (c *githubReleaseClient) DownloadFile(ctx context.Context, url, dest string
 }
 
 func (c *githubReleaseClient) FetchChecksumFile(ctx context.Context, url string) ([]byte, error) {
-	req, err := c.newAssetRequest(ctx, url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.downloadHTTPClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -303,16 +242,5 @@ func (c *githubReleaseClient) FetchChecksumFile(ctx context.Context, url string)
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	if resp.ContentLength > maxReleaseMetadataSize {
-		return nil, fmt.Errorf("release metadata too large: %d bytes", resp.ContentLength)
-	}
-	limited := io.LimitReader(resp.Body, maxReleaseMetadataSize+1)
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > maxReleaseMetadataSize {
-		return nil, fmt.Errorf("release metadata exceeded maximum size of %d bytes", maxReleaseMetadataSize)
-	}
-	return data, nil
+	return io.ReadAll(resp.Body)
 }

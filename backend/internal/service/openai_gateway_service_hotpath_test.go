@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 func TestOpenAIRequestView_ExtractsRawScalars(t *testing.T) {
@@ -103,7 +102,7 @@ func TestOpenAIRequestView_HasPatches(t *testing.T) {
 	require.False(t, view.HasPatches())
 }
 
-func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing.T) {
+func TestOpenAIGatewayService_Forward_APIKeyMissingInstructionsKeepsLargeInputRaw(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		resp: &http.Response{
@@ -127,7 +126,7 @@ func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing
 			"api_key":  "sk-test",
 			"base_url": "https://example.com",
 		},
-		Extra: map[string]any{"use_responses_api": true, "openai_upstream_relay": true},
+		Extra: map[string]any{"use_responses_api": true},
 	}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -139,53 +138,10 @@ func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	// 普通第三方 APIKey 请求保持原始 Responses 语义，不注入完整 Codex prompt。
 	expectedBody := `{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`
-	promptCacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
-	require.NotEmpty(t, promptCacheKey)
-	require.True(t, strings.HasPrefix(promptCacheKey, compatAutoPromptCacheKeyPrefix))
-	withoutPromptCacheKey, deleteErr := sjson.DeleteBytes(upstream.lastBody, "prompt_cache_key")
-	require.NoError(t, deleteErr)
-	require.JSONEq(t, expectedBody, string(withoutPromptCacheKey))
-	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(0, promptCacheKey)), upstream.lastReq.Header.Get("session_id"))
+	require.JSONEq(t, expectedBody, string(upstream.lastBody))
+	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.lastBody, "input.0.content.0.nonce").Raw)
-}
-
-func TestOpenAIGatewayService_Forward_DefaultAPIKeyStillSynthesizesCodexInstructions(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{
-		resp: &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":1}}`)),
-		},
-	}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
-	account := &Account{
-		ID:          2,
-		Name:        "openai-apikey-codex",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
-		Extra:       map[string]any{"use_responses_api": true},
-	}
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	c.Request.Header.Set("User-Agent", codexCLIUserAgent)
-	c.Request.Header.Set("originator", "codex_cli_rs")
-	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-
-	_, err := svc.Forward(
-		context.Background(),
-		c,
-		account,
-		[]byte(`{"model":"gpt-5","stream":false,"input":"hi"}`),
-	)
-	require.NoError(t, err)
-	require.Equal(t, defaultCodexSynthInstructions("gpt-5"), gjson.GetBytes(upstream.lastBody, "instructions").String())
 }
 
 func TestOpenAIGatewayService_Forward_DecodedMutationKeepsLaterFieldDeletes(t *testing.T) {
@@ -377,7 +333,6 @@ func TestOpenAIGatewayService_Forward_TextResponsesSetsBillingModelToMappedModel
 	require.Equal(t, "gpt-5.5", result.BillingModel)
 	require.Equal(t, "gpt-5.5", result.UpstreamModel)
 	require.Equal(t, "gpt-5.5", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "gpt-5.4", gjson.Get(rec.Body.String(), "model").String())
 	require.Equal(t, 0, result.ImageCount)
 }
 
@@ -474,8 +429,6 @@ func TestOpenAIGatewayService_Forward_TextResponsesBillingModelMatchesChatComple
 	require.Equal(t, chatResult.BillingModel, responsesResult.BillingModel)
 	require.Equal(t, "gpt-5.5", responsesResult.BillingModel)
 	require.Equal(t, "gpt-5.5", chatResult.BillingModel)
-	require.Equal(t, "gpt-5.4", gjson.Get(responsesRecorder.Body.String(), "model").String())
-	require.Equal(t, "gpt-5.4", gjson.Get(chatRecorder.Body.String(), "model").String())
 }
 
 func TestOpenAIGatewayService_Forward_TextDataImageDoesNotForceMapMarshal(t *testing.T) {

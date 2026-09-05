@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
-
-	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 var (
@@ -20,28 +18,6 @@ var (
 	upstreamErrorKeyPattern    = regexp.MustCompile(`(?i)\b(?:sk|sk-proj|sk-ant|sess|rk|pk|ak|token|secret)[_-][A-Za-z0-9._~+/=-]{12,}\b`)
 	upstreamErrorJWTPattern    = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
 )
-
-// sanitizeUpstreamErrorMessage is the internal/ops sanitizer. It preserves
-// routing context for administrators while removing credentials and tokens.
-func sanitizeUpstreamErrorMessage(msg string) string {
-	msg = strings.TrimSpace(msg)
-	if msg == "" {
-		return ""
-	}
-
-	return logredact.RedactText(
-		msg,
-		"api_key",
-		"apikey",
-		"authorization",
-		"cookie",
-		"set_cookie",
-		"session_token",
-		"token",
-		"secret",
-		"private_key",
-	)
-}
 
 // sanitizeClientUpstreamErrorMessage additionally removes upstream routing
 // details and stack traces. Use this only at the client response boundary.

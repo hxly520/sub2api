@@ -111,7 +111,7 @@ func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_NonJSON2xxTriggers
 	}
 	svc := &GatewayService{cfg: &config.Config{}}
 
-	usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2}, "claude-sonnet-4-6", "claude-sonnet-4-6")
+	usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2})
 
 	require.Nil(t, usage)
 	var failoverErr *UpstreamFailoverError
@@ -135,36 +135,13 @@ func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_ValidJSONUnchanged
 	}
 	svc := &GatewayService{cfg: &config.Config{}}
 
-	usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2}, "claude-sonnet-4-6", "claude-sonnet-4-6")
+	usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2})
 
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, 5, usage.InputTokens)
 	require.Equal(t, 3, usage.OutputTokens)
-	require.Equal(t, string(body), rec.Body.String())
-}
-
-func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_RewritesOnlyMappedRootModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-
-	body := []byte(`{"id":"msg_1","type":"message","model":"private-upstream-model","content":[{"type":"text","text":"private-upstream-model remains content"}],"metadata":{"model":"private-upstream-model"},"usage":{"input_tokens":5,"output_tokens":3}}`)
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(body)),
-	}
-	svc := &GatewayService{cfg: &config.Config{}}
-
-	usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(
-		context.Background(), resp, c, &Account{ID: 2}, "private-upstream-model", "public-model",
-	)
-
-	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.JSONEq(t, `{"id":"msg_1","type":"message","model":"public-model","content":[{"type":"text","text":"private-upstream-model remains content"}],"metadata":{"model":"private-upstream-model"},"usage":{"input_tokens":5,"output_tokens":3}}`, rec.Body.String())
+	require.JSONEq(t, string(body), rec.Body.String())
 }
 
 func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_ForceCacheBillingResponse(t *testing.T) {
@@ -203,9 +180,7 @@ func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_ForceCacheBillingR
 			}
 			svc := &GatewayService{cfg: &config.Config{}}
 
-			usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(
-				WithForceCacheBilling(context.Background()), resp, c, &Account{ID: 2}, "", "",
-			)
+			usage, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(WithForceCacheBilling(context.Background()), resp, c, &Account{ID: 2})
 
 			require.NoError(t, err)
 			require.Equal(t, int(gjson.Get(tt.body, "usage.input_tokens").Int()), usage.InputTokens, "local accounting must retain the unclassified usage")

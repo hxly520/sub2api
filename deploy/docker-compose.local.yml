@@ -8,15 +8,15 @@
 # Quick Start:
 #   1. Copy .env.example to .env and configure
 #   2. mkdir -p data postgres_data redis_data
-#   3. docker-compose -f docker-compose.local.yml up -d
-#   4. Check logs: docker-compose -f docker-compose.local.yml logs -f sub2api
+#   3. docker compose -f docker-compose.local.yml up -d
+#   4. Check logs: docker compose -f docker-compose.local.yml logs -f sub2api
 #   5. Access: http://localhost:8080
 #
 # Migration to New Server:
-#   1. docker-compose -f docker-compose.local.yml down
+#   1. docker compose -f docker-compose.local.yml down
 #   2. tar czf sub2api-deploy.tar.gz deploy/
 #   3. Transfer to new server and extract
-#   4. docker-compose -f docker-compose.local.yml up -d
+#   4. docker compose -f docker-compose.local.yml up -d
 # =============================================================================
 
 services:
@@ -157,12 +157,6 @@ services:
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
-      - UPDATE_REPOSITORY=${UPDATE_REPOSITORY:-hxly520/sub2api}
-      - UPDATE_DOCKER_IMAGE=${UPDATE_DOCKER_IMAGE:-ghcr.io/hxly520/sub2api}
-      - UPDATE_CHANNEL=${UPDATE_CHANNEL:-stable}
-      - UPDATE_IN_PLACE_ENABLED=${UPDATE_IN_PLACE_ENABLED:-true}
-      - UPDATE_REQUIRE_CHECKSUM=${UPDATE_REQUIRE_CHECKSUM:-true}
-      - UPDATE_REQUIRE_MANIFEST=${UPDATE_REQUIRE_MANIFEST:-true}
 
       # =======================================================================
       # Gateway Upstream, Scheduling & Image Configuration

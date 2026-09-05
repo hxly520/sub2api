@@ -695,6 +695,8 @@ func (s *AntigravityGatewayService) writeMappedClaudeError(c *gin.Context, accou
 	upstreamDetail := s.getUpstreamErrorDetail(body)
 	setOpsUpstreamError(c, upstreamStatus, upstreamMsg, upstreamDetail)
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		AccountName:        account.Name,
@@ -732,7 +734,7 @@ func (s *AntigravityGatewayService) writeMappedClaudeError(c *gin.Context, accou
 	case 400:
 		statusCode = http.StatusBadRequest
 		errType = "invalid_request_error"
-		errMsg = sanitizeClientUpstreamErrorMessage(getPassthroughOrDefault(upstreamMsg, "Invalid request"))
+		errMsg = getPassthroughOrDefault(upstreamMsg, "Invalid request")
 	case 401:
 		statusCode = http.StatusBadGateway
 		errType = "authentication_error"

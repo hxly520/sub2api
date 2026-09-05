@@ -106,7 +106,7 @@ func (s *OpenAIGatewayService) forwardChatCompletionsViaNativeAnthropic(
 	}
 
 	proxyURL := ""
-	if account.Proxy != nil {
+	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
@@ -117,7 +117,7 @@ func (s *OpenAIGatewayService) forwardChatCompletionsViaNativeAnthropic(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	resp, err := s.doOpenAIUpstreamWithFirstTokenTiming(ctx, c, upstreamReq, proxyURL, account)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 	}
@@ -281,6 +281,7 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 
 	return &OpenAIForwardResult{
 		RequestID:        requestID,
+		UpstreamHeaders:  resp.Header,
 		Usage:            claudeUsageToOpenAIUsage(&usage),
 		Model:            originalModel,
 		BillingModel:     billingModel,
@@ -322,7 +323,7 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	ccState.IncludeUsage = includeUsage
 
 	var usage ClaudeUsage
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	firstChunk := true
 	clientDisconnected := false
 
@@ -336,6 +337,7 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
 			RequestID:        requestID,
+			UpstreamHeaders:  resp.Header,
 			Usage:            claudeUsageToOpenAIUsage(&usage),
 			Model:            originalModel,
 			BillingModel:     billingModel,
@@ -396,8 +398,10 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) bool {
 		if firstChunk {
 			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
+			if firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+			}
 		}
 
 		// usage 恒累计（含客户端断开后的排水阶段，payg 上游照常计费）。

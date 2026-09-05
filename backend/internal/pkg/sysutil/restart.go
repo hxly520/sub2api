@@ -2,57 +2,37 @@
 package sysutil
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"time"
 )
 
-// ErrAutomaticRestartUnsupported indicates that no supported Linux supervisor
-// can restart the process after its graceful shutdown.
-var ErrAutomaticRestartUnsupported = errors.New("automatic restart is supported only on Linux supervisors")
-
-// RestartService triggers the application's existing signal-driven shutdown.
+// RestartService triggers a service restart by gracefully exiting.
 //
-// This relies on systemd or Docker's restart policy to automatically restart
-// the service after it exits:
+// This relies on systemd's Restart=always configuration to automatically
+// restart the service after it exits. This is the industry-standard approach:
 //   - Simple and reliable
 //   - No sudo permissions needed
 //   - No complex process management
 //   - Leverages systemd's native restart capability
 //
 // Prerequisites:
-//   - Linux process supervised by systemd or Docker
-//   - Supervisor configured with an automatic restart policy
+//   - Linux OS with systemd
+//   - Service configured with Restart=always in systemd unit file
 func RestartService() error {
-	return ScheduleRestart(100 * time.Millisecond)
-}
-
-// ScheduleRestart schedules the application's existing graceful shutdown path
-// after delay. It returns only after the platform and current process have been
-// validated, so callers can report scheduling failures before returning success.
-func ScheduleRestart(delay time.Duration) error {
 	if runtime.GOOS != "linux" {
-		return ErrAutomaticRestartUnsupported
+		log.Println("Service restart via exit only works on Linux with systemd")
+		return nil
 	}
 
-	process, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		return fmt.Errorf("find current process: %w", err)
-	}
+	log.Println("Initiating service restart by graceful exit...")
+	log.Println("systemd will automatically restart the service (Restart=always)")
 
-	log.Println("Initiating graceful service restart...")
-	log.Println("The configured process supervisor will restart the service")
-
-	// Let the HTTP handler flush its response, then enter main's SIGINT/SIGTERM
-	// shutdown path so in-flight requests and deferred cleanup are not skipped.
+	// Give a moment for logs to flush and response to be sent
 	go func() {
-		time.Sleep(delay)
-		if signalErr := process.Signal(os.Interrupt); signalErr != nil {
-			log.Printf("failed to signal graceful restart: %v", signalErr)
-		}
+		time.Sleep(100 * time.Millisecond)
+		os.Exit(0)
 	}()
 
 	return nil

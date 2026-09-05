@@ -37,6 +37,7 @@ func TestOpenAIGatewayServiceRecordUsage_GPT56OfficialLongContextAcrossResponses
 				&openAIRecordUsageSubRepoStub{},
 				nil,
 			)
+			swapInOpenAILadderCatalog(t, svc)
 			svc.resolver = NewModelPricingResolver(nil, svc.billingService)
 
 			groupID := int64(5600 + i)

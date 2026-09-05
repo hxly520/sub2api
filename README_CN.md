@@ -60,6 +60,11 @@
 </tr>
 
 <tr>
+<td width="180"><a href="https://codex-everywhere.com"><img src="assets/partners/logos/codex-everywhere.jpg" alt="CodexEverywhere" width="150"></a></td>
+<td>Real GPT-5.6 series at 3% of OpenAI pricing — <a href="https://codex-everywhere.com">CodexEverywhere</a> is democratizing access to frontier models for developers worldwide. We believe in transparency and honesty, with model quality verified by active community oversight for months. USD and crypto friendly. Start with a free $20 trial at <a href="https://codex-everywhere.com">codex-everywhere.com</a>.</td>
+</tr>
+
+<tr>
 <td width="180"><a href="https://shop.bmoplus.com/?utm_source=github"><img src="assets/partners/logos/bmoplus.jpg" alt="bmoplus" width="150"></a></td>
 <td>感谢 BmoPlus 赞助了本项目！BmoPlus 是一家专为AI订阅重度用户打造的可靠 AI 账号代充服务商，提供稳定的 ChatGPT Plus / ChatGPT Pro(全程质保) / Claude Pro / Super Grok / Gemini Pro 的官方代充&成品账号。 通过<a href="https://shop.bmoplus.com/?utm_source=github">BmoPlus AI成品号专卖/代充</a>注册下单的用户，可享GPT 官网订阅一折 的震撼价格！</td>
 </tr>
@@ -95,12 +100,6 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://sui-xiang.com/"><img src="assets/partners/logos/sui-xiang.jpg" alt="sui-xiang" width="150"></a></td>
-<td>感谢 随想AI网关 赞助本项目！<a href="https://sui-xiang.com/">随想AI网关</a>  是一家可靠高效的 API 中继服务提供商，提供 Claude、Codex、Gemini 等的中继服务。注重隐私的中转站·无数据倒卖·无模型掺水，隐私，透明，极速售后。新账户注册每日签到就送 0.5 元测试额度，充值额度 1:1，无需订阅，按量付费。多线路冗余、跨区域容灾、自动故障切换,长链路 SSE 不中断。99.9% 可用性,关键调用从不掉队。
-</td>
-</tr>
-
-<tr>
 <td width="180"><a href="https://www.proxy4free.com/?keyword=4yjqecpc"><img src="assets/partners/logos/proxy4free.png" alt="proxy4free" width="150"></a></td>
 <td>感谢 Proxy4Free 赞助本项目！Proxy4Free 是面向开发者和 AI 应用的数据代理服务商，提供住宅代理、静态住宅代理、ISP 代理及数据中心代理等多种代理解决方案，适用于 Web Scraping、Browser Automation、AI Agent 等场景。支持全球 IP 资源、稳定连接与灵活切换，帮助开发者提升数据采集成功率，降低 IP 封禁风险。通过<a href="https://www.proxy4free.com/?keyword=4yjqecpc">此链接注册</a>即可开始体验，轻松构建更稳定、高效的自动化工作流。
 </td>
@@ -123,11 +122,6 @@
 <tr>
 <td width="180"><a href="https://nagora.ai/"><img src="assets/partners/logos/nagora.png" alt="Nagora" width="150"></a></td>
 <td><a href="https://nagora.ai/">Nagora</a> 是专为开发者和团队打造的多模型 AI API 网关。通过一个账户和一枚 API Key，即可统一调用 26+ 款主流文本与图像模型，兼容 OpenAI、Anthropic 与 Gemini 协议，并可无缝接入 Claude Code、Codex、Gemini CLI 等开发工具。平台提供智能路由、自动故障转移、透明计费与统一账单，同时支持预算、限速、并发控制，让个人开发、团队协作和生产环境中的 AI 调用更稳定、更可控。无需改造现有应用，只需替换 Base URL 与 API Key，最快 1 分钟即可完成接入。</td>
-</tr>
-
-<tr>
-<td width="180"><a href="https://www.novada.com/?sub2api/"><img src="assets/partners/logos/novada.png" alt="Novada" width="150"></a></td>
-<td>感谢 <a href="https://www.novada.com/?sub2api/">Novada</a> 赞助本项目！Novada 为构建 AI 应用与自动化工作流的开发者提供住宅代理、ISP 代理、数据中心代理与移动代理，以及 Web Unlocker 和 Scraper API。凭借全球 IP 覆盖、灵活的轮换与粘性会话以及精准的地理定位，Novada 帮助团队在 AI Agent 工作流、跨区域测试、网络调研与浏览器自动化等场景中稳定获取网络数据。立即体验 Novada，构建更稳定、更可扩展的 AI 工作流。</td>
 </tr>
 
 <tr>
@@ -170,6 +164,11 @@
 <td>感谢 APIMart 赞助了本项目！<a href="https://go.apimart.ai/gh-sub2api">APIMart</a> 是专注于 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可生成 160+ 张图片。图片、视频一套异步 API 通吃：提交任务获取 ID，通过轮询或回调获取结果；批量生成上万张图片也不会超时，切换模型无需修改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-sub2api">此注册链接</a>注册即可开始使用。</td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://www.axisnow.io/"><img src="assets/partners/logos/axisnow.jpg" alt="AxisNow" width="150"></a></td>
+<td>感谢 AxisNow 赞助了本项目！<a href="https://www.axisnow.io/">AxisNow</a> 保护并加速网站与 API，兼顾中国大陆及全球的访问体验，并通过客户端 SDK，将加速与安全能力延伸至原生/移动 App — <strong>自建私有部署 CDN</strong>｜<strong>订阅式高防 CDN</strong>｜<strong>自主可控、灵活组合的 CDN 网络</strong>。</td>
+</tr>
+
 </table>
 
 ## 项目概述
@@ -190,22 +189,19 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-本仓库的当前候选代码基线为 Sub2API `v0.1.183`（官方 annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`，源码 commit `e8cb019fabf8b55199436229044cbf9aa7a82564`），私有候选版本为 `v0.1.183-52t.2`，源码和 OCI revision 均为 `cc2165e5fd6a14685700eb6c3607a5fb51baee09`，`backend/cmd/server/VERSION=0.1.183-52t.2`。GitHub Release run `33069107472` 已通过完整质量、安全和发布门禁，GHCR 多架构镜像 digest 为 `sha256:effb2f50b8a3da0f9b525eef5a852f2e2cdf6fdaa4daacbcc580e285886cb622`；`v0.1.183-52t.1` 是不可变的失败候选，没有 Release 或镜像。官方 tag 树内的 `VERSION` 仍为 `0.1.182`，因此发布校验必须同时核对私有 Tag、source commit、manifest 和 OCI revision，不能只读取官方 tag 内版本文件。本轮包含官方 `222-230` 迁移、Ent schema、后端、前端和插件等变化，发布策略固定为 `image-update-required`；候选镜像的构建、上传或服务器缓存不代表生产容器已经切换，自动化不得替换或重启生产 Sub2API。当前生产仍为私有 `v0.1.176-52t.1`，直到维护者完成人工 Compose 切换前不得写成已上线。私有分支在官方基线上继续保留协议缓存兼容、账号调度与首响应、图片/视频任务、媒体下载代理、媒体余额冻结与后台核销、独立积分与签到系统、额度卡与提链、未登录公开首页、可用渠道展示、KeyingPay V2、CC Switch 导入和 Cloudflare/Nginx 源站加固等扩展。二开遵循“官方实现为主、私有能力兼容补充”的原则。
+本仓库当前升级候选基于官方 Sub2API `v0.2.1`（源码 commit `ab99d56e9626e6cd731592dae8553c9758a0efa2`），候选版本标识为 `v0.2.1-52t.1`。生产环境基线仍为 `v0.1.183-52t.4`，本地合并、测试和 GitHub Actions 构建都不会自动替换或重启生产容器；生产切换由维护者在备份与回滚点确认后手工执行。
 
-- [私有二开维护与官方升级指南](docs/PRIVATE_CUSTOMIZATION_CN.md)
-- [生产运维、只读盘点与版本交接](docs/PRODUCTION_OPERATIONS_CN.md)
-- [2026-07-30 v0.1.168 候选与积分系统生产记录](docs/PRODUCTION_DEPLOYMENT_20260730_CN.md)
-- [2026-07-31 积分激活与 v0.1.169 候选交接](docs/PRODUCTION_DEPLOYMENT_20260731_CN.md)
-- [积分与签到系统部署说明](points-system/README.md)
-- [积分与签到结算口径](points-system/PRODUCT_REQUIREMENTS_CN.md)
-- [独立生图工作台源码仓库](https://github.com/hxly520/infinite-canvas)
-- [图片与视频 API 契约](docs/MEDIA_API_CN.md)
-- [KeyingPay V2 部署说明](deploy/KEYINGPAY_V2.md)
-- [媒体 Edge Worker 部署说明](deploy/video-edge-worker/README.md)
+升级边界遵循“官方核心优先、私有产品模块最小兼容”的规则：
 
-后续合并官方版本必须从当前私有 `main` 创建升级分支，再合并已发布的官方 Release tag；禁止从旧私有分支或官方 `main/latest` 覆盖生产树。升级前必须阅读二开维护指南、生产运维文档和积分结算口径，并完成其中的协议、缓存、调度、媒体、计费、积分与签到、未登录首页、可用渠道和支付回归。渠道价格、账号地址和生产凭据由运行时配置维护，不得写入源码或仓库文档。
+- 网关协议、账号调度、重试、缓存、计费和错误处理以官方 `v0.2.1` 实现为准，不恢复旧的广泛重放或计费旁路。
+- 保留同库积分/签到系统、提链/额度卡账本与后扣费、图片和视频任务的余额冻结/释放/核销、统一媒体 API、首字 Token/TTFT 画像、Codex `x-codex-turn-state` 48 KiB 保护，以及当前未登录首页和帮助页。
+- 官方迁移与私有迁移按完整文件名和 checksum 共存，不能按数字前缀覆盖或重命名；本候选包含官方 `231–234`，私有 `173–179`、`192–194` 继续保留。
+- 普通 API Key 页的旧 CCSwitch 自动导入扩展已移除，恢复官方 API Key 行为；额度卡页面中的 CCSwitch 只读接入教程仍保留。
+- KeyingPay V2 私有支付扩展已移除，支付实现回到官方 provider 集合；现有生产数据库如曾启用该 provider，切换前须先由维护者只读核对未完成订单和回调状态。
+- 官方在线更新器只识别官方 Release；本候选跨越数据库迁移、Ent/生成代码、前端和容器基线，发布策略固定为 `image-update-required`，应通过 GitHub Actions 生成不可变 GHCR 镜像，再由维护者使用 Compose 手工切换。后台二进制热更新不得安装本候选。
+- 私有 Release 只接受 `vX.Y.Z-52t.N` annotated Tag，Tag 内 `VERSION` 必须完全一致，并先通过同一 Tag 的 CI 门禁；工作流不会自动改写或推进 `main`，也不会连接或替换生产容器。
 
-52Token 二开 Release Tag 可以从候选分支创建，但必须与默认分支保持祖先关系。发布工作流先校验谱系，只发布候选 Tag、Release 和镜像，绝不修改 `main`；发生分叉或发布期间竞态时失败关闭，禁止只把旧 `main` 的版本文件改成新版本。维护者完成人工 Compose 切换和生产验收后，再把完整 Release 树人工快进到 `main`。仓库主线更新与生产容器切换仍是两件事。
+详细的模块边界、迁移清单、测试门禁和回滚步骤见 [`docs/PRIVATE_CUSTOMIZATION_CN.md`](docs/PRIVATE_CUSTOMIZATION_CN.md)、[`docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 和 [`docs/PRIVATE_RELEASE_RUNBOOK_CN.md`](docs/PRIVATE_RELEASE_RUNBOOK_CN.md)。独立积分服务和生图工作台的源码、镜像及生产状态继续按各自文档记录。
 
 ## 生态项目
 
@@ -241,7 +237,7 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 
 ## 部署方式
 
-> 本仓库是 `hxly520/sub2api` 的 52Token 二开主线，GitHub 可见性长期保持公开以使用公共 Actions runner；生产配置、凭据和请求数据不得入库。生产更新、二开 Release、GHCR 镜像和回滚门禁以 [二开发布手册](docs/PRIVATE_RELEASE_RUNBOOK_CN.md) 与 [部署说明](deploy/README.md) 为准；不要使用官方仓库的安装脚本覆盖二开版本。
+> 52Token 生产候选只通过 GitHub Actions/GHCR 发布，由维护者手工 Compose 切换。下方脚本安装为官方通用说明，不得用于覆盖已包含私有迁移和二开模块的生产数据库。具体见 [二开发布手册](docs/PRIVATE_RELEASE_RUNBOOK_CN.md)。
 
 ### 方式一：脚本安装（推荐）
 
@@ -257,12 +253,7 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 #### 安装步骤
 
 ```bash
-export UPDATE_REPOSITORY=hxly520/sub2api
-export UPDATE_GITHUB_TOKEN="$(gh auth token)"
-gh api -H "Accept: application/vnd.github.raw+json" \
-  "/repos/hxly520/sub2api/contents/deploy/install.sh?ref=main" > install.sh
-sudo --preserve-env=UPDATE_REPOSITORY,UPDATE_GITHUB_TOKEN bash install.sh install
-unset UPDATE_GITHUB_TOKEN
+curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
 ```
 
 脚本会自动：
@@ -292,7 +283,7 @@ sudo systemctl enable sub2api
 
 #### 升级
 
-可以直接在 **管理后台** 左上角点击 **检测更新** 按钮进行在线升级。
+官方安装版可以直接在 **管理后台** 左上角点击 **检测更新** 按钮进行在线升级；该更新器固定读取 `Wei-Shaw/sub2api` 官方 Release。52Token 私有候选（含积分、提链、媒体迁移或前端资产）不走此入口，必须按下方私有 Tag/GHCR/Compose 流程由维护者手工切换。
 
 网页升级功能支持：
 - 自动检测新版本
@@ -312,7 +303,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # 卸载
-sudo bash install.sh uninstall -y
+curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -335,12 +326,7 @@ sudo bash install.sh uninstall -y
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # 下载并运行部署准备脚本
-export UPDATE_REPOSITORY=hxly520/sub2api
-export UPDATE_GITHUB_TOKEN="$(gh auth token)"
-gh api -H "Accept: application/vnd.github.raw+json" \
-  "/repos/hxly520/sub2api/contents/deploy/docker-deploy.sh?ref=main" > docker-deploy.sh
-bash docker-deploy.sh
-unset UPDATE_GITHUB_TOKEN
+curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
 
 # 启动服务
 docker compose up -d

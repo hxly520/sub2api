@@ -37,43 +37,6 @@ func TestSchedulerMetadataAccountKeepsOpenAISubscriptionIdentity(t *testing.T) {
 	require.Empty(t, metadata.GetCredential("access_token"))
 }
 
-func TestSchedulerMetadataAccountKeepsAsyncImageBaseURL(t *testing.T) {
-	account := service.Account{
-		ID:       61,
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":      "secret-api-key",
-			"base_url":     "https://image-upstream.example/v1",
-			"access_token": "secret-access-token",
-		},
-	}
-
-	metadata := buildSchedulerMetadataAccount(account)
-
-	require.True(t, metadata.SupportsOpenAIImageCapability(service.OpenAIImagesCapabilityAsync))
-	require.Equal(t, "https://image-upstream.example/v1", metadata.GetCredential("base_url"))
-	require.Empty(t, metadata.GetCredential("access_token"))
-}
-
-func TestSchedulerMetadataAccountKeepsPoolModePolicy(t *testing.T) {
-	account := service.Account{
-		ID:       62,
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":      "secret-api-key",
-			"pool_mode":    true,
-			"access_token": "secret-access-token",
-		},
-	}
-
-	metadata := buildSchedulerMetadataAccount(account)
-
-	require.True(t, metadata.IsPoolMode())
-	require.Empty(t, metadata.GetCredential("access_token"))
-}
-
 func TestSchedulerMetadataAccountProjectsUpstreamBillingProbe(t *testing.T) {
 	lastError := strings.Repeat("upstream diagnostic ", 512)
 	probe := map[string]any{

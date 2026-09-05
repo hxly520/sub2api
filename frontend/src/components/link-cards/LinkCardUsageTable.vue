@@ -119,6 +119,7 @@ const normalizedRows = computed<AdminUsageLog[]>(() => props.rows.map((row) => (
   actual_cost: Number(row.actual_cost ?? row.total_cost ?? 0),
   rate_multiplier: row.rate_multiplier ?? 1,
   long_context_billing_applied: false,
+  native_compaction_v2: false,
   billing_type: 0,
   request_type: row.request_type,
   stream: row.stream ?? row.request_type === 'stream',

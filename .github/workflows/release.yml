@@ -7,9 +7,23 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing 52Token tag to release (for example v0.1.183-52t.2)'
+        description: 'Existing private tag to release (e.g., v0.2.1-52t.1)'
         required: true
         type: string
+      simple_release:
+        description: 'Simple release: only x86_64 GHCR image, skip other artifacts'
+        required: false
+        type: boolean
+        default: false
+
+# 环境变量：合并 workflow_dispatch 输入和 repository variable
+# tag push 触发时读取 vars.SIMPLE_RELEASE，workflow_dispatch 时使用输入参数
+env:
+  SIMPLE_RELEASE: ${{ github.event.inputs.simple_release == 'true' || vars.SIMPLE_RELEASE == 'true' }}
+  # Expose only the non-secret Docker Hub username at workflow scope so job
+  # `if:` guards can decide whether the optional Docker Hub steps run. The
+  # password/token remains step-scoped and is never placed in an expression.
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
 permissions:
   contents: write
@@ -18,98 +32,103 @@ permissions:
 jobs:
   validate-release-source:
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.release_source.outputs.release_tag }}
+      release_ref: ${{ steps.release_source.outputs.release_ref }}
+      release_version: ${{ steps.release_source.outputs.release_version }}
+      release_commit: ${{ steps.release_source.outputs.release_commit }}
     steps:
-      - name: Checkout release tag
+      - name: Validate requested tag format
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-52t\.[0-9]+$ ]]; then
+            echo "::error::Private releases require a tag matching vX.Y.Z-52t.N; got ${RELEASE_TAG}."
+            exit 1
+          fi
+
+      - name: Checkout exact release tag
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Validate tag and default branch lineage
+      - name: Validate immutable tag and VERSION
+        id: release_source
         shell: bash
         env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          tag="${TAG_NAME}"
-          bash tools/release/validate-private-tag.sh "${tag}"
-          TAG_COMMIT="$(git rev-parse "${tag}^{commit}")"
+
+          if [[ "$(git cat-file -t "refs/tags/${RELEASE_TAG}")" != "tag" ]]; then
+            echo "::error::Release tag ${RELEASE_TAG} must be an annotated tag."
+            exit 1
+          fi
+
           git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
           DEFAULT_COMMIT="$(git rev-parse "refs/remotes/origin/${DEFAULT_BRANCH}")"
 
-          if git merge-base --is-ancestor "${DEFAULT_COMMIT}" "${TAG_COMMIT}"; then
-            echo "Release tag descends from the default branch and can be published safely."
-          elif git merge-base --is-ancestor "${TAG_COMMIT}" "${DEFAULT_COMMIT}"; then
-            VERSION=${TAG_NAME#v}
-            DEFAULT_VERSION="$(git show "${DEFAULT_COMMIT}:backend/cmd/server/VERSION" | tr -d '\r\n')"
-            if [ "${DEFAULT_VERSION}" != "${VERSION}" ]; then
-              echo "::error::Release tag is already behind ${DEFAULT_BRANCH}, whose VERSION is ${DEFAULT_VERSION}; refusing an old-tag rerun or VERSION downgrade."
-              exit 1
-            fi
-            echo "Release tag is already contained in the default branch at the same version."
-          else
-            echo "::error::Release tag ${TAG_NAME} and ${DEFAULT_BRANCH} have diverged; refusing to publish or rewrite the default branch."
+          RELEASE_COMMIT="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          CHECKOUT_COMMIT="$(git rev-parse HEAD)"
+          if [[ "${CHECKOUT_COMMIT}" != "${RELEASE_COMMIT}" ]]; then
+            echo "::error::Checkout ${CHECKOUT_COMMIT} does not match ${RELEASE_TAG} commit ${RELEASE_COMMIT}."
             exit 1
           fi
+
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          SOURCE_VERSION="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
+          if [[ "${SOURCE_VERSION}" != "${RELEASE_VERSION}" ]]; then
+            echo "::error::Tag ${RELEASE_TAG} contains VERSION=${SOURCE_VERSION}; expected ${RELEASE_VERSION}."
+            exit 1
+          fi
+
+          if git merge-base --is-ancestor "${DEFAULT_COMMIT}" "${RELEASE_COMMIT}"; then
+            echo "Validated tag lineage: ${RELEASE_TAG} descends from ${DEFAULT_BRANCH}."
+          elif git merge-base --is-ancestor "${RELEASE_COMMIT}" "${DEFAULT_COMMIT}"; then
+            DEFAULT_VERSION="$(tr -d '\r\n' < <(git show "${DEFAULT_COMMIT}:backend/cmd/server/VERSION"))"
+            if [[ "${DEFAULT_VERSION}" != "${RELEASE_VERSION}" ]]; then
+              echo "::error::Tag ${RELEASE_TAG} is already contained in ${DEFAULT_BRANCH}, but default branch VERSION=${DEFAULT_VERSION}; refusing a stale release."
+              exit 1
+            fi
+            echo "Validated tag lineage: ${RELEASE_TAG} is already contained in ${DEFAULT_BRANCH} at the same version."
+          else
+            echo "::error::Tag ${RELEASE_TAG} and ${DEFAULT_BRANCH} have diverged; refusing to publish."
+            exit 1
+          fi
+
+          {
+            echo "release_tag=${RELEASE_TAG}"
+            echo "release_ref=refs/tags/${RELEASE_TAG}"
+            echo "release_version=${RELEASE_VERSION}"
+            echo "release_commit=${RELEASE_COMMIT}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Validated ${RELEASE_TAG} at ${RELEASE_COMMIT} with VERSION=${SOURCE_VERSION}."
 
   quality-gate:
     needs: validate-release-source
     uses: ./.github/workflows/backend-ci.yml
     with:
-      checkout_ref: ${{ github.event.inputs.tag || github.ref }}
+      checkout_ref: ${{ needs.validate-release-source.outputs.release_ref }}
 
   security-gate:
     needs: validate-release-source
     uses: ./.github/workflows/security-scan.yml
     with:
-      checkout_ref: ${{ github.event.inputs.tag || github.ref }}
-
-  # The release source must already carry the exact immutable version.
-  validate-version:
-    needs: [quality-gate, security-gate]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Validate private release tag
-        env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          tag="${TAG_NAME}"
-          bash tools/release/validate-private-tag.sh "${tag}"
-
-      - name: Validate VERSION file
-        env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          VERSION=${TAG_NAME#v}
-          SOURCE_VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION)
-          if [ "$SOURCE_VERSION" != "$VERSION" ]; then
-            echo "::error::Release tag ${TAG_NAME} contains VERSION=${SOURCE_VERSION}, expected ${VERSION}."
-            exit 1
-          fi
-          echo "Validated VERSION file: $VERSION"
-
-      - name: Upload VERSION artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: version-file
-          path: backend/cmd/server/VERSION
-          retention-days: 1
+      checkout_ref: ${{ needs.validate-release-source.outputs.release_ref }}
 
   build-frontend:
-    needs: [quality-gate, security-gate]
+    needs: [validate-release-source, quality-gate, security-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.validate-release-source.outputs.release_ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -139,20 +158,14 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [validate-version, build-frontend]
+    needs: [validate-release-source, quality-gate, security-gate, build-frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Download VERSION artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: version-file
-          path: backend/cmd/server/
+          ref: ${{ needs.validate-release-source.outputs.release_ref }}
 
       - name: Download frontend artifact
         uses: actions/download-artifact@v8
@@ -197,20 +210,26 @@ jobs:
       - name: Fetch tags with annotations
         run: |
           # 确保获取完整的 annotated tag 信息
-          git fetch --tags
+          git fetch --tags --force
 
-      - name: Verify immutable release checkout
+      - name: Recheck immutable release source
+        shell: bash
         env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.validate-release-source.outputs.release_tag }}
+          RELEASE_COMMIT: ${{ needs.validate-release-source.outputs.release_commit }}
+          RELEASE_VERSION: ${{ needs.validate-release-source.outputs.release_version }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$(git rev-parse "${TAG_NAME}^{commit}")"
+          test "$(git rev-parse HEAD)" = "${RELEASE_COMMIT}"
+          test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "${RELEASE_COMMIT}"
+          test "$(tr -d '\r\n' < backend/cmd/server/VERSION)" = "${RELEASE_VERSION}"
 
       - name: Get tag message
         id: tag_message
         env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG_NAME: ${{ needs.validate-release-source.outputs.release_tag }}
         run: |
+          set -euo pipefail
           echo "Processing tag: $TAG_NAME"
 
           # 获取完整的 tag message（跳过第一行标题）
@@ -221,21 +240,11 @@ jobs:
           echo "Tag message preview:"
           echo "$TAG_MESSAGE" | head -10
 
-          # 使用随机分隔符处理多行内容，避免 tag 正文碰撞固定 EOF。
+          # 使用随机分隔符，避免 tag 正文中的固定字符串截断输出。
           DELIMITER="TAG_MESSAGE_$(openssl rand -hex 16)"
           echo "message<<${DELIMITER}" >> "$GITHUB_OUTPUT"
           echo "$TAG_MESSAGE" >> "$GITHUB_OUTPUT"
           echo "${DELIMITER}" >> "$GITHUB_OUTPUT"
-
-      - name: Classify update safety
-        id: update_policy
-        shell: bash
-        env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          bash tools/release/classify-update.sh "${TAG_NAME}" > update-manifest.json
-          jq . update-manifest.json
-          echo "policy=$(jq -r .policy update-manifest.json)" >> "$GITHUB_OUTPUT"
 
       - name: Set lowercase owner for GHCR
         id: lowercase
@@ -244,9 +253,10 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
-          # Keep release tooling reproducible; bump only after local config and image validation.
+          # Pin the release tool so a future GoReleaser change cannot silently
+          # alter archive or multi-arch manifest output for a production tag.
           version: 'v2.17.1'
-          args: release --clean --skip=validate
+          args: release --clean --skip=validate ${{ env.SIMPLE_RELEASE == 'true' && '--config=.goreleaser.simple.yaml' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
@@ -255,26 +265,9 @@ jobs:
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
 
-      - name: Upload update policy and public static assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          cp deploy/public-landing/index.html public-landing-index.html
-          sha256sum public-landing-index.html > public-landing-index.html.sha256
-          cp deploy/public-help/index.html public-help-index.html
-          sha256sum public-help-index.html > public-help-index.html.sha256
-          gh release upload "${TAG_NAME}" \
-            update-manifest.json \
-            public-landing-index.html \
-            public-landing-index.html.sha256 \
-            public-help-index.html \
-            public-help-index.html.sha256 \
-            --clobber
-
       # Update DockerHub description
       - name: Update DockerHub description
-        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
         uses: peter-evans/dockerhub-description@v5
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -287,11 +280,12 @@ jobs:
 
       # Send Telegram notification
       - name: Send Telegram Notification
+        if: ${{ env.SIMPLE_RELEASE != 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG_NAME: ${{ needs.validate-release-source.outputs.release_tag }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
         continue-on-error: true
         run: |

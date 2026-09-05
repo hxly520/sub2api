@@ -81,7 +81,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
+	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
+		respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
+		return
+	} else if changed {
 		body = cappedBody
 	}
 	imageIntent := service.IsImageGenerationIntentForPlatform(
@@ -95,6 +98,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 		return
 	}
+	h.enableOpenAIFastFirstTokenTiming(c, reqStream)
 	if _, err := service.ValidateOpenAIServiceTierField(body); err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -119,6 +123,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -173,7 +178,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			apiKey.GroupID,
 			"",
 			sessionHash,
-			reqModel,
+			forwardModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 			service.OpenAIEndpointCapabilityChatCompletions,
@@ -273,6 +278,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			stampOpenAIRequestedReasoningEffort(res, c)
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
 			inboundEndpoint := GetInboundEndpoint(c)
@@ -310,14 +316,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			})
 		}
 		if err != nil {
-			if result != nil && result.ClientDisconnect {
-				reqLog.Info("openai_chat_completions.client_disconnected",
-					zap.Int64("account_id", account.ID),
-					zap.Error(err),
-				)
-				submitChatUsage(result)
-				return
-			}
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai_chat_completions.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
@@ -350,7 +348,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						reqLog.Warn("openai_chat_completions.automatic_replay_suppressed",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
-							zap.Bool("request_may_have_been_accepted", !failoverErr.CanSafelyReplayRequest()),
+							zap.Bool("request_may_have_been_accepted", true),
 						)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return

@@ -1880,31 +1880,46 @@ const importToCcswitch = (row: ApiKey) => {
   }
 
   // For other platforms, execute directly
-  void executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
+  executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
-const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
+  const usageScript = `({
+    request: {
+      url: "{{baseUrl}}/v1/usage",
+      method: "GET",
+      headers: { "Authorization": "Bearer {{apiKey}}" }
+    },
+    extractor: function(response) {
+      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
+      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+      return {
+        isValid: response?.is_active ?? response?.isValid ?? true,
+        remaining,
+        unit
+      };
+    }
+  })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
+  const deeplink = buildCcSwitchImportDeeplink({
+    baseUrl,
+    platform,
+    clientType,
+    providerName,
+    apiKey: row.key,
+    usageScript
+  })
 
   try {
-    const usageTemplate = await keysAPI.getCcSwitchUsageTemplate()
-    const deeplink = buildCcSwitchImportDeeplink({
-      baseUrl,
-      platform,
-      clientType,
-      providerName,
-      apiKey: row.key,
-      usageScriptBase64: usageTemplate.script_base64,
-      usageAutoIntervalMinutes: usageTemplate.auto_interval_minutes
-    })
-    window.location.assign(deeplink)
+    window.open(deeplink, '_self')
 
-    // Keep the original install feedback after handing the provider to the OS protocol handler.
+    // Check if the protocol handler worked by detecting if we're still focused
     setTimeout(() => {
       if (document.hasFocus()) {
+        // Still focused means the protocol handler likely failed
         appStore.showError(t('keys.ccSwitchNotInstalled'))
       }
     }, 100)
@@ -1915,7 +1930,7 @@ const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => 
 
 const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
   if (pendingCcsRow.value) {
-    void executeCcsImport(pendingCcsRow.value, clientType)
+    executeCcsImport(pendingCcsRow.value, clientType)
   }
   showCcsClientSelect.value = false
   pendingCcsRow.value = null

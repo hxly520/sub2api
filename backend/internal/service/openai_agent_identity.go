@@ -388,18 +388,7 @@ func (s *OpenAIGatewayService) buildOpenAIAuthenticationHeaders(ctx context.Cont
 		}
 		return agentHeaders, nil
 	}
-	if credAccount != nil && credAccount.Type == AccountTypeAPIKey {
-		switch credAccount.OpenAICompatibleAuthHeader() {
-		case OpenAICompatibleAuthHeaderAPIKey:
-			headers.Set(OpenAICompatibleAuthHeaderAPIKey, token)
-		case OpenAICompatibleAuthHeaderXAPIKey:
-			headers.Set(OpenAICompatibleAuthHeaderXAPIKey, token)
-		default:
-			headers.Set(OpenAICompatibleAuthHeaderAuthorization, "Bearer "+token)
-		}
-		return headers, nil
-	}
-	headers.Set(OpenAICompatibleAuthHeaderAuthorization, "Bearer "+token)
+	headers.Set("Authorization", "Bearer "+token)
 	return headers, nil
 }
 

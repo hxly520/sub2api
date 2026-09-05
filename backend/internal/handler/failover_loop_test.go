@@ -65,14 +65,13 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 	})
 }
 
-func TestSameAccountRetryAllowedStillHonorsPoolCountWithDeadline(t *testing.T) {
+func TestSameAccountRetryAllowedUsesDeadlineInsteadOfPoolCount(t *testing.T) {
 	err := &service.UpstreamFailoverError{
 		RetryableOnSameAccount:   true,
 		SameAccountRetryDeadline: time.Now().Add(time.Minute),
 	}
-	require.False(t, sameAccountRetryAllowed(err, 100, 0))
-	require.False(t, sameAccountRetryAllowed(err, 100, maxSameAccountRetries))
-	require.True(t, sameAccountRetryAllowed(err, maxSameAccountRetries-1, maxSameAccountRetries))
+	require.True(t, sameAccountRetryAllowed(err, 100, 0))
+	require.True(t, sameAccountRetryAllowed(err, 100, maxSameAccountRetries))
 	err.SameAccountRetryDeadline = time.Now().Add(-time.Second)
 	require.False(t, sameAccountRetryAllowed(err, 0, 100))
 }
@@ -215,22 +214,6 @@ func TestSleepWithContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleFailoverError_BasicSwitch(t *testing.T) {
-	t.Run("媒体请求禁用自动重放", func(t *testing.T) {
-		mock := &mockTempUnscheduler{}
-		fs := NewFailoverState(3, false)
-		fs.DisableAutomaticReplay()
-		err := newTestFailoverErr(http.StatusTooManyRequests, true, false)
-
-		action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformOpenAI, 0, err)
-
-		require.Equal(t, FailoverExhausted, action)
-		require.Zero(t, fs.SwitchCount)
-		require.Empty(t, fs.FailedAccountIDs)
-		require.Empty(t, fs.SameAccountRetryCount)
-		require.Empty(t, mock.calls)
-		require.Same(t, err, fs.LastFailoverErr)
-	})
-
 	t.Run("显式停止不切换账号且旧错误默认仍切换", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, false)
@@ -391,7 +374,7 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 		require.Zero(t, fs.SwitchCount)
 	})
 
-	t.Run("OAuth deadline不绕过请求级重试上限", func(t *testing.T) {
+	t.Run("OAuth deadline存在时不按普通计数切换", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, true)
 		fs.SameAccountRetryCount[100] = maxSameAccountRetries
@@ -401,10 +384,10 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 
 		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
 
-		require.True(t, fs.ForceCacheBilling)
-		require.Equal(t, 1, fs.SwitchCount)
-		require.Equal(t, maxSameAccountRetries, fs.SameAccountRetryCount[100])
-		require.Len(t, mock.calls, 1)
+		require.False(t, fs.ForceCacheBilling)
+		require.Zero(t, fs.SwitchCount)
+		require.Equal(t, maxSameAccountRetries+1, fs.SameAccountRetryCount[100])
+		require.Empty(t, mock.calls)
 	})
 
 	t.Run("同账号重试耗尽并实际切换时设置ForceCacheBilling", func(t *testing.T) {

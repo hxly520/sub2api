@@ -783,6 +783,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			ProxyID:            opsUpstreamProxyID(account),
+			ProxyName:          opsUpstreamProxyName(account),
 			Platform:           account.Platform,
 			AccountID:          account.ID,
 			AccountName:        account.Name,
@@ -802,6 +804,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
 				Platform:           account.Platform,
 				AccountID:          account.ID,
 				AccountName:        account.Name,
@@ -825,13 +829,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 
 	var usage OpenAIUsage
 	var imageCount int
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	if parsed.Stream && isEventStreamResponse(resp.Header) {
 		streamUsage, streamCount, streamSizes, ttft, err := s.handleOpenAIImagesStreamingResponse(upstreamCtx, resp, c, startTime)
 		if err != nil {
 			if streamCount > 0 {
 				return &OpenAIForwardResult{
 					RequestID:        resp.Header.Get("x-request-id"),
+					UpstreamHeaders:  resp.Header,
 					Usage:            streamUsage,
 					Model:            requestModel,
 					UpstreamModel:    upstreamModel,
@@ -856,6 +861,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		firstTokenMs = ttft
 		return &OpenAIForwardResult{
 			RequestID:        resp.Header.Get("x-request-id"),
+			UpstreamHeaders:  resp.Header,
 			Usage:            usage,
 			Model:            requestModel,
 			UpstreamModel:    upstreamModel,
@@ -869,7 +875,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			ImageOutputSizes: imageOutputSizes,
 		}, nil
 	} else {
-		nonStreamUsage, nonStreamCount, nonStreamSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(resp, c, false)
+		nonStreamUsage, nonStreamCount, nonStreamSizes, responseBody, responseContentType, err := s.handleOpenAIImagesNonStreamingResponse(upstreamCtx, resp, c, account, parsed, false)
 		if err != nil {
 			return nil, err
 		}
@@ -895,24 +901,19 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			mediaStatus = MediaGenerationStatusCompleted
 		}
 		return &OpenAIForwardResult{
-			RequestID:           resp.Header.Get("x-request-id"),
-			ResponseID:          extractOpenAIImageTaskID(responseBody),
-			Usage:               usage,
-			Model:               requestModel,
-			UpstreamModel:       upstreamModel,
-			Stream:              parsed.Stream,
-			ResponseHeaders:     resp.Header.Clone(),
-			Duration:            time.Since(startTime),
-			FirstTokenMs:        firstTokenMs,
-			ImageCount:          imageCount,
-			ImageSize:           parsed.SizeTier,
-			ImageInputSize:      billingInputSize,
-			ImageOutputSizes:    nonStreamSizes,
-			MediaType:           "image",
-			MediaStatus:         mediaStatus,
-			ResponseStatus:      resp.StatusCode,
-			ResponseBody:        responseBody,
-			ResponseContentType: responseContentType,
+			RequestID:        resp.Header.Get("x-request-id"),
+			UpstreamHeaders:  resp.Header,
+			Usage:            usage,
+			Model:            requestModel,
+			UpstreamModel:    upstreamModel,
+			Stream:           parsed.Stream,
+			ResponseHeaders:  resp.Header.Clone(),
+			Duration:         time.Since(startTime),
+			FirstTokenMs:     firstTokenMs,
+			ImageCount:       imageCount,
+			ImageSize:        parsed.SizeTier,
+			ImageInputSize:   parsed.Size,
+			ImageOutputSizes: nonStreamSizes,
 		}, nil
 	}
 }
@@ -1092,11 +1093,19 @@ func cloneMultipartHeader(src textproto.MIMEHeader) textproto.MIMEHeader {
 	return dst
 }
 
-func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http.Response, c *gin.Context, writeResponse bool) (OpenAIUsage, int, []string, []byte, string, error) {
+func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(
+	ctx context.Context,
+	resp *http.Response,
+	c *gin.Context,
+	account *Account,
+	parsed *OpenAIImagesRequest,
+	writeResponse bool,
+) (OpenAIUsage, int, []string, []byte, string, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return OpenAIUsage{}, 0, nil, nil, "", err
 	}
+	body = s.backfillOpenAIImagesB64JSON(ctx, account, parsed, body)
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1136,7 +1145,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 
 	usage := OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	lastDownstreamWriteAt := time.Now()
 	var fallbackBody bytes.Buffer

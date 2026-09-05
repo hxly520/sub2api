@@ -114,29 +114,10 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			if !errors.Is(err, context.Canceled) {
-				scheduleOllamaCloudUsageActivity(s.deferredService, account)
-			}
-			safeErr := sanitizeUpstreamErrorMessage(err.Error())
-			setOpsUpstreamError(c, 0, safeErr, "")
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: 0,
-				UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
-				Passthrough:        true,
-				Kind:               "request_error",
-				Message:            safeErr,
+			return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{
+				UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
+				Passthrough: true,
 			})
-			c.JSON(http.StatusBadGateway, gin.H{
-				"type": "error",
-				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
-				},
-			})
-			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 		}
 
 		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）
@@ -159,6 +140,8 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 				respBody, _ := s.readUpstreamErrorBody(resp)
 				_ = resp.Body.Close()
 				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					ProxyID:            opsUpstreamProxyID(account),
+					ProxyName:          opsUpstreamProxyName(account),
 					Platform:           account.Platform,
 					AccountID:          account.ID,
 					AccountName:        account.Name,
@@ -203,6 +186,8 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 
 			s.handleRetryExhaustedSideEffects(ctx, resp, account)
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
 				Platform:           account.Platform,
 				AccountID:          account.ID,
 				AccountName:        account.Name,
@@ -237,6 +222,8 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 
 		s.handleFailoverSideEffects(ctx, resp, account, input.RequestModel)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			ProxyID:            opsUpstreamProxyID(account),
+			ProxyName:          opsUpstreamProxyName(account),
 			Platform:           account.Platform,
 			AccountID:          account.ID,
 			AccountName:        account.Name,
@@ -267,7 +254,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	var firstTokenMs *int
 	var clientDisconnect bool
 	if input.RequestStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel, input.OriginalModel)
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
 			// 流中断时保留已观测到的 usage 与错误一起返回，避免上游已计量的请求
 			// 完全漏记漏计费（issue #5148）。
@@ -280,7 +267,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
 	} else {
-		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.RequestModel, input.OriginalModel)
+		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
 		if err != nil {
 			return nil, err
 		}
@@ -291,6 +278,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 
 	return &ForwardResult{
 		RequestID:                     resp.Header.Get("x-request-id"),
+		UpstreamHeaders:               resp.Header,
 		Usage:                         *usage,
 		Model:                         input.OriginalModel,
 		UpstreamModel:                 input.RequestModel,
@@ -381,16 +369,12 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	c *gin.Context,
 	account *Account,
 	startTime time.Time,
-	upstreamModel string,
-	originalModel string,
+	model string,
 ) (*streamingResult, error) {
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
-	defer drainGuard.Stop()
-
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
@@ -467,14 +451,14 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	if s.cfg != nil && s.cfg.Gateway.StreamDataIntervalTimeout > 0 {
 		streamInterval = time.Duration(s.cfg.Gateway.StreamDataIntervalTimeout) * time.Second
 	}
-	var intervalTimer *time.Timer
+	var intervalTicker *time.Ticker
 	if streamInterval > 0 {
-		intervalTimer = time.NewTimer(streamInterval)
-		defer intervalTimer.Stop()
+		intervalTicker = time.NewTicker(streamInterval)
+		defer intervalTicker.Stop()
 	}
 	var intervalCh <-chan time.Time
-	if intervalTimer != nil {
-		intervalCh = intervalTimer.C
+	if intervalTicker != nil {
+		intervalCh = intervalTicker.C
 	}
 
 	keepaliveInterval := time.Duration(0)
@@ -529,12 +513,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 				}
 				if clientDisconnected {
-					if streamInterval > 0 {
-						lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
-						if time.Since(lastRead) >= streamInterval {
-							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
-						}
-					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
 				}
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
@@ -567,15 +545,12 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 			if !clientDisconnected {
-				line = rewriteAnthropicPassthroughSSEModelLine(line, upstreamModel, originalModel)
 				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
 				if _, err := io.WriteString(w, restored); err != nil {
 					clientDisconnected = true
-					drainGuard.ClientDisconnected()
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				} else if _, err := io.WriteString(w, "\n"); err != nil {
 					clientDisconnected = true
-					drainGuard.ClientDisconnected()
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				} else if line == "" {
 					// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
@@ -590,16 +565,15 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 
 		case <-intervalCh:
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
-			if remaining := streamInterval - time.Since(lastRead); remaining > 0 {
-				intervalTimer.Reset(remaining)
+			if time.Since(lastRead) < streamInterval {
 				continue
 			}
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
 			}
-			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, upstreamModel, streamInterval)
+			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleStreamTimeout(ctx, account, upstreamModel)
+				s.rateLimitService.HandleStreamTimeout(ctx, account, model)
 			}
 			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
 
@@ -617,7 +591,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 			if _, err := fmt.Fprint(w, "event: ping\ndata: {\"type\": \"ping\"}\n\n"); err != nil {
 				clientDisconnected = true
-				drainGuard.ClientDisconnected()
 				logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during keepalive ping, continue draining upstream for usage: account=%d", account.ID)
 				continue
 			}
@@ -640,38 +613,6 @@ func extractAnthropicSSEDataLine(line string) (string, bool) {
 		start++
 	}
 	return line[start:], true
-}
-
-func rewriteAnthropicPassthroughSSEModelLine(line, upstreamModel, originalModel string) string {
-	data, ok := extractAnthropicSSEDataLine(line)
-	if !ok {
-		return line
-	}
-	rewritten := rewriteAnthropicPassthroughResponseModel([]byte(data), upstreamModel, originalModel, "message.model", "model")
-	if bytes.Equal(rewritten, []byte(data)) {
-		return line
-	}
-	return line[:len(line)-len(data)] + string(rewritten)
-}
-
-func rewriteAnthropicPassthroughResponseModel(body []byte, upstreamModel, originalModel string, paths ...string) []byte {
-	if upstreamModel == "" || originalModel == "" || upstreamModel == originalModel || !gjson.ValidBytes(body) {
-		return body
-	}
-
-	rewritten := body
-	for _, path := range paths {
-		model := gjson.GetBytes(rewritten, path)
-		if model.Type != gjson.String || model.String() != upstreamModel {
-			continue
-		}
-		next, err := sjson.SetBytes(rewritten, path, originalModel)
-		if err != nil {
-			return body
-		}
-		rewritten = next
-	}
-	return rewritten
 }
 
 // parseSSEUsagePassthrough 从 Anthropic SSE data 行提取 usage（包级函数：
@@ -902,8 +843,6 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
-	upstreamModel string,
-	originalModel string,
 ) (*ClaudeUsage, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -939,7 +878,6 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	body = rewriteAnthropicPassthroughResponseModel(body, upstreamModel, originalModel, "model")
 	body = reverseToolNamesIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil

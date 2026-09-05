@@ -131,9 +131,7 @@ func TestOpenAIStreamErrorFrameDoesNotStartClientOutput(t *testing.T) {
 		{`{"type":"response.reasoning_summary_part.added","part":{"type":"summary_text","text":"thinking"}}`, "response.reasoning_summary_part.added", true},
 		{`{"type":"response.content_part.added","part":{"type":"output_text","text":""}}`, "response.content_part.added", false},
 		{`{"type":"response.output_text.delta","delta":"hi"}`, "response.output_text.delta", true},
-		// The [DONE] sentinel terminates an SSE stream; it is not semantic
-		// client output and must not start first-output accounting.
-		{`[DONE]`, "", false},
+		{`[DONE]`, "", true},
 	}
 	for _, tc := range cases {
 		require.Equal(t, tc.want, openAIStreamDataStartsClientOutput(tc.data, tc.eventType), "data=%s type=%s", tc.data, tc.eventType)

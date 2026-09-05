@@ -18,9 +18,8 @@ import (
 
 // SystemHandler handles system-related operations
 type SystemHandler struct {
-	updateSvc       systemUpdateService
-	lockSvc         *service.SystemOperationLockService
-	scheduleRestart func(time.Duration) error
+	updateSvc systemUpdateService
+	lockSvc   *service.SystemOperationLockService
 }
 
 // systemUpdateTimeout bounds a full in-place update or rollback: the release
@@ -55,9 +54,8 @@ type systemUpdateService interface {
 // NewSystemHandler creates a new SystemHandler
 func NewSystemHandler(updateSvc systemUpdateService, lockSvc *service.SystemOperationLockService) *SystemHandler {
 	return &SystemHandler{
-		updateSvc:       updateSvc,
-		lockSvc:         lockSvc,
-		scheduleRestart: sysutil.ScheduleRestart,
+		updateSvc: updateSvc,
+		lockSvc:   lockSvc,
 	}
 }
 
@@ -210,18 +208,18 @@ func (h *SystemHandler) RestartService(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		var releaseReason string
 		succeeded := false
 		defer func() {
-			release(releaseReason, succeeded)
+			release("", succeeded)
 		}()
 
-		// Validate and schedule before reporting success. The delay gives Gin time
-		// to flush the response while avoiding false success on unsupported hosts.
-		if err := h.scheduleRestart(500 * time.Millisecond); err != nil {
-			releaseReason = "SYSTEM_RESTART_FAILED"
-			return nil, err
-		}
+		// Schedule service restart in background after sending response
+		// This ensures the client receives the success response before the service restarts
+		go func() {
+			// Wait a moment to ensure the response is sent
+			time.Sleep(500 * time.Millisecond)
+			sysutil.RestartServiceAsync()
+		}()
 		succeeded = true
 		return gin.H{
 			"message":      "Service restart initiated",

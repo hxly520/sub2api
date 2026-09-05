@@ -147,6 +147,9 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	modelMetadataRegistryMu   sync.Mutex
+	modelMetadataRegistry     map[string]modelsDevProvider
+	modelMetadataRegistryAt   time.Time
 	pluginManager             *PluginManager
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
@@ -343,7 +346,7 @@ func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Cont
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 	}
 
-	return s.testOpenAIChatCompletionsConnection(c, account, account, testModelID, prompt, buildOpenAIChatCompletionsURL(normalizedBaseURL), authToken)
+	return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 }
 
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
@@ -714,11 +717,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
 		if !openai_compat.ShouldUseResponsesAPI(account.Extra) {
-			chatCompletionsURL, err := s.openAIChatCompletionsTestURL(credentialAccount, normalizedBaseURL)
-			if err != nil {
-				return s.sendErrorAndEnd(c, err.Error())
-			}
-			return s.testOpenAIChatCompletionsConnection(c, account, credentialAccount, testModelID, prompt, chatCompletionsURL, authToken)
+			return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 		}
 		apiURL = buildOpenAIResponsesURLForPlatform(credentialAccount.Platform, normalizedBaseURL)
 	} else {
@@ -768,10 +767,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 				req.Header.Add(key, value)
 			}
 		}
-	} else if isOAuth {
-		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		applyOpenAICompatibleAPIKeyAuth(req, credentialAccount, authToken)
+		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
@@ -1968,13 +1965,13 @@ func minimalSilentWAV() []byte {
 func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c *gin.Context,
 	account *Account,
-	credentialAccount *Account,
 	testModelID string,
 	prompt string,
-	apiURL string,
+	normalizedBaseURL string,
 	authToken string,
 ) error {
 	ctx := c.Request.Context()
+	apiURL := buildOpenAIChatCompletionsURL(normalizedBaseURL)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -1995,7 +1992,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	applyOpenAICompatibleAPIKeyAuth(req, credentialAccount, authToken)
+	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
@@ -2024,17 +2021,6 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	}
 
 	return s.processOpenAIChatCompletionsStream(c, resp.Body)
-}
-
-func (s *AccountTestService) openAIChatCompletionsTestURL(account *Account, normalizedBaseURL string) (string, error) {
-	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
-		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
-		if err != nil {
-			return "", fmt.Errorf("invalid Chat Completions URL: %s", err.Error())
-		}
-		return validatedURL, nil
-	}
-	return buildOpenAIChatCompletionsURL(normalizedBaseURL), nil
 }
 
 // testOpenAICompactConnection probes native remote compaction v2 (streaming
@@ -2119,10 +2105,8 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 				req.Header.Add(key, value)
 			}
 		}
-	} else if isOAuth {
-		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		applyOpenAICompatibleAPIKeyAuth(req, credentialAccount, authToken)
+		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
 	applyOpenAICodexProbeHeaders(req.Header)
 	if isOAuth {
@@ -2917,7 +2901,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
-	applyOpenAICompatibleAPIKeyAuth(req, account, authToken)
+	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)

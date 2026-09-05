@@ -42,20 +42,9 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 	return svc, nil
 }
 
-// ProvideUpdateService creates UpdateService with build and private release settings.
-func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, buildInfo BuildInfo, cfg *config.Config) *UpdateService {
-	options := DefaultUpdateOptions()
-	if cfg != nil {
-		options = UpdateOptions{
-			Repository:      cfg.Update.Repository,
-			DockerImage:     cfg.Update.DockerImage,
-			Channel:         cfg.Update.Channel,
-			InPlaceEnabled:  cfg.Update.InPlaceEnabled,
-			RequireChecksum: cfg.Update.RequireChecksum,
-			RequireManifest: cfg.Update.RequireManifest,
-		}
-	}
-	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType, options)
+// ProvideUpdateService creates UpdateService with BuildInfo.
+func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, buildInfo BuildInfo) *UpdateService {
+	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
 // ProvideEmailQueueService creates EmailQueueService with default worker count

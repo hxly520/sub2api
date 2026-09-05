@@ -112,6 +112,8 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		upstreamDetail = truncateString(string(respBody), maxBytes)
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		AccountName:        account.Name,
@@ -138,14 +140,6 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 
 // openAIChatCompletionsTargetURL 解析账号的（非 Grok）Chat Completions 上游端点。
 func (s *OpenAIGatewayService) openAIChatCompletionsTargetURL(account *Account) (string, error) {
-	if chatCompletionsURL := account.GetOpenAIChatCompletionsURL(); chatCompletionsURL != "" {
-		validatedURL, err := s.validateUpstreamBaseURL(chatCompletionsURL)
-		if err != nil {
-			return "", fmt.Errorf("invalid chat_completions_url: %w", err)
-		}
-		return validatedURL, nil
-	}
-
 	baseURL := account.GetOpenAIBaseURL()
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
@@ -194,9 +188,13 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
+	// 记录本次实际选择的协议端点，供错误日志和用量日志在没有
+	// OpenAIForwardResult（例如 503/传输失败）时使用。每次发送都覆盖，
+	// 避免 Gin context 在账号 failover 尝试之间残留旧端点。
+	SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	applyOpenAICompatibleAPIKeyAuth(upstreamReq, account, bearerToken)
+	upstreamReq.Header.Set("Authorization", "Bearer "+bearerToken)
 	if stream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {
@@ -225,14 +223,15 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
 	// 使配置值获得除共享传输层强制头之外的最高优先级。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header)
 
 	proxyURL := ""
-	if account.Proxy != nil {
+	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.doOpenAIUpstreamWithFirstResponseBudget(ctx, c, account, upstreamReq, proxyURL, false)
+	resp, err := s.doOpenAIUpstreamWithFirstTokenTiming(ctx, c, upstreamReq, proxyURL, account)
 	if err != nil {
-		return nil, err
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
 	return resp, nil
 }
@@ -242,8 +241,7 @@ type ccStreamScanState struct {
 	// Usage 为 include_usage chunk 中最近一次出现的用量（上游可能重复发送，
 	// 总是保留最新值）；终态事件中的用量由调用方在 finalize 阶段自行覆盖。
 	Usage OpenAIUsage
-	// FirstTokenMs 优先采用最终 attempt 的成功响应头时延；没有 dispatch
-	// 标记的内部调用才回退到首个实际输出 chunk。
+	// FirstTokenMs 为首个实际输出 chunk（排除 usage-only chunk）的到达时延。
 	FirstTokenMs *int
 	// SawDone 表示上游发出了 [DONE] 哨兵。
 	SawDone bool
@@ -254,13 +252,11 @@ type ccStreamScanState struct {
 }
 
 // scanCCStream 驱动两条 CC 回退路径共享的 SSE 读循环：提取 data 行、在 [DONE]
-// 哨兵处停止、保留最新 usage、记录首响应时延，并把每个解析成功的 chunk 交给
+// 哨兵处停止、保留最新 usage、记录首 token 时延，并把每个解析成功的 chunk 交给
 // emit 回调做各自的协议转换与写出。读错误按既有约定过滤 context 取消类噪声后
 // 记入 Warn 日志。
 func (s *OpenAIGatewayService) scanCCStream(
-	ctx context.Context,
 	c *gin.Context,
-	account *Account,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
@@ -270,30 +266,6 @@ func (s *OpenAIGatewayService) scanCCStream(
 	st := ccStreamScanState{FirstTokenMs: openAIFirstTokenAccepted(c)}
 
 	scanner := s.newUpstreamSSEScanner(resp.Body)
-	firstResponseWatch := newOpenAIFirstResponseTimeoutWatch(ctx, resp.Body)
-	defer firstResponseWatch.Stop()
-	pendingChunks := make([]apicompat.ChatCompletionsChunk, 0, 2)
-	pendingChunkBytes := 0
-	emitPendingChunks := func() {
-		for i := range pendingChunks {
-			emit(&pendingChunks[i])
-		}
-		pendingChunks = pendingChunks[:0]
-		pendingChunkBytes = 0
-	}
-	emitChunk := func(chunk *apicompat.ChatCompletionsChunk, serializedBytes int) {
-		if chunk == nil {
-			return
-		}
-		if firstResponseWatch.Waiting() {
-			if reserveOpenAIFirstResponseBuffer(firstResponseWatch, &pendingChunkBytes, serializedBytes) {
-				pendingChunks = append(pendingChunks, *chunk)
-				return
-			}
-		}
-		emitPendingChunks()
-		emit(chunk)
-	}
 	for scanner.Scan() {
 		line := scanner.Text()
 		payload, ok := extractOpenAISSEDataLine(line)
@@ -304,16 +276,16 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if payload == "" {
 			continue
 		}
-		if observer := upstreamResponseModelObserverFromContext(c); observer != nil {
-			observer.ObserveOpenAI([]byte(payload), "")
-		}
 		if payload == "[DONE]" {
-			firstResponseWatch.observe()
-			emitPendingChunks()
 			st.SawDone = true
 			break
 		}
-		firstResponseWatch.ObservePayload(payload)
+		// 观察上游 CC chunk 回显的 model / service_tier（计费以回显为准）。
+		// CC chunk 无 type 字段，按 untyped payload 观察（上游约束：只有终止
+		// 事件与无类型 body 报告实际处理档位）。
+		if observer := upstreamResponseModelObserverFromContext(c); observer != nil {
+			observer.ObserveOpenAI([]byte(payload), "")
+		}
 
 		if u := extractCCStreamUsage(payload); u != nil {
 			st.Usage = *u
@@ -328,17 +300,13 @@ func (s *OpenAIGatewayService) scanCCStream(
 			continue
 		}
 		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
-			ms := int(time.Since(openAIFirstTokenStart(c, startTime)).Milliseconds())
+			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
-		emitChunk(&chunk, len(payload)+len("data: \n\n"))
+		emit(&chunk)
 	}
 
 	if err := scanner.Err(); err != nil {
-		if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, false); failoverErr != nil {
-			st.Err = failoverErr
-			return st
-		}
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			logger.L().Warn(logPrefix+": stream read error",
 				zap.Error(err),
@@ -346,9 +314,6 @@ func (s *OpenAIGatewayService) scanCCStream(
 			)
 		}
 		st.Err = err
-	}
-	if failoverErr := firstResponseWatch.failoverErrorIfTimedOut(s, c, account, false, requestID, false); failoverErr != nil {
-		st.Err = failoverErr
 	}
 	return st
 }
@@ -380,6 +345,8 @@ func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 		writeError(c, http.StatusBadGateway, "api_error", "Failed to parse upstream response")
 		return nil, OpenAIUsage{}, fmt.Errorf("parse chat completions response: %w", err)
 	}
+	// 观察上游 CC JSON 回显的 model / service_tier（计费以回显为准）。
+	// CC JSON 无 type 字段，按 untyped payload 观察（上游约束）。
 	if observer := upstreamResponseModelObserverFromContext(c); observer != nil {
 		observer.ObserveOpenAI(respBody, "")
 	}

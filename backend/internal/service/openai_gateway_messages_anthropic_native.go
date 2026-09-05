@@ -57,12 +57,16 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 		}
 		body = rewritten
 	}
+	if normalized, changed := NormalizeGLM53AnthropicThinking(body, upstreamModel); changed {
+		body = normalized
+	}
 
 	// 记录客户端请求的推理强度：优先 Claude 协议的 output_config.effort；
 	// 缺失且 thinking 已启用时，按国产 passback-required 模型兜底为 high
 	// （对齐 Anthropic 网关 gateway_handler 的记录语义，避免该路径长期落 NULL）。
+	requestedReasoningEffort := NormalizeClaudeOutputEffort(gjson.GetBytes(body, "output_config.effort").String())
 	reasoningEffort := ApplyThinkingEnabledFallback(
-		NormalizeClaudeOutputEffort(gjson.GetBytes(body, "output_config.effort").String()),
+		requestedReasoningEffort,
 		body,
 		billingModel,
 	)
@@ -85,7 +89,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 	}
 
 	proxyURL := ""
-	if account.Proxy != nil {
+	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
@@ -96,7 +100,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 		return nil, err
 	}
 
-	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	resp, err := s.doOpenAIUpstreamWithFirstTokenTiming(ctx, c, upstreamReq, proxyURL, account)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 	}
@@ -243,6 +247,7 @@ func (s *OpenAIGatewayService) handleNativeAnthropicBufferedResponse(
 
 	return &OpenAIForwardResult{
 		RequestID:        resp.Header.Get("x-request-id"),
+		UpstreamHeaders:  resp.Header,
 		Usage:            claudeUsageToOpenAIUsage(usage),
 		Model:            originalModel,
 		BillingModel:     billingModel,
@@ -301,7 +306,7 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 	}
 
 	usage := &ClaudeUsage{}
-	var firstTokenMs *int
+	firstTokenMs := openAIFirstTokenAccepted(c)
 	clientDisconnected := false
 	sawTerminalEvent := false
 
@@ -516,6 +521,7 @@ func (s *OpenAIGatewayService) nativeAnthropicStreamResult(
 	}
 	return &OpenAIForwardResult{
 		RequestID:        resp.Header.Get("x-request-id"),
+		UpstreamHeaders:  resp.Header,
 		Usage:            claudeUsageToOpenAIUsage(usage),
 		Model:            originalModel,
 		BillingModel:     billingModel,

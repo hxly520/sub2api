@@ -5,11 +5,9 @@ package handler
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -21,48 +19,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type openAIResponsesMissingTerminalUpstream struct {
-	service.HTTPUpstream
-	mu         sync.Mutex
-	accountIDs []int64
-	body       string
-}
-
-func (u *openAIResponsesMissingTerminalUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
-	u.mu.Lock()
-	u.accountIDs = append(u.accountIDs, accountID)
-	u.mu.Unlock()
-	body := u.body
-	if body == "" {
-		body = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
-	}
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header: http.Header{
-			"Content-Type": []string{"text/event-stream"},
-			"X-Request-Id": []string{"rid-client-gone-missing-terminal"},
-		},
-		Body: io.NopCloser(bytes.NewBufferString(body)),
-	}, nil
-}
-
-func (u *openAIResponsesMissingTerminalUpstream) calls() []int64 {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return append([]int64(nil), u.accountIDs...)
-}
-
-type openAIResponsesFailingWriter struct {
-	gin.ResponseWriter
-	attempts int
-}
-
-func (w *openAIResponsesFailingWriter) Write(_ []byte) (int, error) {
-	w.attempts++
-	return 0, errors.New("client disconnected")
-}
-
-// openAIResponsesFailoverCancelUpstream 固定返回 HTTP 429，可在首次上游调用时
+// openAIResponsesFailoverCancelUpstream 固定返回 HTTP 520，可在首次上游调用时
 // 触发回调（用于模拟“上游在途期间客户端断开”）。
 type openAIResponsesFailoverCancelUpstream struct {
 	service.HTTPUpstream
@@ -80,9 +37,9 @@ func (u *openAIResponsesFailoverCancelUpstream) Do(_ *http.Request, _ string, ac
 		u.onFirstDo()
 	}
 	return &http.Response{
-		StatusCode: http.StatusTooManyRequests,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewBufferString(`{"error":{"message":"rate limited"}}`)),
+		StatusCode: 520,
+		Header:     http.Header{"Content-Type": []string{"text/html"}},
+		Body:       io.NopCloser(bytes.NewBufferString("<html>520: unknown error</html>")),
 	}, nil
 }
 
@@ -118,12 +75,6 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 			Credentials: map[string]any{"access_token": "token-2"},
 		},
 	}
-	return newOpenAIResponsesFailoverTestHandlerWithAccounts(t, upstream, accounts)
-}
-
-func newOpenAIResponsesFailoverTestHandlerWithAccounts(t *testing.T, upstream service.HTTPUpstream,
-	accounts []service.Account) *OpenAIGatewayHandler {
-	t.Helper()
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	gatewayService := service.NewOpenAIGatewayService(
@@ -194,7 +145,7 @@ func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*
 }
 
 // TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected 复现
-// #4257：客户端在上游请求在途期间断开，上游随后返回可 failover 的 429。
+// #4257：客户端在上游请求在途期间断开，上游随后返回可 failover 的 520。
 // 期望：不再用已取消的 context 重新选号（不触达账号 2）、不把取消误报成
 // 502 账号耗尽、请求按 499 归类。
 func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *testing.T) {
@@ -215,19 +166,19 @@ func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *t
 	_, hasFinalUpstreamErr := c.Get(service.OpsUpstreamStatusCodeKey)
 	require.False(t, hasFinalUpstreamErr, "不应记录 failover 耗尽的上游错误终态")
 
-	// 真实发生过的 429 应保留 failover 事件（service 层在返回 failover 错误前记录）
+	// 真实发生过的 520 应保留 failover 事件（service 层在返回 failover 错误前记录）
 	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
 	require.True(t, ok)
 	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	require.Equal(t, "failover", events[0].Kind)
-	require.Equal(t, http.StatusTooManyRequests, events[0].UpstreamStatusCode)
+	require.Equal(t, 520, events[0].UpstreamStatusCode)
 }
 
 // TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient 回归
-// 守卫：客户端在线时 failover 行为不变——切换到账号 2，两个账号都 429 后按
-// 最后一次上游拒绝状态返回 429。
+// 守卫：客户端在线时 failover 行为不变——切换到账号 2，两个账号都 520 后按
+// 耗尽返回 502。
 func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -238,47 +189,6 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 	handler.Responses(c)
 
 	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
-	require.Equal(t, http.StatusTooManyRequests, rec.Code)
-	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-}
-
-func TestOpenAIGatewayHandlerResponses_ClientDisconnectMissingTerminalDoesNotAppendFallbackOrReplay(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesMissingTerminalUpstream{}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	c, _ := newOpenAIResponsesFailoverTestContext(t, nil)
-	body := []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-	writer := &openAIResponsesFailingWriter{ResponseWriter: c.Writer}
-	c.Writer = writer
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls(), "a disconnected client must not start another upstream attempt")
-	require.Equal(t, 1, writer.attempts, "handler must not append a fallback event after the client write failed")
-}
-
-func TestOpenAIGatewayHandlerResponses_ClientDisconnectUpstreamFailureDoesNotReplay(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesMissingTerminalUpstream{body: strings.Join([]string{
-		`data: {"type":"response.output_text.delta","delta":"partial"}`,
-		"",
-		`data: {"type":"response.failed","response":{"status":"failed","error":{"message":"upstream failed"},"usage":{"input_tokens":2,"output_tokens":1}}}`,
-		"",
-	}, "\n")}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	c, _ := newOpenAIResponsesFailoverTestContext(t, nil)
-	body := []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-	writer := &openAIResponsesFailingWriter{ResponseWriter: c.Writer}
-	c.Writer = writer
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls(), "a disconnected client must not replay a real upstream failure")
-	require.Equal(t, 1, writer.attempts, "handler must not append another event after the client write failed")
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 }

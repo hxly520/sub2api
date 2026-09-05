@@ -398,6 +398,8 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		UpstreamStatusCode: resp.StatusCode,
@@ -468,7 +470,7 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 
 	switch resp.StatusCode {
 	case 400:
-		c.Data(http.StatusBadRequest, "application/json", sanitizeUpstreamErrorResponseBody(body))
+		c.Data(http.StatusBadRequest, "application/json", body)
 		summary := upstreamMsg
 		if summary == "" {
 			summary = truncateForLog(body, 512)
@@ -578,6 +580,8 @@ func (s *GatewayService) handleRetryExhaustedError(ctx context.Context, resp *ht
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		UpstreamStatusCode: resp.StatusCode,
@@ -675,6 +679,7 @@ func partialStreamUsageResult(c *gin.Context, resp *http.Response, streamResult 
 	}
 	return &ForwardResult{
 		RequestID:                     resp.Header.Get("x-request-id"),
+		UpstreamHeaders:               resp.Header,
 		Usage:                         *streamResult.usage,
 		Model:                         model,
 		UpstreamModel:                 upstreamModel,
@@ -693,8 +698,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
-	drainGuard := startClientDisconnectDrainGuard(originalClientRequestContext(ctx, c), resp.Body, s.cfg)
-	defer drainGuard.Stop()
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
@@ -1078,7 +1081,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						restored := reverseToolNamesIfPresent(c, []byte(block))
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
-							drainGuard.ClientDisconnected()
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 							// 不 break：客户端断开后仍需继续合并本事件及后续事件的 usage，
 							// 否则会漏计当前事件携带的 usage 导致少计费。后续写入由
@@ -1136,7 +1138,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			}
 			if _, werr := fmt.Fprint(w, keepaliveBlock); werr != nil {
 				clientDisconnected = true
-				drainGuard.ClientDisconnected()
 				logger.LegacyPrintf("service.gateway", "Client disconnected during keepalive ping, continuing to drain upstream for billing")
 				continue
 			}

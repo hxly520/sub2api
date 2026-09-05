@@ -33,14 +33,12 @@ builds:
 
 archives:
   - id: default
-    formats:
-      - tar.gz
+    format: tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        formats:
-          - zip
+        format: zip
     files:
       - LICENSE*
       - README*
@@ -123,10 +121,6 @@ dockers:
       - "--label=org.opencontainers.image.source=https://github.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}"
 
 # Docker manifests for multi-arch support
-# The exact ``{{ .Version }}`` manifest is the release artifact.  The
-# ``latest`` and major/minor aliases below are convenience pointers and are
-# intentionally mutable; production Compose files must pin the exact tag or
-# digest and must never use an alias for rollback.
 docker_manifests:
   # DockerHub manifests (skipped if DOCKERHUB_USERNAME is 'skip')
   - name_template: "{{ .Env.DOCKERHUB_USERNAME }}/sub2api:{{ .Version }}"
@@ -179,10 +173,7 @@ release:
     owner: "{{ .Env.GITHUB_REPO_OWNER }}"
     name: "{{ .Env.GITHUB_REPO_NAME }}"
   draft: false
-  # The -52t.N suffix identifies a stable private revision, not a prerelease.
-  # GitHub /releases/latest ignores prereleases, so this must remain false for
-  # the admin updater to discover private releases.
-  prerelease: false
+  prerelease: auto
   name_template: "Sub2API {{.Version}}"
   # 完全使用 tag 消息作为 release 内容（通过环境变量传入）
   header: |
@@ -207,14 +198,9 @@ release:
     docker pull ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:{{ .Version }}
     ```
 
-    **Public repository install (Linux):**
+    **One-line install (Linux):**
     ```bash
-    export UPDATE_REPOSITORY={{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}
-    curl --fail --silent --show-error --location \
-      "https://raw.githubusercontent.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}/v{{ .Version }}/deploy/install.sh" \
-      --output install.sh
-    sudo --preserve-env=UPDATE_REPOSITORY \
-      bash install.sh install --version v{{ .Version }}
+    curl -sSL https://raw.githubusercontent.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}/main/deploy/install.sh | sudo bash
     ```
 
     **Manual download:**

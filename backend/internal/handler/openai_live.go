@@ -97,9 +97,8 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		return
 	}
 
-	userRelease, acquired, err := h.concurrencyHelper.TryAcquireUserSlotForKey(
+	userRelease, acquired, err := h.concurrencyHelper.TryAcquireUserSlot(
 		c.Request.Context(),
-		apiKey,
 		subject.UserID,
 		subject.Concurrency,
 	)

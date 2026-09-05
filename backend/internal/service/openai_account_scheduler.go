@@ -780,7 +780,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	}()
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
-	if previousResponseID != "" && normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
+	if previousResponseID != "" && NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
 		selection, err := s.service.selectAccountByPreviousResponseIDForCapability(
 			ctx,
@@ -916,7 +916,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		clearBinding()
 		return nil, false, false, nil
 	}
-	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
 		clearBinding()
 		return nil, false, false, nil
 	}
@@ -960,17 +960,17 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	allowTemporaryEscape := !account.IsPoolMode()
 	if allowTemporaryEscape {
 		if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg, profile); shouldEscape {
-			// TTFT migration must have a proven faster peer and update the binding;
-			// without one, retaining cache affinity is safer than blind escape.
-			if reason != "ttft" {
-				slog.Info("sticky_escape_triggered",
-					"account_id", accountID,
-					"reason", reason,
-					"error_rate", errorRate,
-					"ttft", ttft,
-				)
-				return nil, false, true, nil
-			}
+			// A materially faster peer is migrated above when its profile is
+			// known.  If no peer has a usable sample yet, retain the official
+			// bounded escape behavior and let load balancing choose another
+			// compatible account rather than pinning a demonstrably slow one.
+			slog.Info("sticky_escape_triggered",
+				"account_id", accountID,
+				"reason", reason,
+				"error_rate", errorRate,
+				"ttft", ttft,
+			)
+			return nil, false, true, nil
 		}
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
@@ -1099,7 +1099,7 @@ func (s *defaultOpenAIAccountScheduler) findFasterStickyAccount(
 				continue
 			}
 		}
-		if !candidate.IsSchedulable() || candidate.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !candidate.IsOpenAICompatible() {
+		if !candidate.IsSchedulable() || candidate.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !candidate.IsOpenAICompatible() {
 			continue
 		}
 		if !s.service.openAIAccountMatchesSchedulingGroup(candidate, req.GroupID) ||
@@ -2045,7 +2045,6 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	filtered := make([]*Account, 0, len(accounts))
-	runtimeBlockedFallback := make([]*Account, 0, 1)
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
@@ -2059,7 +2058,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("not_schedulable")
 			continue
 		}
-		if account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
@@ -2072,19 +2071,8 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if block, runtimeBlocked := s.service.openAIAccountRuntimeBlock(account); runtimeBlocked {
-			reason := "runtime_blocked"
-			if openAIRuntimeBlockReasonAllowsSingleCandidateFailOpen(block.Reason) &&
-				!s.service.isOpenAIAccountModelRuntimeBlocked(account, req.RequestedModel) {
-				if compatible, compatibilityReason := s.isAccountRequestCompatibleReasonIgnoringAccountRuntimeBlock(ctx, account, req); !compatible {
-					reason = compatibilityReason
-				} else if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-					reason = "transport_incompatible"
-				} else {
-					runtimeBlockedFallback = append(runtimeBlockedFallback, account)
-				}
-			}
-			filterStats.exclude(reason)
+		if s.service.isOpenAIAccountRuntimeBlocked(account) {
+			filterStats.exclude("runtime_blocked")
 			continue
 		}
 		if compatible, reason := s.isAccountRequestCompatibleReason(ctx, account, req); !compatible {
@@ -2100,20 +2088,6 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			ID:             account.ID,
 			MaxConcurrency: account.EffectiveLoadFactor(),
 		})
-	}
-	if len(filtered) == 0 && len(runtimeBlockedFallback) == 1 {
-		account := runtimeBlockedFallback[0]
-		s.service.ClearAccountSchedulingBlock(account.ID)
-		filtered = append(filtered, account)
-		loadReq = append(loadReq, AccountWithConcurrency{
-			ID:             account.ID,
-			MaxConcurrency: account.EffectiveLoadFactor(),
-		})
-		slog.Warn("openai.runtime_block_fail_open_single_candidate",
-			"account_id", account.ID,
-			"group_id", req.GroupID,
-			"model", req.RequestedModel,
-		)
 	}
 	if len(filtered) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
@@ -2389,7 +2363,7 @@ func (s *OpenAIGatewayService) HasOpenAIAlternativeAccountForCapability(
 		return false, ErrNoAvailableAccounts
 	}
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
-	platform = normalizeOpenAICompatiblePlatform(platform)
+	platform = NormalizeOpenAICompatiblePlatform(platform)
 	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
 	if err != nil {
 		return false, err
@@ -2922,7 +2896,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		return selection, decision, err
 	}
 	// The circuit only ever quarantines PlatformOpenAI accounts.
-	if normalizeOpenAICompatiblePlatform(platform) != PlatformOpenAI {
+	if NormalizeOpenAICompatiblePlatform(platform) != PlatformOpenAI {
 		return selection, decision, err
 	}
 	blocked := s.getOpenAIProxyStreamCircuit().activeBlockCount(time.Now())
@@ -2995,7 +2969,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	if requiredImageCapability == "" {
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
-	platform = normalizeOpenAICompatiblePlatform(platform)
+	platform = NormalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
 	preserveGuardianParentBinding := preserveOpenAIGuardianParentBinding(ctx, sessionHash)
 	guardianParentAccountID := int64(0)
@@ -3042,7 +3016,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		if requiredTransport == OpenAIUpstreamTransportAny || requiredTransport == OpenAIUpstreamTransportHTTPSSE {
 			effectiveExcludedIDs := cloneExcludedAccountIDs(excludedIDs)
 			for {
-				selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, legacySessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, requiredImageCapability, requiredTransport, useUpstreamTokenCost)
+				selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, legacySessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, useUpstreamTokenCost)
 				if err != nil {
 					return nil, decision, err
 				}
@@ -3067,7 +3041,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 
 		effectiveExcludedIDs := cloneExcludedAccountIDs(excludedIDs)
 		for {
-			selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, legacySessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, requiredImageCapability, requiredTransport, useUpstreamTokenCost)
+			selection, err := s.selectAccountWithLoadAwareness(ctx, groupID, platform, legacySessionHash, requestedModel, effectiveExcludedIDs, requireCompact, requiredCapability, useUpstreamTokenCost)
 			if err != nil {
 				return nil, decision, err
 			}

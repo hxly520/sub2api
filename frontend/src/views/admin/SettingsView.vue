@@ -5282,6 +5282,32 @@
                   </p>
                 </div>
 
+              <!-- OpenAI Responses 首 token 统计 -->
+              <div class="border-b border-gray-100 pb-5 dark:border-dark-700 md:col-span-2">
+                <label
+                  for="openai-ttft-mode"
+                  class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.gatewayForwarding.openaiTTFTMode") }}
+                </label>
+                <select
+                  id="openai-ttft-mode"
+                  v-model="form.openai_ttft_mode"
+                  class="input mt-2 w-full"
+                  data-testid="openai-ttft-mode"
+                >
+                  <option value="semantic">
+                    {{ t("admin.settings.gatewayForwarding.openaiTTFTModeSemantic") }}
+                  </option>
+                  <option value="visible">
+                    {{ t("admin.settings.gatewayForwarding.openaiTTFTModeVisible") }}
+                  </option>
+                </select>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.gatewayForwarding.openaiTTFTModeHint") }}
+                </p>
+              </div>
+
               <!-- Fingerprint Unification -->
               <div class="flex items-center justify-between">
                 <div>
@@ -9784,6 +9810,7 @@ const form = reactive<SettingsForm>({
   openai_first_response_enabled: false,
   openai_first_response_timeout_ms: 5000,
   // Gateway forwarding behavior
+  openai_ttft_mode: "semantic",
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
@@ -11365,6 +11392,8 @@ async function saveSettings() {
       min_claude_code_version: form.min_claude_code_version,
       max_claude_code_version: form.max_claude_code_version,
       allow_ungrouped_key_scheduling: form.allow_ungrouped_key_scheduling,
+      openai_ttft_mode:
+        form.openai_ttft_mode === "visible" ? "visible" : "semantic",
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
@@ -12115,6 +12144,10 @@ const openaiFastPolicyTierOptions = computed(() => [
     value: "priority",
     label: t("admin.settings.openaiFastPolicy.tierPriority"),
   },
+  {
+    value: "ultrafast",
+    label: t("admin.settings.openaiFastPolicy.tierUltrafast"),
+  },
   { value: "flex", label: t("admin.settings.openaiFastPolicy.tierFlex") },
 ]);
 
@@ -12217,7 +12250,6 @@ async function saveBetaPolicySettings() {
 
 const allPaymentTypes = computed(() => [
   { value: "easypay", label: t("payment.methods.easypay") },
-  { value: "keyingpay", label: t("payment.methods.keyingpay") },
   { value: "alipay", label: t("payment.methods.alipay") },
   { value: "wxpay", label: t("payment.methods.wxpay") },
   { value: "stripe", label: t("payment.methods.stripe") },
@@ -12275,7 +12307,6 @@ const providerDialogRef = ref<InstanceType<
 
 const providerKeyOptions = computed(() => [
   { value: "easypay", label: t("admin.settings.payment.providerEasypay") },
-  { value: "keyingpay", label: t("admin.settings.payment.providerKeyingpay") },
   { value: "alipay", label: t("admin.settings.payment.providerAlipay") },
   { value: "wxpay", label: t("admin.settings.payment.providerWxpay") },
   { value: "stripe", label: t("admin.settings.payment.providerStripe") },

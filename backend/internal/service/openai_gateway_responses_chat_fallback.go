@@ -87,9 +87,8 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		}
 		return nil, err
 	}
-	// 计费兜底 tier = 最终出站 body（policy filter/force 后）里的 tier；最终值由
-	// resolvedOpenAIUpstreamServiceTier 决定（上游回显优先）。filter 删掉字段后
-	// 这里取到 nil，不再按原请求 Fast 计费。
+	// Keep the final outbound tier for usage-time reconciliation. A policy
+	// filter that removes the field therefore leaves this nil.
 	serviceTier := extractOpenAIServiceTierFromBody(chatBody)
 
 	logger.L().Debug("openai responses: forwarding via raw chat completions",
@@ -121,7 +120,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	}
 
 	if clientStream {
-		return s.streamChatCompletionsAsResponses(ctx, c, resp, account, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
 	return s.bufferChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -154,23 +153,23 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 	c.JSON(http.StatusOK, responsesResp)
 
 	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-		Stream:          false,
-		Duration:        time.Since(startTime),
+		RequestID:                   requestID,
+		UpstreamHeaders:             resp.Header,
+		Usage:                       usage,
+		Model:                       originalModel,
+		BillingModel:                billingModel,
+		UpstreamModel:               upstreamModel,
+		ReasoningEffort:             reasoningEffort,
+		UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
+		ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+		Stream:                      false,
+		Duration:                    time.Since(startTime),
 	}, nil
 }
 
 func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
-	ctx context.Context,
 	c *gin.Context,
 	resp *http.Response,
-	account *Account,
 	originalModel string,
 	customTools map[string]bool,
 	functionTools map[string]bool,
@@ -218,7 +217,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 		c.Writer.Flush()
 	}
 
-	scan := s.scanCCStream(ctx, c, account, resp, "openai responses chat fallback", requestID, startTime, func(chunk *apicompat.ChatCompletionsChunk) {
+	scan := s.scanCCStream(c, resp, "openai responses chat fallback", requestID, startTime, func(chunk *apicompat.ChatCompletionsChunk) {
 		events := apicompat.ChatCompletionsChunkToResponsesEvents(chunk, state)
 		s.cacheReasoningItemsFromEvents(events)
 		writeEvents(events)
@@ -226,30 +225,34 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 
 	if scan.Err != nil {
 		return &OpenAIForwardResult{
-			RequestID:       requestID,
-			Usage:           scan.Usage,
-			Model:           originalModel,
-			BillingModel:    billingModel,
-			UpstreamModel:   upstreamModel,
-			ReasoningEffort: reasoningEffort,
-			ServiceTier:     resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    scan.FirstTokenMs,
+			RequestID:                   requestID,
+			UpstreamHeaders:             resp.Header,
+			Usage:                       scan.Usage,
+			Model:                       originalModel,
+			BillingModel:                billingModel,
+			UpstreamModel:               upstreamModel,
+			ReasoningEffort:             reasoningEffort,
+			UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
+			ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+			Stream:                      true,
+			Duration:                    time.Since(startTime),
+			FirstTokenMs:                scan.FirstTokenMs,
 		}, fmt.Errorf("stream usage incomplete: %w", scan.Err)
 	}
 	if err := state.ValidateToolCallArguments(); err != nil {
 		return &OpenAIForwardResult{
-			RequestID:       requestID,
-			Usage:           scan.Usage,
-			Model:           originalModel,
-			BillingModel:    billingModel,
-			UpstreamModel:   upstreamModel,
-			ReasoningEffort: reasoningEffort,
-			ServiceTier:     resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    scan.FirstTokenMs,
+			RequestID:                   requestID,
+			UpstreamHeaders:             resp.Header,
+			Usage:                       scan.Usage,
+			Model:                       originalModel,
+			BillingModel:                billingModel,
+			UpstreamModel:               upstreamModel,
+			ReasoningEffort:             reasoningEffort,
+			UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
+			ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+			Stream:                      true,
+			Duration:                    time.Since(startTime),
+			FirstTokenMs:                scan.FirstTokenMs,
 		}, fmt.Errorf("invalid tool call arguments from upstream: %w", err)
 	}
 
@@ -270,16 +273,18 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           scan.Usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-		Stream:          true,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    scan.FirstTokenMs,
+		RequestID:                   requestID,
+		UpstreamHeaders:             resp.Header,
+		Usage:                       scan.Usage,
+		Model:                       originalModel,
+		BillingModel:                billingModel,
+		UpstreamModel:               upstreamModel,
+		ReasoningEffort:             reasoningEffort,
+		UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
+		ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+		Stream:                      true,
+		Duration:                    time.Since(startTime),
+		FirstTokenMs:                scan.FirstTokenMs,
 	}, nil
 }
 

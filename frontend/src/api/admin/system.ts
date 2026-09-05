@@ -19,12 +19,6 @@ export interface VersionInfo {
   cached: boolean
   warning?: string
   build_type: string // "source" for manual builds, "release" for CI builds
-  repository: string
-  docker_image: string
-  channel: string
-  hot_update_policy: 'hot-update-safe' | 'image-update-recommended' | 'image-update-required' | string
-  hot_update_allowed: boolean
-  hot_update_reasons?: string[]
 }
 
 /**
@@ -55,9 +49,6 @@ export interface RollbackVersionInfo {
   version: string
   published_at: string
   html_url: string
-  hot_update_policy?: 'hot-update-safe' | 'image-update-recommended' | 'image-update-required' | string
-  hot_update_allowed?: boolean
-  hot_update_reasons?: string[]
 }
 
 /**
