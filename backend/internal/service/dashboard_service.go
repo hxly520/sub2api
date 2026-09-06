@@ -60,7 +60,8 @@ func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregat
 	aggEnabled := true
 	aggInterval := time.Minute
 	aggLookback := 2 * time.Minute
-	aggUsageDays := 90
+	// Keep dashboard range aligned with the raw usage-log retention default.
+	aggUsageDays := 30
 	if cfg != nil {
 		if !cfg.Dashboard.Enabled {
 			cache = nil

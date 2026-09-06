@@ -184,6 +184,9 @@ func TestSessionBindingHash(t *testing.T) {
 }
 
 func TestParseAuditLogRetentionDays(t *testing.T) {
+	if defaultAuditLogRetentionDays != 30 {
+		t.Fatalf("defaultAuditLogRetentionDays = %d, want 30", defaultAuditLogRetentionDays)
+	}
 	cases := map[string]int{
 		"":       defaultAuditLogRetentionDays,
 		"abc":    defaultAuditLogRetentionDays,

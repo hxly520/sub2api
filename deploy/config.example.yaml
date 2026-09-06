@@ -773,9 +773,13 @@ dashboard_aggregation:
   # Retention windows (days)
   # 保留窗口（天）
   retention:
-    # Raw usage_logs retention
-    # 原始 usage_logs 保留天数
-    usage_logs_days: 90
+    # Raw usage_logs retention (default: 30 days)
+    # 原始 usage_logs 保留天数（默认 30 天）
+    usage_logs_days: 30
+    # Billing deduplication records are intentionally retained longer for
+    # idempotency/audit and must not be shortened with usage_logs.
+    # 计费幂等记录需长期保留用于追溯，不随 usage_logs 一起缩短。
+    usage_billing_dedup_days: 365
     # Hourly aggregation retention
     # 小时聚合保留天数
     hourly_days: 180

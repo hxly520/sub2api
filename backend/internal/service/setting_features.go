@@ -260,7 +260,7 @@ func (s *SettingService) IsStepUpEnabled(ctx context.Context) bool {
 }
 
 // defaultAuditLogRetentionDays 审计日志默认保留天数。
-const defaultAuditLogRetentionDays = 180
+const defaultAuditLogRetentionDays = 30
 
 // GetAuditLogRetentionDays 审计日志保留天数（<=0 表示永久保留，仅支持手动清空）。
 func (s *SettingService) GetAuditLogRetentionDays(ctx context.Context) int {

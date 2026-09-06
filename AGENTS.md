@@ -8,7 +8,8 @@
 2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：v0.2.1 候选的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
-5. `docs/LINK_CARDS_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡、媒体和积分契约。
+5. `docs/LOG_RETENTION_POLICY_CN.md`：使用记录、操作日志的 30 天保留边界，以及充值/配置数据保护清单。
+6. `docs/LINK_CARDS_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡、媒体和积分契约。
 
 ## 仓库与分支规则
 
