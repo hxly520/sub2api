@@ -46,7 +46,8 @@
   `id/key/value` 集合在变更前后完全一致。
 - 按固定 30 天截止时间分批清理 `usage_logs` 与 `audit_logs`，并重建受影响的
   `usage_group_daily_rollups`；固定截止时间复核的超期行数均为 `0`。随后执行
-  `VACUUM (ANALYZE)`，未执行高锁定风险的 `VACUUM FULL`。
+  `VACUUM (ANALYZE)`，未执行高锁定风险的 `VACUUM FULL`；最终复核结果保存在
+  `boundary-final.tsv`。
 - 本次 SQL 未写入 `payment_orders`、`payment_audit_logs`、`usage_billing_dedup` 或
   其他业务表；生产容器镜像摘要未变化，重建后健康状态为 `healthy`、重启次数为 `0`。
 - `ops_system_logs` 等运维日志仍由 `ops_advanced_settings.data_retention` 单独控制，
