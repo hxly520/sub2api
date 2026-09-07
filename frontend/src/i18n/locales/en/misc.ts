@@ -297,7 +297,8 @@ export default {
     actualPay: 'Actual Payment',
     createOrder: 'Confirm Payment',
     methods: {
-      easypay: 'EasyPay',
+    easypay: 'EasyPay',
+    keyingpay: 'KeyingPay',
       alipay: 'Alipay',
       wxpay: 'WeChat Pay',
       stripe: 'Stripe',

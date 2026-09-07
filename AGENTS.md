@@ -27,7 +27,7 @@
 - Codex `x-codex-turn-state` 单值 48 KiB 保护及 Nginx 响应头缓冲约束。
 - 当前未登录首页、帮助页、导航和独立 `infinite-canvas` 工作台部署契约。
 
-普通 API Key 页旧 CCSwitch 自动导入和 KeyingPay V2 不属于当前保留范围，已恢复官方实现；额度卡页面的 CCSwitch 只读接入教程仍保留。网关、协议、重试、缓存、计费和账号调度必须保持官方 v0.2.1 语义。
+普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道已按支付模块最小适配恢复，额度卡页面的 CCSwitch 只读接入教程仍保留。网关、协议、重试、缓存、计费和账号调度必须保持官方 v0.2.1 语义。
 
 ## 不可破坏契约
 

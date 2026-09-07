@@ -52,6 +52,13 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid keyingpay provider",
+			providerKey:    payment.TypeKeyingPay,
+			providerName:   "KeyingPay Provider",
+			supportedTypes: "alipay,wxpay",
+			wantErr:        false,
+		},
+		{
 			name:           "valid alipay provider",
 			providerKey:    "alipay",
 			providerName:   "Alipay Direct",
@@ -112,6 +119,14 @@ func TestValidateProviderRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateKeyingPaySupportedTypes(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateKeyingPaySupportedTypes(""))
+	require.NoError(t, validateKeyingPaySupportedTypes("alipay,wxpay"))
+	require.ErrorContains(t, validateKeyingPaySupportedTypes("alipay,card"), "unsupported KeyingPay payment type")
 }
 
 func TestValidateEasyPayCustomMethods(t *testing.T) {
@@ -235,6 +250,12 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{"easypay", "pkey", true},
 		{"easypay", "pid", false},
 		{"easypay", "apiBase", false},
+
+		// KeyingPay V2
+		{payment.TypeKeyingPay, "merchantPrivateKey", true},
+		{payment.TypeKeyingPay, "platformPublicKey", true},
+		{payment.TypeKeyingPay, "pid", false},
+		{payment.TypeKeyingPay, "apiBase", false},
 
 		// Airwallex
 		{payment.TypeAirwallex, "apiKey", true},
