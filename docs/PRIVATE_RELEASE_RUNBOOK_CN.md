@@ -7,7 +7,7 @@
 | 项目 | 状态 |
 | --- | --- |
 | 官方基线 | `v0.2.1`，commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.3`；commit `13cb357e7597889b76af26cd42537d89cd686c80`，CI `34142101697`、Security `34142101727` 已通过；Release/GHCR 待构建；生产切换 pending |
+| 私有候选 | `v0.2.1-52t.3`；commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，CI `34147361923`/`34147361869` 与 release `34148161221` 均通过；GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0` 已完成；生产切换 pending |
 | 生产基线 | `v0.1.183-52t.4`；本轮不自动替换、重启或连接生产服务器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
@@ -15,11 +15,12 @@
 
 ### KeyingPay V2 v0.2.1-52t.3
 
-- Main merge commit: `13cb357e7597889b76af26cd42537d89cd686c80`.
+- Main release commit: `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`.
 - Scope: restore KeyingPay V2 provider, admin configuration, signed callbacks, query, refund/refund-query, close, and frontend entry only; points, link cards, media, gateway, billing, retry, and home modules are unchanged.
-- CI: https://github.com/hxly520/sub2api/actions/runs/34142101697 (success).
-- Security scan: https://github.com/hxly520/sub2api/actions/runs/34142101727 (success).
-- GHCR/Release: pending until the annotated candidate tag is published.
+- PR CI: https://github.com/hxly520/sub2api/actions/runs/34147361923 (success).
+- PR security scan: https://github.com/hxly520/sub2api/actions/runs/34147361869 (success).
+- Release workflow: https://github.com/hxly520/sub2api/actions/runs/34148161221 (success).
+- GHCR: `ghcr.io/hxly520/sub2api:0.2.1-52t.3`; manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0`; amd64 `sha256:6b229be0feb37e25df1f9fbcdb94b00ededc7a8456e92e16eb1b51c1868ab736`; arm64 `sha256:0771d5278face508e2e1ee37f73604cbec10bff36422721c97832ed53c0a8924`.
 - Production: server, database, and running containers remain unchanged; the maintainer performs the manual image switch.
 
 ## 1. 保留范围与冲突规则
