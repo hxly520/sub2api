@@ -164,6 +164,25 @@ func TestBuildPaymentOrderProviderSnapshot_IncludesEasyPayMerchantIdentity(t *te
 	require.NotContains(t, snapshot, "pkey")
 }
 
+func TestBuildPaymentOrderProviderSnapshot_IncludesKeyingPayMerchantIdentity(t *testing.T) {
+	t.Parallel()
+
+	snapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "67",
+		ProviderKey: payment.TypeKeyingPay,
+		Config: map[string]string{
+			"pid":                "1001",
+			"merchantPrivateKey": "secret-private-key",
+			"platformPublicKey":  "secret-public-key",
+		},
+		PaymentMode: "qrcode",
+	}, CreateOrderRequest{PaymentType: payment.TypeAlipay})
+
+	require.Equal(t, "1001", snapshot["merchant_id"])
+	require.NotContains(t, snapshot, "merchantPrivateKey")
+	require.NotContains(t, snapshot, "platformPublicKey")
+}
+
 func TestBuildPaymentOrderProviderSnapshot_IncludesProviderCurrency(t *testing.T) {
 	t.Parallel()
 

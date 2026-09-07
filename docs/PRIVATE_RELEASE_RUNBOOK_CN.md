@@ -23,7 +23,7 @@
 - 首字 Token/TTFT 记录、Codex `x-codex-turn-state` 48 KiB 保护；
 - 当前未登录首页、帮助页和独立 `points-system`/`infinite-canvas` 部署契约。
 
-普通 API Key 页的旧 CCSwitch 自动导入和 KeyingPay V2 已恢复为官方状态；额度卡页面的 CCSwitch 只读教程仍保留。发生重复实现时先保留官方路径，再以最小适配补丁满足上述契约。
+普通 API Key 页的旧 CCSwitch 自动导入仍为官方实现；KeyingPay V2（可盈Pay）仅作为支付 provider 最小适配恢复，额度卡页面的 CCSwitch 只读教程仍保留。发生重复实现时先保留官方路径，再以最小适配补丁满足上述契约。
 
 ## 2. 发布前门禁
 
