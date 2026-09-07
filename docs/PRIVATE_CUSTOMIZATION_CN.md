@@ -250,7 +250,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 ### 3.8 支付扩展
 
 - 工厂、路由、配置和前端入口：`payment/provider/factory.go`、`server/routes/payment.go`、`handler/payment_webhook_handler.go`、`frontend/src/components/payment/`。
-- 当前支付 provider、路由、配置与回调完全采用官方 `v0.2.1` 实现；历史 KeyingPay V2 扩展不在当前候选中。
+- 当前支付 provider、路由、配置与回调以官方 `v0.2.1` 实现为基线，并恢复 KeyingPay V2（可盈Pay）支付 provider 的最小适配；详见 `deploy/KEYINGPAY_V2.md`。
 
 支付回调必须验证签名并保持幂等。创建、回调、主动查单、退款、退款查询和关闭订单要复用 Sub2API 原有订单状态机，不能绕过平台订单表直接加余额。
 

@@ -197,7 +197,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 - 保留同库积分/签到系统、提链/额度卡账本与后扣费、图片和视频任务的余额冻结/释放/核销、统一媒体 API、首字 Token/TTFT 画像、Codex `x-codex-turn-state` 48 KiB 保护，以及当前未登录首页和帮助页。
 - 官方迁移与私有迁移按完整文件名和 checksum 共存，不能按数字前缀覆盖或重命名；本候选包含官方 `231–234`，私有 `173–179`、`192–194` 继续保留。
 - 普通 API Key 页的旧 CCSwitch 自动导入扩展已移除，恢复官方 API Key 行为；额度卡页面中的 CCSwitch 只读接入教程仍保留。
-- KeyingPay V2 私有支付扩展已移除，支付实现回到官方 provider 集合；现有生产数据库如曾启用该 provider，切换前须先由维护者只读核对未完成订单和回调状态。
+- KeyingPay V2（可盈Pay）支付通道已恢复为独立 provider，配置与回调见 `deploy/KEYINGPAY_V2.md`；现有生产数据库如曾启用该 provider，切换前须先由维护者只读核对未完成订单和回调状态。
 - 官方在线更新器只识别官方 Release；本候选跨越数据库迁移、Ent/生成代码、前端和容器基线，发布策略固定为 `image-update-required`，应通过 GitHub Actions 生成不可变 GHCR 镜像，再由维护者使用 Compose 手工切换。后台二进制热更新不得安装本候选。
 - 私有 Release 只接受 `vX.Y.Z-52t.N` annotated Tag，Tag 内 `VERSION` 必须完全一致，并先通过同一 Tag 的 CI 门禁；工作流不会自动改写或推进 `main`，也不会连接或替换生产容器。
 
