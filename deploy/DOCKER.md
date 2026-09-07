@@ -6,7 +6,7 @@ Sub2API is an AI API Gateway Platform for distributing and managing AI product s
 
 ```bash
 # Replace VERSION_TAG with the approved private release (for example
-# 0.2.1-52t.2 after its GitHub Actions checks complete). Never use `latest`
+# 0.2.1-52t.3 after its GitHub Actions checks complete). Never use `latest`
 # as a production rollback point.
 export SUB2API_IMAGE=ghcr.io/hxly520/sub2api:VERSION_TAG
 # Authenticate once with a read:packages PAT when the GHCR package is private.

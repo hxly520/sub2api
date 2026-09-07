@@ -4,14 +4,14 @@
 
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
-## 0. 当前 v0.2.1-52t.2 候选（2026-09-06）
+## 0. 当前 v0.2.1-52t.3 候选（2026-09-08）
 
 本节是当前候选状态，优先于下文保留的历史版本描述；下文 `v0.1.183` 及更早内容只作为已发布谱系和回归依据。
 
 | 项目 | 当前记录 |
 | --- | --- |
 | 官方基线 | 官方 `v0.2.1`，源码 commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.2`；commit `102c921eeb09f75614313c8561f7cd0ca9d87e6e`，annotated Tag、Release、GHCR 镜像和 digest 已完成；生产切换 pending |
+| 私有候选 | `v0.2.1-52t.3`；commit `13cb357e7597889b76af26cd42537d89cd686c80`，CI `34142101697`、Security `34142101727`已通过；Release/GHCR 待构建；生产切换 pending |
 | 生产基线 | `v0.1.183-52t.4`；本轮自动化不得替换、重启或切换生产 Sub2API |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用官方 `v0.2.1` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
 | 必须保留 | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |

@@ -7,10 +7,20 @@
 | 项目 | 状态 |
 | --- | --- |
 | 官方基线 | `v0.2.1`，commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.2`；commit `102c921eeb09f75614313c8561f7cd0ca9d87e6e`，Actions run `33995383939`、Release、GHCR manifest `sha256:90d4a5b70ea6155e12aaf90291b24ea128a74cf44596d80366203b5994462c80` 已完成；生产切换 pending |
+| 私有候选 | `v0.2.1-52t.3`；commit `13cb357e7597889b76af26cd42537d89cd686c80`，CI `34142101697`、Security `34142101727` 已通过；Release/GHCR 待构建；生产切换 pending |
 | 生产基线 | `v0.1.183-52t.4`；本轮不自动替换、重启或连接生产服务器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
+
+
+### KeyingPay V2 v0.2.1-52t.3
+
+- Main merge commit: `13cb357e7597889b76af26cd42537d89cd686c80`.
+- Scope: restore KeyingPay V2 provider, admin configuration, signed callbacks, query, refund/refund-query, close, and frontend entry only; points, link cards, media, gateway, billing, retry, and home modules are unchanged.
+- CI: https://github.com/hxly520/sub2api/actions/runs/34142101697 (success).
+- Security scan: https://github.com/hxly520/sub2api/actions/runs/34142101727 (success).
+- GHCR/Release: pending until the annotated candidate tag is published.
+- Production: server, database, and running containers remain unchanged; the maintainer performs the manual image switch.
 
 ## 1. 保留范围与冲突规则
 
