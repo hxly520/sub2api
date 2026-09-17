@@ -7,11 +7,20 @@
 | 项目 | 状态 |
 | --- | --- |
 | 官方基线 | `v0.2.5`；tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；另回移官方 `611c30f04` 的 grpc `v1.83.2` 安全修复 |
-| 私有候选 | `v0.2.5-52t.1`；分支 `codex/upgrade-v0.2.5-compat`，起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；最终 commit、Tag、CI、Release 和 GHCR digest 均为 `pending` |
-| 运行基线 | 由维护者当前 Compose/容器/OCI 记录确认；本轮不自动替换或重启生产服务器 |
+| 私有候选 | `v0.2.5-52t.1`；发布源码/Tag peeled commit/OCI revision `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿 |
+| 运行基线 | 生产仍为 `ghcr.io/hxly520/sub2api:0.2.1-52t.3`；服务器仅缓存新候选，未替换或重启生产容器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
-| 本地门禁 | 后端 default/unit/integration、vet、golangci v2.13 与 govulncheck v1.8、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 和视频 Worker 已通过；积分 PostgreSQL 16、macOS Apple Container 与远端安全扫描等待 GitHub Actions |
+| 验证与产物 | 本地全部门禁、PR/main CI、安全扫描、积分 PostgreSQL 16、macOS Apple Container、Release 与制品校验均通过；GHCR manifest `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26` 已缓存到服务器 |
+
+### 当前私有发布：v0.2.5-52t.1
+
+- PR [`#13`](https://github.com/hxly520/sub2api/pull/13) 已合入 `main`；merge commit、annotated Tag peeled commit 和 amd64/arm64 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`。
+- Release workflow [`35237673572`](https://github.com/hxly520/sub2api/actions/runs/35237673572) 成功；Release [`v0.2.5-52t.1`](https://github.com/hxly520/sub2api/releases/tag/v0.2.5-52t.1) 包含五个平台归档和 `checksums.txt`，归档 digest 与校验文件一致。
+- 镜像为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`；多架构 manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`，amd64 为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`，arm64 为 `sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。
+- `2026-09-17` 服务器只执行该不可变 Tag 的 `docker pull`。缓存的 amd64 image ID 为 `sha256:d674f0ceca50015dd69787312bc01664696e1a2f786b107dd18301884af6cb9b`，RepoDigest 与上述多架构 manifest 一致，创建时间为 `2026-09-17T15:26:39.538188747Z`。
+- 拉取前后生产 Sub2API 容器均为 `c3458bdc8ce1...`，镜像仍为 `0.2.1-52t.3`，旧 image ID `sha256:4da29aaf61487f94747ab2865ab5aaf2c23ead8ae0a28daf6764456510af12b6`，启动时间 `2026-09-07T23:35:28.690785751Z`，状态 healthy、restart count `0`；积分、生图工作台、PostgreSQL 和 Redis 容器也未改变。
+- 本版本包含 forward-only 迁移与前后端跨度，继续分类为 `image-update-required`。当前代码采用官方在线更新器且本 Release 不提供私有 `update-manifest.json`，因此不得通过后台二进制热更新安装；数据库备份、人工 Compose 切换和生产冒烟仍由维护者完成。
 
 
 ### 上一私有发布：KeyingPay V2 v0.2.1-52t.3
