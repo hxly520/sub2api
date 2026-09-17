@@ -2,7 +2,7 @@
 
 > **52Token private fork:** production must pin an approved
 > `ghcr.io/hxly520/sub2api:<version>` tag or digest through `SUB2API_IMAGE`.
-> The current `v0.2.1-52t.2` candidate contains private migrations and product
+> The current `v0.2.5-52t.1` candidate contains private migrations and product
 > modules, so it must be deployed with Compose after a database backup; do not
 > use the upstream one-click installer or the in-app binary updater for this
 > candidate. See [`../docs/PRIVATE_RELEASE_RUNBOOK_CN.md`](../docs/PRIVATE_RELEASE_RUNBOOK_CN.md).
@@ -53,7 +53,7 @@ Apple-silicon Macs running macOS 26 can run the complete Sub2API, PostgreSQL, an
 ./apple-container.sh logs app -f
 ```
 
-The script uses Apple named volumes, starts dependencies in order, and performs live readiness checks. It does not provide a continuous restart supervisor; run `./apple-container.sh up` after a host reboot. Docker Compose remains the recommended production deployment path.
+The script uses Apple named volumes, starts dependencies in order, and performs live readiness checks. The application container supervises the Sub2API process so the Web UI's update-and-restart flow can relaunch an updated binary. It does not provide host-level automatic startup; run `./apple-container.sh up` after a host reboot. Docker Compose remains the recommended production deployment path.
 
 See [APPLE_CONTAINER.md](./APPLE_CONTAINER.md) for configuration, upgrades, persistence, networking behavior, and limitations.
 

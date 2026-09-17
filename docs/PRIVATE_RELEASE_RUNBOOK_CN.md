@@ -6,14 +6,15 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 官方基线 | `v0.2.1`，commit `ab99d56e9626e6cd731592dae8553c9758a0efa2` |
-| 私有候选 | `v0.2.1-52t.3`；commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，CI `34147361923`/`34147361869` 与 release `34148161221` 均通过；GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0` 已完成；生产切换 pending |
-| 生产基线 | `v0.1.183-52t.4`；本轮不自动替换、重启或连接生产服务器 |
+| 官方基线 | `v0.2.5`；tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；另回移官方 `611c30f04` 的 grpc `v1.83.2` 安全修复 |
+| 私有候选 | `v0.2.5-52t.1`；分支 `codex/upgrade-v0.2.5-compat`，起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；最终 commit、Tag、CI、Release 和 GHCR digest 均为 `pending` |
+| 运行基线 | 由维护者当前 Compose/容器/OCI 记录确认；本轮不自动替换或重启生产服务器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
+| 本地门禁 | 后端 default/unit/integration、vet、golangci v2.13 与 govulncheck v1.8、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 和视频 Worker 已通过；积分 PostgreSQL 16、macOS Apple Container 与远端安全扫描等待 GitHub Actions |
 
 
-### KeyingPay V2 v0.2.1-52t.3
+### 上一私有发布：KeyingPay V2 v0.2.1-52t.3
 
 - Main release commit: `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`.
 - Scope: restore KeyingPay V2 provider, admin configuration, signed callbacks, query, refund/refund-query, close, and frontend entry only; points, link cards, media, gateway, billing, retry, and home modules are unchanged.
@@ -25,7 +26,7 @@
 
 ## 1. 保留范围与冲突规则
 
-官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.1` 为准。只在官方入口接回以下产品契约：
+官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.5` 为准。只在官方入口接回以下产品契约：
 
 - 同库积分/签到系统；
 - 提链/额度卡账本、预扣/后扣费、欠费恢复和退款边界；
@@ -73,10 +74,12 @@ git diff --check
 ```bash
 git add -A
 git diff --cached --check
-git commit -m "chore(release): prepare v0.2.1-52t.2"
-git tag -a v0.2.1-52t.2 -m "private compatibility release v0.2.1-52t.2"
-git push origin codex/upgrade-v0.2.1-compat
-git push origin v0.2.1-52t.2
+git commit -m "merge: official v0.2.5 with 52Token compatibility"
+git push origin codex/upgrade-v0.2.5-compat
+# PR/审查后把候选合入私有 main，再在该 main commit 上创建 annotated Tag
+git tag -a v0.2.5-52t.1 -m "private compatibility release v0.2.5-52t.1 [image-update-required]"
+git push origin main
+git push origin v0.2.5-52t.1
 ```
 
 3. `.github/workflows/release.yml` 只接受现存的私有 Tag。它先确认名称格式、annotated Tag、精确 checkout commit、Tag 树内 `VERSION` 和默认分支祖先关系，再以同一个 `refs/tags/<tag>` 调用 `backend-ci.yml` 与 `security-scan.yml`。任何校验、质量或安全门禁失败都会阻止 GoReleaser 和镜像发布。
