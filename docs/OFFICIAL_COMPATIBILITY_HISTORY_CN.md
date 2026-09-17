@@ -15,21 +15,22 @@
 | `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed (historical) | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已由 `.4` 手工切换替代。 |
 | `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | `.4` released and current production | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。当前 `backend/cmd/server/VERSION=0.1.183-52t.4`，私有发布提交与 Tag 均指向 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者已于 `2026-08-28 07:26:27 +08` 完成人工切换，生产长上下文计费冒烟通过。`v0.1.183-52t.3` 因 lint 门禁失败且未生成 Release 或镜像，只保留失败证据。 |
 | `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.3` released; superseded by candidate | `.2` 完成首轮兼容发布，`.3` 在同一官方基线上恢复 KeyingPay V2；`.3` commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0`。生产运行态仍以服务器证据为准。 |
-| `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` candidate; release pending | annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`；从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交不纳入。采用官方 WS 执行作用域、账号调度、Images、模型准入、OpenCode、MiniMax、站点类型与批量管理；保留积分、提链/额度卡、媒体冻结/核销、统一视频、TTFT、Codex 48 KiB 保护、KeyingPay V2、首页和帮助页。本地源码门禁已完成；Tag、CI、Release、镜像、digest、服务器缓存和生产切换均为 `pending`。 |
+| `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` candidate; release pending | annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`；从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交只回移 `611c30f04` grpc 安全修复，其余不纳入。采用官方 WS 执行作用域、账号调度、Images、模型准入、OpenCode、MiniMax、站点类型与批量管理；保留积分、提链/额度卡、媒体冻结/核销、统一视频、TTFT、Codex 48 KiB 保护、KeyingPay V2、首页和帮助页。本地源码门禁已完成；Tag、CI、Release、镜像、digest、服务器缓存和生产切换均为 `pending`。 |
 
 官方 `v0.1.173` tag 的源码 `VERSION` 仍为 `0.1.172`，官方 `v0.1.175` tag 树内的 `VERSION` 仍为 `0.1.173`，官方 `v0.1.176` tag 树内的 `VERSION` 仍为 `0.1.175`，官方 `v0.1.183` tag 树内的 `VERSION` 仍为 `0.1.182`，官方 `v0.2.5` tag 树内的 `VERSION` 仍为 `0.2.4`。发布审计不得只看 tag 名称，必须同时记录 annotated tag object、peeled commit、私有 `VERSION`、manifest source commit 和构建产物 revision。
 
 ### v0.2.5 / v0.2.5-52t.1 候选
 
-- 官方稳定 Release 固定为 `v0.2.5` tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`、peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。官方 `main` 比该 Release 多 53 个未发布提交，本轮禁止混入。
+- 官方稳定 Release 固定为 `v0.2.5` tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`、peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。官方 `main` 比该 Release 多 53 个未发布提交；除 `611c30f04` 的 grpc 安全修复外，本轮禁止混入。
 - 私有起点固定为 `19d74426a7d41183b128e8aa3b08d79d5d89d533`，工作分支 `codex/upgrade-v0.2.5-compat`，源码版本 `0.2.5-52t.1`。最终 merge commit、annotated Tag、Actions run、Release、GHCR digest 和 OCI revision 尚未产生，全部为 `pending`。
 - 官方优先范围包括 Responses/Chat/Anthropic/Gemini 网关、WS 连接池与执行作用域、抢占/重试、计费/缓存/调度、OpenAI OAuth Images、Grok 媒体、支付订单状态机、模型可见目录、OpenCode、MiniMax、站点类型及批量管理。私有代码只接回已记录的产品契约，不维护平行网关或计费旁路。
 - 私有保留范围为积分/签到桥接、提链/额度卡资金账本与欠费恢复、图片/视频冻结释放核销、统一视频 API、真实 TTFT、`x-codex-turn-state` 单值 `48 KiB`、KeyingPay V2、可用渠道/Q 群、当前首页/帮助页/Logo。独立积分和生图工作台容器不属于本轮替换范围。
 - 官方新增 `235_group_model_allowlist.sql`、`236_group_model_allowlist_repair.sql`、`237_add_minimax_platform.sql`、`238_opencode_go_platform.sql`、`238_purge_unlimited_user_platform_quotas.sql` 原名保留；两份 `238` 按完整文件名共存。私有 `173-179`、`192_media_balance_hold_reconciliation_index_notx.sql`、`193_points_balance_credit_ledger.sql`、`194_link_cards.sql` 的文件和 checksum 不变。
 - `235` 会把旧 `models_list_config` 升级为请求准入白名单。候选已增加提链 Key allow/deny 回归；生产切换前仍须只读盘点所有启用旧列表的分组，确保普通 Key、提链 Key 和媒体实际使用模型均在精确项或通配规则内。
 - 当前 API Key 认证快照版本为 `v24`：历史私有 `v21` 长上下文/逐模型价格字段继续保留，官方随后以 `v22`、`v23`、`v24` 依次加入免费 Fast、Codex 模型清单和 `model_allowlist`。版本提升会让旧 Redis 快照自然失效并回源重建，不需要清空 Redis，也不会修改数据库或历史账单。
+- 首轮 PR 安全门禁在 `grpc v1.82.1` 命中 `GO-2026-6443` 与 `GO-2026-6348`。候选精确回移官方提交 `611c30f04fac9081d41bb6f4fa2712d8c7bbe359`，升级到 `grpc v1.83.2` 并接受 `go mod tidy` 的最小版本选择结果；没有回移该提交之外的未发布功能。
 - 本轮跨数据库迁移、Ent/生成代码、后端和前端，固定为 `image-update-required`。后台二进制热更新不得安装；自动化只发布和缓存不可变镜像，生产由维护者手工 Compose 切换。
-- 当前证据：26 个直接冲突已清零，Wire/Ent 重生成一致；后端 default/unit/integration 全量测试、`go vet` 与 `golangci-lint v2.13.0`、积分服务 test/vet/build、前端 lint/typecheck/全量 Vitest/build、Caddy 代理测试和视频 Worker 测试均已通过。积分 PostgreSQL 16 集成、macOS Apple Container 脚本和安全扫描由 GitHub Actions 最终确认；Tag、Release、镜像、服务器缓存、生产切换及生产冒烟在完成前保持 `pending`。
+- 当前证据：26 个直接冲突已清零，Wire/Ent 重生成一致；后端 default/unit/integration 全量测试、`go vet`、`golangci-lint v2.13.0` 与安全回移后的 `govulncheck v1.8.0`、积分服务 test/vet/build、前端 lint/typecheck/全量 Vitest/build、Caddy 代理测试和视频 Worker 测试均已通过。积分 PostgreSQL 16 集成、macOS Apple Container 脚本和安全扫描仍由 GitHub Actions 最终确认；Tag、Release、镜像、服务器缓存、生产切换及生产冒烟在完成前保持 `pending`。
 - Windows 本地门禁只调整两处测试夹具，不修改生产实现：账号替代候选用例补齐官方要求的持久化冷却字段；Ollama CAS 用例基于首次冷却值构造确定性差值，避免低精度时钟把两次 `time.Now()+5s` 生成为同一时间。
 
 ### v0.2.1 / v0.2.1-52t.2 与 v0.2.1-52t.3

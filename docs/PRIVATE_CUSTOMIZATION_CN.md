@@ -10,14 +10,14 @@
 
 | 项目 | 当前记录 |
 | --- | --- |
-| 官方基线 | 官方 `v0.2.5`；annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；tag 树内 `VERSION=0.2.4` |
+| 官方基线 | 官方 `v0.2.5`；annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；tag 树内 `VERSION=0.2.4`；额外精确回移官方 `611c30f04` 的 grpc 安全修复 |
 | 私有候选 | `v0.2.5-52t.1`；升级分支 `codex/upgrade-v0.2.5-compat`，起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；最终 commit、annotated Tag、CI、Release、GHCR digest 和 OCI revision 均为 `pending` |
 | 生产基线 | 只按维护者当前 Compose、容器与 OCI 记录确认；本轮自动化不得替换、重启或切换生产 Sub2API |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用官方 `v0.2.5` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
 | 必须保留 | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
 | 数据库迁移 | 官方 `235_group_model_allowlist.sql`、`236_group_model_allowlist_repair.sql`、`237_add_minimax_platform.sql` 和两份 `238_*` 与私有 `173-179`、`192-194` 按完整文件名和 checksum 共存；同号文件不得覆盖、改名、合并或按数字前缀去重 |
 | 发布方式 | 固定为 `image-update-required`，本轮必须由维护者在备份与回滚点确认后手工执行 Compose；后台热更新不适用 |
-| 验证与产物 | 冲突解析、Wire/Ent 重生成、后端 default/unit/integration、vet 与 golangci v2.13、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 与视频 Worker：completed；积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、镜像 digest、服务器缓存、生产切换与生产冒烟：`pending` |
+| 验证与产物 | 冲突解析、Wire/Ent 重生成、后端 default/unit/integration、vet、golangci v2.13 与 govulncheck v1.8、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 与视频 Worker：completed；积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、镜像 digest、服务器缓存、生产切换与生产冒烟：`pending` |
 
 当前 API Key 认证快照常量为 `v24`。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
 
@@ -36,7 +36,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 52Token 二开仓库：`hxly520/sub2api`；仓库可按发布需要保持私有或公开，公开时也不得提交生产配置、凭据和请求数据。官方远端只用于获取基线，不直接向官方远端推送二开提交。
-- 当前维护候选从私有 `main` commit `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合入官方 `v0.2.5` peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`，工作分支为 `codex/upgrade-v0.2.5-compat`。官方 tag 后 `main` 的 53 个未发布提交不在本轮范围内。官方网关、协议、重试、缓存、计费和调度优先；仅保留积分、额度卡/提链、媒体冻结/核销、视频、TTFT、Codex 48 KiB 保护、KeyingPay V2、首页和帮助页。
+- 当前维护候选从私有 `main` commit `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合入官方 `v0.2.5` peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`，工作分支为 `codex/upgrade-v0.2.5-compat`。官方 tag 后 `main` 的 53 个未发布提交只回移 `611c30f04`：`grpc v1.83.2` 修复 `GO-2026-6443`、`GO-2026-6348`，其余未发布功能不在本轮范围内。官方网关、协议、重试、缓存、计费和调度优先；仅保留积分、额度卡/提链、媒体冻结/核销、视频、TTFT、Codex 48 KiB 保护、KeyingPay V2、首页和帮助页。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 历史部署事实（截至 `2026-08-02`）：当时全体签到开放，Sub2API 为 `0.1.169-1a4a690dd999`、积分服务为 `0.1.169-b64a0110ab2c`，两者均 healthy；该段仅保留旧验收证据。当前生产版本、门禁和 OCI revision 以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；后续仍不能只看仓库 `main` 或服务器镜像缓存，自动化不得替换或重启 Sub2API。

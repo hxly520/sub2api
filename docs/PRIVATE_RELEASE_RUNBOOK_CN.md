@@ -6,12 +6,12 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 官方基线 | `v0.2.5`；tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` |
+| 官方基线 | `v0.2.5`；tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；另回移官方 `611c30f04` 的 grpc `v1.83.2` 安全修复 |
 | 私有候选 | `v0.2.5-52t.1`；分支 `codex/upgrade-v0.2.5-compat`，起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；最终 commit、Tag、CI、Release 和 GHCR digest 均为 `pending` |
 | 运行基线 | 由维护者当前 Compose/容器/OCI 记录确认；本轮不自动替换或重启生产服务器 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
-| 本地门禁 | 后端 default/unit/integration、vet 与 golangci v2.13、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 和视频 Worker 已通过；积分 PostgreSQL 16、macOS Apple Container 与安全扫描等待 GitHub Actions |
+| 本地门禁 | 后端 default/unit/integration、vet、golangci v2.13 与 govulncheck v1.8、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 和视频 Worker 已通过；积分 PostgreSQL 16、macOS Apple Container 与远端安全扫描等待 GitHub Actions |
 
 
 ### 上一私有发布：KeyingPay V2 v0.2.1-52t.3
