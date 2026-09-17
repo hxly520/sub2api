@@ -2,9 +2,9 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-最新生产事实以本文件第 0 节（含 0.13 新版本切换与计费复核）为准；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
+最新生产事实以本文件第 0 节（含 0.14 当前候选发布与服务器缓存）为准；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
-## 0. 当前生产事实（运行态与候选交接更新至 2026-08-28，其余条目按各自日期）
+## 0. 当前生产事实（运行态与候选交接更新至 2026-09-17，其余条目按各自日期）
 
 - 切换前只读快照：Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；当时拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。该快照已由 0.13 的实际运行态记录覆盖。官方网关语义与长上下文计费修复随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存；失败候选 `.3` 没有 Release 或镜像。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
@@ -15,6 +15,15 @@
 - 最终 nonterminal/failed grant 为 0；Sub2API、PostgreSQL、Redis 的容器 ID和启动时间未因积分发布变化，Nginx 为 active。
 - 当前 `https://api.52token.org/points` 与 `https://52token.org/points` 都是有效父页面。生产以 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org` 保留 Logo 主来源，并以 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org` 增加第二精确父 Origin；CSP 和 ready/theme 消息只使用合并后的有限列表，不允许通配符。只配置其中一个会使另一个父站超时显示“积分中心暂时未就绪”。
 - 用户 1 已在 `390x844` 移动视口从根域完成真实 iframe 验收：无未就绪遮罩、资源和用户 API 全部成功、`clientWidth=scrollWidth=367` 且无控制台 WARN/ERROR。两个父站 `/points` 均为 `200`，积分 CSP 同时精确允许两个 Origin；后续任一父域、Nginx 或前端入口变更都必须重复桌面和移动验收。
+
+### 0.14 2026-09-17 v0.2.5-52t.1 发布与服务器缓存
+
+- 官方基线为 `v0.2.5` peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；私有 PR `#13` 已合入 `main`，最终 merge commit、annotated Tag peeled commit 与双平台 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`。仅额外回移官方 `611c30f04` 的 grpc `v1.83.2` 安全修复，未混入官方 tag 后的其他未发布功能。
+- Release run `35237673572` 的质量、安全、积分 PostgreSQL、macOS、前端、lint、unit/integration 和 GoReleaser 门禁全部通过。Release `v0.2.5-52t.1` 已发布，归档 digest 与 `checksums.txt` 一致。
+- 不可变镜像为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`；多架构 manifest digest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`，amd64/arm64 manifest 分别为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`、`sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。
+- 服务器只执行 `docker pull ghcr.io/hxly520/sub2api:0.2.5-52t.1`。缓存的 amd64 image ID 为 `sha256:d674f0ceca50015dd69787312bc01664696e1a2f786b107dd18301884af6cb9b`，RepoDigest 与多架构 manifest 一致，OCI revision 为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`，创建时间为 `2026-09-17T15:26:39.538188747Z`。
+- 拉取前后，运行中 Sub2API 始终为容器 `c3458bdc8ce1...`、镜像 `ghcr.io/hxly520/sub2api:0.2.1-52t.3`、image ID `sha256:4da29aaf61487f94747ab2865ab5aaf2c23ead8ae0a28daf6764456510af12b6`、启动时间 `2026-09-07T23:35:28.690785751Z`、healthy、restart count `0`。积分、生图工作台、PostgreSQL、Redis 的容器 ID、镜像和运行状态也保持不变；未执行 Compose、容器替换、重启、迁移或配置修改。
+- 本候选固定为 `image-update-required`，后台在线热更新不适用。数据库备份、Compose 回滚点、维护者人工切换及切换后的健康、登录、API、积分、额度卡、媒体/视频、首页/帮助页冒烟均为 `pending`。
 
 ### 0.13 2026-08-28 新版本切换与 GPT-5.6 长上下文计费复核
 
@@ -162,7 +171,7 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库维护候选为官方 Sub2API Release `v0.1.183` 与完整私有兼容层，工作分支 `backend/cmd/server/VERSION=0.1.183-52t.4`；生产仍运行 `v0.1.176-52t.1`，精确状态以第 0、0.11、0.12 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
+- 当前仓库已发布官方 `v0.2.5` 与完整私有兼容层的 `v0.2.5-52t.1` 候选；生产仍运行 `v0.2.1-52t.3`，新候选仅完成服务器缓存，精确状态以第 0.14 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
@@ -200,7 +209,7 @@
 - 核销前发现24条历史异常冻结，共 `2.42 U`。逐条关联媒体任务和成功结果后，22条无出图证据的冻结退款 `2.32 U`；2条存在成功出图证据的冻结按原报价结算 `0.10 U`，对应 hold ID `298`、`323`。
 - 核销在单一数据库事务中执行，完成后旧异常冻结为0；相关余额缓存随后失效。生产 Sub2API 镜像、容器、Nginx和画布工作台均未变更。
 - 审计记录为 `audit_logs.id=3339`，request ID `hold-reconcile-20260729`。操作前回滚快照位于 `/home/api/sub2api-deploy/backups/media-hold-reconcile-before-20260729-195009.jsonl`，SHA256 为 `57770ff7ca39ba929a66efd8dce7c180babf887768dc0d39852055dd3b327fdd`。
-- 私有提交 `9f1b6bae` 增加明确失败即时退款、未知终态保留冻结、成功费用按报价封顶及全站到期冻结后台核销；该功能继续包含在当前生产 `v0.1.169-1a4a690dd999` 基线中，后续升级仍须持续检查后台核销审计和异常冻结聚合。
+- 私有提交 `9f1b6bae` 增加明确失败即时退款、未知终态保留冻结、成功费用按报价封顶及全站到期冻结后台核销；该功能曾包含在 `v0.1.169-1a4a690dd999` 生产基线中，当前兼容候选继续保留，后续升级仍须持续检查后台核销审计和异常冻结聚合。
 
 ### 2.2 2026-07-30 历史运行基线
 
@@ -231,7 +240,7 @@
 - 发现 10 条超过 30 分钟、无成功 usage/任务证据的同步图片 `dispatched` 冻结，共 `1.02 U`；用户 1 为 `0.20 U`，用户 160 为 `0.82 U`。root-only 操作前备份位于 `/home/api/sub2api-deploy/backups/media-hold-no-output-refund-20260731-092046`，custom dump SHA256 为 `77c60a5611000d4c3ae945f0ce71f85e99005393e1416a843a1ae5c98a9706b7`。
 - 固定 ID、总额、用户数和成功证据断言均通过后，在单一事务中把 10 条全部退款并标为 `released`；审计为 `audit_logs.id=3814`、request ID `hold-refund-no-output-20260731`。完成后 active hold、active 金额和非零冻结用户均为 0，Sub2API 未重启或替换。
 - 使用工作台精确自动质量参数的主分组请求在 99 秒后成功生成 1 图，hold `408` 已 `captured` `0.10 U`，usage `219522` 只记一次；生成后 active hold 和非零冻结用户仍为 0。参考图 SHA256 为 `bc8a8bcabcbdc33429d035e9be90d61bef539fbc03811b8bc53f575a93f5b6c6`。
-- 当前 `v0.1.169-1a4a690dd999` 继续把同步 `/v1/images/generations` 未知终态冻结窗口从通用 24 小时缩短为 30 分钟；明确失败仍即时退款，异步图片/视频仍使用 24 小时。后续升级不得回退该分流规则。
+- 历史 `v0.1.169-1a4a690dd999` 已把同步 `/v1/images/generations` 未知终态冻结窗口从通用 24 小时缩短为 30 分钟；当前兼容候选继续保留该行为，明确失败仍即时退款，异步图片/视频仍使用 24 小时。后续升级不得回退该分流规则。
 
 ## 3. 域名和进程边界
 
@@ -357,7 +366,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
-`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c` 和 `0.1.172-7fe54f0856ee`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `0.1.176-52t.1`，`v0.1.183-52t.3` 是未产出镜像的失败候选，`v0.1.183-52t.4` 是已发布、已缓存但尚未上线的修复候选，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0、0.11、0.12 节及链接记录为准。
+`2026-07-30` 与 `2026-08-01` 的 GitHub Actions 均因账户计费或支出限额在 runner 分配前终止，job 未执行任何 step；两次均改由受控本机生成标准 Docker archive，服务器只拉取/导入，不编译。Sub2API 曾切换为 `v0.1.168-339422728b2c`、`0.1.172-7fe54f0856ee` 和 `v0.1.183-52t.4`，积分服务也经历过 `v0.1.168-28e760bc8c6d`，这些只属于历史发布链。registry digest、image ID 与 archive SHA256 必须分别记录，禁止互相冒充；当前 Sub2API 为 `v0.2.1-52t.3`，`v0.2.5-52t.1` 是已发布、已缓存但尚未切换的候选，当前积分服务为 `v0.1.169-b64a0110ab2c`，精确状态以本文件第 0.14 节及链接记录为准。
 
 当前通用部署文档包含官方 `weishaw/sub2api:latest` 示例，只适用于官方默认部署。私有生产严禁照搬该镜像引用。
 
@@ -371,7 +380,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 ### 9.2 独立积分系统发布与安全边界
 
-积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算、全体积分中心/签到门禁、昨日原始消费四阶梯、冲正净额展示和双精确父 Origin；当前积分服务为 `v0.1.169-b64a0110ab2c`，Sub2API 为 `0.1.172-7fe54f0856ee`。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
+积分系统已经完成镜像导入、同库隔离、Nginx 接入、中文双工作区、管理员用户明细、一次性历史回算、全体积分中心/签到门禁、昨日原始消费四阶梯、冲正净额展示和双精确父 Origin；当前积分服务为 `v0.1.169-b64a0110ab2c`，当前 Sub2API 为 `v0.2.1-52t.3`，`v0.2.5-52t.1` 仅完成服务器缓存。以下步骤同时是后续重部署和版本合并的强制边界，任何自动化都不得替换或重启 Sub2API。
 
 1. 优先由 GitHub 分别构建 Sub2API 与 `points-system` 的 commit 不可变镜像，记录两者 tag、OCI revision 和 registry digest；生产机不编译。CI runner 受计费门禁时可使用受控本机构建和标准 archive，但仍须把镜像推送 GHCR 并分别记录 registry digest、archive SHA256 和服务器加载后的 image ID。
    第 2-4 步只适用于空白新环境或经审计的灾难恢复。当前生产角色、schema 和密钥均已存在，普通积分镜像更新不得重跑 bootstrap 或重新生成密钥。

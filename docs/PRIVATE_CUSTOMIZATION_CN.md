@@ -4,24 +4,24 @@
 
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
-## 0. 当前 v0.2.5-52t.1 候选（2026-09-17）
+## 0. 当前 v0.2.5-52t.1 已发布候选（2026-09-17）
 
 本节是当前候选状态，优先于下文保留的历史版本描述；下文 `v0.1.183` 及更早内容只作为已发布谱系和回归依据。
 
 | 项目 | 当前记录 |
 | --- | --- |
 | 官方基线 | 官方 `v0.2.5`；annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；tag 树内 `VERSION=0.2.4`；额外精确回移官方 `611c30f04` 的 grpc 安全修复 |
-| 私有候选 | `v0.2.5-52t.1`；升级分支 `codex/upgrade-v0.2.5-compat`，起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；最终 commit、annotated Tag、CI、Release、GHCR digest 和 OCI revision 均为 `pending` |
-| 生产基线 | 只按维护者当前 Compose、容器与 OCI 记录确认；本轮自动化不得替换、重启或切换生产 Sub2API |
+| 私有候选 | `v0.2.5-52t.1`；发布源码提交、annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿 |
+| 生产基线 | 当前运行 `ghcr.io/hxly520/sub2api:0.2.1-52t.3`；`v0.2.5-52t.1` 仅完成服务器缓存，未替换、重启或切换生产 Sub2API |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用官方 `v0.2.5` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
 | 必须保留 | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
 | 数据库迁移 | 官方 `235_group_model_allowlist.sql`、`236_group_model_allowlist_repair.sql`、`237_add_minimax_platform.sql` 和两份 `238_*` 与私有 `173-179`、`192-194` 按完整文件名和 checksum 共存；同号文件不得覆盖、改名、合并或按数字前缀去重 |
 | 发布方式 | 固定为 `image-update-required`，本轮必须由维护者在备份与回滚点确认后手工执行 Compose；后台热更新不适用 |
-| 验证与产物 | 冲突解析、Wire/Ent 重生成、后端 default/unit/integration、vet、golangci v2.13 与 govulncheck v1.8、积分 test/vet/build、前端 lint/typecheck/Vitest/build、Caddy 与视频 Worker：completed；积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、镜像 digest、服务器缓存、生产切换与生产冒烟：`pending` |
+| 验证与产物 | 冲突解析、Wire/Ent 重生成、本地全量门禁、积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、双架构镜像 digest/OCI revision 与服务器缓存：completed；数据库备份、维护者人工 Compose 切换与生产冒烟：`pending` |
 
 当前 API Key 认证快照常量为 `v24`。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
 
-只有实际命令输出、CI run、Release 资产和 OCI 检查结果才能把上述 `pending` 改为完成；不能引用旧候选的 run、digest 或服务器缓存作为本候选证据，也不能用构建证据代替生产证据。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
+发布证据固定为 PR `#13`、Release run `35237673572`、Release `v0.2.5-52t.1` 和 GHCR manifest `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`；amd64/arm64 manifest 分别为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`、`sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。服务器缓存不等于生产切换，不能用构建或拉取证据代替备份、人工 Compose 切换和生产冒烟。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
 
 ## 1. 维护原则
 
@@ -73,7 +73,7 @@
 | `04a19ca08` | v0.1.169 发布链历史节点 | Gemini 非流式 SSE 聚合收到正式 `finishReason` 后立即完成；后续已由用户 1 预览兼容提交 `f79803bb7` 取代 |
 | `ca18cf77a` | 积分中心与签到独立部署门禁 | 新增 `POINTS_CHECKIN_ACCESS_MODE` / `POINTS_CHECKIN_PREVIEW_IDS`，允许积分中心全体开放但签到只对白名单开放；历史积分生产 revision |
 | `7c62dd1a8` | 用户 1 签到比例灰度收口 | 锁定仅昨日消费、每日一次、昨日消费原额 `0.1%-5%` 和三层 `100 U` 上限的真实验收口径 |
-| `1a4a690dd` | 积分余额审计兼容修复 | Sub2API 余额 credit/reversal 审计为 `request_body` 写入非空值；当前生产 Sub2API，临时兼容触发器已删除 |
+| `1a4a690dd` | 积分余额审计兼容修复 | Sub2API 余额 credit/reversal 审计为 `request_body` 写入非空值；历史生产节点，临时兼容触发器已删除，当前候选继续保留该审计契约 |
 | `1d8d50522` | 最终昨日消费阶梯签到 | 增加 `spend` 四档、可空金额上限、迁移 004 和完整安全回归；历史积分发布 revision，创建 policy v5 |
 | `fc7ea1fe5` | 冲正净额展示与安全预留分离 | 今日/累计赠送只显示已到账未冲正净额，待发放金额仍占用次数与 cap；双 Origin 发布前生产 revision |
 | `b64a0110a` | 双精确 iframe 父 Origin | CSP、Logo 来源和 ready/theme 消息使用有限精确 Origin 列表，禁止通配符；当前积分生产 revision |

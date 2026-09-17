@@ -39,7 +39,7 @@
 
 ## 版本与发布
 
-当前候选基线：官方 `v0.2.5` tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`、peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`，私有候选 `v0.2.5-52t.1`，升级起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`。官方 tag 后 53 个未发布提交除 `611c30f04` 的 grpc 安全修复外均不纳入本轮；该回移只把 `google.golang.org/grpc` 升至 `v1.83.2` 及同步更新最小版本选择依赖，以修复 `GO-2026-6443`、`GO-2026-6348`。本候选包含数据库迁移、Ent/生成代码、后端、前端和容器变化，发布策略为 `image-update-required`：先跑全量门禁，再由 GitHub Actions 构建 `ghcr.io/hxly520/sub2api:<version>`，服务器最多只缓存镜像，最后由维护者备份并手工 Compose 切换。官方后台在线更新器只识别官方 Release，不可安装本私有候选。
+当前候选基线：官方 `v0.2.5` tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`、peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`，私有发布 `v0.2.5-52t.1`，升级起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`。官方 tag 后 53 个未发布提交除 `611c30f04` 的 grpc 安全修复外均不纳入本轮；该回移只把 `google.golang.org/grpc` 升至 `v1.83.2` 及同步更新最小版本选择依赖，以修复 `GO-2026-6443`、`GO-2026-6348`。发布源码提交、annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`，服务器已缓存。生产仍运行 `0.2.1-52t.3`，数据库备份、维护者人工 Compose 切换和生产冒烟仍为 `pending`。本版本包含数据库迁移、Ent/生成代码、后端、前端和容器变化，发布策略为 `image-update-required`；官方后台在线更新器只识别官方 Release，不可安装本私有候选。
 
 私有发布 Tag 必须是 `vX.Y.Z-52t.N` 格式的 annotated Tag，且 Tag 树内 `backend/cmd/server/VERSION` 必须等于去掉前导 `v` 的 Tag 值。Release 工作流始终以该精确 Tag 调用 `backend-ci.yml` 与 `security-scan.yml`；校验、质量或安全门禁失败不得发布，成功后也不得由工作流单独改写或推进 `main`。
 
