@@ -76,7 +76,7 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 	repo := &mockChannelRepository{
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
-	return NewChannelService(repo, groupRepo, nil, nil)
+	return NewChannelService(repo, groupRepo, nil, nil, nil)
 }
 
 func availableModelNames(models []SupportedModel) []string {
@@ -143,7 +143,7 @@ func TestListAvailable_ListAllErrorPropagates(t *testing.T) {
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return nil, sentinel },
 	}
 	groupRepo := &stubGroupRepoForAvailable{}
-	svc := NewChannelService(repo, groupRepo, nil, nil)
+	svc := NewChannelService(repo, groupRepo, nil, nil, nil)
 	out, err := svc.ListAvailable(context.Background())
 	require.Nil(t, out)
 	require.ErrorIs(t, err, sentinel)
@@ -347,7 +347,7 @@ func TestListAvailable_UsesOnlyConcreteChannelPricingModels(t *testing.T) {
 	groupRepo := &stubGroupRepoForAvailable{activeGroups: []Group{
 		{
 			ID: 1, Name: "video", Platform: "openai",
-			ModelsListConfig: GroupModelsListConfig{Enabled: true, Models: []string{"group-list-only-model"}},
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"group-list-only-model"}},
 		},
 		{ID: 2, Name: "claude", Platform: "anthropic"},
 	}}

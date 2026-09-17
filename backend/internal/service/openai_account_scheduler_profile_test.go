@@ -375,14 +375,15 @@ func TestOpenAIGatewayServiceHasAlternativeExcludesUnavailableCandidates(t *test
 	require.False(t, hasAlternative)
 }
 
-func TestOpenAIGatewayServiceHasAlternativeExcludesRuntimeBlocked(t *testing.T) {
+func TestOpenAIGatewayServiceHasAlternativeExcludesPersistedRuntimeBlocked(t *testing.T) {
 	groupID := int64(9700)
-	blocked := Account{ID: 9701, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}}
+	blockedUntil := time.Now().Add(time.Minute)
+	blocked := Account{ID: 9701, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}, TempUnschedulableUntil: &blockedUntil}
 	healthy := Account{ID: 9702, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID}}
 	svc := &OpenAIGatewayService{
 		accountRepo: groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{blocked, healthy}}},
 	}
-	svc.BlockAccountScheduling(&blocked, time.Now().Add(time.Minute), "stream_read_error")
+	svc.BlockAccountScheduling(&blocked, blockedUntil, "stream_read_error")
 
 	hasAlternative, err := svc.HasOpenAIAlternativeAccountForCapability(
 		context.Background(), &groupID, "gpt-5.6-luna", healthy.ID, nil,

@@ -168,7 +168,7 @@
                     <template v-else>{{ formatRange(interval.min_tokens, interval.max_tokens) }}</template>
                   </span>
                   <span class="text-right">
-                    {{ formatInterval(interval, model.pricing.billing_mode) }}
+                    {{ formatInterval(interval, model.pricing) }}
                   </span>
                 </div>
               </div>
@@ -191,15 +191,18 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PricingRow from './PricingRow.vue'
-import { formatScaled } from '@/utils/pricing'
+import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
 import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
   BILLING_MODE_VIDEO,
-  type BillingMode,
 } from '@/constants/channel'
-import type { UserPricingInterval, UserSupportedModel } from '@/api/channels'
+import type {
+  UserPricingInterval,
+  UserSupportedModel,
+  UserSupportedModelPricing,
+} from '@/api/channels'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
 import {
@@ -264,18 +267,21 @@ function formatRange(min: number, max: number | null): string {
   return `(${min}, ${max == null ? '∞' : String(max)}]`
 }
 
-function formatInterval(interval: UserPricingInterval, mode: BillingMode): string {
+function formatInterval(
+  interval: UserPricingInterval,
+  pricing: UserSupportedModelPricing,
+): string {
   if (
-    mode === BILLING_MODE_PER_REQUEST ||
-    mode === BILLING_MODE_IMAGE ||
-    mode === BILLING_MODE_VIDEO
+    pricing.billing_mode === BILLING_MODE_PER_REQUEST ||
+    pricing.billing_mode === BILLING_MODE_IMAGE ||
+    pricing.billing_mode === BILLING_MODE_VIDEO
   ) {
     return formatScaled(interval.per_request_price, 1)
   }
-  return `${formatScaled(interval.input_price, perMillionScale)} / ${formatScaled(
-    interval.output_price,
-    perMillionScale,
-  )}`
+  const resolved = resolveIntervalPrices(interval, pricing)
+  const input = formatScaled(resolved.input_price, perMillionScale)
+  const output = formatScaled(resolved.output_price, perMillionScale)
+  return `${input} / ${output}`
 }
 
 const hovered = ref(false)
