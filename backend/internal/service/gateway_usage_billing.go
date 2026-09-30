@@ -74,16 +74,16 @@ type usageLogBestEffortWriter interface {
 
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
-	Cost                  *CostBreakdown
-	User                  *User
-	APIKey                *APIKey
-	Account               *Account
-	Subscription          *UserSubscription
-	RequestPayloadHash    string
-	IsSubscriptionBill    bool
-	AccountRateMultiplier float64
-	APIKeyService         APIKeyQuotaUpdater
-	Platform              string // 来自 APIKey 关联 Group 的平台标识
+	Cost                      *CostBreakdown
+	User                      *User
+	APIKey                    *APIKey
+	Account                   *Account
+	Subscription              *UserSubscription
+	RequestPayloadHash        string
+	IsSubscriptionBill        bool
+	AccountRateMultiplier     float64
+	APIKeyService             APIKeyQuotaUpdater
+	Platform                  string // 来自 APIKey 关联 Group 的平台标识
 	MediaBalanceHoldRequestID string
 	MediaBalanceHoldAmount    float64
 	// SimpleModeKeyRateLimitOnly opts the request into the simple-mode billing

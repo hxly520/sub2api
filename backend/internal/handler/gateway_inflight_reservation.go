@@ -94,27 +94,6 @@ func reserveInflightBalanceCtx(
 	return service.WithInflightReservation(ctx, res), res.HandlerDone, nil
 }
 
-// grokMediaInflightEstimate 媒体生成请求的估算输入；状态/内容查询返回空模型（不预留：
-// 查询会为已生成的媒体计费，不能因余额预留而拦截用户取回已付费结果）。
-func grokMediaInflightEstimate(endpoint service.GrokMediaEndpoint, model string, info service.GrokMediaRequestInfo, body []byte) service.InflightEstimateRequest {
-	if !endpoint.IsGenerationRequest() {
-		return service.InflightEstimateRequest{}
-	}
-	switch endpoint {
-	case service.GrokMediaEndpointImagesGenerations, service.GrokMediaEndpointImagesEdits:
-		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N}
-	default:
-		return service.InflightEstimateRequest{
-			Model:                model,
-			BodyBytes:            len(body),
-			Kind:                 service.InflightEstimateVideo,
-			Units:                1,
-			VideoResolution:      info.Resolution,
-			VideoDurationSeconds: info.DurationSeconds,
-		}
-	}
-}
-
 // grokVoiceSTTBytesPerSecond STT 时长粗估（~128kbps 压缩音频）。
 const grokVoiceSTTBytesPerSecond = 16000
 

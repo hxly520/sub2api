@@ -491,33 +491,6 @@ func (s *openAIAccountRuntimeStats) snapshotForSchedule(accountID int64, profile
 	return errRate, ttft, !math.IsNaN(ttft) && global.ttftSamples.Load() > 0
 }
 
-func (s *openAIAccountRuntimeStats) snapshotForStickyPerformance(accountID int64, profile OpenAIAccountScheduleProfile) (float64, float64, bool) {
-	if s == nil || accountID <= 0 {
-		return 0, 0, false
-	}
-	var stat *openAIAccountRuntimeStat
-	if key, ok := openAIAccountRuntimeProfileKeyFor(accountID, profile); ok {
-		if value, found := s.profiles.Load(key); found {
-			stat, _ = value.(*openAIAccountRuntimeStat)
-		}
-	} else if value, found := s.accounts.Load(accountID); found {
-		stat, _ = value.(*openAIAccountRuntimeStat)
-	}
-	if stat == nil {
-		return 0, 0, false
-	}
-	if stat.successTTFTSamples.Load() < openAIAccountProfileMinTTFTSamples {
-		return clamp01(math.Float64frombits(stat.errorRateEWMABits.Load())), 0, false
-	}
-	ttft := math.Float64frombits(stat.successTTFTEWMABits.Load())
-	return clamp01(math.Float64frombits(stat.errorRateEWMABits.Load())), ttft, !math.IsNaN(ttft)
-}
-func (s *openAIAccountRuntimeStats) profileSize() int {
-	if s == nil {
-		return 0
-	}
-	return int(s.profileCount.Load())
-}
 func (s *openAIAccountRuntimeStats) markRecentFailure(accountID int64, now time.Time) {
 	if s == nil || accountID <= 0 {
 		return
