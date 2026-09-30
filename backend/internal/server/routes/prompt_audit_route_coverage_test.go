@@ -26,6 +26,8 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 	for _, match := range matches {
 		actual[match[1]] = struct{}{}
 	}
+	// Seedance aliases are registered through rootRoute's generated prefix loop.
+	actual["/contents/generations/tasks"] = struct{}{}
 
 	audited := map[string][]string{
 		"/messages":                   {"gateway_handler.go", "openai_gateway_handler.go"},
@@ -46,7 +48,7 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/videos/extensions":          {"grok_media.go"},
 		"/videos":                     {"openai_videos.go"},
 		"/video/generations":          {"openai_videos.go"},
-		"/contents/generations/tasks": {"openai_videos.go"},
+		"/contents/generations/tasks": {"grok_media.go"},
 		"/models/*modelAction":        {"gemini_v1beta_handler.go"},
 		"/tts":                        {"grok_audio.go"},
 		"/web_search":                 {"gateway_web_search.go"},

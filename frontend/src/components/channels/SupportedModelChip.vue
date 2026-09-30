@@ -1,54 +1,51 @@
 <template>
-  <div class="relative inline-block max-w-full">
-    <button
+  <div class="relative inline-block">
+    <span
       ref="triggerEl"
-      type="button"
       :class="[
-        'inline-flex min-h-7 max-w-full cursor-help items-center gap-1 rounded-md border px-2 py-0.5 text-left text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/40',
+        'inline-flex cursor-help items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
         effectivePlatform
           ? platformBadgeClass(effectivePlatform)
           : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300',
       ]"
-      :aria-expanded="show"
-      :aria-controls="popoverId"
-      aria-haspopup="dialog"
-      @mouseenter="onMouseEnter"
-      @mouseleave="onMouseLeave"
-      @focus="onFocus"
-      @blur="onBlur"
-      @click.stop="togglePinned"
+      @mouseenter="onEnter"
+      @mouseleave="onLeave"
+      @focusin="onEnter"
+      @focusout="onLeave"
+      tabindex="0"
     >
       <PlatformIcon
         v-if="effectivePlatform"
         :platform="effectivePlatform as GroupPlatform"
         size="xs"
-        class="flex-shrink-0"
       />
       <span
         v-if="showPlatform && model.platform"
-        class="flex-shrink-0 rounded bg-gray-200/60 px-1 text-[10px] uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-400"
+        class="rounded bg-gray-200/60 px-1 text-[10px] uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-400"
       >
         {{ model.platform }}
       </span>
-      <span class="break-all">{{ model.name }}</span>
-    </button>
+      {{ model.name }}
+    </span>
 
+    <!-- Teleport to body so the popover is not clipped by card/overflow-hidden
+         ancestors. Fixed-position coords are computed from the trigger's
+         bounding rect; re-measured on enter / scroll / resize. -->
     <Teleport to="body">
       <div
         v-show="show"
-        :id="popoverId"
         ref="popoverEl"
-        role="dialog"
-        :aria-label="model.name"
-        class="fixed z-[99999] max-h-[calc(100vh-1rem)] w-80 max-w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border bg-white text-xs shadow-xl dark:bg-dark-800"
+        role="tooltip"
+        class="pointer-events-none fixed z-[99999] w-80 max-w-[min(22rem,calc(100vw-1rem))] rounded-lg border bg-white text-xs shadow-xl dark:bg-dark-800"
         :class="[popoverBorderClass]"
         :style="popoverStyle"
       >
+        <!-- Header：平台主题色背景，含模型名 + 平台徽章 -->
         <div
           class="flex items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2"
           :class="[popoverHeaderClass, popoverBorderClass]"
         >
-          <span class="min-w-0 break-all font-semibold">{{ model.name }}</span>
+          <span class="truncate font-semibold">{{ model.name }}</span>
           <span
             v-if="model.platform"
             class="flex-shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide dark:bg-dark-900/60"
@@ -63,9 +60,9 @@
           </div>
 
           <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
-            <div class="flex justify-between gap-4">
+            <div class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
-              <span class="text-right">{{ billingModeLabel }}</span>
+              <span>{{ billingModeLabel }}</span>
             </div>
 
             <template v-if="model.pricing.billing_mode === BILLING_MODE_TOKEN">
@@ -139,10 +136,7 @@
             />
 
             <PricingRow
-              v-if="
-                model.pricing.billing_mode === BILLING_MODE_VIDEO &&
-                model.pricing.per_request_price != null
-              "
+              v-if="model.pricing.billing_mode === BILLING_MODE_VIDEO && model.pricing.per_request_price != null"
               :label="t(prefixKey('videoPrice'))"
               :value="model.pricing.per_request_price"
               :unit="t(prefixKey('unitPerSecond'))"
@@ -159,17 +153,15 @@
               </div>
               <div class="space-y-1">
                 <div
-                  v-for="(interval, index) in model.pricing.intervals"
-                  :key="index"
-                  class="flex justify-between gap-4 text-[11px]"
+                  v-for="(iv, idx) in model.pricing.intervals"
+                  :key="idx"
+                  class="flex justify-between text-[11px]"
                 >
                   <span class="text-gray-500 dark:text-gray-400">
-                    <template v-if="interval.tier_label">{{ interval.tier_label }}</template>
-                    <template v-else>{{ formatRange(interval.min_tokens, interval.max_tokens) }}</template>
+                    <template v-if="iv.tier_label">{{ iv.tier_label }}</template>
+                    <template v-else>{{ formatRange(iv.min_tokens, iv.max_tokens) }}</template>
                   </span>
-                  <span class="text-right">
-                    {{ formatInterval(interval, model.pricing) }}
-                  </span>
+                  <span>{{ formatInterval(iv, model.pricing) }}</span>
                 </div>
               </div>
             </div>
@@ -181,14 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  getCurrentInstance,
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PricingRow from './PricingRow.vue'
 import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
@@ -196,43 +181,45 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
-  BILLING_MODE_VIDEO,
+  BILLING_MODE_VIDEO
 } from '@/constants/channel'
-import type {
-  UserPricingInterval,
-  UserSupportedModel,
-  UserSupportedModelPricing,
-} from '@/api/channels'
+// 复用 api/channels.ts 的用户侧最小形态 DTO。
+// admin 侧 ChannelModelPricing 字段更多，但结构上是用户 DTO 的超集，admin 视图传入可直接通过结构化子类型检查。
+import type { UserPricingInterval, UserSupportedModel, UserSupportedModelPricing } from '@/api/channels'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
-import {
-  platformBadgeClass,
-  platformBorderClass,
-  platformBadgeLightClass,
-} from '@/utils/platformColors'
+import { platformBadgeClass, platformBorderClass, platformBadgeLightClass } from '@/utils/platformColors'
 
 const props = withDefaults(
   defineProps<{
     model: UserSupportedModel
+    /** i18n 前缀：管理端传 `admin.availableChannels.pricing`，用户端传 `availableChannels.pricing`。 */
     pricingKeyPrefix?: string
     noPricingLabel?: string
     showPlatform?: boolean
+    /**
+     * 当 model.platform 缺失（如 admin 聚合场景）时，用父行的平台作为兜底着色。
+     * 仅用于视觉，不影响业务逻辑。
+     */
     platformHint?: string
   }>(),
   {
     pricingKeyPrefix: 'availableChannels.pricing',
     noPricingLabel: '',
     showPlatform: true,
-    platformHint: '',
-  },
+    platformHint: ''
+  }
 )
 
-const { t } = useI18n()
-const effectivePlatform = computed(() => props.model.platform || props.platformHint || '')
-const perMillionScale = 1_000_000
-const instanceUID = getCurrentInstance()?.uid ?? 0
-const popoverId = `supported-model-pricing-${instanceUID}`
+const effectivePlatform = computed<string>(() => props.model.platform || props.platformHint || '')
 
+const { t } = useI18n()
+
+/** 按 token 定价展示时的换算单位：每百万 token。 */
+const perMillionScale = 1_000_000
+
+// Popover border + header classes echo the platform theme so each card reads
+// at a glance which model family it belongs to.
 const popoverBorderClass = computed(() =>
   effectivePlatform.value
     ? platformBorderClass(effectivePlatform.value)
@@ -244,12 +231,13 @@ const popoverHeaderClass = computed(() =>
     : 'bg-gray-50 text-gray-700 dark:bg-dark-700/60 dark:text-gray-300',
 )
 
-function prefixKey(key: string): string {
-  return `${props.pricingKeyPrefix}.${key}`
+function prefixKey(k: string): string {
+  return `${props.pricingKeyPrefix}.${k}`
 }
 
 const billingModeLabel = computed(() => {
-  switch (props.model.pricing?.billing_mode) {
+  const mode = props.model.pricing?.billing_mode
+  switch (mode) {
     case BILLING_MODE_TOKEN:
       return t(prefixKey('billingModeToken'))
     case BILLING_MODE_PER_REQUEST:
@@ -264,57 +252,54 @@ const billingModeLabel = computed(() => {
 })
 
 function formatRange(min: number, max: number | null): string {
-  return `(${min}, ${max == null ? '∞' : String(max)}]`
+  const maxLabel = max == null ? '∞' : String(max)
+  return `(${min}, ${maxLabel}]`
 }
 
-function formatInterval(
-  interval: UserPricingInterval,
-  pricing: UserSupportedModelPricing,
-): string {
-  if (
-    pricing.billing_mode === BILLING_MODE_PER_REQUEST ||
-    pricing.billing_mode === BILLING_MODE_IMAGE ||
-    pricing.billing_mode === BILLING_MODE_VIDEO
-  ) {
-    return formatScaled(interval.per_request_price, 1)
+function formatInterval(iv: UserPricingInterval, pricing: UserSupportedModelPricing): string {
+  if (pricing.billing_mode === BILLING_MODE_VIDEO) {
+    return `${formatScaled(iv.per_request_price, 1)} ${t(prefixKey('unitPerSecond'))}`
   }
-  const resolved = resolveIntervalPrices(interval, pricing)
+  if (pricing.billing_mode === BILLING_MODE_PER_REQUEST || pricing.billing_mode === BILLING_MODE_IMAGE) {
+    return formatScaled(iv.per_request_price, 1)
+  }
+  const resolved = resolveIntervalPrices(iv, pricing)
   const input = formatScaled(resolved.input_price, perMillionScale)
   const output = formatScaled(resolved.output_price, perMillionScale)
   return `${input} / ${output}`
 }
 
-const hovered = ref(false)
-const focused = ref(false)
-const pinned = ref(false)
-const dismissed = ref(false)
-const show = computed(
-  () => pinned.value || (!dismissed.value && (hovered.value || focused.value)),
-)
-const triggerEl = ref<HTMLButtonElement | null>(null)
+// ── Popover positioning ─────────────────────────────────────────────
+// Teleport-to-body + fixed positioning avoids being clipped by
+// overflow-hidden ancestors (the parent table card). We re-measure on
+// hover enter, scroll, and resize. Pinning to the trigger's top-center
+// with a flip when the viewport edge is near keeps it aligned without a
+// full-blown positioning lib.
+const show = ref(false)
+const triggerEl = ref<HTMLElement | null>(null)
 const popoverEl = ref<HTMLElement | null>(null)
 const popoverStyle = ref<Record<string, string>>({ top: '0px', left: '0px' })
-let listenersBound = false
 
 function updatePosition() {
   const trigger = triggerEl.value
   if (!trigger) return
-
   const rect = trigger.getBoundingClientRect()
   const margin = 8
   const popover = popoverEl.value
-  const popoverWidth = popover?.offsetWidth ?? 320
-  const popoverHeight = popover?.offsetHeight ?? 240
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
+  const popWidth = popover?.offsetWidth ?? 320
+  const popHeight = popover?.offsetHeight ?? 240
+  const vw = window.innerWidth
+  const vh = window.innerHeight
 
   let top = rect.bottom + margin
-  if (top + popoverHeight > viewportHeight - margin) {
-    top = Math.max(margin, rect.top - popoverHeight - margin)
+  // Flip upward if it would overflow below.
+  if (top + popHeight > vh - margin) {
+    top = Math.max(margin, rect.top - popHeight - margin)
   }
 
-  let left = rect.left + rect.width / 2 - popoverWidth / 2
-  left = Math.max(margin, Math.min(left, viewportWidth - margin - popoverWidth))
+  let left = rect.left + rect.width / 2 - popWidth / 2
+  if (left < margin) left = margin
+  if (left + popWidth > vw - margin) left = vw - margin - popWidth
 
   popoverStyle.value = {
     top: `${Math.round(top)}px`,
@@ -322,78 +307,23 @@ function updatePosition() {
   }
 }
 
-function onDocumentPointerDown(event: PointerEvent) {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (triggerEl.value?.contains(target) || popoverEl.value?.contains(target)) return
-  pinned.value = false
-  dismissed.value = true
+function onEnter() {
+  show.value = true
+  nextTick(() => {
+    updatePosition()
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+  })
 }
 
-function onDocumentKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
-  pinned.value = false
-  // focus() can synchronously emit focus and clear dismissed; restore the
-  // dismissal afterwards so Escape never re-opens the popover.
-  triggerEl.value?.focus({ preventScroll: true })
-  dismissed.value = true
-}
-
-function bindListeners() {
-  if (listenersBound) return
-  listenersBound = true
-  window.addEventListener('scroll', updatePosition, true)
-  window.addEventListener('resize', updatePosition)
-  document.addEventListener('pointerdown', onDocumentPointerDown, true)
-  document.addEventListener('keydown', onDocumentKeydown)
-}
-
-function unbindListeners() {
-  if (!listenersBound) return
-  listenersBound = false
+function onLeave() {
+  show.value = false
   window.removeEventListener('scroll', updatePosition, true)
   window.removeEventListener('resize', updatePosition)
-  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
-  document.removeEventListener('keydown', onDocumentKeydown)
 }
 
-function onMouseEnter() {
-  hovered.value = true
-  dismissed.value = false
-}
-
-function onMouseLeave() {
-  hovered.value = false
-}
-
-function onFocus() {
-  focused.value = true
-  dismissed.value = false
-}
-
-function onBlur() {
-  focused.value = false
-  if (!hovered.value && !pinned.value) dismissed.value = false
-}
-
-function togglePinned() {
-  if (pinned.value) {
-    pinned.value = false
-    dismissed.value = true
-    return
-  }
-  pinned.value = true
-  dismissed.value = false
-}
-
-watch(show, (visible) => {
-  if (!visible) {
-    unbindListeners()
-    return
-  }
-  bindListeners()
-  nextTick(updatePosition)
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', updatePosition, true)
+  window.removeEventListener('resize', updatePosition)
 })
-
-onBeforeUnmount(unbindListeners)
 </script>
