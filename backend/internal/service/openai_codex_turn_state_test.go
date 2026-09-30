@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,71 @@ func TestRelayOpenAICodexTurnState_ClearsStaleValueWhenUpstreamAbsent(t *testing
 	require.Empty(t, c.Writer.Header().Get("X-Codex-Turn-State"))
 	_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-stale")
 	require.False(t, ok)
+}
+
+func TestOpenAICodexTurnStateSizeLimit(t *testing.T) {
+	maxState := strings.Repeat("x", openAICodexTurnStateMaxBytes)
+	tooLargeState := maxState + "x"
+
+	require.Equal(t, maxState, normalizeOpenAICodexTurnState(maxState))
+	require.Empty(t, normalizeOpenAICodexTurnState(tooLargeState))
+
+	upstream := http.Header{}
+	upstream.Set(openAICodexTurnStateHeader, maxState)
+	require.Equal(t, maxState, extractOpenAICodexTurnState(upstream))
+
+	upstream.Set(openAICodexTurnStateHeader, tooLargeState)
+	require.Empty(t, extractOpenAICodexTurnState(upstream))
+}
+
+func TestRelayOpenAICodexTurnState_RejectsOversizedHeader(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	c, _ := newTurnStateTestContext(t, 7, "sess-oversized")
+	c.Writer.Header().Set(openAICodexTurnStateHeader, "stale-value")
+
+	upstream := http.Header{}
+	upstream.Set(openAICodexTurnStateHeader, strings.Repeat("x", openAICodexTurnStateMaxBytes+1))
+	svc.relayOpenAICodexTurnState(c, &Account{ID: 42}, upstream)
+
+	require.Empty(t, c.Writer.Header().Get(openAICodexTurnStateHeader))
+	_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-oversized")
+	require.False(t, ok, "oversized state must not create provenance")
+}
+
+func TestGuardOpenAICodexTurnStateEcho_RejectsOversizedHeader(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	c, _ := newTurnStateTestContext(t, 7, "sess-oversized-echo")
+	h := http.Header{}
+	h.Set(openAICodexTurnStateHeader, strings.Repeat("x", openAICodexTurnStateMaxBytes+1))
+
+	svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 42}, h)
+
+	require.Empty(t, h.Get(openAICodexTurnStateHeader))
+}
+
+func TestSanitizeOpenAICodexTurnStateHeaderSizeLimit(t *testing.T) {
+	t.Run("preserves_boundary_value", func(t *testing.T) {
+		headers := http.Header{}
+		state := strings.Repeat("x", openAICodexTurnStateMaxBytes)
+		headers.Set(openAICodexTurnStateHeader, state)
+
+		sanitizeOpenAICodexTurnStateHeader(headers)
+
+		require.Equal(t, state, headers.Get(openAICodexTurnStateHeader))
+	})
+
+	t.Run("removes_oversized_value", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set(openAICodexTurnStateHeader, strings.Repeat("x", openAICodexTurnStateMaxBytes+1))
+
+		sanitizeOpenAICodexTurnStateHeader(headers)
+
+		require.Empty(t, headers.Get(openAICodexTurnStateHeader))
+	})
+
+	t.Run("nil_headers_are_safe", func(t *testing.T) {
+		sanitizeOpenAICodexTurnStateHeader(nil)
+	})
 }
 
 func TestStageOpenAICodexTurnState_StagedHeaders(t *testing.T) {

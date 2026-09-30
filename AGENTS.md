@@ -5,7 +5,7 @@
 ## 开始前必读
 
 1. `docs/PRIVATE_CUSTOMIZATION_CN.md`：二开功能清单、代码入口和官方合并规则。
-2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：v0.2.5 候选的测试、GitHub Actions、GHCR 和人工 Compose 流程。
+2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.11 候选的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
 5. `docs/LINK_CARDS_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡、媒体和积分契约。
@@ -17,7 +17,7 @@
 - 保留完整 Git 历史、merge-base、迁移文件名和 checksum。禁止浅克隆、按数字前缀覆盖同号迁移、重命名已应用迁移，或使用 `git reset --hard` 清掉未审查的工作树改动。
 - 同类功能冲突时官方实现为主；私有代码只能在官方入口加入明确的产品契约和回归测试。
 
-## 当前 v0.2.5 保留模块
+## 私有功能保留边界
 
 - 同库 `points-system` 积分/签到桥接与管理员配置。
 - 提链/额度卡账本、预扣/后扣费、欠费恢复、退款和公共查询门户。
@@ -26,7 +26,7 @@
 - Codex `x-codex-turn-state` 单值 48 KiB 保护及 Nginx 响应头缓冲约束。
 - 当前未登录首页、帮助页、导航和独立 `infinite-canvas` 工作台部署契约。
 
-普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道已按支付模块最小适配恢复，额度卡页面的 CCSwitch 只读接入教程仍保留。网关、协议、重试、缓存、计费和账号调度必须保持官方 v0.2.5 语义。官方 `235_group_model_allowlist.sql` 会把旧模型列表升级为真实请求准入规则，普通 Key、提链 Key 和媒体入口都必须经过同一白名单。
+普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道已按支付模块最小适配恢复，额度卡页面的 CCSwitch 只读接入教程仍保留。当前升级以官方 `v0.2.11` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 会把旧模型列表升级为真实请求准入规则，普通 Key、提链 Key 和媒体入口都必须经过同一白名单。
 
 ## 不可破坏契约
 
@@ -39,7 +39,7 @@
 
 ## 版本与发布
 
-当前候选基线：官方 `v0.2.5` tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`、peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`，私有发布 `v0.2.5-52t.1`，升级起点 `19d74426a7d41183b128e8aa3b08d79d5d89d533`。官方 tag 后 53 个未发布提交除 `611c30f04` 的 grpc 安全修复外均不纳入本轮；该回移只把 `google.golang.org/grpc` 升至 `v1.83.2` 及同步更新最小版本选择依赖，以修复 `GO-2026-6443`、`GO-2026-6348`。发布源码提交、annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`，服务器已缓存。生产仍运行 `0.2.1-52t.3`，数据库备份、维护者人工 Compose 切换和生产冒烟仍为 `pending`。本版本包含数据库迁移、Ent/生成代码、后端、前端和容器变化，发布策略为 `image-update-required`；官方后台在线更新器只识别官方 Release，不可安装本私有候选。
+当前最新私有发布为 `v0.2.5-52t.1`。本轮升级候选以官方 `v0.2.11` peeled commit `96f4c115c9749078f90cbf210a01d39baf3f53b6` 为准，从私有主线 `3c990be5c8fe5b2105a7abfeed8a6f27679227a4` 合并，merge-base 为官方 `v0.2.5` commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。候选分支 `codex/upgrade-v0.2.11-compat` / 版本 `0.2.11-52t.1` 尚在验证；PR、Release、镜像与 GHCR digest 均为 `pending`。只读服务器核验显示运行镜像仍为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`、healthy、重启数为 0；本轮未更改服务器或容器。官方新增迁移 `238b`、`239`、`240` 仅新增，私有迁移保持原名与 checksum。所有源码门禁和 Release 工作流通过前不得发布镜像；发布策略为 `image-update-required`，生产仍由维护者人工 Compose 切换。
 
 私有发布 Tag 必须是 `vX.Y.Z-52t.N` 格式的 annotated Tag，且 Tag 树内 `backend/cmd/server/VERSION` 必须等于去掉前导 `v` 的 Tag 值。Release 工作流始终以该精确 Tag 调用 `backend-ci.yml` 与 `security-scan.yml`；校验、质量或安全门禁失败不得发布，成功后也不得由工作流单独改写或推进 `main`。
 

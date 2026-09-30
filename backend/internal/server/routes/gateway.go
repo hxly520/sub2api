@@ -128,9 +128,13 @@ func RegisterGatewayRoutes(
 	}
 	openAIVideoHandler := func(c *gin.Context) {
 		platform := getGroupPlatform(c)
+		requestID := strings.TrimSpace(c.Param("request_id"))
+		if requestID == "" {
+			requestID = strings.TrimSpace(c.Param("task_id"))
+		}
 		isCompositeTaskLookup := platform == service.PlatformComposite &&
 			c.Request.Method == http.MethodGet &&
-			strings.HasPrefix(strings.TrimSpace(c.Param("request_id")), "video-")
+			strings.HasPrefix(requestID, "video-")
 		if platform == service.PlatformOpenAI || isCompositeTaskLookup {
 			h.OpenAIGateway.Videos(c)
 			return
@@ -332,9 +336,7 @@ func RegisterGatewayRoutes(
 		gateway.POST("/video/generations", openAIVideoHandler)
 		gateway.GET("/video/generations/:request_id/content", openAIVideoHandler)
 		gateway.GET("/video/generations/:request_id", openAIVideoHandler)
-		gateway.POST("/contents/generations/tasks", openAIVideoHandler)
-		gateway.GET("/contents/generations/tasks/:request_id/content", openAIVideoHandler)
-		gateway.GET("/contents/generations/tasks/:request_id", openAIVideoHandler)
+		gateway.GET("/contents/generations/tasks/:task_id/content", openAIVideoHandler)
 
 		voiceHandler := func(endpoint string) gin.HandlerFunc {
 			return func(c *gin.Context) {
@@ -418,6 +420,11 @@ func RegisterGatewayRoutes(
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
 		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)
 	}
+	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
+		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+		rootRoute(http.MethodGet, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+		rootRoute(http.MethodDelete, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+	}
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesHandler))
 	rootRoute(http.MethodPost, "/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
@@ -483,9 +490,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodPost, "/video/generations", bodyLimit, openAIVideoHandler)
 	rootRoute(http.MethodGet, "/video/generations/:request_id/content", bodyLimit, openAIVideoHandler)
 	rootRoute(http.MethodGet, "/video/generations/:request_id", bodyLimit, openAIVideoHandler)
-	rootRoute(http.MethodPost, "/contents/generations/tasks", bodyLimit, openAIVideoHandler)
-	rootRoute(http.MethodGet, "/contents/generations/tasks/:request_id/content", bodyLimit, openAIVideoHandler)
-	rootRoute(http.MethodGet, "/contents/generations/tasks/:request_id", bodyLimit, openAIVideoHandler)
+	rootRoute(http.MethodGet, "/contents/generations/tasks/:task_id/content", bodyLimit, openAIVideoHandler)
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
 		return func(c *gin.Context) {

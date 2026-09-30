@@ -6,14 +6,24 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 官方基线 | `v0.2.5`；tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；另回移官方 `611c30f04` 的 grpc `v1.83.2` 安全修复 |
-| 私有候选 | `v0.2.5-52t.1`；发布源码/Tag peeled commit/OCI revision `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿 |
-| 运行基线 | 生产仍为 `ghcr.io/hxly520/sub2api:0.2.1-52t.3`；服务器仅缓存新候选，未替换或重启生产容器 |
+| 官方基线 | 当前升级目标 `v0.2.11`；peeled commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`；官方 tag 内 `VERSION` 与 tag 名不一致，私有候选按 tag 设为 `0.2.11-52t.1` |
+| 私有候选 | `v0.2.11-52t.1`；分支 `codex/upgrade-v0.2.11-compat`，起点 `3c990be5c8fe5b2105a7abfeed8a6f27679227a4`，merge-base `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；源码、PR、Release 与镜像待验证 |
+| 运行基线 | 只读服务器核验为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`、healthy、restart count `0`；本轮未改容器或其他服务 |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
-| 验证与产物 | 本地全部门禁、PR/main CI、安全扫描、积分 PostgreSQL 16、macOS Apple Container、Release 与制品校验均通过；GHCR manifest `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26` 已缓存到服务器 |
+| 验证与产物 | 本地/CI 门禁、PR、安全扫描、Release、GHCR 与服务器候选缓存均为 `pending`；不得把源码合并或构建过程写成生产上线 |
 
-### 当前私有发布：v0.2.5-52t.1
+### 当前升级候选：v0.2.11-52t.1（未发布）
+
+- 官方 Release 固定为 `v0.2.11`，peeled commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。官方 tag 树内的 `backend/cmd/server/VERSION` 仍为 `0.2.10`；私有候选版本文件改为 `0.2.11-52t.1`，以与候选 Tag 保持一致。
+- 私有起点为 `3c990be5c8fe5b2105a7abfeed8a6f27679227a4`，merge-base 为官方 `v0.2.5` peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。当前分支保留双亲 merge 谱系，未压平官方历史。
+- 官方网关、协议转换、计费、重试、缓存、账号调度、管理功能与前端按 `v0.2.11` 为准；仅在官方入口保留本手册列明的积分/签到、额度卡账本、媒体冻结/释放/核销、统一媒体与视频、TTFT、Codex 48 KiB 防护、KeyingPay V2、当前首页/帮助页及 Logo 等私有产品契约。
+- 私有 `points-system/`、额度卡实现与迁移、KeyingPay provider、首页和帮助页静态资源均保留。官方新增迁移为 `238b_content_moderation_engine_meta.sql`、`239_channel_reasoning_effort_multipliers.sql`、`240_affiliate_ledger_operation_id.sql`；私有迁移不重命名、不覆盖，按完整文件名和 checksum 执行。
+- 官方新增 Seedance 路径维持官方请求后计费，不接入私有媒体预冻结。现有图片及视频任务仍保留既有余额冻结、明确失败释放与成功核销语义；未知终态不擅自退款。
+- 后端核心兼容适配、全量门禁和 Codex 48 KiB 边界回归尚未完成时，不创建 Release 或推送 GHCR 镜像。发布策略为 `image-update-required`；只发布 Sub2API 镜像，生产切换由维护者手动执行。
+- SSH 只读核验的运行版本为 `0.2.5-52t.1`，服务 healthy、重启数为 0；当前候选尚未上传服务器或替换容器。积分、生图工作台、额度卡独立服务、数据库、Redis 与 Nginx 不在本轮部署范围。
+
+### 上一私有发布：v0.2.5-52t.1
 
 - PR [`#13`](https://github.com/hxly520/sub2api/pull/13) 已合入 `main`；merge commit、annotated Tag peeled commit 和 amd64/arm64 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`。
 - Release workflow [`35237673572`](https://github.com/hxly520/sub2api/actions/runs/35237673572) 成功；Release [`v0.2.5-52t.1`](https://github.com/hxly520/sub2api/releases/tag/v0.2.5-52t.1) 包含五个平台归档和 `checksums.txt`，归档 digest 与校验文件一致。
@@ -35,7 +45,7 @@
 
 ## 1. 保留范围与冲突规则
 
-官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.5` 为准。只在官方入口接回以下产品契约：
+当前升级的官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.11` 为准。只在官方入口接回以下产品契约：
 
 - 同库积分/签到系统；
 - 提链/额度卡账本、预扣/后扣费、欠费恢复和退款边界；
