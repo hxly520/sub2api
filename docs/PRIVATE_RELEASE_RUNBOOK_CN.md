@@ -6,14 +6,32 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 官方基线 | 当前升级目标 `v0.2.11`；peeled commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`；官方 tag 内 `VERSION` 与 tag 名不一致，私有候选按 tag 设为 `0.2.11-52t.1` |
-| 私有候选 | `v0.2.11-52t.1`；分支 `codex/upgrade-v0.2.11-compat`，起点 `3c990be5c8fe5b2105a7abfeed8a6f27679227a4`，merge-base `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；源码、PR、Release 与镜像待验证 |
-| 运行基线 | 只读服务器核验为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`、healthy、restart count `0`；本轮未改容器或其他服务 |
+| 官方基线 | 当前升级目标 `v0.2.15`；peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；官方 tag 内 `VERSION=0.2.14`，私有候选主动设为 `0.2.15-52t.1` |
+| 私有候选 | `v0.2.15-52t.1`；分支 `codex/upgrade-v0.2.15-compat`，起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；直接冲突已解决，兼容复核与发布待验证 |
+| 运行基线 | `2026-10-10` 只读服务器核验为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、restart count `0`；本轮未改容器或其他服务 |
+| 工具链与构建 | Go `1.27.2`；沿用精确 annotated Tag、完整 GoReleaser/GHCR 发布流程，`SIMPLE_RELEASE=false` |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
 | 验证与产物 | 本地/CI 门禁、PR、安全扫描、Release、GHCR 与服务器候选缓存均为 `pending`；不得把源码合并或构建过程写成生产上线 |
 
-### 当前升级候选：v0.2.11-52t.1（未发布）
+### 当前升级候选：v0.2.15-52t.1（未发布）
+
+- 官方 Release 固定为 `v0.2.15`，peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`。tag 内 `backend/cmd/server/VERSION=0.2.14`，私有候选主动设置 `0.2.15-52t.1`；构建和检查使用 Go `1.27.2`。
+- 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入；merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`。分支 `codex/upgrade-v0.2.15-compat` 保留双亲 merge 谱系；直接冲突已解决，兼容审查和测试仍为 `pending`。
+- 保留积分/签到同库桥接、提链/额度卡账本、既有图片/视频冻结释放核销、统一媒体接口、TTFT、Codex 48 KiB 头部保护及 KeyingPay V2；官方网关、协议、重试、缓存、调度和通用计费采用 v0.2.15。Seedance 按用户确认继续官方后扣费。
+- 新增 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 必须按完整文件名独立执行。旧私有迁移原名和 checksum 不变。checksum 以 UTF-8 内容经 `strings.TrimSpace` 后计算 SHA256；已核验的 10 份私有迁移及 238b/239/240 共 13 份与生产记录匹配，不代表新增迁移已执行。
+- 重点回归充值实付/赠送/折扣/到账/退款与 KeyingPay 幂等，普通 Key 删除后的官方余额结算与提链在途退款/结算，WS 后续轮次价格刷新、图像输入费用及 Claude 计费。`kimi-k3` 零 usage 是单独待确认事项，本次升级不授权估计扣费或历史追扣。
+- 本地测试、隔离数据库迁移/事务回归、PR、CI、安全扫描、Release、GHCR digest 与服务器候选缓存均为 `pending`；仅在真实证据通过后更新状态。沿用 full GoReleaser/GHCR，不改用新的官方矩阵发布方式。
+- 只读生产镜像为 `0.2.11-52t.3`，manifest digest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，image ID `sha256:41bf83907718fe708d41578fc632c54fb56f373e6262b2ad99ccc2ba4dd5d906`。只允许缓存核验后的候选；生产 Sub2API 由维护者手工切换，积分/生图工作台等其他容器及宿主首页/帮助静态资产不变。
+
+### 上一生产基线：v0.2.11-52t.3
+
+- `2026-10-10` 只读确认生产为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`，healthy、restart count `0`，启动时间 `2026-09-30T14:37:29.03656502Z`。
+- 对应本轮私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`。既有 Release 的完整构建证据应从精确 Tag/Actions 查询，不使用下述 `.1` 早期候选阶段证据代替 `.3`。
+
+### 历史候选记录：v0.2.11-52t.1（当时未发布）
+
+本段保留 v0.2.11 首轮候选的当时状态；其 pending 与生产版本描述不代表当前状态。现行候选和生产基线见上文。
 
 - 官方 Release 固定为 `v0.2.11`，peeled commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。官方 tag 树内的 `backend/cmd/server/VERSION` 仍为 `0.2.10`；私有候选版本文件改为 `0.2.11-52t.1`，以与候选 Tag 保持一致。
 - 私有起点为 `3c990be5c8fe5b2105a7abfeed8a6f27679227a4`，merge-base 为官方 `v0.2.5` peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。当前分支保留双亲 merge 谱系，未压平官方历史。
@@ -45,7 +63,7 @@
 
 ## 1. 保留范围与冲突规则
 
-当前升级的官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.11` 为准。只在官方入口接回以下产品契约：
+当前升级的官方网关、协议转换、账号调度、重试、缓存、计费和错误处理以 `v0.2.15` 为准。只在官方入口接回以下产品契约：
 
 - 同库积分/签到系统；
 - 提链/额度卡账本、预扣/后扣费、欠费恢复和退款边界；
@@ -85,6 +103,8 @@ git diff --check
 
 重点回归：GPT-5.6 长上下文双倍计费、媒体一次提交与失败释放、额度卡账本/并发/欠费恢复、视频统一接口、TTFT 开关和失败 attempt 隔离、Codex 头部上限，以及首页/帮助页静态资源。
 
+v0.2.15 另须完成隔离 PostgreSQL 迁移/事务回归、KeyingPay 充值赠送与退款金额核验，以及提链退款/删除与在途结算资金守恒。正式计费只接受真实 usage，不以“请求成功”推断缺失的 token 数。
+
 ## 3. 生成候选 Tag 与 GitHub Actions 镜像
 
 1. 在升级分支确认工作树干净、官方 commit 和 `backend/cmd/server/VERSION` 已记录。版本文件必须已经等于 Tag 去掉前导 `v` 后的完整值；工作流不会代替源码改写版本。
@@ -93,12 +113,12 @@ git diff --check
 ```bash
 git add -A
 git diff --cached --check
-git commit -m "merge: official v0.2.5 with 52Token compatibility"
-git push origin codex/upgrade-v0.2.5-compat
+git commit -m "merge: official v0.2.15 with 52Token compatibility"
+git push origin codex/upgrade-v0.2.15-compat
 # PR/审查后把候选合入私有 main，再在该 main commit 上创建 annotated Tag
-git tag -a v0.2.5-52t.1 -m "private compatibility release v0.2.5-52t.1 [image-update-required]"
+git tag -a v0.2.15-52t.1 -m "private compatibility release v0.2.15-52t.1 [image-update-required]"
 git push origin main
-git push origin v0.2.5-52t.1
+git push origin v0.2.15-52t.1
 ```
 
 3. `.github/workflows/release.yml` 只接受现存的私有 Tag。它先确认名称格式、annotated Tag、精确 checkout commit、Tag 树内 `VERSION` 和默认分支祖先关系，再以同一个 `refs/tags/<tag>` 调用 `backend-ci.yml` 与 `security-scan.yml`。任何校验、质量或安全门禁失败都会阻止 GoReleaser 和镜像发布。
@@ -112,8 +132,7 @@ git push origin v0.2.5-52t.1
 服务器不构建源码或镜像，发布工作流也不连接生产服务器。只有维护者在备份和回滚点确认后的维护窗口手工执行（示例，先替换为已核验的 tag/digest）：
 
 ```bash
-cd /path/to/sub2api
-git diff -- deploy/docker-compose.yml
+cd /home/api/sub2api-deploy
 docker compose config --quiet
 # 备份数据库、.env、当前镜像 ID 和回滚 tag
 docker compose pull sub2api

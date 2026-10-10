@@ -2,9 +2,9 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-最新生产事实以本文件第 0 节（含 0.14 当前候选发布与服务器缓存）为准；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
+最新生产事实以本文件第 0 节最新日期的只读核验为准；本轮升级交接见 [v0.2.15-52t.1 发布记录](RELEASE_V0_2_15_52T_1_CN.md)；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
-## 0. 当前生产事实（运行态与候选交接更新至 2026-09-17，其余条目按各自日期）
+## 0. 当前生产事实（运行态只读核验更新至 2026-10-10，其余条目按各自日期）
 
 - 切换前只读快照：Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；当时拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。该快照已由 0.13 的实际运行态记录覆盖。官方网关语义与长上下文计费修复随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存；失败候选 `.3` 没有 Release 或镜像。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
@@ -15,6 +15,15 @@
 - 最终 nonterminal/failed grant 为 0；Sub2API、PostgreSQL、Redis 的容器 ID和启动时间未因积分发布变化，Nginx 为 active。
 - 当前 `https://api.52token.org/points` 与 `https://52token.org/points` 都是有效父页面。生产以 `POINTS_EMBED_PARENT_ORIGIN=https://api.52token.org` 保留 Logo 主来源，并以 `POINTS_EMBED_PARENT_ORIGINS=https://52token.org` 增加第二精确父 Origin；CSP 和 ready/theme 消息只使用合并后的有限列表，不允许通配符。只配置其中一个会使另一个父站超时显示“积分中心暂时未就绪”。
 - 用户 1 已在 `390x844` 移动视口从根域完成真实 iframe 验收：无未就绪遮罩、资源和用户 API 全部成功、`clientWidth=scrollWidth=367` 且无控制台 WARN/ERROR。两个父站 `/points` 均为 `200`，积分 CSP 同时精确允许两个 Origin；后续任一父域、Nginx 或前端入口变更都必须重复桌面和移动验收。
+
+### 0.15 2026-10-10 运行态与 v0.2.15 候选边界
+
+- SSH 只读核验：`sub2api` 运行 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`，容器 `7d25401938d7309bfd05e0223203e84f5b284e79a7684d73abbec486b239120d`，启动 `2026-09-30T14:37:29.03656502Z`、healthy、restart count `0`。
+- 当前 image ID `sha256:41bf83907718fe708d41578fc632c54fb56f373e6262b2ad99ccc2ba4dd5d906`，manifest digest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`；根盘 34G、已用 18G、可用约 15G。
+- 工作台保持 `infinite-canvas:v0.16.0-52t.1`，积分保持 `sub2api-points:0.1.169-b64a0110ab2c`，PostgreSQL `17.8-alpine`、Redis `8-alpine`。此前各日期功能/配置快照是历史证据，本次未重测或改变它们的生产配置。
+- 仅为 Sub2API 构建官方 v0.2.15 的私有兼容镜像 `0.2.15-52t.1`，原发布流程不变；候选测试、Release、GHCR 和服务器缓存证据见发布记录，完成前保持 pending。
+- 原有私有迁移与已应用官方 238b/239/240 共 13 项 checksum 在本次只读检查中一致；新增双 241 和 242 尚未应用生产。checksum 以 `strings.TrimSpace` 的 UTF-8 内容计算，不能直接用文件原始字节。
+- Compose 目录 `/home/api/sub2api-deploy`；只缓存成功镜像，维护者自行修改 image 并执行单服务 `up -d --no-deps sub2api`，本任务不切换容器、不手动迁移、不改 Nginx/数据库/Redis。
 
 ### 0.14 2026-09-17 v0.2.5-52t.1 发布与服务器缓存
 

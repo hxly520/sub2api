@@ -2,6 +2,8 @@
 
 本文只记录可由 Git 历史、官方 Release tag、测试结果和脱敏部署证据复核的事实。`pending` 不得写成已完成；源码候选可以继续验证，但门禁未完成前不得创建 Release、生产镜像或宣称已上线。
 
+现行状态（`2026-10-10`）：生产为 `0.2.11-52t.3`，本轮候选为 `0.2.15-52t.1`。以下旧版本中“当前”“本轮”或 pending 描述仅代表该版本当时的审计状态，不能代替本节最新记录。
+
 ## 1. 版本总表
 
 | 官方基线 | 官方 Release commit | 私有状态 | 私有兼容节点/说明 |
@@ -15,10 +17,24 @@
 | `v0.1.176` | `e803e3851c0a7e222cfadeafad7b8636ab959d11` | completed (historical) | annotated tag object `14e6d7ee7bdb1e4cb6bc59129a7ee1dd1110c52a`；私有 `v0.1.176-52t.1` 已由 `.4` 手工切换替代。 |
 | `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | `.4` released; superseded in production | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。该版本 `backend/cmd/server/VERSION=0.1.183-52t.4`，私有发布提交与 Tag 均指向 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者曾于 `2026-08-28 07:26:27 +08` 完成人工切换并通过长上下文计费冒烟，后续已由 `v0.2.1-52t.3` 取代。`v0.1.183-52t.3` 因 lint 门禁失败且未生成 Release 或镜像，只保留失败证据。 |
 | `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.3` released; superseded by `v0.2.5-52t.1` | `.2` 完成首轮兼容发布，`.3` 在同一官方基线上恢复 KeyingPay V2；`.3` commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0`。`2026-09-17` 服务器只读证据当时确认该版本运行；后续 `v0.2.5-52t.1` 已切换，当前运行状态见最新运维核验。 |
-| `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` released and running before `v0.2.11` candidate | 从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交只回移 `611c30f04` grpc 安全修复，其余不纳入。发布源码提交、私有 annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`。本轮升级前只读服务器确认生产运行该版本；人工切换和生产冒烟属于维护者操作。 |
-| `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.1` compatibility candidate in progress | 从私有 `main` `3c990be5c8fe5b2105a7abfeed8a6f27679227a4` 合并；merge-base 为 `v0.2.5` commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`。核心服务契约和全量门禁待完成；Release/镜像/服务器缓存/人工切换均为 `pending`。官方 `VERSION` 文件仍为 `0.2.10`，私有候选明确设为 `0.2.11-52t.1`。 |
+| `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` released; superseded in production | 从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交只回移 `611c30f04` grpc 安全修复，其余不纳入。发布源码提交、私有 annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`。其历史切换和冒烟记录继续保留。 |
+| `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.3` production baseline | `2026-10-10` 只读确认 `.3` 运行，私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`；GHCR manifest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，healthy、restart count `0`。`.1` 的早期候选记录保留在下方，仅代表当时状态。 |
+| `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` compatibility candidate; validation pending | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。直接冲突已解决；兼容审查、测试、PR、Release、GHCR 镜像及服务器候选缓存仍为 `pending`。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
 
-### v0.2.11 当前兼容候选
+### v0.2.15 当前兼容候选
+
+- 官方 Release 于 `2026-10-09 11:35:49 +08` 发布；只合入精确 Release peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`，不混入官方 tag 后未发布 tip。Go 工具链和 CI 同步至 `1.27.2`。
+- 官方重点差异包括充值赠送/折扣及订单 bonus amount、类型化平台约束调整、WS 后续轮次价格刷新、图像输入计费、Claude 计费/冷却与平台调度结构。兼容回归未完成前不宣称功能已验证。
+- 保留积分/签到同库桥接、提链/额度卡独立资金账本、既有图片/视频冻结释放核销、统一媒体接口、真实 TTFT、Codex 单值 48 KiB 头部保护、KeyingPay V2 及当前首页/帮助/Logo。Seedance 按用户确认维持官方请求后计费。
+- 新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存。旧私有迁移与官方 238b/239/240 共 13 份已只读匹配生产 checksum；checksum 对 UTF-8 内容执行 `strings.TrimSpace` 后 SHA256。新增迁移尚未在生产执行，隔离演练仍为 `pending`。
+- 资金兼容重点：KeyingPay 的实付金额、余额入账、赠送与退款不能混用；回调保持签名/金额核验与幂等。官方允许删除普通 Key 后仍结算余额，必须验证提链删除/退款与在途 usage 的独立余额结算、资金守恒和终态边界。
+- `kimi-k3` 零 usage 记录仍需独立核查；升级不代表缺失 usage 已修复。不得估算 token/费用，不进行未经单独批准的历史追扣。
+- 直接合并冲突已解决；本地和隔离 PostgreSQL 测试、PR、CI、安全扫描、full GoReleaser Release、GHCR digest/OCI revision 与服务器候选缓存均为 `pending`。沿用现有私有 annotated Tag/精确 CI/full GoReleaser/GHCR 流程，`SIMPLE_RELEASE=false`。
+- 发布分类为 `image-update-required`。自动化只准备和缓存候选，维护者手工仅替换 `sub2api`；不替换积分、生图工作台等容器，不改生产数据库/Redis/Nginx，不发布宿主首页/帮助静态资产。
+
+### v0.2.11 首轮历史候选记录（当时状态）
+
+下列记录形成于 `.1` 候选验证阶段；当前 `.3` 生产事实与 v0.2.15 候选见上文。旧 pending 不代表 `.3` 仍待发布，旧测试结果也不构成 v0.2.15 门禁证据。
 
 - 官方版本重点变化：GPT-6.1 Sol 与订阅套餐识别、Claude 原生限额重置兑换、Codex 远程模型目录、API Key 数量/频率限制、Astra Ultrafast 能力识别、余额模式请求在途预占，以及内容审核元数据、推理强度渠道倍率和联盟账本操作 ID。
 - 官方网关、协议、计费、调度、缓存、重试和前端作为唯一核心实现；本轮仅恢复保证既有私有积分、额度卡/提链、媒体冻结/结算、TTFT、Codex 头部保护、KeyingPay、首页/帮助契约所需的适配。

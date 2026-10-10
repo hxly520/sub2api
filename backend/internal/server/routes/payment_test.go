@@ -29,6 +29,7 @@ func TestRegisterPaymentRoutesIncludesKeyingPayWebhook(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	routes := router.Routes()
