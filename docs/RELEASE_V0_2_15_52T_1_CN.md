@@ -28,9 +28,9 @@
 | --- | --- |
 | 合并 | 5 处冲突已处理，保留发布流程与两组资金集成测试；补齐可盈路由测试的新 Redis 参数 |
 | 前端 | lint、Vue 类型检查、生产 build 通过；377 文件 / 2925 项 Vitest 通过 |
-| 积分服务 | Go test / vet / build 通过，源码及生产独立容器不变 |
-| 后端 | 全量编译、vet 通过；unit/default、隔离 PostgreSQL 测试 pending |
-| 部署契约 | 额度卡 Nginx 静态契约通过；其他门禁 pending |
+| 积分服务 | Go test / vet / build 通过；仅构建依赖安全补丁更新，业务源码及生产独立容器不变 |
+| 后端 | 全量编译、vet、unit/default、二开重点回归通过；隔离 PostgreSQL 测试待 CI |
+| 部署契约 | 额度卡 Nginx 静态契约通过；Compose 网关环境与运行资源契约通过 |
 | GitHub / Release / GHCR | pending |
 | 服务器候选缓存 | pending |
 | 生产切换 | 维护者手动执行，本任务不执行 |
@@ -38,6 +38,13 @@
 长上下文计费保留官方预设、阈值、账号/分组开关和渠道显式区间，不叠加重复倍率。新增回归证明可盈优惠订单按实付校验、含赠金一次入账；删除/退款提链的晚到结算不能扣创建者余额或残留 dedup/ledger。
 
 `kimi-k3` 等缺失 usage 的零 token 事件不视为本轮自动解决，不估计扣费或追扣历史。既有非本轮新增边界：无 RefundID 的可盈待确认退款查询会使用到账口径构造金额关联，正常带 RefundID 路径不受影响；后续支付专项应单独评估。
+
+## CI 构建依赖与本地证据
+
+- PR [#16](https://github.com/hxly520/sub2api/pull/16)，当前 CI 和安全门禁仍待完成。
+- 首轮 points-security run `38059057233` 发现旧 Go 1.27.0 标准库及 x/text 0.39.0 已知漏洞。仅积分构建元数据升级为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0 依赖；不改变积分业务代码，不发布或替换积分镜像。更新后本地 test/vet/build 通过。
+- 本地首轮 backup 测试缺少 Windows PATH 中的 sh，补齐 Git sh 路径后仓库套件通过；私有可盈路由测试已适配官方新 Redis 参数。官方内存增长测试首轮在混合负载中超出阈值，未修改断言，service 完整重跑通过。
+- 本地日志留在工作区外 `output/upgrade-plans/v215-*`；源码仓库只保留脱敏摘要与 CI 链接。
 
 ## 人工切换
 
