@@ -2,14 +2,12 @@
 
 本文件供后续自动化维护者和 AI 接替时使用。它只记录源码边界与验证规则，不存储生产密码、完整 API Key、数据库连接串、HMAC secret、GHCR PAT、GitHub token 或请求数据。真实生产状态以脱敏运维记录和服务器只读核验为准。
 
-
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 的 CI/隔离 PostgreSQL 和最终发布仍 pending。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。后续真实构建/缓存证据统一补入 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
-
+本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 开始前必读
 
 1. `docs/PRIVATE_CUSTOMIZATION_CN.md`：二开功能清单、代码入口和官方合并规则。
-2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.15 候选的测试、GitHub Actions、GHCR 和人工 Compose 流程。
+2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.15 私有发布的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
 5. `docs/LINK_CARDS_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡、媒体和积分契约。
@@ -44,7 +42,7 @@
 
 ## 版本与发布
 
-`2026-10-10` 只读核验的生产基线为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、重启数为 0，私有起点 commit 为 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`。本轮目标固定为官方 `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；merge-base 为官方 `v0.2.11` commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。候选分支 `codex/upgrade-v0.2.15-compat` / 版本 `0.2.15-52t.1` 已解决直接合并冲突，兼容复核、测试、PR、Release、GHCR digest 和服务器候选缓存仍为 `pending`。官方 tag 树内 `VERSION` 滞后为 `0.2.14`，私有版本必须主动设置为候选完整版本；Go 工具链使用 `1.27.2`。
+`2026-10-10` 只读核验的生产基线为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、重启数为 0，私有起点 commit 为 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`。本轮目标固定为官方 `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；merge-base 为官方 `v0.2.11` commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。候选分支 `codex/upgrade-v0.2.15-compat` / 版本 `0.2.15-52t.1` 已完成合并、兼容复核、测试、PR、Release、GHCR 和服务器缓存；发布源码/Tag/OCI revision 为 `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`。生产切换仍由维护者执行。官方 tag 树内 `VERSION` 滞后为 `0.2.14`，私有版本必须主动设置为候选完整版本；Go 工具链使用 `1.27.2`。
 
 官方新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql` 按完整文件名共存，两份 `241` 不覆盖、不合并、不重命名。既有私有迁移保持原名与 checksum；迁移 runner 的 checksum 为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256，不能用原始文件字节校验值替代。隔离数据库验证和回滚边界未确认前不得发布。重点验证官方充值赠送/折扣的支付金额、入账余额与退款关系，以及普通 Key 删除兼容对提链退款和在途结算的影响；不得把 `kimi-k3` 缺失 usage 自动视为修复，未经独立批准不得估计扣费或历史追扣。
 

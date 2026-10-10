@@ -21,9 +21,16 @@
 - SSH 只读核验：`sub2api` 运行 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`，容器 `7d25401938d7309bfd05e0223203e84f5b284e79a7684d73abbec486b239120d`，启动 `2026-09-30T14:37:29.03656502Z`、healthy、restart count `0`。
 - 当前 image ID `sha256:41bf83907718fe708d41578fc632c54fb56f373e6262b2ad99ccc2ba4dd5d906`，manifest digest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`；根盘 34G、已用 18G、可用约 15G。
 - 工作台保持 `infinite-canvas:v0.16.0-52t.1`，积分保持 `sub2api-points:0.1.169-b64a0110ab2c`，PostgreSQL `17.8-alpine`、Redis `8-alpine`。此前各日期功能/配置快照是历史证据，本次未重测或改变它们的生产配置。
-- 仅为 Sub2API 构建官方 v0.2.15 的私有兼容镜像 `0.2.15-52t.1`，原发布流程不变；候选测试、Release、GHCR 和服务器缓存证据见发布记录，完成前保持 pending。
+- 仅为 Sub2API 构建官方 v0.2.15 的私有兼容镜像 `0.2.15-52t.1`，原发布流程不变；候选测试、Release、GHCR 和服务器缓存均已完成，证据见发布记录；生产切换仍等待维护者人工操作。
 - 原有私有迁移与已应用官方 238b/239/240 共 13 项 checksum 在本次只读检查中一致；新增双 241 和 242 尚未应用生产。checksum 以 `strings.TrimSpace` 的 UTF-8 内容计算，不能直接用文件原始字节。
 - Compose 目录 `/home/api/sub2api-deploy`；只缓存成功镜像，维护者自行修改 image 并执行单服务 `up -d --no-deps sub2api`，本任务不切换容器、不手动迁移、不改 Nginx/数据库/Redis。
+
+### 0.16 2026-10-10 v0.2.15-52t.1 已发布并缓存
+
+- PR #16、CI/安全与精确 Tag Release run `38060183370` 全部通过。main 发布源码、Tag peeled commit 与双架构 revision 均 `8afa8d339eec95607ccca76386813e1874b53159`。
+- `ghcr.io/hxly520/sub2api:0.2.15-52t.1` 已拉到服务器；manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`、amd64 image ID `sha256:2f65c62b25a968962085826d44dfe7f5f410e32febf09e1e461654be363313fa`，创建 `2026-10-10T14:57:06.376720263Z`，版本及 pg_dump 18.6 无网络冒烟通过。
+- 拉取前后 5 个既有容器的 ID/镜像/启动时间/状态/重启数完全一致。生产 Sub2API 仍 `0.2.11-52t.3`、healthy、restart count 0；积分、工作台、PostgreSQL、Redis 未替换。未编辑 Compose/Nginx 或生产数据，新增迁移未应用生产。
+- Compose 旧命令 `/usr/local/bin/docker-compose` 为 v2.27.1，可在 `/home/api/sub2api-deploy` 使用。维护者备份后修改唯一 `sub2api` image 并单服务更新；完整检查及回滚边界见 [发布交接](RELEASE_V0_2_15_52T_1_CN.md)。
 
 ### 0.14 2026-09-17 v0.2.5-52t.1 发布与服务器缓存
 

@@ -4,9 +4,7 @@
 
 现行状态（`2026-10-10`）：生产为 `0.2.11-52t.3`，本轮候选为 `0.2.15-52t.1`。以下旧版本中“当前”“本轮”或 pending 描述仅代表该版本当时的审计状态，不能代替本节最新记录。
 
-
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 的 CI/隔离 PostgreSQL 和最终发布仍 pending。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。后续真实构建/缓存证据统一补入 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
-
+本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 1. 版本总表
 
@@ -23,17 +21,17 @@
 | `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.3` released; superseded by `v0.2.5-52t.1` | `.2` 完成首轮兼容发布，`.3` 在同一官方基线上恢复 KeyingPay V2；`.3` commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0`。`2026-09-17` 服务器只读证据当时确认该版本运行；后续 `v0.2.5-52t.1` 已切换，当前运行状态见最新运维核验。 |
 | `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` released; superseded in production | 从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交只回移 `611c30f04` grpc 安全修复，其余不纳入。发布源码提交、私有 annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`。其历史切换和冒烟记录继续保留。 |
 | `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.3` production baseline | `2026-10-10` 只读确认 `.3` 运行，私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`；GHCR manifest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，healthy、restart count `0`。`.1` 的早期候选记录保留在下方，仅代表当时状态。 |
-| `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` compatibility candidate; validation pending | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。直接冲突已解决；兼容审查、测试、PR、Release、GHCR 镜像及服务器候选缓存仍为 `pending`。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
+| `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` released and cached; manual switch pending | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。PR #16 已合入；兼容审查、测试、安全、Release 与服务器缓存全部完成，源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`；尚未生产切换。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
 
 ### v0.2.15 当前兼容候选
 
 - 官方 Release 于 `2026-10-09 11:35:49 +08` 发布；只合入精确 Release peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`，不混入官方 tag 后未发布 tip。Go 工具链和 CI 同步至 `1.27.2`。
-- 官方重点差异包括充值赠送/折扣及订单 bonus amount、类型化平台约束调整、WS 后续轮次价格刷新、图像输入计费、Claude 计费/冷却与平台调度结构。兼容回归未完成前不宣称功能已验证。
+- 官方重点差异包括充值赠送/折扣及订单 bonus amount、类型化平台约束调整、WS 后续轮次价格刷新、图像输入计费、Claude 计费/冷却与平台调度结构。兼容回归和发布门禁已全部通过，生产切换仍待维护者人工操作。
 - 保留积分/签到同库桥接、提链/额度卡独立资金账本、既有图片/视频冻结释放核销、统一媒体接口、真实 TTFT、Codex 单值 48 KiB 头部保护、KeyingPay V2 及当前首页/帮助/Logo。Seedance 按用户确认维持官方请求后计费。
-- 新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存。旧私有迁移与官方 238b/239/240 共 13 份已只读匹配生产 checksum；checksum 对 UTF-8 内容执行 `strings.TrimSpace` 后 SHA256。新增迁移尚未在生产执行，隔离演练仍为 `pending`。
+- 新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存。旧私有迁移与官方 238b/239/240 共 13 份已只读匹配生产 checksum；checksum 对 UTF-8 内容执行 `strings.TrimSpace` 后 SHA256。新增迁移尚未在生产执行，隔离 PostgreSQL 迁移/事务回归已通过。
 - 资金兼容重点：KeyingPay 的实付金额、余额入账、赠送与退款不能混用；回调保持签名/金额核验与幂等。官方允许删除普通 Key 后仍结算余额，必须验证提链删除/退款与在途 usage 的独立余额结算、资金守恒和终态边界。
 - `kimi-k3` 零 usage 记录仍需独立核查；升级不代表缺失 usage 已修复。不得估算 token/费用，不进行未经单独批准的历史追扣。
-- 直接合并冲突已解决；本地和隔离 PostgreSQL 测试、PR、CI、安全扫描、full GoReleaser Release、GHCR digest/OCI revision 与服务器候选缓存均为 `pending`。沿用现有私有 annotated Tag/精确 CI/full GoReleaser/GHCR 流程，`SIMPLE_RELEASE=false`。
+- 本地和隔离 PostgreSQL 测试、PR #16、CI、安全扫描、full GoReleaser Release 和服务器缓存全部完成；源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`。沿用现有私有 annotated Tag/精确 CI/full GoReleaser/GHCR 流程，`SIMPLE_RELEASE=false`。
 - 发布分类为 `image-update-required`。自动化只准备和缓存候选，维护者手工仅替换 `sub2api`；不替换积分、生图工作台等容器，不改生产数据库/Redis/Nginx，不发布宿主首页/帮助静态资产。
 
 ### v0.2.11 首轮历史候选记录（当时状态）

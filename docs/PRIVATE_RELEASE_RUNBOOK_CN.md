@@ -2,30 +2,28 @@
 
 > 本手册只描述当前源码和可复核的发布动作，不记录生产密钥、数据库连接串、GHCR PAT 或用户数据。生产 Sub2API 容器始终由维护者手工切换；自动化只负责检查、构建和发布候选产物。
 
+本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 的 CI/隔离 PostgreSQL 和最终发布仍 pending。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。后续真实构建/缓存证据统一补入 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
-
-
-## 0. 当前候选
+## 0. 当前已发布候选（待人工生产切换）
 
 | 项目 | 状态 |
 | --- | --- |
 | 官方基线 | 当前升级目标 `v0.2.15`；peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；官方 tag 内 `VERSION=0.2.14`，私有候选主动设为 `0.2.15-52t.1` |
-| 私有候选 | `v0.2.15-52t.1`；分支 `codex/upgrade-v0.2.15-compat`，起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；直接冲突已解决，兼容复核与发布待验证 |
+| 私有候选 | `v0.2.15-52t.1`；分支 `codex/upgrade-v0.2.15-compat`，起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；PR #16 已合入 main，源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159` |
 | 运行基线 | `2026-10-10` 只读服务器核验为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、restart count `0`；本轮未改容器或其他服务 |
 | 工具链与构建 | Go `1.27.2`；沿用精确 annotated Tag、完整 GoReleaser/GHCR 发布流程，`SIMPLE_RELEASE=false` |
 | 发布策略 | `image-update-required`：数据库迁移、Ent/生成代码、前端和容器基线必须随镜像交付 |
 | 生产动作 | 维护者备份数据库和 Compose 回滚点后，手工 `docker compose pull`/`up`；本手册不执行切换 |
-| 验证与产物 | 本地/CI 门禁、PR、安全扫描、Release、GHCR 与服务器候选缓存均为 `pending`；不得把源码合并或构建过程写成生产上线 |
+| 验证与产物 | 本地/CI/隔离 PostgreSQL、安全扫描、Release 与服务器缓存均已完成；Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`；尚未生产切换 |
 
-### 当前升级候选：v0.2.15-52t.1（未发布）
+### 当前升级候选：v0.2.15-52t.1（已发布并缓存）
 
 - 官方 Release 固定为 `v0.2.15`，peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`。tag 内 `backend/cmd/server/VERSION=0.2.14`，私有候选主动设置 `0.2.15-52t.1`；构建和检查使用 Go `1.27.2`。
-- 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入；merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`。分支 `codex/upgrade-v0.2.15-compat` 保留双亲 merge 谱系；直接冲突已解决，兼容审查和测试仍为 `pending`。
+- 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入；merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`。分支 `codex/upgrade-v0.2.15-compat` 保留双亲 merge 谱系；兼容审查、测试与 PR #16 已完成，已合入 main。
 - 保留积分/签到同库桥接、提链/额度卡账本、既有图片/视频冻结释放核销、统一媒体接口、TTFT、Codex 48 KiB 头部保护及 KeyingPay V2；官方网关、协议、重试、缓存、调度和通用计费采用 v0.2.15。Seedance 按用户确认继续官方后扣费。
 - 新增 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 必须按完整文件名独立执行。旧私有迁移原名和 checksum 不变。checksum 以 UTF-8 内容经 `strings.TrimSpace` 后计算 SHA256；已核验的 10 份私有迁移及 238b/239/240 共 13 份与生产记录匹配，不代表新增迁移已执行。
 - 重点回归充值实付/赠送/折扣/到账/退款与 KeyingPay 幂等，普通 Key 删除后的官方余额结算与提链在途退款/结算，WS 后续轮次价格刷新、图像输入费用及 Claude 计费。`kimi-k3` 零 usage 是单独待确认事项，本次升级不授权估计扣费或历史追扣。
-- 本地测试、隔离数据库迁移/事务回归、PR、CI、安全扫描、Release、GHCR digest 与服务器候选缓存均为 `pending`；仅在真实证据通过后更新状态。沿用 full GoReleaser/GHCR，不改用新的官方矩阵发布方式。
+- 本地测试、隔离数据库迁移/事务回归、PR、CI、安全扫描、Release、GHCR 与服务器候选缓存全部完成，详细证据见 `RELEASE_V0_2_15_52T_1_CN.md`。沿用 full GoReleaser/GHCR，不改用新的官方矩阵发布方式。
 - 只读生产镜像为 `0.2.11-52t.3`，manifest digest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，image ID `sha256:41bf83907718fe708d41578fc632c54fb56f373e6262b2ad99ccc2ba4dd5d906`。只允许缓存核验后的候选；生产 Sub2API 由维护者手工切换，积分/生图工作台等其他容器及宿主首页/帮助静态资产不变。
 
 ### 上一生产基线：v0.2.11-52t.3
@@ -53,7 +51,6 @@
 - `2026-09-17` 服务器只执行该不可变 Tag 的 `docker pull`。缓存的 amd64 image ID 为 `sha256:d674f0ceca50015dd69787312bc01664696e1a2f786b107dd18301884af6cb9b`，RepoDigest 与上述多架构 manifest 一致，创建时间为 `2026-09-17T15:26:39.538188747Z`。
 - 拉取前后生产 Sub2API 容器均为 `c3458bdc8ce1...`，镜像仍为 `0.2.1-52t.3`，旧 image ID `sha256:4da29aaf61487f94747ab2865ab5aaf2c23ead8ae0a28daf6764456510af12b6`，启动时间 `2026-09-07T23:35:28.690785751Z`，状态 healthy、restart count `0`；积分、生图工作台、PostgreSQL 和 Redis 容器也未改变。
 - 本版本包含 forward-only 迁移与前后端跨度，继续分类为 `image-update-required`。当前代码采用官方在线更新器且本 Release 不提供私有 `update-manifest.json`，因此不得通过后台二进制热更新安装；数据库备份、人工 Compose 切换和生产冒烟仍由维护者完成。
-
 
 ### 上一私有发布：KeyingPay V2 v0.2.1-52t.3
 

@@ -4,11 +4,9 @@
 
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
+本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 的 CI/隔离 PostgreSQL 和最终发布仍 pending。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。后续真实构建/缓存证据统一补入 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
-
-
-## 0. 当前升级候选：v0.2.15-52t.1（未发布）
+## 0. 当前升级候选：v0.2.15-52t.1（已发布并缓存，待人工切换）
 
 本节记录 `2026-10-10` 最新只读生产基线和已批准升级范围。后面的 v0.2.11 首轮候选、v0.2.5 与更早版本保留当时证据，不可代替现行状态。
 
@@ -23,7 +21,7 @@
 | 官方迁移 | 新增 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存，既有私有迁移原名与 checksum 不变 |
 | 工具链与发布方式 | Go `1.27.2`；沿用私有精确 annotated Tag/CI/full GoReleaser/GHCR，`SIMPLE_RELEASE=false`；发布策略 `image-update-required` |
 | 特例与部署边界 | Seedance 维持官方请求后计费；宿主首页/帮助静态资产不发布；不替换积分、生图工作台等其他容器，不改生产数据库/Redis/Nginx；Sub2API 仅由维护者手工切换 |
-| 验证与产物 | 直接合并冲突已解决；兼容复核、本地/隔离数据库测试、PR、CI、安全扫描、Release、GHCR digest/OCI revision 与服务器候选缓存均为 `pending` |
+| 验证与产物 | 兼容复核、本地/隔离数据库测试、PR #16、CI、安全扫描、Release 和服务器缓存均完成；源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`；生产仍待人工切换 |
 
 资金回归须分别核验 KeyingPay 实付、余额入账、赠送、退款金额及回调幂等；普通 Key 删除后的官方余额结算不能改变提链独立余额、退款收口或在途结算。`kimi-k3` 零 usage 是独立待确认问题，不视为本次升级自动修复；未经单独批准不估计扣费、不追扣历史消费。
 
