@@ -48,23 +48,25 @@ checksum 均为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；已有同号
 | 门禁 | 状态及证据 |
 | --- | --- |
 | 后端 default 全量 | `go test -p 2 ./... -count=1`通过；最终退役/普通Key/媒体/迁移/长上下文/支付/积分/TTFT/头部重点unit回归与vet通过 |
-| 后端 unit / vet / embed build | vet/embed build/版本冒烟通过；除service一个全进程内存阈值测试波动外，其余unit包通过；该测试独立重复10次通过，隔离CI待复核，不放宽断言 |
+| 后端 unit / vet / embed build | 本地 vet/embed build/版本冒烟通过；Windows 全进程内存阈值波动保留记录；代码提交 70f6aaf5e 的 Linux CI 完整 unit 通过，未放宽断言 |
 | 前端 | lint:check、typecheck/生产 build 通过；完整Vitest最终382文件/2971项通过；补3项取消竞态回归，KeyUsageView测试卸载计时器清理修复后无uncaught |
 | 独立积分 | test/vet 通过，`go build ./cmd/server` 通过；业务源码和运行容器未改 |
-| 媒体退役屏障 | default/unit 定向通过；PostgreSQL integration 已编译，本机无 Docker，实际隔离 PG 回归待 CI，不记为通过 |
+| 媒体退役屏障 | default/unit 定向通过；本机无 Docker 不计实测；代码提交 70f6aaf5e 的 CI 完整 PostgreSQL integration 通过，包含新旧可选字段与历史 Key/资金来源屏障 |
 | 帮助页 | 静态契约 25/25、定向 ESLint 通过；9 个非额度卡章节与原 main 一致 |
 | Release helper | 10 项通过、Windows POSIX 权限检查 1 项跳过；bash 语法检查通过 |
-| GitHub CI / 安全 / Release | pending |
+| GitHub CI / 安全 / Release | 代码提交 70f6aaf5e：CI 40053477408 与安全 40053477431 全部 success；Release 未创建，迁移 246 决策仍待确认 |
 | 镜像 digest / OCI revision / 服务器缓存 | pending |
 | 生产切换 | 仅维护者人工执行；本任务不执行 |
 
-Windows模型目录测试曾因同一测试连续调用时间戳重复而命中上一场景缓存；仅给fixture增加递增后缀隔离，定向重复50次与随后整套该项通过。未修改网关生产实现。内存阈值测试整套曾测得8,801,344 bytes高于8,388,608阈值，独立10次均通过，保留失败记录，由隔离CI再验证。
+Windows模型目录测试曾因同一测试连续调用时间戳重复而命中上一场景缓存；仅给fixture增加递增后缀隔离，定向重复50次与随后整套该项通过。未修改网关生产实现。内存阈值测试整套曾测得8,801,344 bytes高于8,388,608阈值，独立10次均通过；保留本地波动记录，最终代码提交的 Linux CI 完整 unit 已通过。
 
 本地脱敏日志位于仓库外 `output/upgrade-plans/v218-*`。旧 v0.2.15 全绿证据不代替本轮门禁。
 
 首轮 PR17 安全扫描 `40053058230` 的 backend/frontend 通过，points-security 检出 Go 标准库 `GO-2026-6809`（`crypto/x509@go1.27.2`，修复版 `go1.27.3`）。仅将积分 `go.mod` 与 Dockerfile 构建工具链同步至 1.27.3，不改业务、不更换依赖、不触发积分镜像发布或生产替换；修复后的本地与 CI 结果另行记录，旧失败不覆盖。
 
-工具链补丁后本地明确输出 `go version go1.27.3 windows/amd64`，积分 `go test ./... -count=1`、`go vet ./...`、`go build ./cmd/server` 均通过。首轮 CI `40053058304` 的 shell、frontend、points-system（含独立 PostgreSQL 事务/并发测试）、video-edge-worker、golangci-lint 已通过；backend test 尚在运行，补丁提交后的精确 HEAD 仍需重新验证。
+工具链补丁后本地明确输出 `go version go1.27.3 windows/amd64`，积分 `go test ./... -count=1`、`go vet ./...`、`go build ./cmd/server` 均通过。首轮 CI `40053058304` 最终 success；正式代码验证以补丁提交 `70f6aaf5e144286374a9b580928e394f1d1e6580` 的 CI `40053477408` 和安全扫描 `40053477431` 为准，两者全部 success。CI 包含完整后端 unit/integration、前端、积分 PostgreSQL 事务/并发、视频 worker、部署脚本及 golangci-lint；repository integration 28.033 秒，service unit 209.538 秒。后续纯文档提交不自动继承为新的精确 HEAD/Tag 门禁证据；正式发布仍须在最终 Tag 上重跑质量与安全门禁。
+
+本轮日志已留存于仓库外 `output/upgrade-plans/v218-ci-securityfix-success.log` 和 `v218-securityfix-success.log`。代码复核未发现新的退役资金隔离阻断；没有创建发布 Tag、Release 或镜像，也没有合入 main、修改生产配置或切换容器。
 
 ## 5. 生产只读核验（2026-10-24）
 

@@ -134,7 +134,7 @@ git push origin v0.2.15-52t.1
 ```
 
 3. `.github/workflows/release.yml` 只接受现存的私有 Tag。它先确认名称格式、annotated Tag、精确 checkout commit、Tag 树内 `VERSION` 和默认分支祖先关系，再以同一个 `refs/tags/<tag>` 调用 `backend-ci.yml` 与 `security-scan.yml`。任何校验、质量或安全门禁失败都会阻止 GoReleaser 和镜像发布。
-4. 质量门禁通过后才从同一 Tag 构建前端，并由固定版本 GoReleaser `v2.17.1` 构建 Linux 多架构 GHCR 镜像、各平台二进制和 checksums。正式候选应保持 `SIMPLE_RELEASE=false`，镜像仓库按当前 GitHub 仓库 owner 发布，即 `ghcr.io/hxly520/sub2api:<tag-without-v>`。
+4. 质量门禁通过后才从同一 Tag 构建前端，再由 GoReleaser 构建 Linux 多架构 GHCR 镜像、各平台二进制和 checksums。当前工作流实际使用 `~> v2` 范围，不能将其描述成固定 `v2.17.1`；发布时记录实际工具版本。正式候选应保持 `SIMPLE_RELEASE=false`，镜像仓库按当前 GitHub 仓库 owner 发布，即 `ghcr.io/hxly520/sub2api:<tag-without-v>`。
 5. 发布流程不提交代码、不推进默认分支，也不单独同步 `VERSION`；候选源码何时合并到 `main` 由维护者按正常 Git 审查流程决定。
 6. 记录 workflow run URL、Tag commit、`backend/cmd/server/VERSION`、GHCR 多架构 manifest digest 和 OCI revision。不要把 `latest` 当作候选或回滚标识。
 7. 只有源码门禁、Actions、Release 资产和 digest 全部复核后，才把文档中的 pending 改为完成。Release 成功也不代表生产已切换。
