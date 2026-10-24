@@ -2,7 +2,14 @@
 
 ## Overview
 
-> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+
+### 当前候选总览（2026-10-24）
+
+- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](../../docs/RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
+- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+
 
 
 This directory contains SQL migration files for database schema changes. The migration system uses SHA256 checksums to ensure migration immutability and consistency across environments.
@@ -58,10 +65,10 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 - Upstream `v0.1.183` adds these migrations: `222_group_usage_daily_rollups.sql`, `223_group_usage_rollup_timezone.sql`, `224_user_platform_quotas_add_cn_providers.sql`, `225_backfill_codex_fingerprint_seed.sql`, `225_channel_model_time_pricing.sql`, `226_add_usage_log_effective_model_indexes_notx.sql`, `226_channel_monitor_quota_mode.sql`, `227_composite_routes_add_cn_providers.sql`, `228_channel_pricing_multipliers.sql`, `229_plugins.sql`, and `230_plugin_artifacts.sql`. The set includes duplicate numeric prefixes (`225` and `226`); all files are independent migrations and must be tracked by complete filename and checksum.
 - Upstream `v0.2.5` adds `235_group_model_allowlist.sql`, `236_group_model_allowlist_repair.sql`, `237_add_minimax_platform.sql`, `238_opencode_go_platform.sql`, and `238_purge_unlimited_user_platform_quotas.sql`. Both `238` files are independent and coexist by complete filename. Migration `235` promotes the legacy model-list setting into request admission; before switching the image, audit every group whose legacy list is enabled and confirm all production models used by standard keys and media requests are allowed; link-card keys are historical and disabled.
 - The three `194` migrations coexist by complete filename; `194_link_cards.sql` is historical and audit-only: `194_add_usage_log_upstream_response_model.sql`, `194_channel_monitor_v2.sql`, and `194_link_cards.sql`. The runner identifies and records migrations by the complete filename plus checksum, never by the numeric prefix alone.
-- Keep every filename and SQL body unchanged. Lexical ordering applies among duplicate numeric prefixes (`194_add...`, `194_channel...`, `194_link...`, then `195_add...`, `195_channel...`); an already-applied private migration is checksum-validated and skipped while each missing upstream file is applied independently.
+- Keep every filename and SQL body unchanged. Lexical ordering applies among duplicate numeric prefixes (`194_add...`, `194_channel...`, `194_link...`, then `195_add...`, `195_channel...`). The current runner explicitly skips the complete audit-only filename `194_link_cards.sql` before application; other already-applied migrations are checksum-validated and each missing upstream file is applied independently. Never generalize this exception to all `194` files.
 - The `v0.2.5-52t.1` compatibility release is `image-update-required`. Back up PostgreSQL and audit `schema_migrations` by full filename/checksum, including the complete `235-238` set and both `238` files, before the maintainer performs the Compose image switch; do not install this migration set through binary hot update.
 - Any correction must use a new, unique migration filename after the current migration set. Never edit, rename, delete, or renumber an applied migration.
-- Historical rollback records do not remove link-card tables or ledger rows. The feature is already disabled and its tables/rows are retained only for audit; do not re-enable link-card routes or keys. Preserve operations and ledger rows when auditing old data.
+- Historical rollback records do not remove link-card tables or ledger rows. The product runtime is removed from this candidate, while production has not been switched or reverified by this change. Its historical tables/rows are retained only for audit; do not re-enable link-card routes or keys, and never load legacy link-card keys as standard keys or charge the creator balance. Preserve operations and ledger rows when auditing old data.
 
 The former link-card product checklist is retired. Historical production application status is recorded in [`../../docs/PRODUCTION_OPERATIONS_CN.md`](../../docs/PRODUCTION_OPERATIONS_CN.md) and [`../../docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`](../../docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md).
 

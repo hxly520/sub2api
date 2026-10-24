@@ -64,6 +64,15 @@ type APIKey struct {
 	Window7dStart *time.Time // Start of current 7d window
 }
 
+// EffectiveConcurrency returns the concurrency limit inherited from the owning
+// user. API keys no longer carry a separate product-specific override.
+func (k *APIKey) EffectiveConcurrency() int {
+	if k != nil && k.User != nil {
+		return k.User.Concurrency
+	}
+	return 0
+}
+
 func (k *APIKey) IsActive() bool {
 	return k.Status == StatusActive
 }

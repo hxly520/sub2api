@@ -55,18 +55,13 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://aigocode.com/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
-<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://aigocode.com/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
+<td width="180"><a href="https://api.aigocode.dev/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
+<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://api.aigocode.dev/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
 </tr>
 
 <tr>
 <td width="180"><a href="https://codex-everywhere.com"><img src="assets/partners/logos/codex-everywhere.jpg" alt="CodexEverywhere" width="150"></a></td>
 <td>Real GPT-5.6 series at 3% of OpenAI pricing — <a href="https://codex-everywhere.com">CodexEverywhere</a> is democratizing access to frontier models for developers worldwide. We believe in transparency and honesty, with model quality verified by active community oversight for months. USD and crypto friendly. Start with a free $20 trial at <a href="https://codex-everywhere.com">codex-everywhere.com</a>.</td>
-</tr>
-
-<tr>
-<td width="180"><a href="https://shop.bmoplus.com/?utm_source=github"><img src="assets/partners/logos/bmoplus.jpg" alt="bmoplus" width="150"></a></td>
-<td>感谢 BmoPlus 赞助了本项目！BmoPlus 是一家专为AI订阅重度用户打造的可靠 AI 账号代充服务商，提供稳定的 ChatGPT Plus / ChatGPT Pro(全程质保) / Claude Pro / Super Grok / Gemini Pro 的官方代充&成品账号。 通过<a href="https://shop.bmoplus.com/?utm_source=github">BmoPlus AI成品号专卖/代充</a>注册下单的用户，可享GPT 官网订阅一折 的震撼价格！</td>
 </tr>
 
 <tr>
@@ -96,18 +91,6 @@
 <tr>
 <td width="180"><a href="https://roxybrowser.com/invite/bgGKG7"><img src="assets/partners/logos/RoxyBrowser.png" alt="RoxyBrowser" width="150"></a></td>
 <td>感谢 RoxyBrowser 赞助本项目！<a href="https://roxybrowser.com/invite/bgGKG7">RoxyBrowser</a> 是 Sub2API 的理想搭档：内置原生 Roxy AI Agent 与高质量原生住宅 IP，支持通过简单命令实现批量自动化，显著提升多账号管理的安全性与效率！点击<a href="https://roxybrowser.com/invite/bgGKG7">此链接</a>注册，可领取免费住宅 IP 套餐与终身 9 折优惠。
-</td>
-</tr>
-
-<tr>
-<td width="180"><a href="https://www.proxy4free.com/?keyword=4yjqecpc"><img src="assets/partners/logos/proxy4free.png" alt="proxy4free" width="150"></a></td>
-<td>感谢 Proxy4Free 赞助本项目！Proxy4Free 是面向开发者和 AI 应用的数据代理服务商，提供住宅代理、静态住宅代理、ISP 代理及数据中心代理等多种代理解决方案，适用于 Web Scraping、Browser Automation、AI Agent 等场景。支持全球 IP 资源、稳定连接与灵活切换，帮助开发者提升数据采集成功率，降低 IP 封禁风险。通过<a href="https://www.proxy4free.com/?keyword=4yjqecpc">此链接注册</a>即可开始体验，轻松构建更稳定、高效的自动化工作流。
-</td>
-</tr>
-
-<tr>
-<td width="180"><a href="http://aimzoon.com"><img src="assets/partners/logos/aimzoon.jpg" alt="aimzoon" width="150"></a></td>
-<td>感谢 Aimzoon 对本项目的赞助！ <a href="http://aimzoon.com">Aimzoon</a> 提供稳定、高性价比的 AI API 接入服务，支持开发者将常用 AI 服务快速接入 Codex、Claude Code、Gemini CLI 等编程工具。无需复杂配置，更快接入，更稳调用，更省成本。codex倍率优惠，特价倍率等促销不断，注册即送免费体验额度，让 AI 编程真正进入日常工作流。<a href="http://aimzoon.com">点击这里</a>注册体验！
 </td>
 </tr>
 
@@ -147,11 +130,6 @@
 </tr>
 
 <tr>
-<td width="180"><a href="https://www.duckip.cn/?keyword=cu7oog6y"><img src="assets/partners/logos/duckip.png" alt="DuckIP" width="150"></a></td>
-<td><a href="https://www.duckip.cn/?keyword=cu7oog6y">DuckIP</a> - 9000 万+ 全球住宅网络资源，覆盖 195+ 国家和地区，支持轮换和粘性会话，适用于公共数据采集、RAG 更新、模型评估和多区域数据工作负载。🟢住宅代理 - 8 折优惠；🟢静态住宅代理 - ¥50.00/IP 起；🟢无限住宅代理 - ¥19.8/小时 起。✅免费领取 500M 试用流量。</td>
-</tr>
-
-<tr>
 <td width="180"><a href="https://go.apimart.ai/gh-sub2api"><img src="assets/partners/logos/apimart.jpg" alt="APIMart" width="150"></a></td>
 <td>感谢 APIMart 赞助了本项目！<a href="https://go.apimart.ai/gh-sub2api">APIMart</a> 是专注于 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可生成 160+ 张图片。图片、视频一套异步 API 通吃：提交任务获取 ID，通过轮询或回调获取结果；批量生成上万张图片也不会超时，切换模型无需修改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-sub2api">此注册链接</a>注册即可开始使用。</td>
 </tr>
@@ -169,6 +147,21 @@
 <tr>
 <td width="180"><a href="https://colaproxy.com/?utm_source=sub2api&utm_medium=sub2api&ref=sub2api"><img src="assets/partners/logos/cola-proxy.jpg" alt="ColaProxy" width="150"></a></td>
 <td>ColaProxy 提供专为网页抓取、自动化和多账号管理打造的高质量住宅代理。免费试用，流量永不过期，价格低至 $0.3/GB，支持无限并发连接和智能 IP 轮换，带来更流畅、更稳定的代理体验。使用优惠码 COLA10 立享 9 折优惠，立即开始使用可靠的住宅代理扩展您的项目。<a href="https://colaproxy.com/?utm_source=sub2api&utm_medium=sub2api&ref=sub2api">立即开始使用 ColaProxy</a></td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://modelflare.dev/zh/sign-up?utm_source=github&utm_campaign=sub2api"><img src="assets/partners/logos/modelflare.png" alt="Modelflare" width="150"></a></td>
+<td>Modelflare：满血稳定不掺水，低成本享受全球 SOTA 模型。站点由美国 LLC 主体 Havenbyte LLC 运营，支持 GPT、Claude、Gemini、Grok 等主流模型和常用兼容协议，还支持 40 多种图片和视频模型。缓存补偿是一大亮点：部分 OpenAI 价格优先、稳定和高级分组提供每日 65%、75%、85% 的缓存命中率保障，符合条件的请求没达到目标的，平台补偿差额，结算后可在用量看板查看。特惠活动：单笔充值 US$20 即可解锁 0.015 倍价格倍率的 GPT 特惠分组，单笔充值 US$50 即可解锁 0.03 倍价格倍率的 Claude 特惠分组。通过<a href="https://modelflare.dev/zh/sign-up?utm_source=github&utm_campaign=sub2api">专属链接</a>注册即可参与</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://x.com/chenju_ai"><img src="assets/partners/logos/chenju_ai.png" alt="Chenju" width="150"></a></td>
+<td>感谢 <a href="https://x.com/chenju_ai">陈局</a> 赞助了本项目！这大概是本栏唯一一个不让你注册的广告位。好的开源项目值得被付费，陈局来随个份子，敬作者一杯。X 上找 <a href="https://x.com/chenju_ai">陈局</a>，聊中转、聊上游、吹吹水。</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://t.me/AACC8888888"><img src="assets/partners/logos/ooko.ai.png" alt="ooko.ai" width="150"></a></td>
+<td>🔑 高价收 AI 账号｜Gemini · Claude · GPT｜大小号通收，各种渠道都要｜支持按量跑付｜寻一手大厂资源，我上 KEY 。<br>微信：Liuyou-zawd｜TG：<a href="https://t.me/AACC8888888">AACC8888888</a></td>
 </tr>
 
 </table>
@@ -191,22 +184,15 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 ## 私有维护分支说明
 
-> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+本仓库是 `hxly520/sub2api` 的 52Token 维护主线。当前候选基于官方稳定 Release `v0.2.18`（peeled commit `ac1b8f1271be0d674fa6f074403c1410f30a3a81`），私有版本为 `0.2.18-52t.1`，Go `1.27.3`。官方 tag 中 VERSION 滞后为 `0.2.17`，私有版本以自己的精确 Tag 为准。
 
+- **全部停用提链/额度卡**：移除 Sub2API 内提链中心、管理页、API、专用鉴权/计费和公共额度卡页，独立额度卡部署不再属于发布范围。旧 Key 必须失败关闭，不得回落为普通 Key 扣创建者余额。
+- **保留其他二开**：积分/签到同库桥接；图片/视频余额冻结、失败释放与成功核销；统一媒体 API；首字 Token/TTFT 优化；Codex 响应头单值 48 KiB 保护；KeyingPay V2（可盈Pay）；现有首页、帮助页、Logo 与导航。
+- **官方核心优先**：网关、协议、通用计费、重试、缓存和账号调度采用官方 v0.2.18，不恢复旧广泛请求重放或平行计费。
+- **数据不删除**：`194_link_cards.sql` 原文件及 checksum 保留审计，当前 runner 按完整文件名跳过；旧表和流水不删除、不自动退余额。新官方迁移 `242_group_i18n.sql` 至 `246_enable_gemini_image_generation_groups.sql` 与既有同号文件独立共存。
+- **仅人工切换 Sub2API**：分类 `image-update-required`，通过精确 annotated Tag、CI/安全门禁和 GHCR 发布不可变镜像，上传/缓存后由维护者手工替换。积分、生图工作台、数据库、Redis、Nginx 和宿主静态文件不随该镜像自动修改。
 
-本仓库当前升级候选基于官方 Sub2API `v0.2.5`（Release commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`），并单独回移官方 `611c30f04` 的 grpc 安全修复；候选版本标识为 `v0.2.5-52t.1`。升级起点是私有 `main` 的 `19d74426a7d41183b128e8aa3b08d79d5d89d533`；候选 Tag、GitHub Actions、镜像 digest、服务器缓存和生产切换在实际完成前均保持 `pending`。自动化不会替换或重启生产容器，最终切换仍由维护者在备份与回滚点确认后手工执行。
-
-升级边界遵循“官方核心优先、私有产品模块最小兼容”的规则：
-
-- 网关协议、账号调度、重试、缓存、计费和错误处理以官方 `v0.2.5` 实现为准，不恢复旧的广泛重放或计费旁路。
-- 保留同库积分/签到系统；提链/额度卡仅作为历史迁移和审计记录保留，当前功能已停用；同时保留图片和视频任务的余额冻结/释放/核销、统一媒体 API、首字 Token/TTFT 画像、Codex `x-codex-turn-state` 48 KiB 保护，以及当前未登录首页和帮助页。
-- 官方迁移与私有迁移按完整文件名和 checksum 共存，不能按数字前缀覆盖或重命名；本候选新增官方 `235_group_model_allowlist.sql` 至两份 `238_*`，私有 `173–179`、`192–194` 保持原文件和 checksum 不变。`235` 会把旧模型列表配置升级为请求准入白名单，切换前必须盘点已启用列表的分组。
-- 普通 API Key 页的旧 CCSwitch 自动导入扩展已移除，恢复官方 API Key 行为；额度卡 CCSwitch 只读接入教程属于历史内容，当前页面已移除。
-- KeyingPay V2（可盈Pay）支付通道已恢复为独立 provider，配置与回调见 `deploy/KEYINGPAY_V2.md`；现有生产数据库如曾启用该 provider，切换前须先由维护者只读核对未完成订单和回调状态。
-- 官方在线更新器只识别官方 Release；本候选跨越数据库迁移、Ent/生成代码、前端和容器基线，发布策略固定为 `image-update-required`，应通过 GitHub Actions 生成不可变 GHCR 镜像，再由维护者使用 Compose 手工切换。后台二进制热更新不得安装本候选。
-- 私有 Release 只接受 `vX.Y.Z-52t.N` annotated Tag，Tag 内 `VERSION` 必须完全一致，并先通过同一 Tag 的 CI 门禁；工作流不会自动改写或推进 `main`，也不会连接或替换生产容器。
-
-详细的模块边界、迁移清单、测试门禁和回滚步骤见 [`docs/PRIVATE_CUSTOMIZATION_CN.md`](docs/PRIVATE_CUSTOMIZATION_CN.md)、[`docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 和 [`docs/PRIVATE_RELEASE_RUNBOOK_CN.md`](docs/PRIVATE_RELEASE_RUNBOOK_CN.md)。独立积分服务和生图工作台的源码、镜像及生产状态继续按各自文档记录。
+当前是候选源码范围说明，不代表生产已经切换或停用完成。测试、镜像 digest、服务器缓存及人工切换状态见 [v0.2.18 交接](docs/RELEASE_V0_2_18_52T_1_CN.md)；维护入口见 [AGENTS.md](AGENTS.md)、[二开功能清单](docs/PRIVATE_CUSTOMIZATION_CN.md) 和 [发布运行手册](docs/PRIVATE_RELEASE_RUNBOOK_CN.md)。历史版本中的“保留提链/额度卡”只属当时审计记录，不得据此恢复现行功能。
 
 ## 生态项目
 

@@ -33,6 +33,7 @@ func (r *usageBillingRepository) ReconcileExpiredMediaBalanceHolds(ctx context.C
 		SELECT user_id, MIN(expires_at) AS first_expires_at
 		FROM media_balance_holds
 		WHERE status IN ('reserved', 'dispatched', 'capture_pending')
+			AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 			AND expires_at <= NOW()
 		GROUP BY user_id
 		HAVING $1::timestamptz IS NULL

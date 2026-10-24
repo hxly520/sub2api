@@ -2,15 +2,22 @@
 
 本文档是本私有分支的维护入口。它记录官方 Sub2API 之外的兼容扩展、代码入口、不可破坏约束和升级流程，供后续维护者在合并官方新版本时使用。
 
-> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+
+### 当前候选总览（2026-10-24）
+
+- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
+- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+
 
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
+历史 v0.2.15 发布证据（不代替 2026-10-24 当前工作树验收）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
-## 0. 当前升级候选：v0.2.15-52t.1（已发布并缓存，待人工切换）
+## 0. 历史已发布候选：v0.2.15-52t.1（已发布并缓存，当时待人工切换）
 
-本节记录 `2026-10-10` 最新只读生产基线和已批准升级范围。后面的 v0.2.11 首轮候选、v0.2.5 与更早版本保留当时证据，不可代替现行状态。
+本节保留 `2026-10-10` 的只读生产基线及 v0.2.15 已发布候选证据，不代表 2026-10-24 当前工作树已经发布或生产已经切换。当前工作树的额度卡移除边界以上方声明为准；后面的 v0.2.11 首轮候选、v0.2.5 与更早版本同样只保留当时证据。
 
 | 项目 | 当前记录 |
 | --- | --- |
@@ -19,13 +26,13 @@
 | 官方差异重点 | 充值赠送/折扣与 bonus amount；类型化平台约束；WS 后续轮次价格刷新；图像输入计费；Claude 计费/冷却与平台调度结构 |
 | 生产状态 | `2026-10-10` SSH 只读核验为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、restart count `0`；manifest digest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83` |
 | 官方优先边界 | 网关、协议、计费、重试、缓存、账号调度、管理功能和前端以官方 `v0.2.15` 为主；私有功能只通过必要适配和回归测试接回 |
-| 必须保留 | 积分/签到同库桥接；提链/额度卡独立账本与权限；既有图片/视频冻结释放核销及统一媒体接口；真实 TTFT；Codex 单值 48 KiB 保护；KeyingPay V2；现有首页/帮助/Logo/导航 |
+| 当时保留范围（非当前候选） | 积分/签到同库桥接；提链/额度卡当时的独立账本与权限（当前候选仅留审计）；既有图片/视频冻结释放核销及统一媒体接口；真实 TTFT；Codex 单值 48 KiB 保护；KeyingPay V2；现有首页/帮助/Logo/导航 |
 | 官方迁移 | 新增 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存，既有私有迁移原名与 checksum 不变 |
 | 工具链与发布方式 | Go `1.27.2`；沿用私有精确 annotated Tag/CI/full GoReleaser/GHCR，`SIMPLE_RELEASE=false`；发布策略 `image-update-required` |
 | 特例与部署边界 | Seedance 维持官方请求后计费；宿主首页/帮助静态资产不发布；不替换积分、生图工作台等其他容器，不改生产数据库/Redis/Nginx；Sub2API 仅由维护者手工切换 |
 | 验证与产物 | 兼容复核、本地/隔离数据库测试、PR #16、CI、安全扫描、Release 和服务器缓存均完成；源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`；生产仍待人工切换 |
 
-资金回归须分别核验 KeyingPay 实付、余额入账、赠送、退款金额及回调幂等；普通 Key 删除后的官方余额结算不能改变提链独立余额、退款收口或在途结算。`kimi-k3` 零 usage 是独立待确认问题，不视为本次升级自动修复；未经单独批准不估计扣费、不追扣历史消费。
+资金回归须分别核验 KeyingPay 实付、余额入账、赠送、退款金额及回调幂等；普通 Key 删除后的官方余额结算继续遵循官方语义；历史提链 Key 必须失败关闭，禁止回落到普通用户余额扣款，历史账本和在途数据仅可审计。`kimi-k3` 零 usage 是独立待确认问题，不视为本次升级自动修复；未经单独批准不估计扣费、不追扣历史消费。
 
 ## 0.1 历史首轮候选：v0.2.11-52t.1（当时未发布）
 
@@ -38,7 +45,7 @@
 | 官方升级能力 | GPT-6.1 Sol/套餐识别；Claude 原生额度重置兑换；Codex 远程模型目录；API Key 创建频率/数量限制；余额请求在途预占；Astra Ultrafast 能力与新的内容审核、推理强度渠道倍率元数据 |
 | 生产状态 | SSH 只读核验为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`、healthy、restart count `0`；本轮不替换容器、不改数据库/Redis/Nginx 或其他服务 |
 | 官方优先边界 | 网关、协议、计费、重试、缓存、账号调度、管理功能和前端以官方 `v0.2.11` 为主；私有功能只通过必要适配和回归测试接回 |
-| 必须保留 | 积分系统；提链/额度卡；现有图片与视频冻结、失败释放和成功核销；统一媒体 API；真实 TTFT；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；KeyingPay V2；当前首页和帮助页 |
+| 当时保留范围（非当前候选） | 积分系统；提链/额度卡；现有图片与视频冻结、失败释放和成功核销；统一媒体 API；真实 TTFT；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；KeyingPay V2；当前首页和帮助页 |
 | 官方迁移 | 新增官方 `238b_content_moderation_engine_meta.sql`、`239_channel_reasoning_effort_multipliers.sql`、`240_affiliate_ledger_operation_id.sql`；私有迁移文件未重命名或覆盖，按完整文件名/checksum 识别 |
 | 特例 | 官方新增 Seedance 视频路径保持官方请求后计费，不额外接入媒体余额冻结；其余既有媒体冻结/释放/核销语义保持不变 |
 | 发布状态 | 当前核心服务兼容和门禁尚在验证；PR、CI、安全扫描、Release、GHCR 镜像、服务器缓存均为 `pending`；发布策略 `image-update-required`，生产仍由维护者手工 Compose 切换 |
@@ -53,12 +60,12 @@
 | 私有候选 | `v0.2.5-52t.1`；发布源码提交、annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿 |
 | 历史生产基线 | 后续曾切换到 `v0.2.5-52t.1`；v0.2.11 首轮候选阶段只读确认运行该镜像。当前运行版本以第 0 节为准 |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用当时官方 `v0.2.5` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
-| 必须保留 | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
+| 当时保留范围（非当前候选） | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
 | 数据库迁移 | 官方 `235_group_model_allowlist.sql`、`236_group_model_allowlist_repair.sql`、`237_add_minimax_platform.sql` 和两份 `238_*` 与私有 `173-179`、`192-194` 按完整文件名和 checksum 共存；同号文件不得覆盖、改名、合并或按数字前缀去重 |
 | 发布方式 | 固定为 `image-update-required`，本轮必须由维护者在备份与回滚点确认后手工执行 Compose；后台热更新不适用 |
 | 验证与产物 | 冲突解析、Wire/Ent 重生成、本地全量门禁、积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、双架构镜像 digest/OCI revision 与服务器缓存：completed；数据库备份、维护者人工 Compose 切换与生产冒烟：`pending` |
 
-当前 API Key 认证快照常量为 `v24`。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
+当前 API Key 认证快照常量为 `v25`（额度卡退役屏障；拒绝复用旧 v24 快照并强制回源标准 Key 查询）。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
 
 发布证据固定为 PR `#13`、Release run `35237673572`、Release `v0.2.5-52t.1` 和 GHCR manifest `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`；amd64/arm64 manifest 分别为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`、`sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。服务器缓存不等于生产切换，不能用构建或拉取证据代替备份、人工 Compose 切换和生产冒烟。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
 
@@ -75,7 +82,7 @@
 
 - 官方仓库：`Wei-Shaw/sub2api`。
 - 52Token 二开仓库：`hxly520/sub2api`；仓库可按发布需要保持私有或公开，公开时也不得提交生产配置、凭据和请求数据。官方远端只用于获取基线，不直接向官方远端推送二开提交。
-- 当前升级候选从私有 `main` commit `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入官方 Release `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`，工作分支为 `codex/upgrade-v0.2.15-compat`；merge-base 是官方 `v0.2.11` `96f4c115c9749078f90cbf210a01d39baf3f53b6`。官方网关、协议、重试、缓存、计费和调度按 `v0.2.15` 优先；只在官方入口保留积分、额度卡/提链、既有媒体冻结/核销、统一视频 API、TTFT、Codex 48 KiB 保护、KeyingPay V2、当前首页和帮助页。Seedance 依用户确认维持官方请求后计费。
+- 历史 v0.2.15 候选从私有 `main` commit `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入官方 Release `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`，工作分支为 `codex/upgrade-v0.2.15-compat`；merge-base 是官方 `v0.2.11` `96f4c115c9749078f90cbf210a01d39baf3f53b6`。官方网关、协议、重试、缓存、计费和调度按 `v0.2.15` 优先；当时只在官方入口保留积分、提链/额度卡及既有媒体冻结/核销（额度卡现已从当前候选移除）、统一视频 API、TTFT、Codex 48 KiB 保护、KeyingPay V2、当前首页和帮助页。Seedance 依用户确认维持官方请求后计费。
 
 积分控制台采用单策略编辑器。管理员保存“开放用户积分功能”及其他积分/签到配置时，后端只追加下一自然日版本；历史版本不可变，页面不提供历史版本列表，也不允许客户端提交自定义生效日期。该 `enabled` 开关只负责业务层用户积分中心可见性，Sub2API/积分服务自身的 all/preview 配置仍是独立部署门禁。后续官方升级合并必须保留 `POST /api/v1/internal/user-access`、Sub2API `/api/v1/points/access`、菜单/路由/launch/session 的 fail-closed 校验和管理员策略台可用性。
 - 历史部署事实（截至 `2026-08-02`）：当时全体签到开放，Sub2API 为 `0.1.169-1a4a690dd999`、积分服务为 `0.1.169-b64a0110ab2c`，两者均 healthy；该段仅保留旧验收证据。当前生产版本、门禁和 OCI revision 以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 第 0 节为准；后续仍不能只看仓库 `main` 或服务器镜像缓存，自动化不得替换或重启 Sub2API。
@@ -127,7 +134,7 @@
 | 协议兼容层 | 兼容 OpenAI、Anthropic、Gemini、国内 OpenAI-compatible 实现和第三方客户端 | 不按 User-Agent 或检测器名称伪造能力；工具调用、usage、SSE 和终止事件必须来自真实协议转换 |
 | 调度与缓存层 | 提高会话缓存亲和、账号选择质量和首响应体验 | 分组和账号能力约束优先；失败切换不能产生额外计费请求；TTFT 不得伪造 |
 | 媒体任务层 | 图片/视频创建、轮询、恢复、计费和下载代理 | 创建最多一次；查询可重复；成功只扣一次，失败/取消/过期不扣费；公开响应只使用平台任务 ID 和代理 URL |
-| 产品扩展层 | 可用渠道、Q 群入口、独立积分与签到服务、额度卡/提链 | 不改变官方核心数据语义；后台配置为准；敏感配置不进入公开 API 和仓库 |
+| 产品扩展层 | 可用渠道、Q 群入口、独立积分与签到服务（提链/额度卡仅留审计） | 不改变官方核心数据语义；后台配置为准；敏感配置不进入公开 API 和仓库 |
 
 ## 3. 二开功能清单与代码入口
 
@@ -271,22 +278,13 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 后续官方升级不得把积分余额发放改成前端请求参数直写用户余额，不得恢复已删除的积分兑换流程，也不得用浮点数处理积分比例、消费金额、百分比或奖励金额。
 
-### 3.7 提链与额度卡中心（历史记录，已停用）
+### 3.7 提链与额度卡（历史审计索引，候选已移除）
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.2.15-52t.1` 候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口、悬停面板视口保护、官方模型白名单和资金事务边界；新增普通 Key 删除后计费必须回归提链在途结算/退款，不能触发普通用户余额扣款回退。具体提交必须由最终候选 commit、Tag 与 OCI revision 固定，不能把未提交工作树或旧候选哈希写成已发布源码。实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
-- 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
-- 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
-- 普通 API Key 页的 CCSwitch 自动导入已恢复官方实现；额度卡页面仅保留只读 CCSwitch 接入教程。
-- 开发候选默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`；当前生产已完成验收并使用 `link_cards_enabled=true`、`link_cards_development_mode=false`，因此所有已认证注册用户均可进入提链中心。管理员控制台始终受管理员认证保护，不依赖普通用户开关；后续升级必须保留两种门禁语义。
-- 创建和充值必须先在数据库事务内从创建者真实余额扣款。批量创建总扣款固定为单张金额乘数量，余额不足或任一 Key/流水失败时整批回滚。提链控制台只维护分组授权，不单独设置倍率或专属分组；可选分组是提链授权与 Sub2API 原生用户可用分组的实时交集，专属分组继续由 `user_allowed_groups` 控制，用户专属倍率覆盖分组默认倍率。授权默认 `0.08x` 分组时，存在 `0.07x` 专属倍率的用户显示并按 `0.07x` 发行；未配置该专属倍率的其他用户按原生 `0.08x`，若另有原生专属倍率则以其为准。授权 `0.05x` 专属分组也只有获得原生专属授权的用户可见。创建事务必须重算权限与倍率并写入发行换算快照；`10 U / 0.10x = 100 U` 只表示对外固定 1x 初始额度，浏览器不得提交倍率或资金事实。
-- 已发行额度不因后续分组或专属倍率变化而重算；请求继续实时使用当前原生有效倍率，卡片 1x 等效扣减倍率按“当前有效倍率 / 发行换算倍率”向上取一位小数，禁止四舍五入向下造成成本损失。例如发行 `0.07x`、当前 `0.08x` 时按 `1.2x` 而不是 `1.1x` 扣卡片额度；发行 `0.10x`、当前 `0.15x` 时为 `1.5x`。耗尽状态对外显示“欠费”；创建者充值后，只有充值后的总额度足以覆盖已用额度和在途预留且仍严格大于零时，才在同一事务自动恢复卡片和 API Key，无需手动启用。该自动恢复只解除额度耗尽，不能绕过管理员冻结、退款、撤销、创建者禁用、原生分组权限或模型权限，管理员解冻也不能绕过资金条件；即使状态恢复，网关每次请求仍重新复核原生用户/分组权限。
-- 创建、充值、退款和管理员操作必须使用永久幂等记录；资金变动写入不可修改的 `link_card_ledger`。创建者只可退回未激活且零使用的本人 Key，管理员才可退回已激活或已使用 Key 的未消费余额；退款前必须冻结、失效鉴权缓存并收口在途请求。
-- 提链调用不得二次扣创建者余额。文本请求完全沿用 Sub2API 原生后扣时序：准入时可用额度必须严格大于零，提链 `quota=0` 不能解释为不限额；已经准入的最后一笔或并发请求允许在结算后形成欠费，但必须完整记录实际费用，随后立即禁用 Key 并拒绝新请求；图片、视频和批量生图继续使用请求前额度预留。网关按每张 Key 独立执行并发、RPM 与幂等结算，计费仓库异常必须失败关闭，不能回退到普通余额扣款。
-- 用户、管理员和公共使用记录复用 Sub2API Token、缓存、费用、类型、流式、延迟和首 Token 字段，默认每页 10 条；普通/公共响应只展示 1x 费用，不泄露创建者、内部倍率或实际资金字段。
-- 费用对账使用数据库 `decimal` 精确值；原生页面的六位小数金额仅是展示值，禁止用它乘发行倍率反算。`usage_logs` 的输入、输出、缓存读写和图像费用都必须进入原生明细与额度卡明细；费用/Token 悬停通过 `body` Teleport、实际尺寸测量、视口钳制和窄屏滚动保证首行可见。
-- 主要入口：`backend/internal/service/link_card.go`、`repository/link_card_repo.go`、`repository/usage_billing_repo.go`、`server/routes/link_cards.go`、`frontend/src/api/linkCards.ts`、三端 `LinkCard*View.vue` 与迁移 `194_link_cards.sql`。
-- 公共页面 404 修复：额度卡短期会话过期时，`/api/v1/public/link-cards/*` 的 401 只由额度卡页面处理，不进入 Sub2API 登录 token 刷新或 `/login` 跳转；Nginx 对遗留 `/login` 做防御性 `302 /card`，因此 `key.52token.org` 不再落到不存在的登录页。公共接口请求不携带 Sub2API `Authorization`，继续使用 `X-Link-Card-Session`。
-- 激活防爆破：激活入口先按可信客户端 IP 做 Redis 共享的每分钟 30 次 fail-close 限流；只有明确的 `ErrLinkCardNotFound` 才计入连续错误，达到第 10 次立即锁定 5 分钟，Redis 保存截断 SHA-256 IP 键而不是完整 Key。成功激活清零连续错误，Redis 不可用时返回 `503` 并关闭激活入口；锁定响应带 `Retry-After`，前端留在 Key 输入页。
+- 历史产品、资金、接口与验收证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。旧文档中的开放状态、开关、Key、路由、公共页面及回滚步骤仅说明当时版本，不作为当前候选能力或生产停用证据。
+- 当前候选不包含提链服务、仓储产品接口、网关额度卡结算、三端页面或专用 Nginx/部署入口。不得依据历史索引恢复 `/link-cards`、`/admin/link-cards`、`/card`、`/quota-card` 或公共会话接口。
+- 原 `194_link_cards.sql`、已应用迁移记录、历史数据表、永久幂等和资金流水继续原样保留审计；当前候选迁移 runner 只跳过完整文件名 `194_link_cards.sql`，不跳过官方同号迁移，也不删除历史记录。
+- 发布前必须验证已有 `key_type=link` 的 Key 在认证、缓存回源和结算边界失败关闭，不能当作普通 Key 加载、展示、变更或扣创建者普通余额；这属于防止旧数据进入现行链路的兼容隔离，不是恢复额度卡功能。
+- 本次只修改候选源码及文档，没有切换生产容器或修改生产数据。生产旧 Key/在途状态与独立入口是否仍存在，必须在维护者执行切换前另行只读核验；未知状态继续记为 `pending`。
 
 ### 3.8 支付扩展
 
@@ -297,10 +295,10 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 ### 3.9 公开页面、导入与边缘部署
 
-- 普通 API Key 页的 CCSwitch 自动导入已恢复官方实现；额度卡页面仅保留只读 CCSwitch 接入教程。
+- 普通 API Key 页的 CCSwitch 自动导入沿用官方实现；旧额度卡教程仅作历史审计，不保留当前页面或入口。
 - 私有公开首页和帮助页：`deploy/public-landing/`、`deploy/public-help/`；公开内容必须经过本地净化，不得把内部 API 或管理入口暴露到静态域名。
-- 帮助中心必须覆盖三类角色：注册自用用户、提链额度卡创建者和无需注册的额度卡使用者。公开积分说明只展示消费结算口径、次日 `00:05`、签到资格和“最高可达昨日实际消费金额 10%”的活动上限，不暴露后台阶梯区间；实际资格和到账金额始终以当日生效策略为准。
-- 提链帮助必须说明余额先扣后创建、批量金额为单张金额乘数量、`预充值金额 / 创建时倍率 = 1x 对外额度`、待激活退款、欠费充值自动恢复、完整 Key 安全和创建者积分归属。分销示例和自动发货模板只能使用 `CARD_KEY`、`MODEL` 等占位符，不写入真实 Key，不使用“永久”“无限”“官方授权”等不可验证承诺。
+- 当前帮助中心覆盖注册自用用户及现行积分、API 和媒体能力；旧提链创建者/额度卡使用者说明仅作历史审计，不能作为当前产品入口。公开积分说明只展示消费结算口径、次日 `00:05`、签到资格和“最高可达昨日实际消费金额 10%”的活动上限，不暴露后台阶梯区间；实际资格和到账金额始终以当日生效策略为准。
+- 旧提链帮助、分销示例和自动发货模板仅属于历史审计，不得作为当前功能宣传或引导恢复入口；历史证据也只能使用占位符，不写入真实 Key。
 - Vue `/home` 和 exact-root 静态首页只使用中性功能、稳定性和管理文案，不出现具体国外模型或商业中转宣传名称；本次仅修改未登录首页，登录后 Dashboard 不得随首页迭代改变。两套入口必须同步采用生图参考稿确定的冷灰/电蓝数据化风格、左文右图主视觉和一致的信息层级，不能只改 Vue 页面后把生产根路径遗留为旧版。当前首屏和后续功能区统一使用宽版心，首屏不再绘制左右纵向装饰线，主视觉按桌面、平板和移动端稳定比例放大；主视觉使用透明服务拓扑 SVG，不再使用带画布底色的位图。
 - 上传 Logo 的同源图片入口为 `GET /api/v1/settings/logo`：只接受后台 `site_logo` 中不超过 2 MiB 且真实文件签名一致的 PNG/JPEG/WebP/GIF Base64 Data URI，响应设置 `nosniff`；后台上传控件同步只接受这四类栅格格式。异常值、伪造类型、SVG、AVIF 或未配置时重定向到 `/logo.svg`。公开首页和积分嵌入页统一使用该上传 Logo，不复制品牌素材。
 - 生产 Nginx 对 `/` 和 `/index.html` 使用 exact location，从宿主 `/home/api/sub2api-deploy/public/index.html` 提供公开首页；该文件不在 Sub2API 容器层中，单独切换镜像不会更新它。`frontend/src/views/HomeView.vue`、`frontend/src/components/home/HomeTechVisual.vue` 和 `deploy/public-landing/index.html` 必须作为同一次首页改版审查；静态 exact-root 应保持单文件自包含或把新增资产纳入原子发布清单。每次首页发布必须先运行 `publicStaticPages.spec.ts`，备份宿主旧文件后原子替换，并核对本地文件、宿主文件和线上响应 SHA256 一致；不需要重启 Sub2API。
@@ -317,8 +315,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - 私有已发布迁移必须全部保留：`173_media_generation_tasks.sql`、`174_media_generation_task_public_ids.sql`、`175_openai_first_response_settings.sql`、`176_media_generation_finalization_recovery.sql`、`177_media_generation_pricing_snapshot.sql`、`178_media_balance_holds.sql`、`179_media_balance_hold_dispatch_state.sql`。
 - `192_media_balance_hold_reconciliation_index_notx.sql` 是 `v0.1.168` 新增的非事务并发索引迁移，服务于全站到期冻结扫描，当前已进入生产。后续发布必须验证迁移执行器继续按 `_notx` 语义运行，并确认旧 `173-179` 文件及 checksum 不变。
 - `193_points_balance_credit_ledger.sql` 是 Sub2API 侧积分余额幂等入账账本，当前已进入生产；积分服务自己的迁移位于 `points-system/internal/migrate/migrations/`，在同一数据库的独立 `points` schema 使用独立迁移表和最小权限角色。两套迁移不得混放、重编号或绕过事务发件箱直接改余额。
-- `194_link_cards.sql` 是提链/额度卡中心的 forward-only 私有迁移，已于 `2026-08-08` 进入生产，checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；应用后禁止改名、改号、删除或修改 checksum，只能追加后续迁移。
-- 当前 `v0.2.15-52t.1` 候选在既有迁移基础上新增官方 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql` 和 `242_drop_platform_check_constraints.sql`；此前 `235-240` 与私有迁移继续保留。双 `241` 按完整文件名共存，新增差异不得重命名或覆盖旧迁移，`_notx` 文件继续使用非事务迁移语义。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后 SHA256；只读核验已确认私有 173-179/192-194 及官方 238b/239/240 共 13 份与生产 checksum 一致，本轮新增迁移仍待隔离数据库验证。
+- `194_link_cards.sql` 是提链/额度卡中心的 forward-only 私有迁移，已于 `2026-08-08` 进入生产，checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它曾扩展 `api_keys` 并创建分组授权、永久幂等和不可修改资金流水表；文件、原 checksum 和已应用历史不可变。当前候选只为审计保留该文件，迁移 runner 按完整文件名跳过，不为新环境重新启用该产品。
+- 历史 `v0.2.15-52t.1` 候选在既有迁移基础上新增官方 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql` 和 `242_drop_platform_check_constraints.sql`；此前 `235-240` 与私有迁移继续保留。双 `241` 按完整文件名共存，新增差异不得重命名或覆盖旧迁移，`_notx` 文件继续使用非事务迁移语义。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后 SHA256；只读核验已确认私有 173-179/192-194 及官方 238b/239/240 共 13 份与生产 checksum 一致，本轮新增迁移仍待隔离数据库验证。
 - 积分角色读取 Sub2API 用户表必须保持列级 allowlist：内部关联用 `id`、界面登录邮箱用 `email`、过滤软删除用 `deleted_at`。阶段 A 允许短期精确双读 `id/email/username/deleted_at`，仅用于新旧积分镜像兼容切换；新镜像验收后必须由阶段 B 收敛为 `id/email/deleted_at`。任何新增展示字段都必须先经过数据最小化审查，禁止把用户表整表授权给积分角色。
 - 官方后续存在相同数字前缀的其他迁移；runner按完整文件名排序并以完整文件名作为主键，因此可以共存。已经进入生产数据库的私有迁移禁止重命名、删除或修改 checksum。
 - `178_media_balance_holds.sql` 创建原子媒体冻结记录；`179_media_balance_hold_dispatch_state.sql` 只扩展发送态过期索引。
@@ -345,8 +343,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 - 官方基线为 annotated tag `v0.1.183`，tag object 为 `c21fd3382a1c39fe491a96ac6780bac927327ae4`，peeled commit 为 `e8cb019fabf8b55199436229044cbf9aa7a82564`，tag 树内 `VERSION=0.1.182`。双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 保留私有起点与官方 peeled commit 两个父节点。私有 `.4` 的版本文件为 `0.1.183-52t.4`；发布提交、annotated Tag、Release 和 OCI revision 均为 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者已于 `2026-08-28` 手工切换生产，取代此前的 `v0.1.176-52t.1`。失败候选 `v0.1.183-52t.3` 仅保留源码与 lint 失败 run 证据，不存在 Release、manifest 或镜像；`.2` 也只作为更早的发布历史保留。
 - 官方插件出站传输、Kimi/Zhipu/DeepSeek 一等供应商、复合分组、渠道监控配额模式、分组用量汇总、Codex 指纹种子、OpenAI Responses/WS 与调度修复按官方结构保留。官方已经提供同类抽象时，私有能力只作为兼容约束和测试移植，不再维护平行入口。
-- 官方 Fast/Flex service tier、渠道倍率、分时时段与仅工作日配置共用统一 Token 计费链路。私有 `v21` 认证快照继续双向保存分组长上下文开关和逐模型价格；分组或账号任一开启即按 OR 语义启用长上下文阶梯，渠道显式区间优先且不重复叠加官方倍率。GPT-5.6 生产同型条件固定为：账号 `openai_long_context_billing_enabled=true` 可在分组开关关闭时独立启用；渠道没有显式区间价；未缓存输入、cache write 和 cache read 的合计严格大于 `272000`。命中后未缓存输入、cache write、cache read 均按 `2x`，输出按 `1.5x`，分组倍率只乘一次，使用记录必须标记 `long_context_billing_applied=true`。`backend/internal/service/openai_gpt56_long_context_billing_test.go` 覆盖 HTTP Responses、WebSocket HTTP bridge 与 WebSocket v2；Fast/Flex、分时倍率、长上下文档位和提链换算仍须用同一费用分项矩阵验证。
-- 该历史版本当时在 Wire、路由、仓储和前端保留积分/签到、提链/额度卡、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有在线更新源、跨协议正式终态和精确容量错误有界重试。媒体创建最多提交一次；普通余额和提链卡保留请求级价格快照、余额事务及失败/未知终态边界。上述“私有在线更新源”等旧实现不代表当前 `v0.2.15-52t.1` 候选仍包含它们，当前范围以第 0 节为准。
+- 官方 Fast/Flex service tier、渠道倍率、分时时段与仅工作日配置共用统一 Token 计费链路。私有 `v21` 认证快照继续双向保存分组长上下文开关和逐模型价格；分组或账号任一开启即按 OR 语义启用长上下文阶梯，渠道显式区间优先且不重复叠加官方倍率。GPT-5.6 生产同型条件固定为：账号 `openai_long_context_billing_enabled=true` 可在分组开关关闭时独立启用；渠道没有显式区间价；未缓存输入、cache write 和 cache read 的合计严格大于 `272000`。命中后未缓存输入、cache write、cache read 均按 `2x`，输出按 `1.5x`，分组倍率只乘一次，使用记录必须标记 `long_context_billing_applied=true`。`backend/internal/service/openai_gpt56_long_context_billing_test.go` 覆盖 HTTP Responses、WebSocket HTTP bridge 与 WebSocket v2；Fast/Flex、分时倍率和长上下文档位仍须用同一费用分项矩阵验证；提链换算仅保留旧账单审计说明。
+- 该历史版本当时在 Wire、路由、仓储和前端保留积分/签到、提链/额度卡、媒体冻结/核销、统一视频兼容、公开首页/帮助、私有在线更新源、跨协议正式终态和精确容量错误有界重试。媒体创建最多提交一次；普通余额和提链卡保留请求级价格快照、余额事务及失败/未知终态边界。上述提链/额度卡、“私有在线更新源”等旧实现不代表当前候选仍包含它们；当前额度卡边界以上方 2026-10-24 声明及第 3.7 节为准。
 - 迁移 runner 按完整 filename 和 checksum 识别迁移。私有 `173-179`、`192-194`、此前官方 `194-221` 与本轮官方 `222-230` 全部原名保留；三份 `194`、两份 `225`、两份 `226` 独立共存。任何同号文件都不得按数字前缀覆盖、重命名或合并。
 - 该轮包含 forward-only 数据库迁移、Ent/生成代码、后端、前端和发布资产，发布策略为 `image-update-required`。`v0.1.183-52t.4` 只能由维护者在人工窗口使用 Compose 切换；候选 Tag 与版本树不得脱节，也不得在旧代码树上单独提交新 `VERSION`。
 - `.2` 的本地门禁、GitHub run `33069107472`、Release manifest、附件校验和、amd64/arm64 manifest 与 OCI revision 作为上一候选证据；`.3` 的 lint 失败 run 仅作失败历史；`.4` 的源码、Tag、run `33105459243`、Release、manifest、双架构镜像、服务器缓存、维护者手工切换和生产计费冒烟均已核验。数据库备份证据仍应单独按运维记录复核，不能从 Release 或运行态反推。
@@ -400,8 +398,8 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 - `channel_available.go` 和可用渠道前端：模型来源必须仍为渠道定价。
 - 支付 provider、webhook 和订单生命周期：签名、幂等、金额和状态转换。
 - `points-system/`、Sub2API points bridge 和 `193_points_balance_credit_ledger.sql`：单位精度、次日策略、消费快照修订、最低昨日消费门槛、阶梯边界、金额上限、签到并发、管理员 disabled 配置入口、启动票据、缓存代次、余额幂等与失败终态。
-- `api_keys`、API Key 鉴权/缓存、usage 计费事务和 `194_link_cards.sql`：标准/提链 Key 隔离、提链授权与原生用户分组交集、专属倍率覆盖、每 Key 并发与 RPM、倍率快照、批量原子扣款、文本末笔完整后扣、欠费拒绝新请求、充值覆盖欠费后自动恢复、媒体请求前预留、永久幂等、退款在途收口和不可变流水。
-- API Key 认证快照：所有参与路由或计费的分组字段必须在 snapshot struct、构建、还原和 JSON/L2 回归中成对保真；当前版本为 `v24`。分组长上下文与账号长上下文采用 OR 语义，渠道区间价格与官方长上下文倍率不得重复叠加。
+- `api_keys`、API Key 鉴权/缓存和 usage 计费事务：历史提链 Key 必须在现行链路失败关闭，不得回落到普通用户余额扣款；`194_link_cards.sql` 文件/checksum/已应用历史仅审计保留，当前 runner 精确跳过。
+- API Key 认证快照：所有参与路由或计费的分组字段必须在 snapshot struct、构建、还原和 JSON/L2 回归中成对保真；当前版本为 `v25`。分组长上下文与账号长上下文采用 OR 语义，渠道区间价格与官方长上下文倍率不得重复叠加。
 
 ## 6. 发布门禁
 
@@ -445,7 +443,7 @@ go build ./cmd/server
 | 视频 | 每个公开模型的创建、查询、内容下载、长轮询恢复、公开 ID、失败不扣费、成功一次计费 |
 | 前端 | 可用渠道长模型列表、移动端、Q 群入口、支付 provider 配置 |
 | 积分与签到 | 两位小数比例、真实成功消费、00:05 动态刷新、业务发放时间、快照修订、总/昨日积分阶梯、最低昨日消费金额、固定/百分比奖励、每日次数、三层金额上限、并发签到、刷新与签到按钮恢复、签到未知结果幂等确认、四卡紧凑等高、真实同步状态、8px 面板尺度、reduced-motion、两表每页 10 条独立分页、父主题跨刷新权威、浅/深表格与悬停对比、Canvas 换色、disabled 管理员入口、HMAC 轮换、票据重放、公网内部接口拒绝、同库 schema 隔离、邮箱 ACL 阶段 A/B、反向回滚与失败事务 PostgreSQL CI、缓存旧值回填竞态、拒绝记录收敛、余额幂等、未知 credit 禁止直接冲正和永久失败人工重试 |
-| 提链与额度卡 | 创建/充值/退款事务、幂等账本、后扣最后一笔、欠费恢复、分组倍率快照、公共激活限流、原生 Token/缓存/费用明细、CCSwitch 只读教程 |
+| 历史 Key 隔离与迁移审计 | 旧 `key_type=link` 的认证/缓存/结算失败关闭；不得当普通 Key 扣款；194 原文件/checksum/历史不变且 runner 精确跳过；无旧路由/页面/部署入口 |
 | 检测兼容 | 按标准协议真实测试，不识别检测器、不伪造模型身份或固定输出 |
 
 收费媒体真实测试应使用最小数量并保存任务 ID、时间窗和 usage 对照。禁止为了“多试几次”自动循环创建付费媒体任务。
@@ -458,10 +456,10 @@ go build ./cmd/server
 2. 构建带 commit 的不可变镜像标签，并记录 digest；浮动版本标签不能作为唯一回滚点。
 3. Sub2API 镜像按运维约定只上传/导入服务器，是否切换由维护窗口决定。
 4. 积分镜像可在备份 `points` schema 并记录旧镜像后独立更新，但必须断言 Sub2API 容器 ID、启动时间和镜像引用未变；一次性历史回算不得随更新重跑。
-5. 提链当前生产已完成全体用户开放；后续升级仍须按 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md) 复核资金、并发、迁移和三端门禁，不得因镜像已运行而跳过。
+5. 当前候选不启用提链/额度卡。维护者切换前仅只读核验历史 Key/在途与审计数据，并验证失败关闭；历史验收文档不构成恢复产品或认定生产已经停用的依据。
 6. 切换前备份 compose 和数据库；只修改目标服务的镜像 tag，不顺带改账号、渠道价格或网关配置。
 7. 切换后检查版本、health、restart、migration、关键路由和错误日志。
-8. 回滚时恢复旧不可变镜像；如果新迁移不向后兼容，按预先准备的数据回滚方案处理，不能只改镜像。存在提链 Key 时先关闭入口、冻结和禁用全部提链 Key、清空在途并对账，禁止让不识别 `key_type` 的旧镜像接管活动 Key。
+8. 回滚时恢复已核验的不可变镜像；新迁移不向后兼容时按预先准备的数据方案处理，不能只改镜像。必须确认回滚目标同样拒绝历史提链 Key，不得恢复旧产品入口、删除账本或让普通余额链路接管旧 Key。
 
 ## 7. 不可破坏清单
 
@@ -484,10 +482,7 @@ go build ./cmd/server
 - 积分子页不得用固定浅色覆盖深色表格或悬停状态；严格校验后的父主题在后续资料刷新中保持权威，并触发 Canvas 重绘。四张概览卡在桌面和移动端不得互相错位或发生按钮遮挡，两张个人记录表默认每页 10 条且独立翻页。
 - 积分用户首屏失败必须进入持久可重试状态，管理员首屏必须在真实汇总加载后才揭示；窄屏 Canvas 不得使用固定内部宽度造成日期挤压，普通 hover 不得使用近似选中态的高强度主色填充。
 - 余额缓存旧回源不得覆盖积分 credit/reversal 后的新余额；缓存同步失败必须保持同一交易可重试。公网域名不得代理内部 credit 路径，`/launch` 之外的积分访问日志不得整体关闭。
-- 普通 API Key 页面和接口不得显示、编辑或删除提链 Key；提链 Key 未激活、冻结、耗尽、退款或撤销时不得通过网关鉴权，状态变更必须失效鉴权缓存。
-- 提链创建/充值只能由服务端从创建者真实余额原子扣款；调用时不得再次扣创建者余额。客户端不得决定创建者、倍率、总扣款、可退款额、已用额或结算费用。
-- 提链批量创建必须全成或全败，所有资金写操作永久幂等并写不可变流水；最后一笔和已准入并发只允许形成可审计的受控欠费，不能形成免费差额、重复扣款或超额退款，欠费后任何新请求与管理员解冻都必须失败关闭。
-- 提链控制台不得形成第二套倍率或专属分组配置；用户可见分组、显示倍率和创建校验必须复用 Sub2API 原生用户权限解析。欠费充值达到正可用额度时自动恢复调用，但不得借充值解除其他冻结、撤销或权限阻断。
+- 普通 API Key 页面、接口、鉴权缓存与结算必须隔离历史提链 Key；旧 Key 一律失败关闭，不得作为普通 Key 展示、编辑、删除、使用或扣款。
 
 ## 8. 文档更新规则
 
@@ -495,7 +490,7 @@ go build ./cmd/server
 
 1. 本文档的功能清单、代码入口和不可破坏约束。
 2. `docs/MEDIA_API_CN.md`、`docs/PRODUCTION_OPERATIONS_CN.md` 或对应部署文档中的对外契约与运行边界。
-3. 涉及提链/额度卡中心时同步更新 `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`；配置示例和迁移说明也必须同步。
+3. 涉及历史提链迁移或审计证据时同步标注 `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md` 的历史范围，并保持停用声明、迁移 README 与失败关闭测试一致；不恢复旧配置或部署入口。
 4. 对应测试矩阵。
 
 不得在文档中保存生产凭据、真实 API Key、支付密钥、Worker Secret、数据库连接串或 SSH/GitHub Token。

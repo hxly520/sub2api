@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import KeyUsageView from '../KeyUsageView.vue'
@@ -105,7 +105,10 @@ vi.mock('@/stores', () => ({
 }))
 
 describe('KeyUsageView daily detail', () => {
+  let mountedWrapper: VueWrapper | undefined
+
   beforeEach(() => {
+    vi.useFakeTimers()
     showInfo.mockReset()
     showSuccess.mockReset()
     showError.mockReset()
@@ -169,12 +172,16 @@ describe('KeyUsageView daily detail', () => {
   })
 
   afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = undefined
+    // Discard animation callbacks before restoring the timer and RAF globals.
+    vi.clearAllTimers()
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
   it('renders daily usage detail rows after a successful query', async () => {
-    const wrapper = mount(KeyUsageView, {
+    const wrapper = mountedWrapper = mount(KeyUsageView, {
       global: {
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
@@ -210,15 +217,12 @@ describe('KeyUsageView daily detail', () => {
     expect(text).toContain('30')
     expect(text).toContain('10')
     expect(text).toContain('$0.12')
-
-    wrapper.unmount()
   })
 
   it('queries the current local calendar date near midnight', async () => {
-    vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 13, 0, 30))
 
-    const wrapper = mount(KeyUsageView, {
+    const wrapper = mountedWrapper = mount(KeyUsageView, {
       global: {
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
@@ -235,13 +239,14 @@ describe('KeyUsageView daily detail', () => {
     const requestUrl = String(vi.mocked(fetch).mock.calls[0][0])
     expect(requestUrl).toContain('start_date=2026-07-13')
     expect(requestUrl).toContain('end_date=2026-07-13')
-
-    wrapper.unmount()
   })
 })
 
 describe('KeyUsageView subscription feature flag', () => {
+  let mountedWrapper: VueWrapper | undefined
+
   beforeEach(() => {
+    vi.useFakeTimers()
     localStorage.clear()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -267,12 +272,16 @@ describe('KeyUsageView subscription feature flag', () => {
   })
 
   afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = undefined
+    vi.clearAllTimers()
+    vi.useRealTimers()
     appStoreState.cachedPublicSettings = null
     vi.unstubAllGlobals()
   })
 
   async function mountAndQuery() {
-    const wrapper = mount(KeyUsageView, {
+    const wrapper = mountedWrapper = mount(KeyUsageView, {
       global: {
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
@@ -293,7 +302,6 @@ describe('KeyUsageView subscription feature flag', () => {
 
     expect(wrapper.text()).toContain('Subscription Type')
     expect(wrapper.text()).toContain('Wallet Balance')
-    wrapper.unmount()
   })
 
   it('drops the "Subscription" wording from the wallet row when subscriptions are disabled', async () => {
@@ -303,6 +311,5 @@ describe('KeyUsageView subscription feature flag', () => {
     expect(wrapper.text()).toContain('Billing Type')
     expect(wrapper.text()).not.toContain('Subscription Type')
     expect(wrapper.text()).toContain('Wallet Balance')
-    wrapper.unmount()
   })
 })

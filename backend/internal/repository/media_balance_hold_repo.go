@@ -10,6 +10,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+// Historical databases may retain a funding_source classification on holds.
+// Read it through the row JSON so fresh databases need no retired migration,
+// while historical non-user holds never debit or credit the owner's balance.
 func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *service.MediaBalanceHoldCommand) (_ *service.MediaBalanceHoldResult, err error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("usage billing repository db is nil")
@@ -30,6 +33,9 @@ func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *s
 			_ = tx.Rollback()
 		}
 	}()
+	if err := requireStandardUsageBillingAPIKey(ctx, tx, cmd.APIKeyID); err != nil {
+		return nil, err
+	}
 	if err := releaseExpiredMediaBalanceHolds(ctx, tx, cmd.UserID); err != nil {
 		return nil, err
 	}
@@ -48,7 +54,7 @@ func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *s
 		if scanErr := tx.QueryRowContext(ctx, `
 				SELECT user_id, request_fingerprint, hold_amount, status
 				FROM media_balance_holds
-				WHERE request_id = $1 AND api_key_id = $2 AND funding_source = 'user_balance'
+				WHERE request_id = $1 AND api_key_id = $2 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 			`, cmd.RequestID, cmd.APIKeyID).Scan(&existingUserID, &fingerprint, &existingAmount, &status); scanErr != nil {
 			return nil, scanErr
 		}
@@ -113,7 +119,7 @@ func (r *usageBillingRepository) MarkMediaBalanceDispatched(ctx context.Context,
 			updated_at = NOW()
 		WHERE request_id = $1 AND api_key_id = $2 AND user_id = $3
 			AND request_fingerprint = $4 AND hold_amount = $5
-			AND funding_source = 'user_balance'
+			AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 			AND status IN ('reserved', 'dispatched')
 	`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, cmd.RequestFingerprint, cmd.HoldAmount, cmd.ExpirySeconds())
 	if err != nil {
@@ -158,7 +164,7 @@ func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context,
 	err = tx.QueryRowContext(ctx, `
 		SELECT user_id, request_fingerprint, hold_amount, capture_amount, status
 		FROM media_balance_holds
-		WHERE request_id = $1 AND api_key_id = $2 AND funding_source = 'user_balance'
+		WHERE request_id = $1 AND api_key_id = $2 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 		FOR UPDATE
 	`, cmd.RequestID, cmd.APIKeyID).Scan(&holdUserID, &fingerprint, &holdAmount, &existingCapture, &status)
 	if err != nil {
@@ -187,7 +193,7 @@ func (r *usageBillingRepository) MarkMediaBalanceForCapture(ctx context.Context,
 			expires_at = GREATEST(expires_at, NOW() + ($4 * INTERVAL '1 second')),
 			updated_at = NOW()
 		WHERE request_id = $1 AND api_key_id = $3
-		  AND funding_source = 'user_balance'
+		  AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 		  AND status IN ('reserved', 'dispatched', 'capture_pending')
 	`, cmd.RequestID, actualCost, cmd.APIKeyID, cmd.ExpirySeconds())
 	if err != nil {
@@ -235,7 +241,7 @@ func (r *usageBillingRepository) ReleaseMediaBalance(ctx context.Context, cmd *s
 	err = tx.QueryRowContext(ctx, `
 		SELECT id, user_id, request_fingerprint, hold_amount, status
 		FROM media_balance_holds
-		WHERE request_id = $1 AND api_key_id = $2 AND funding_source = 'user_balance'
+		WHERE request_id = $1 AND api_key_id = $2 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 		FOR UPDATE
 	`, cmd.RequestID, cmd.APIKeyID).Scan(&holdID, &holdUserID, &fingerprint, &holdAmount, &status)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -273,7 +279,7 @@ func (r *usageBillingRepository) ReleaseMediaBalance(ctx context.Context, cmd *s
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_balance_holds
 		SET status = 'released', settled_amount = 0, settled_at = NOW(), updated_at = NOW()
-		WHERE id = $1 AND funding_source = 'user_balance'
+		WHERE id = $1 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 	`, holdID); err != nil {
 		return nil, err
 	}
@@ -298,7 +304,7 @@ func (r *usageBillingRepository) captureMediaBalanceHold(ctx context.Context, tx
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, user_id, hold_amount, capture_amount, status
 		FROM media_balance_holds
-		WHERE request_id = $1 AND api_key_id = $2 AND funding_source = 'user_balance'
+		WHERE request_id = $1 AND api_key_id = $2 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 		FOR UPDATE
 	`, cmd.MediaBalanceHoldRequestID, cmd.APIKeyID).Scan(&holdID, &userID, &holdAmount, &captureAmount, &status)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -334,7 +340,7 @@ func (r *usageBillingRepository) captureMediaBalanceHold(ctx context.Context, tx
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_balance_holds
 		SET status = 'captured', settled_amount = $2, settled_at = NOW(), updated_at = NOW()
-		WHERE id = $1 AND funding_source = 'user_balance'
+		WHERE id = $1 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 	`, holdID, actual); err != nil {
 		return 0, err
 	}
@@ -376,7 +382,7 @@ func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID i
 		WITH expired_holds AS MATERIALIZED (
 			SELECT id, api_key_id, request_id
 			FROM media_balance_holds
-			WHERE user_id = $1 AND funding_source = 'user_balance'
+			WHERE user_id = $1 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 				AND status IN ('reserved', 'dispatched', 'capture_pending')
 				AND expires_at <= NOW()
 			FOR UPDATE
@@ -405,7 +411,7 @@ func reconcileExpiredMediaBalanceHolds(ctx context.Context, tx *sql.Tx, userID i
 		WITH expired_holds AS MATERIALIZED (
 			SELECT id, api_key_id, request_id, status, hold_amount, capture_amount
 			FROM media_balance_holds
-			WHERE user_id = $1 AND funding_source = 'user_balance'
+			WHERE user_id = $1 AND COALESCE(to_jsonb(media_balance_holds)->>'funding_source', 'user_balance') = 'user_balance'
 				AND status IN ('reserved', 'dispatched', 'capture_pending')
 				AND expires_at <= NOW()
 			FOR UPDATE

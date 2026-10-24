@@ -65,6 +65,13 @@ const usageLogsEffectiveUpstreamModelIndex = "idx_usage_logs_effective_upstream_
 const usageLogsUpstreamRequestIDIndexMigration = "233_add_usage_log_upstream_request_id_index_notx.sql"
 const usageLogsUpstreamRequestIDIndex = "idx_usage_logs_upstream_request_id"
 
+// historicalAuditOnlyMigrations are retained for checksum and production
+// history audits, but must never be applied by a fresh runtime. Link-card
+// tables and settings are intentionally not recreated after product removal.
+var historicalAuditOnlyMigrations = map[string]struct{}{
+	"194_link_cards.sql": {},
+}
+
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
 	acceptedDBChecksum map[string]struct{}
@@ -180,6 +187,10 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	sort.Strings(files) // 确保按文件名顺序执行迁移
 
 	for _, name := range files {
+		if _, auditOnly := historicalAuditOnlyMigrations[name]; auditOnly {
+			continue
+		}
+
 		// 读取迁移文件内容
 		contentBytes, err := fs.ReadFile(fsys, name)
 		if err != nil {

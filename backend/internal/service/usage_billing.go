@@ -48,6 +48,13 @@ type UsageBillingCommand struct {
 	// instead of deducting BalanceCost a second time.
 	MediaBalanceHoldRequestID  string
 	MediaBalanceHoldActualCost float64
+
+	// AccountQuotaHasDailyLimit / AccountQuotaHasWeeklyLimit record the account
+	// quota dimensions known while constructing the command. They select the
+	// appropriate atomic increment statement and are not part of the idempotency
+	// fingerprint.
+	AccountQuotaHasDailyLimit  bool
+	AccountQuotaHasWeeklyLimit bool
 }
 
 func (c *UsageBillingCommand) Normalize() {

@@ -2,14 +2,19 @@
 
 本文件供后续自动化维护者和 AI 接替时使用。它只记录源码边界与验证规则，不存储生产密码、完整 API Key、数据库连接串、HMAC secret、GHCR PAT、GitHub token 或请求数据。真实生产状态以脱敏运维记录和服务器只读核验为准。
 
-> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+> **候选移除范围**：提链/额度卡已从当前候选运行时代码、路由、页面和部署入口移除，生产尚未切换/重新核验。历史接口、账本及开放证据只用于审计。`194_link_cards.sql` 保留原文件和 checksum，当前迁移 runner 按完整文件名跳过。
 
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
+## 当前候选（2026-10-24）
+
+- 官方基线 `v0.2.18`：annotated tag object `de86961b627e48db75d61fff8c05535d44a00cbe`，peeled commit `ac1b8f1271be0d674fa6f074403c1410f30a3a81`。官方 tag 内 VERSION 为 `0.2.17`；私有版本为 `0.2.18-52t.1`，Go `1.27.3`。
+- 分支 `codex/upgrade-v0.2.18-no-linkcards`，私有起点为 `main` `6cd5468dff7b874647571b80f08002f51b8a9ea6`，merge-base 为官方 `v0.2.15` `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`。
+- 用户确认 Sub2API 提链和独立额度卡中心全部停用；本候选移除运行时代码、路由、菜单、页面、独立部署模板及专用计费。历史数据仅审计，不能重新启用。
+- 这是候选源码状态，不是生产已经切换或停用的证明。本轮测试、Release、镜像和服务器缓存状态见 [本轮交接](docs/RELEASE_V0_2_18_52T_1_CN.md)，无新证据的项目保持 `pending`。
 
 ## 开始前必读
 
 1. `docs/PRIVATE_CUSTOMIZATION_CN.md`：二开功能清单、代码入口和官方合并规则。
-2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.15 私有发布的测试、GitHub Actions、GHCR 和人工 Compose 流程。
+2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.18 私有发布的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
 5. `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡历史验收（仅审计）、媒体和积分契约。
@@ -30,13 +35,13 @@
 - Codex `x-codex-turn-state` 单值 48 KiB 保护及 Nginx 响应头缓冲约束。
 - 当前未登录首页、帮助页、导航和独立 `infinite-canvas` 工作台部署契约。
 
-普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配。额度卡 CCSwitch 教程与提链 Key 均为历史内容，当前入口和鉴权路径已移除。当前升级以官方 `v0.2.15` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key 和媒体入口继续经过同一模型白名单。
+普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配。额度卡 CCSwitch 教程与提链 Key 均为历史内容，当前入口和鉴权路径已移除。当前升级以官方 `v0.2.18` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key 和媒体入口继续经过同一模型白名单。
 
 ## 不可破坏契约
 
 - 媒体创建最多提交一次；明确失败、取消或空结果释放冻结余额，未知终态不擅自退款，成功只核销一次。
 - Seedance 视频路径维持用户已确认的官方请求后计费，不接入私有媒体预冻结。
-- 历史额度卡余额变更仅按服务端鉴权、幂等键、事务和审计记录核对；当前运行时不再接受额度卡参数。
+- 历史额度卡 Key 和旧认证快照必须失败关闭，不得按普通 Key 扣创建者余额；历史非用户资金来源媒体冻结也不得扣退普通余额。历史表和流水不删除、不自动退余额。
 - 积分用户/管理员界面严格隔离，策略按约定的次日生效；服务端开关关闭时入口和 API 同时隐藏/拒绝。
 - 官方请求失败、断流、超时或 5xx 不得被私有旁路泛化成重放；只允许官方明确的有界重试。
 - 根路径首页和 `/help/` 帮助中心由记录中的静态资产发布；修改镜像不会自动更新宿主静态页。
@@ -44,11 +49,11 @@
 
 ## 版本与发布
 
-`2026-10-10` 只读核验的生产基线为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、重启数为 0，私有起点 commit 为 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`。本轮目标固定为官方 `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；merge-base 为官方 `v0.2.11` commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。候选分支 `codex/upgrade-v0.2.15-compat` / 版本 `0.2.15-52t.1` 已完成合并、兼容复核、测试、PR、Release、GHCR 和服务器缓存；发布源码/Tag/OCI revision 为 `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`。生产切换仍由维护者执行。官方 tag 树内 `VERSION` 滞后为 `0.2.14`，私有版本必须主动设置为候选完整版本；Go 工具链使用 `1.27.2`。
+当前版本身份见上文和本轮交接；旧 v0.2.15 发布/服务器缓存证据只属于历史，不代替本次验证。
 
-官方新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql` 按完整文件名共存，两份 `241` 不覆盖、不合并、不重命名。既有私有迁移保持原名与 checksum；迁移 runner 的 checksum 为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256，不能用原始文件字节校验值替代。隔离数据库验证和回滚边界未确认前不得发布。重点验证官方充值赠送/折扣的支付金额、入账余额与退款关系；历史提链退款和在途结算仅做数据审计，不得把 `kimi-k3` 缺失 usage 自动视为修复，未经独立批准不得估计扣费或历史追扣。
+官方相对 v0.2.15 新增 `242_group_i18n.sql`、`243_gemini_cached_contents.sql`、`244_gemini_cached_contents_channel_usage.sql`、`245_gemini_cached_contents_mutation_lease.sql`、`246_enable_gemini_image_generation_groups.sql`，两份 `242` 按完整文件名共存。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；旧迁移不修改、不改名。246 会开启已有 Gemini/Antigravity 分组生图，composite 不自动开启，切换前核对业务分组开关。未经隔离数据库验证不得发布；不把 `kimi-k3` 缺失 usage 自动视为修复，不估计扣费、不历史追扣。
 
-沿用既有 full GoReleaser/GHCR 发布方式，`SIMPLE_RELEASE=false`，发布策略为 `image-update-required`。本轮仅构建并缓存 Sub2API 候选镜像；生产由维护者手工仅切换 `sub2api` 服务，不替换积分、生图工作台等其他容器，不修改生产数据库、Redis、Nginx 或宿主首页/帮助静态资产。
+沿用既有 full 发布目标和 GHCR，适配已审查的官方发布工作流结构，`SIMPLE_RELEASE=false`，发布策略为 `image-update-required`。本轮仅构建并缓存 Sub2API 候选镜像；生产由维护者手工仅切换 `sub2api` 服务，不替换积分、生图工作台等其他容器，不修改生产数据库、Redis、Nginx 或宿主首页/帮助静态资产。
 
 私有发布 Tag 必须是 `vX.Y.Z-52t.N` 格式的 annotated Tag，且 Tag 树内 `backend/cmd/server/VERSION` 必须等于去掉前导 `v` 的 Tag 值。Release 工作流始终以该精确 Tag 调用 `backend-ci.yml` 与 `security-scan.yml`；校验、质量或安全门禁失败不得发布，成功后也不得由工作流单独改写或推进 `main`。
 

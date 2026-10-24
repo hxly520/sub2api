@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { onUnmounted } from 'vue'
 import { useTableLoader } from '@/composables/useTableLoader'
 
 // Mock @vueuse/core 的 useDebounceFn
@@ -192,6 +193,55 @@ describe('useTableLoader', () => {
   // --- 请求取消 ---
 
   describe('请求取消', () => {
+    it('已取消的旧请求晚于新请求返回时不覆盖新结果', async () => {
+      let resolveOld: (value: any) => void = () => {}
+      const fetchFn = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+        .mockResolvedValueOnce({ items: [{ id: 2 }], total: 2, pages: 2 })
+      const { items, loading, load, pagination } = useTableLoader({ fetchFn })
+
+      const oldLoad = load()
+      await load()
+      resolveOld({ items: [{ id: 1 }], total: 1, pages: 1 })
+      await expect(oldLoad).resolves.toBeUndefined()
+
+      expect(items.value).toEqual([{ id: 2 }])
+      expect(pagination.total).toBe(2)
+      expect(pagination.pages).toBe(2)
+      expect(loading.value).toBe(false)
+    })
+
+    it('卸载取消后无响应内容不会产生未处理错误', async () => {
+      let resolveLoad: (value: any) => void = () => {}
+      const fetchFn = vi.fn(() => new Promise((resolve) => { resolveLoad = resolve }))
+      const { items, loading, load } = useTableLoader({ fetchFn })
+      const pending = load()
+      const unmount = vi.mocked(onUnmounted).mock.calls.at(-1)?.[0]
+      expect(unmount).toBeTypeOf('function')
+
+      unmount!()
+      resolveLoad(undefined)
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(items.value).toEqual([])
+      expect(loading.value).toBe(false)
+    })
+
+    it('卸载取消后的非标准取消错误被静默处理', async () => {
+      let rejectLoad: (reason: any) => void = () => {}
+      const fetchFn = vi.fn(() => new Promise((_resolve, reject) => { rejectLoad = reject }))
+      const { loading, load } = useTableLoader({ fetchFn })
+      const pending = load()
+      const unmount = vi.mocked(onUnmounted).mock.calls.at(-1)?.[0]
+      expect(unmount).toBeTypeOf('function')
+
+      unmount!()
+      rejectLoad(new TypeError('request disposed'))
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(loading.value).toBe(false)
+    })
+
     it('新请求取消前一个未完成的请求', async () => {
       let callCount = 0
       const fetchFn = vi.fn((_page, _size, _params, options) => {
