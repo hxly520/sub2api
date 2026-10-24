@@ -5,7 +5,6 @@ import channelMonitorV2 from './channelMonitorV2'
 import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
-import linkCards from './linkCards'
 
 export default {
   ...landing,
@@ -15,5 +14,4 @@ export default {
   ...batchImage,
   admin,
   ...misc,
-  ...linkCards,
 }

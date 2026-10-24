@@ -23,7 +23,6 @@ type helperConcurrencyCacheStub struct {
 
 	accountAcquireCalls int
 	userAcquireCalls    int
-	userAcquireIDs      []int64
 	accountReleaseCalls int
 	userReleaseCalls    int
 	waitAllowed         bool
@@ -34,7 +33,6 @@ type helperConcurrencyCacheStub struct {
 	apiKeyTrackCalls    int
 	apiKeyReleaseCalls  int
 	apiKeyTrackIDs      []int64
-	apiKeyTrackErr      error
 }
 
 func (s *helperConcurrencyCacheStub) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -84,7 +82,6 @@ func (s *helperConcurrencyCacheStub) AcquireUserSlot(ctx context.Context, userID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.userAcquireCalls++
-	s.userAcquireIDs = append(s.userAcquireIDs, userID)
 	if len(s.userSeq) == 0 {
 		return false, nil
 	}
@@ -109,7 +106,7 @@ func (s *helperConcurrencyCacheStub) TrackAPIKeySlot(ctx context.Context, apiKey
 	defer s.mu.Unlock()
 	s.apiKeyTrackCalls++
 	s.apiKeyTrackIDs = append(s.apiKeyTrackIDs, apiKeyID)
-	return s.apiKeyTrackErr
+	return nil
 }
 
 func (s *helperConcurrencyCacheStub) ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error {
@@ -340,93 +337,6 @@ func TestTryAcquireUserSlotForAPIKey_TracksAPIKeySlot(t *testing.T) {
 
 	require.Equal(t, 1, cache.userReleaseCalls)
 	require.Equal(t, 1, cache.apiKeyReleaseCalls)
-}
-
-func TestTryAcquireUserSlotForKey_StandardPreservesOriginalPath(t *testing.T) {
-	cache := &helperConcurrencyCacheStub{userSeq: []bool{true}}
-	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
-	standardKey := &service.APIKey{ID: 77, KeyType: service.APIKeyTypeStandard}
-
-	release, acquired, err := helper.TryAcquireUserSlotForKey(context.Background(), standardKey, 202, 3)
-	require.NoError(t, err)
-	require.True(t, acquired)
-	require.NotNil(t, release)
-	require.Equal(t, []int64{202}, cache.userAcquireIDs)
-	require.Zero(t, cache.apiKeyTrackCalls, "standard Live requests must not gain link-card tracking")
-
-	release()
-	require.Equal(t, 1, cache.userReleaseCalls)
-	require.Zero(t, cache.apiKeyReleaseCalls)
-}
-
-func TestTryAcquireUserSlotForKey_LinkUsesCardScopedStrictPath(t *testing.T) {
-	cache := &helperConcurrencyCacheStub{userSeq: []bool{true}}
-	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
-	linkKey := &service.APIKey{ID: 77, KeyType: service.APIKeyTypeLink}
-
-	release, acquired, err := helper.TryAcquireUserSlotForKey(context.Background(), linkKey, 202, 3)
-	require.NoError(t, err)
-	require.True(t, acquired)
-	require.NotNil(t, release)
-	require.Equal(t, []int64{-77}, cache.userAcquireIDs)
-	require.Equal(t, []int64{77}, cache.apiKeyTrackIDs)
-
-	release()
-	require.Equal(t, 1, cache.userReleaseCalls)
-	require.Equal(t, 1, cache.apiKeyReleaseCalls)
-}
-
-func TestBuildKeyBillingInfo_StandardIgnoresLinkMetadata(t *testing.T) {
-	group := &service.Group{
-		ID:             8,
-		Platform:       service.PlatformOpenAI,
-		RateMultiplier: 0.5,
-	}
-	key := &service.APIKey{
-		ID:                 95,
-		KeyType:            service.APIKeyTypeStandard,
-		LinkRateMultiplier: 0.08,
-		GroupID:            &group.ID,
-		Group:              group,
-	}
-
-	response := buildKeyBillingInfo(key, 0.4, time.Now())
-	require.Equal(t, 0.5, response.GroupRateMultiplier)
-	require.Equal(t, 0.4, response.ResolvedRateMultiplier)
-	require.Equal(t, 0.4, response.EffectiveRateMultiplier)
-	require.NotNil(t, response.UserRateMultiplier)
-	require.Equal(t, 0.4, *response.UserRateMultiplier)
-}
-
-func TestLinkCardsUseIndependentConcurrencySubjects(t *testing.T) {
-	cache := &helperConcurrencyCacheStub{userSeq: []bool{true, true}}
-	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
-
-	for _, cardID := range []int64{77, 78} {
-		c, _ := newHelperTestContext(http.MethodPost, "/v1/responses")
-		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: cardID, KeyType: service.APIKeyTypeLink})
-		streamStarted := false
-		release, err := helper.acquireUserSlotWithWaitTimeout(c, 1, 5, time.Second, false, &streamStarted)
-		require.NoError(t, err)
-		require.NotNil(t, release)
-		release()
-	}
-
-	require.Equal(t, []int64{-77, -78}, cache.userAcquireIDs)
-	require.Equal(t, []int64{77, 78}, cache.apiKeyTrackIDs)
-}
-
-func TestLinkCardConcurrencyTrackingFailsClosed(t *testing.T) {
-	cache := &helperConcurrencyCacheStub{userSeq: []bool{true}, apiKeyTrackErr: errors.New("redis unavailable")}
-	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
-	c, _ := newHelperTestContext(http.MethodPost, "/v1/responses")
-	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 77, KeyType: service.APIKeyTypeLink})
-	streamStarted := false
-
-	release, err := helper.acquireUserSlotWithWaitTimeout(c, 1, 5, time.Second, false, &streamStarted)
-	require.Error(t, err)
-	require.Nil(t, release)
-	require.Equal(t, 1, cache.userReleaseCalls)
 }
 
 func TestAcquireUserSlotWithWait_WaitSuccessDecrementsBeforeReturn(t *testing.T) {
