@@ -8,6 +8,7 @@
 
 - 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](../../docs/RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
 - 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 用户于 2026-10-24 明确保留所有已有分组生图开关 true/false 现状。`246_enable_gemini_image_generation_groups.sql` 原文件与 checksum `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c` 不变；runner 对该精确身份不执行配置重写，首次处理仅在同一事务记录原 filename/checksum，已有历史继续校验，未知 hash 失败关闭，其他迁移照常执行。此兼容改动最终精确提交的 CI/隔离 PostgreSQL 验证待完成。
 - 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
 
 
@@ -44,7 +45,7 @@ Example: `017_add_gemini_tier_id.sql`
 
 ## Migration File Structure
 
-This project uses a custom migration runner (`internal/repository/migrations_runner.go`) that executes the full SQL file content as-is.
+This project uses a custom migration runner (`internal/repository/migrations_runner.go`) that normally executes the full SQL file content as-is. The narrowly approved configuration-preservation exception for migration 246 records its original complete filename and reviewed checksum atomically without executing its configuration rewrite; it does not modify the immutable SQL file or skip other migrations. An unreviewed checksum fails closed. Historical audit-only migration 194 is separately skipped as documented below.
 
 - Regular migrations (`*.sql`): executed in a transaction.
 - Non-transactional migrations (`*_notx.sql`): split by statement and executed without transaction (for `CONCURRENTLY`).

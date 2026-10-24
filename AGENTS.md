@@ -51,7 +51,7 @@
 
 当前版本身份见上文和本轮交接；旧 v0.2.15 发布/服务器缓存证据只属于历史，不代替本次验证。
 
-官方相对 v0.2.15 新增 `242_group_i18n.sql`、`243_gemini_cached_contents.sql`、`244_gemini_cached_contents_channel_usage.sql`、`245_gemini_cached_contents_mutation_lease.sql`、`246_enable_gemini_image_generation_groups.sql`，两份 `242` 按完整文件名共存。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；旧迁移不修改、不改名。246 会开启已有 Gemini/Antigravity 分组生图，composite 不自动开启，切换前核对业务分组开关。未经隔离数据库验证不得发布；不把 `kimi-k3` 缺失 usage 自动视为修复，不估计扣费、不历史追扣。
+官方相对 v0.2.15 新增 `242_group_i18n.sql`、`243_gemini_cached_contents.sql`、`244_gemini_cached_contents_channel_usage.sql`、`245_gemini_cached_contents_mutation_lease.sql`、`246_enable_gemini_image_generation_groups.sql`，两份 `242` 按完整文件名共存。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；旧迁移不修改、不改名。用户于 **2026-10-24 明确保留分组生图开关现状（true/false 均不变）**：246 原 SQL 及 checksum `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c` 保持不变，runner 仅对该完整文件名和已审查 checksum 执行配置保留例外，不执行其开启开关的 SQL；首次处理在同一事务记录原 filename/checksum，已有迁移历史继续校验，未知 checksum 失败关闭。其他迁移正常执行，不泛化跳过同号文件。该兼容改动的最终精确提交及 Tag 必须另经 CI/隔离数据库验证，不继承此前代码全绿结论。未经隔离数据库验证不得发布；不把 `kimi-k3` 缺失 usage 自动视为修复，不估计扣费、不历史追扣。
 
 沿用既有 full 发布目标和 GHCR，适配已审查的官方发布工作流结构，`SIMPLE_RELEASE=false`，发布策略为 `image-update-required`。本轮仅构建并缓存 Sub2API 候选镜像；生产由维护者手工仅切换 `sub2api` 服务，不替换积分、生图工作台等其他容器，不修改生产数据库、Redis、Nginx 或宿主首页/帮助静态资产。
 

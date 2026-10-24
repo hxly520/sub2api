@@ -8,6 +8,7 @@
 
 - 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
 - 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 用户于 2026-10-24 确认保留分组生图开关现状（true/false 均不变）。官方 `246_enable_gemini_image_generation_groups.sql` 文件和原 checksum 不变；runner 对该精确 filename/hash 不执行开启开关的 SQL，首次仅在同一事务记录原 filename/checksum，已有记录继续核验，未知 hash 失败关闭；其他迁移照常。新增兼容改动的最终精确提交/Tag CI 与隔离 PostgreSQL 验证待完成，不继承此前提交的全绿证据。
 - 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
 
 
@@ -117,6 +118,8 @@ git diff --check
 
 当前候选另须完成隔离 PostgreSQL 迁移/事务回归、KeyingPay 充值赠送与退款金额核验，以及历史提链 Key 不进入普通认证/缓存/余额结算的隔离验证。`194_link_cards.sql` 原文件、checksum 和已应用历史保持不变；当前 runner 必须精确跳过该文件，官方同号迁移照常处理。正式计费只接受真实 usage，不以“请求成功”推断缺失的 token 数。
 
+迁移 246 配置保留须单独回归：已有开启和关闭值均不变、首次仅记录原 filename/hash、同事务失败无半记录、重复启动校验幂等、已有历史校验、未知 hash 拒绝，以及相邻官方迁移仍正常应用。246 原 checksum 为 `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c`；不得通过改写原 SQL、宽泛跳过数字前缀或生产直接回写开关来实现。最终门禁须绑定包含该改动的精确提交/Tag。
+
 ## 3. 生成候选 Tag 与 GitHub Actions 镜像
 
 1. 在升级分支确认工作树干净、官方 commit 和 `backend/cmd/server/VERSION` 已记录。版本文件必须已经等于 Tag 去掉前导 `v` 后的完整值；工作流不会代替源码改写版本。
@@ -151,7 +154,7 @@ docker compose pull sub2api
 docker compose up -d --no-deps sub2api
 ```
 
-切换后检查 `/health`、登录、原有 API、积分、历史提链 Key 失败关闭、媒体/视频和首页/帮助页；确认无误再清理旧镜像。积分服务和 `infinite-canvas` 容器不随 Sub2API 镜像自动替换。
+切换后检查 `/health`、登录、原有 API、积分、历史提链 Key 失败关闭、媒体/视频和首页/帮助页；对比分组生图开关 true/false 均未改变，并核验 246 的原 filename/checksum 记录；确认无误再清理旧镜像。积分服务和 `infinite-canvas` 容器不随 Sub2API 镜像自动替换。
 
 ## 5. 回滚
 

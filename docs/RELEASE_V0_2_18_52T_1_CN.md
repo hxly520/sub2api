@@ -41,7 +41,9 @@ checksum 均为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；已有同号
 | `245_gemini_cached_contents_mutation_lease.sql` | `75434a7beeb8aad09b3339708ed520604d153e99c7fe680a376e8c958aadb1e8` |
 | `246_enable_gemini_image_generation_groups.sql` | `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c` |
 
-官方迁移 246 会开启已有 Gemini/Antigravity 分组生图，composite 不自动开启。当前生产有 1 个 Gemini 分组关闭、1 个开启；已就保留关闭状态或遵循官方迁移向维护者询问，切换前必须确认该配置影响。未修改官方迁移内容或生产配置。
+官方迁移 246 原行为会开启已有 Gemini/Antigravity 分组生图，composite 不自动开启；只读核验生产有 1 个 Gemini 分组关闭、1 个开启。用户于 **2026-10-24 明确选择“保留现有状态”**，因此所有已有开关 true/false 均保持不变。
+
+兼容方式：不修改官方 246 SQL 文件或上述 checksum；runner 只识别该完整 filename 与已审查 checksum，不执行其中的配置重写，首次处理仅在同一事务向 `schema_migrations` 记录原 filename/checksum。已记录的迁移仍核验原 checksum；该文件出现未知 checksum 时失败关闭，不回退执行 SQL。其他迁移（包括同号文件）照常处理。此为候选代码中的精确配置保留例外，不是人工修改生产数据库、回写开关或忽略全部迁移。新增兼容改动的最终精确提交/Tag CI 与隔离 PostgreSQL 验证仍待完成，不能引用此前提交的通过状态代替。
 
 ## 4. 当前验证状态
 
@@ -54,7 +56,8 @@ checksum 均为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；已有同号
 | 媒体退役屏障 | default/unit 定向通过；本机无 Docker 不计实测；代码提交 70f6aaf5e 的 CI 完整 PostgreSQL integration 通过，包含新旧可选字段与历史 Key/资金来源屏障 |
 | 帮助页 | 静态契约 25/25、定向 ESLint 通过；9 个非额度卡章节与原 main 一致 |
 | Release helper | 10 项通过、Windows POSIX 权限检查 1 项跳过；bash 语法检查通过 |
-| GitHub CI / 安全 / Release | 代码提交 70f6aaf5e：CI 40053477408 与安全 40053477431 全部 success；Release 未创建，迁移 246 决策仍待确认 |
+| 迁移 246 配置保留 | 用户已确认保留现有 true/false；原 SQL/checksum 不变、同事务仅记录原身份、未知 hash 失败关闭；新增兼容改动最终精确提交的 CI/隔离 PostgreSQL 验证 pending |
+| GitHub CI / 安全 / Release | 代码提交 70f6aaf5e：CI 40053477408 与安全 40053477431 全部 success；后续纯文档提交 e945e4dd7 和新增 246 兼容改动须分别核验精确 HEAD/Tag 门禁，Release 未创建 |
 | 镜像 digest / OCI revision / 服务器缓存 | pending |
 | 生产切换 | 仅维护者人工执行；本任务不执行 |
 
@@ -83,6 +86,6 @@ Windows模型目录测试曾因同一测试连续调用时间戳重复而命中�
 
 维护者切换前备份 PostgreSQL、Compose/env，保留旧镜像精确 Tag；仅更新 Compose 的 `sub2api` image，然后单服务 `up -d --no-deps sub2api`。自动化不执行该步骤，不替换积分/工作台等容器。
 
-切换后验证健康、登录、普通 Key、流式与 usage、长上下文计费、可盈支付、积分桥接、媒体/视频以及退役 Key 失败关闭。不能通过旧镜像撤回数据库 forward-only 迁移；回滚前确认新缓存数据和新配置兼容。
+切换后验证健康、登录、普通 Key、流式与 usage、长上下文计费、可盈支付、积分桥接、媒体/视频以及退役 Key 失败关闭；对比切换前后的各分组生图开关，确认 true/false 均未变化，并核验 246 以原 filename/checksum 记录。不能通过旧镜像撤回数据库 forward-only 迁移；回滚前确认新缓存数据和新配置兼容。
 
 宿主 `/help/` 仍由 Nginx 静态目录提供，镜像切换不会自动同步。仓库帮助页已删除额度卡内容，SHA256 为 `a2eb9ade4ad512c38f412b2a2bad565c7cce5d5d606ba4f3b065edcaa5a33fb5`；维护者如需线上同步，另行备份并原子替换 `/home/api/sub2api-deploy/help/index.html` 后核验。本任务不修改该宿主文件，当前首页也不重新部署。
