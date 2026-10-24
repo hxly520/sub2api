@@ -13,7 +13,7 @@
 | 私有起点 | `main` `6cd5468dff7b874647571b80f08002f51b8a9ea6` |
 | merge-base | 官方 v0.2.15 `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` |
 | 候选 | `codex/upgrade-v0.2.18-no-linkcards` / `0.2.18-52t.1` |
-| 工具链 | Sub2API Go `1.27.3`；独立积分服务依赖不变 |
+| 工具链 | Sub2API 与独立积分构建工具链 Go `1.27.3`；积分业务及模块依赖不变，不发布/替换积分镜像 |
 | 发布策略 | `image-update-required`；精确 annotated Tag、同 Tag CI/安全门禁、5 平台归档与双架构 GHCR |
 
 **保留**：同库积分/签到及签名幂等桥接、媒体余额冻结/失败释放/成功核销、统一媒体接口与视频、真实首字 Token/TTFT 优化、Codex `x-codex-turn-state` 单值 48 KiB 保护、KeyingPay V2、现有首页/帮助/Logo/导航。Seedance 继续官方请求后计费；不新增私有预冻结。
@@ -61,6 +61,10 @@ checksum 均为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；已有同号
 Windows模型目录测试曾因同一测试连续调用时间戳重复而命中上一场景缓存；仅给fixture增加递增后缀隔离，定向重复50次与随后整套该项通过。未修改网关生产实现。内存阈值测试整套曾测得8,801,344 bytes高于8,388,608阈值，独立10次均通过，保留失败记录，由隔离CI再验证。
 
 本地脱敏日志位于仓库外 `output/upgrade-plans/v218-*`。旧 v0.2.15 全绿证据不代替本轮门禁。
+
+首轮 PR17 安全扫描 `40053058230` 的 backend/frontend 通过，points-security 检出 Go 标准库 `GO-2026-6809`（`crypto/x509@go1.27.2`，修复版 `go1.27.3`）。仅将积分 `go.mod` 与 Dockerfile 构建工具链同步至 1.27.3，不改业务、不更换依赖、不触发积分镜像发布或生产替换；修复后的本地与 CI 结果另行记录，旧失败不覆盖。
+
+工具链补丁后本地明确输出 `go version go1.27.3 windows/amd64`，积分 `go test ./... -count=1`、`go vet ./...`、`go build ./cmd/server` 均通过。首轮 CI `40053058304` 的 shell、frontend、points-system（含独立 PostgreSQL 事务/并发测试）、video-edge-worker、golangci-lint 已通过；backend test 尚在运行，补丁提交后的精确 HEAD 仍需重新验证。
 
 ## 5. 生产只读核验（2026-10-24）
 
