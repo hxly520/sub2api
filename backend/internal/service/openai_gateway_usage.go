@@ -215,10 +215,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	pricingAt := openAIUsagePricingAt(input)
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, pricingAt)
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
-	webSearchMultiplier := LinkCardChargeRateMultiplier(apiKey, baseMultiplier)
-	multiplier = LinkCardChargeRateMultiplier(apiKey, multiplier)
-	imageMultiplier = LinkCardChargeRateMultiplier(apiKey, imageMultiplier)
-	videoMultiplier = LinkCardChargeRateMultiplier(apiKey, videoMultiplier)
+	webSearchMultiplier := baseMultiplier
 	if isOpenAIVideoUsageResult(result, nil) && input.MediaPricingSnapshot != nil {
 		videoMultiplier = input.MediaPricingSnapshot.RateMultiplier
 	} else if result.ImageCount > 0 && input.MediaPricingSnapshot != nil {
@@ -897,7 +894,7 @@ func (s *OpenAIGatewayService) resolveOpenAIMediaRateMultiplier(ctx context.Cont
 	if baseMultiplier < 0 || math.IsNaN(baseMultiplier) || math.IsInf(baseMultiplier, 0) {
 		return 0
 	}
-	return LinkCardChargeRateMultiplier(apiKey, baseMultiplier)
+	return baseMultiplier
 }
 
 func isGrokVideoBillingModel(model string) bool {

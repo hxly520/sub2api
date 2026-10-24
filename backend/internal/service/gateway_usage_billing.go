@@ -320,7 +320,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		}
 	}
 
-	if p.SimpleModeKeyRateLimitOnly && !p.APIKey.IsLinkKey() && strings.TrimSpace(p.MediaBalanceHoldRequestID) == "" {
+	if p.SimpleModeKeyRateLimitOnly && strings.TrimSpace(p.MediaBalanceHoldRequestID) == "" {
 		if p.Cost.ActualCost > 0 && p.APIKey.HasRateLimits() {
 			cmd.APIKeyRateLimitCost = p.Cost.ActualCost
 		}
@@ -332,9 +332,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	// user-specific) rate multiplier consumes subscription quota at the expected
 	// speed. TotalCost remains the raw (pre-multiplier) value; downstream guards
 	// on "> 0" still correctly skip free subscriptions (RateMultiplier == 0).
-	if p.APIKey.IsLinkKey() && p.Cost.ActualCost > 0 && strings.TrimSpace(p.MediaBalanceHoldRequestID) == "" {
-		cmd.PrepaidLinkCost = p.Cost.ActualCost
-	} else if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
+	if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
 		cmd.SubscriptionID = &p.Subscription.ID
 		cmd.SubscriptionCost = p.Cost.ActualCost
 	} else if p.Cost.ActualCost > 0 {
@@ -345,10 +343,9 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	if strings.TrimSpace(p.MediaBalanceHoldRequestID) != "" && !p.IsSubscriptionBill {
 		cmd.MediaBalanceHoldRequestID = strings.TrimSpace(p.MediaBalanceHoldRequestID)
 		cmd.MediaBalanceHoldActualCost = p.Cost.ActualCost
-		cmd.MediaBalanceHoldLinkCard = p.APIKey.IsLinkKey()
 	}
 
-	if p.shouldDeductAPIKeyQuota() && !p.APIKey.IsLinkKey() {
+	if p.shouldDeductAPIKeyQuota() {
 		cmd.APIKeyQuotaCost = p.Cost.ActualCost
 	}
 	if p.shouldUpdateRateLimits() {
@@ -369,8 +366,8 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
-		if (p.APIKey != nil && p.APIKey.IsLinkKey()) || strings.TrimSpace(p.MediaBalanceHoldRequestID) != "" {
-			return false, infraerrors.ServiceUnavailable("LINK_CARD_BILLING_UNAVAILABLE", "link card billing is temporarily unavailable")
+		if strings.TrimSpace(p.MediaBalanceHoldRequestID) != "" {
+			return false, infraerrors.ServiceUnavailable("MEDIA_BALANCE_HOLD_BILLING_UNAVAILABLE", "media balance hold billing is temporarily unavailable")
 		}
 		if p.SimpleModeKeyRateLimitOnly {
 			return false, ErrSimpleModeKeyRateLimitBillingUnavailable
@@ -423,11 +420,11 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 		return
 	}
 
-	if p.IsSubscriptionBill && (p.APIKey == nil || !p.APIKey.IsLinkKey()) {
+	if p.IsSubscriptionBill {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
-	} else if p.Cost.ActualCost > 0 && p.User != nil && (p.APIKey == nil || !p.APIKey.IsLinkKey()) {
+	} else if p.Cost.ActualCost > 0 && p.User != nil {
 		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	}
 
@@ -444,7 +441,7 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	//     限制在并发 in-flight 请求数量内（旧实现的异步入队会让超支无限累积直到 worker 处理）
 	//   - DB 异步(flusher_enabled=false):在独立 goroutine 中走 detached context,失败用 ALERT log 触发 oncall 对账
 	//   - flusher_enabled=true:不直写 DB,由 flusher 异步批量刷（markDirty 已在 IncrementUserPlatformQuotaUsage 内部完成）
-	if !p.IsSubscriptionBill && (p.APIKey == nil || !p.APIKey.IsLinkKey()) && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil && deps.billingCacheService != nil {
+	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil && deps.billingCacheService != nil {
 		if deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
@@ -523,7 +520,7 @@ func notifyBalanceLow(p *postUsageBillingParams, deps *billingDeps, result *Usag
 			slog.Error("panic in notifyBalanceLow", "recover", r)
 		}
 	}()
-	if p.IsSubscriptionBill || (p.APIKey != nil && p.APIKey.IsLinkKey()) || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
+	if p.IsSubscriptionBill || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
 		slog.Debug("notifyBalanceLow: skipped",
 			"is_subscription", p.IsSubscriptionBill,
 			"actual_cost", p.Cost.ActualCost,
@@ -827,8 +824,6 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		pricingAt = timezone.Now()
 	}
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, pricingAt)
-	multiplier = LinkCardChargeRateMultiplier(apiKey, multiplier)
-	imageMultiplier = LinkCardChargeRateMultiplier(apiKey, imageMultiplier)
 
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)

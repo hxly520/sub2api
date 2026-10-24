@@ -2,6 +2,8 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
+> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+
 最新生产事实以本文件第 0 节最新日期的只读核验为准；本轮升级交接见 [v0.2.15-52t.1 发布记录](RELEASE_V0_2_15_52T_1_CN.md)；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
 ## 0. 当前生产事实（运行态只读核验更新至 2026-10-10，其余条目按各自日期）
@@ -92,7 +94,7 @@
 ### 0.3 2026-08-07 提链/额度卡开发候选边界
 
 - 提链/额度卡中心已形成默认关闭的开发候选镜像，镜像已载入生产服务器缓存并启用专用 Nginx 入口；运行中的 Sub2API 尚未切换候选容器，迁移仍未执行。生产第 0 节所列 Sub2API、积分服务、容器和迁移事实除本节明确记录的 Nginx 平滑 reload 外不因该候选改变。
-- 产品与资金契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
+- 产品与资金契约见 已停用的提链/额度卡历史契约（仅审计）。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
 - 候选默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`；管理员控制台受管理员认证保护。该默认值只是开发门禁，不是生产已验证状态，也不得据此推断用户 `1` 当前生产可访问。
 - `194_link_cards.sql` 仍是未应用候选迁移。当前生产 `public.schema_migrations` 仍以第 5 节已核验基线为准；在共享或生产数据库首次应用 `194` 前，必须完成数据库备份、隔离迁移、标准 Key 零回归、文本后扣超额完整入账、欠费禁用、媒体并发额度预留、退款在途收口和旧镜像回滚审查。
 - `2026-08-07` 本地已完成后端 `-tags=unit ./internal/...` 全量测试（并补齐既有 points `/auth/me` 契约字段）、提链定向 Go vet、Ent/Wire 重新生成、迁移测试、前端完整 Vitest、Vue TypeScript 检查和前端生产构建；覆盖原生分组交集、专属倍率覆盖、专属分组运行时撤权、发行/当前倍率换算、欠费充值自动恢复和普通 Key 隔离。`0.06x`、`0.07x`、`0.08x`、`0.09x` 的双向换算矩阵固定向上取一位小数，内部结算倍率不低于当前原生倍率。该记录不代表迁移或生产验收完成。
@@ -192,7 +194,7 @@
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
-- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前生产状态与全用户正式开放证据以第 0.8 节为准。
+- 提链/额度卡中心维护契约：已停用的提链/额度卡历史契约（仅审计）。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前生产状态与全用户正式开放证据以第 0.8 节为准。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
@@ -375,7 +377,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 1. 从完整克隆的当前私有 `main` 创建 `codex/upgrade-vX.Y.Z-*`。
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
-3. 解决协议、调度、四种图片模式、媒体计费、提链 Key 鉴权/计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 与 `docs/LINK_CARDS_CN.md` 中的完整门禁。
+3. 解决协议、调度、四种图片模式、媒体计费、提链 Key 鉴权/计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 中的历史门禁记录。
 4. 通过 CI 或受控本机构建环境构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和 commit；发布摘要必须记录 manifest digest、image ID 和传输归档 SHA256。
 5. Sub2API 新镜像只上传、导入或缓存，不立即替换运行容器；积分镜像可在 `points` schema 备份和旧镜像记录完成后独立更新。
 6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额；若已启用提链，再确认在途额度为零或可安全恢复、资金账本守恒且旧镜像不会接管活动提链 Key。

@@ -92,7 +92,7 @@ type openAICreditsSnapshot struct {
 }
 
 // OpenAIQuotaUsage is the typed projection of /wham/usage we expose to the UI.
-// Fields not relevant to the quota card are intentionally omitted to keep the
+// Fields not relevant to the API key quota are intentionally omitted to keep the
 // surface narrow; full upstream payload preservation is unnecessary.
 type OpenAIQuotaUsage struct {
 	UserID                string                       `json:"user_id,omitempty"`

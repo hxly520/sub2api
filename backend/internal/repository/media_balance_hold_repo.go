@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/shopspring/decimal"
 )
 
 func (r *usageBillingRepository) ReserveMediaBalance(ctx context.Context, cmd *service.MediaBalanceHoldCommand) (_ *service.MediaBalanceHoldResult, err error) {
@@ -289,32 +288,6 @@ func (r *usageBillingRepository) ReleaseMediaBalance(ctx context.Context, cmd *s
 // hold settlement and the normal usage/quota updates commit atomically.
 func (r *usageBillingRepository) captureMediaBalanceHold(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (float64, error) {
 	if strings.TrimSpace(cmd.MediaBalanceHoldRequestID) == "" {
-		return 0, nil
-	}
-	if cmd.MediaBalanceHoldLinkCard {
-		actual, ok := linkCardHoldAmount(cmd.MediaBalanceHoldActualCost)
-		if cmd.MediaBalanceHoldActualCost <= 0 {
-			actual = decimal.Zero
-		} else if !ok {
-			return 0, service.ErrMediaBalanceHoldConflict
-		}
-		// The authoritative hold amount is read from the row below; never trust
-		// a replayed usage command to supply the reservation amount.
-		var storedAmount decimal.Decimal
-		if err := tx.QueryRowContext(ctx, `
-			SELECT hold_amount FROM media_balance_holds
-			WHERE request_id=$1 AND api_key_id=$2 AND funding_source='link_card'
-		`, cmd.MediaBalanceHoldRequestID, cmd.APIKeyID).Scan(&storedAmount); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return 0, service.ErrMediaBalanceHoldNotFound
-			}
-			return 0, err
-		}
-		_, err := r.captureLinkCardHoldTx(ctx, tx, cmd.MediaBalanceHoldRequestID, cmd.APIKeyID, cmd.UserID,
-			"", storedAmount, actual)
-		if err != nil {
-			return 0, err
-		}
 		return 0, nil
 	}
 	var holdID int64

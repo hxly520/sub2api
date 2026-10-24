@@ -2,6 +2,8 @@
 
 本文件供后续自动化维护者和 AI 接替时使用。它只记录源码边界与验证规则，不存储生产密码、完整 API Key、数据库连接串、HMAC secret、GHCR PAT、GitHub token 或请求数据。真实生产状态以脱敏运维记录和服务器只读核验为准。
 
+> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+
 本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 开始前必读
@@ -10,7 +12,7 @@
 2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.15 私有发布的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
-5. `docs/LINK_CARDS_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡、媒体和积分契约。
+5. `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡历史验收（仅审计）、媒体和积分契约。
 
 ## 仓库与分支规则
 
@@ -22,19 +24,19 @@
 ## 私有功能保留边界
 
 - 同库 `points-system` 积分/签到桥接与管理员配置。
-- 提链/额度卡账本、预扣/后扣费、欠费恢复、退款和公共查询门户。
+- 提链/额度卡功能已停用；其账本、预扣/后扣费、欠费恢复、退款和公共查询门户仅保留历史迁移与审计记录。
 - 图片/视频任务、余额冻结/释放/核销及统一媒体 API。
 - 首字 Token/TTFT 记录与调度画像；失败 attempt 不得污染样本，也不得新增请求重放。
 - Codex `x-codex-turn-state` 单值 48 KiB 保护及 Nginx 响应头缓冲约束。
 - 当前未登录首页、帮助页、导航和独立 `infinite-canvas` 工作台部署契约。
 
-普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配，额度卡页面的 CCSwitch 只读接入教程仍保留。当前升级以官方 `v0.2.15` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key、提链 Key 和媒体入口继续经过同一模型白名单。
+普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配。额度卡 CCSwitch 教程与提链 Key 均为历史内容，当前入口和鉴权路径已移除。当前升级以官方 `v0.2.15` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key 和媒体入口继续经过同一模型白名单。
 
 ## 不可破坏契约
 
 - 媒体创建最多提交一次；明确失败、取消或空结果释放冻结余额，未知终态不擅自退款，成功只核销一次。
 - Seedance 视频路径维持用户已确认的官方请求后计费，不接入私有媒体预冻结。
-- 额度卡和余额变更必须经服务端鉴权、幂等键、事务和审计；客户端参数不是金额事实来源。
+- 历史额度卡余额变更仅按服务端鉴权、幂等键、事务和审计记录核对；当前运行时不再接受额度卡参数。
 - 积分用户/管理员界面严格隔离，策略按约定的次日生效；服务端开关关闭时入口和 API 同时隐藏/拒绝。
 - 官方请求失败、断流、超时或 5xx 不得被私有旁路泛化成重放；只允许官方明确的有界重试。
 - 根路径首页和 `/help/` 帮助中心由记录中的静态资产发布；修改镜像不会自动更新宿主静态页。
@@ -44,7 +46,7 @@
 
 `2026-10-10` 只读核验的生产基线为 `ghcr.io/hxly520/sub2api:0.2.11-52t.3`、healthy、重启数为 0，私有起点 commit 为 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`。本轮目标固定为官方 `v0.2.15` peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`；merge-base 为官方 `v0.2.11` commit `96f4c115c9749078f90cbf210a01d39baf3f53b6`。候选分支 `codex/upgrade-v0.2.15-compat` / 版本 `0.2.15-52t.1` 已完成合并、兼容复核、测试、PR、Release、GHCR 和服务器缓存；发布源码/Tag/OCI revision 为 `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`。生产切换仍由维护者执行。官方 tag 树内 `VERSION` 滞后为 `0.2.14`，私有版本必须主动设置为候选完整版本；Go 工具链使用 `1.27.2`。
 
-官方新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql` 按完整文件名共存，两份 `241` 不覆盖、不合并、不重命名。既有私有迁移保持原名与 checksum；迁移 runner 的 checksum 为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256，不能用原始文件字节校验值替代。隔离数据库验证和回滚边界未确认前不得发布。重点验证官方充值赠送/折扣的支付金额、入账余额与退款关系，以及普通 Key 删除兼容对提链退款和在途结算的影响；不得把 `kimi-k3` 缺失 usage 自动视为修复，未经独立批准不得估计扣费或历史追扣。
+官方新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql` 按完整文件名共存，两份 `241` 不覆盖、不合并、不重命名。既有私有迁移保持原名与 checksum；迁移 runner 的 checksum 为 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256，不能用原始文件字节校验值替代。隔离数据库验证和回滚边界未确认前不得发布。重点验证官方充值赠送/折扣的支付金额、入账余额与退款关系；历史提链退款和在途结算仅做数据审计，不得把 `kimi-k3` 缺失 usage 自动视为修复，未经独立批准不得估计扣费或历史追扣。
 
 沿用既有 full GoReleaser/GHCR 发布方式，`SIMPLE_RELEASE=false`，发布策略为 `image-update-required`。本轮仅构建并缓存 Sub2API 候选镜像；生产由维护者手工仅切换 `sub2api` 服务，不替换积分、生图工作台等其他容器，不修改生产数据库、Redis、Nginx 或宿主首页/帮助静态资产。
 

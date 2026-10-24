@@ -62,12 +62,6 @@ declare module 'vue-router' {
     requiresPointsSystem?: boolean
 
     /**
-     * Whether this route requires an explicit Link Card access decision.
-     * Unknown and failed checks are denied.
-     */
-    requiresLinkCards?: boolean
-
-    /**
      * 是否要求订阅功能开关（subscription_enabled，opt-out）未被显式关闭
      * @default false
      */

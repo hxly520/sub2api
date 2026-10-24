@@ -168,22 +168,6 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
 		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path)
-		if apiKey.IsLinkKey() && apiKey.LinkState != service.LinkCardStateActive {
-			// A depleted prepaid key must remain usable for read-only endpoints
-			// (usage and async task polling), just like an exhausted standard key.
-			// Generation requests still fail in the billing section below.
-			if apiKey.LinkState == service.LinkCardStateDepleted && skipBilling {
-				// continue through the read-only path
-			} else if apiKey.LinkState == service.LinkCardStateDepleted {
-				abortWithAPIKeyQuotaError(c)
-				return
-			} else {
-				MarkIngressRejected(c, IngressRejectAPIKeyDisabled)
-				AbortWithError(c, 401, "LINK_CARD_INACTIVE", "Link card is not active")
-				return
-			}
-		}
-
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
 		if cfg.RunMode == config.RunModeSimple {
@@ -207,7 +191,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 
 		// 倍率自省不需要订阅数据；/v1/usage 仍保留原有订阅读取行为。
-		if isSubscriptionType && subscriptionService != nil && !billingInfoRequest && !apiKey.IsLinkKey() {
+		if isSubscriptionType && subscriptionService != nil && !billingInfoRequest {
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
@@ -271,7 +255,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					AbortWithError(c, status, code, validateErr.Error())
 					return
 				}
-			} else if !apiKey.IsLinkKey() {
+			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
 					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")

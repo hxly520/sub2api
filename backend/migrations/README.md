@@ -2,6 +2,9 @@
 
 ## Overview
 
+> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+
+
 This directory contains SQL migration files for database schema changes. The migration system uses SHA256 checksums to ensure migration immutability and consistency across environments.
 
 ## Migration File Naming
@@ -48,19 +51,19 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 
 ## Private Migration Registry
 
-- `193_points_balance_credit_ledger.sql` and `194_link_cards.sql` are private migrations confirmed in production by `docs/PRODUCTION_OPERATIONS_CN.md`.
-- `194_link_cards.sql` entered production on `2026-08-08`. Its SHA256 checksum over trimmed content is `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`.
+- `193_points_balance_credit_ledger.sql` and the historical `194_link_cards.sql` are immutable private migrations recorded in `docs/PRODUCTION_OPERATIONS_CN.md`; the link-card migration is retained for audit only and is not used by the current runtime.
+- Historical `194_link_cards.sql` entered production on `2026-08-08`; preserve the original file and SHA256 checksum over trimmed content (`7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`) for audit. Do not execute it for the current runtime.
 - Upstream `v0.1.175` adds `194_add_usage_log_upstream_response_model.sql`, `194_channel_monitor_v2.sql`, `195_add_usage_log_upstream_model_mismatch_index_notx.sql`, `195_channel_monitor_mode.sql`, the Channel Monitor V2 sequence through `206_channel_monitor_v2_privacy_defaults.sql`, and pricing/config migrations `217_group_video_model_prices.sql` through `220_clear_non_grok_video_generation_config.sql`.
 - Upstream `v0.1.176` adds `221_group_model_pricing.sql`, which adds the group-level long-context pricing switch and per-model JSONB pricing overrides. The migration is forward-only and must be applied by the image/Compose upgrade after a database backup; it is not eligible for binary hot update.
 - Upstream `v0.1.183` adds these migrations: `222_group_usage_daily_rollups.sql`, `223_group_usage_rollup_timezone.sql`, `224_user_platform_quotas_add_cn_providers.sql`, `225_backfill_codex_fingerprint_seed.sql`, `225_channel_model_time_pricing.sql`, `226_add_usage_log_effective_model_indexes_notx.sql`, `226_channel_monitor_quota_mode.sql`, `227_composite_routes_add_cn_providers.sql`, `228_channel_pricing_multipliers.sql`, `229_plugins.sql`, and `230_plugin_artifacts.sql`. The set includes duplicate numeric prefixes (`225` and `226`); all files are independent migrations and must be tracked by complete filename and checksum.
-- Upstream `v0.2.5` adds `235_group_model_allowlist.sql`, `236_group_model_allowlist_repair.sql`, `237_add_minimax_platform.sql`, `238_opencode_go_platform.sql`, and `238_purge_unlimited_user_platform_quotas.sql`. Both `238` files are independent and coexist by complete filename. Migration `235` promotes the legacy model-list setting into request admission; before switching the image, audit every group whose legacy list is enabled and confirm all production models used by standard keys, link-card keys, and media requests are allowed.
-- The three `194` migrations coexist with the private migration: `194_add_usage_log_upstream_response_model.sql`, `194_channel_monitor_v2.sql`, and `194_link_cards.sql`. The runner identifies and records migrations by the complete filename plus checksum, never by the numeric prefix alone.
+- Upstream `v0.2.5` adds `235_group_model_allowlist.sql`, `236_group_model_allowlist_repair.sql`, `237_add_minimax_platform.sql`, `238_opencode_go_platform.sql`, and `238_purge_unlimited_user_platform_quotas.sql`. Both `238` files are independent and coexist by complete filename. Migration `235` promotes the legacy model-list setting into request admission; before switching the image, audit every group whose legacy list is enabled and confirm all production models used by standard keys and media requests are allowed; link-card keys are historical and disabled.
+- The three `194` migrations coexist by complete filename; `194_link_cards.sql` is historical and audit-only: `194_add_usage_log_upstream_response_model.sql`, `194_channel_monitor_v2.sql`, and `194_link_cards.sql`. The runner identifies and records migrations by the complete filename plus checksum, never by the numeric prefix alone.
 - Keep every filename and SQL body unchanged. Lexical ordering applies among duplicate numeric prefixes (`194_add...`, `194_channel...`, `194_link...`, then `195_add...`, `195_channel...`); an already-applied private migration is checksum-validated and skipped while each missing upstream file is applied independently.
 - The `v0.2.5-52t.1` compatibility release is `image-update-required`. Back up PostgreSQL and audit `schema_migrations` by full filename/checksum, including the complete `235-238` set and both `238` files, before the maintainer performs the Compose image switch; do not install this migration set through binary hot update.
 - Any correction must use a new, unique migration filename after the current migration set. Never edit, rename, delete, or renumber an applied migration.
-- Application rollback does not remove link-card tables or ledger rows. Before rolling back to a binary that does not understand `key_type`, disable the feature, freeze and disable every link key, invalidate auth caches, drain in-flight requests, and reconcile funds. Preserve operations and ledger rows for audit.
+- Historical rollback records do not remove link-card tables or ledger rows. The feature is already disabled and its tables/rows are retained only for audit; do not re-enable link-card routes or keys. Preserve operations and ledger rows when auditing old data.
 
-The authoritative product and release checklist is [`../../docs/LINK_CARDS_CN.md`](../../docs/LINK_CARDS_CN.md). Production application status is recorded only in [`../../docs/PRODUCTION_OPERATIONS_CN.md`](../../docs/PRODUCTION_OPERATIONS_CN.md).
+The former link-card product checklist is retired. Historical production application status is recorded in [`../../docs/PRODUCTION_OPERATIONS_CN.md`](../../docs/PRODUCTION_OPERATIONS_CN.md) and [`../../docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`](../../docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md).
 
 ## Important Rules
 

@@ -2,6 +2,8 @@
 
 本文档是本私有分支的维护入口。它记录官方 Sub2API 之外的兼容扩展、代码入口、不可破坏约束和升级流程，供后续维护者在合并官方新版本时使用。
 
+> **额度卡状态（2026-10-24）**：提链/额度卡功能已停用，并已从当前运行时代码、路由、前端页面和部署入口移除。本文中出现的相关接口、配置、账本、验收和回滚步骤均为历史记录或迁移审计资料，不代表当前可用能力；`194_link_cards.sql` 仅保留原文件、原 checksum 和迁移历史，不再由当前运行时执行。
+
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
 本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
@@ -269,9 +271,9 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 
 后续官方升级不得把积分余额发放改成前端请求参数直写用户余额，不得恢复已删除的积分兑换流程，也不得用浮点数处理积分比例、消费金额、百分比或奖励金额。
 
-### 3.7 提链与额度卡中心
+### 3.7 提链与额度卡中心（历史记录，已停用）
 
-- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.2.15-52t.1` 候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口、悬停面板视口保护、官方模型白名单和资金事务边界；新增普通 Key 删除后计费必须回归提链在途结算/退款，不能触发普通用户余额扣款回退。具体提交必须由最终候选 commit、Tag 与 OCI revision 固定，不能把未提交工作树或旧候选哈希写成已发布源码。实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
+- 完整产品、资金、接口、迁移、升级和回滚契约见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。历史生产验收仍以 `LINK_CARDS_ACCEPTANCE_20260808_CN.md` 为证据；当前 `v0.2.15-52t.1` 候选继续保留公共会话 404 修复、激活防爆破、原生使用记录字段、刷新状态收口、悬停面板视口保护、官方模型白名单和资金事务边界；新增普通 Key 删除后计费必须回归提链在途结算/退款，不能触发普通用户余额扣款回退。具体提交必须由最终候选 commit、Tag 与 OCI revision 固定，不能把未提交工作树或旧候选哈希写成已发布源码。实际运行开关与验收证据以 [`PRODUCTION_OPERATIONS_CN.md`](PRODUCTION_OPERATIONS_CN.md) 为准。
 - 提链 Key 复用 `api_keys`，以 `key_type=link` 与普通 `standard` Key 严格隔离；分组、模型、渠道定价、账号调度、协议转换和 `usage_logs` 全部复用 Sub2API 权威链路，不维护第二套价格或模型数据。
 - 注册用户入口为 `/link-cards`，管理员入口为 `/admin/link-cards`，公共额度卡入口为 `https://key.52token.org/card`。注册用户和管理员沿用 Sub2API 布局与主题，公共页默认只允许输入完整 Key；激活后继续保留“额度摘要 -> 使用记录 -> 接入教程”的生产布局，不新增独立大型 Key 面板。使用记录标题下方的“脱敏 Key · 分组名称”后增加小型复制图标，点击后复制有效短期 no-store 资料响应返回的完整 Key，并在页面顶部显示绿色成功 Toast；正文与示例不得渲染真实 Key，复制失败只报错并保留当前会话。
 - 普通 API Key 页的 CCSwitch 自动导入已恢复官方实现；额度卡页面仅保留只读 CCSwitch 接入教程。
@@ -456,7 +458,7 @@ go build ./cmd/server
 2. 构建带 commit 的不可变镜像标签，并记录 digest；浮动版本标签不能作为唯一回滚点。
 3. Sub2API 镜像按运维约定只上传/导入服务器，是否切换由维护窗口决定。
 4. 积分镜像可在备份 `points` schema 并记录旧镜像后独立更新，但必须断言 Sub2API 容器 ID、启动时间和镜像引用未变；一次性历史回算不得随更新重跑。
-5. 提链当前生产已完成全体用户开放；后续升级仍须按 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md) 复核资金、并发、迁移和三端门禁，不得因镜像已运行而跳过。
+5. 提链当前生产已完成全体用户开放；后续升级仍须按 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md) 复核资金、并发、迁移和三端门禁，不得因镜像已运行而跳过。
 6. 切换前备份 compose 和数据库；只修改目标服务的镜像 tag，不顺带改账号、渠道价格或网关配置。
 7. 切换后检查版本、health、restart、migration、关键路由和错误日志。
 8. 回滚时恢复旧不可变镜像；如果新迁移不向后兼容，按预先准备的数据回滚方案处理，不能只改镜像。存在提链 Key 时先关闭入口、冻结和禁用全部提链 Key、清空在途并对账，禁止让不识别 `key_type` 的旧镜像接管活动 Key。
@@ -493,7 +495,7 @@ go build ./cmd/server
 
 1. 本文档的功能清单、代码入口和不可破坏约束。
 2. `docs/MEDIA_API_CN.md`、`docs/PRODUCTION_OPERATIONS_CN.md` 或对应部署文档中的对外契约与运行边界。
-3. 涉及提链/额度卡中心时同步更新 `docs/LINK_CARDS_CN.md`；配置示例和迁移说明也必须同步。
+3. 涉及提链/额度卡中心时同步更新 `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`；配置示例和迁移说明也必须同步。
 4. 对应测试矩阵。
 
 不得在文档中保存生产凭据、真实 API Key、支付密钥、Worker Secret、数据库连接串或 SSH/GitHub Token。

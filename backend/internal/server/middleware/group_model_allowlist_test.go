@@ -161,29 +161,6 @@ func TestGroupModelAllowlistJSONBodyAllowed(t *testing.T) {
 	}
 }
 
-func TestGroupModelAllowlistAppliesToLinkCardKeys(t *testing.T) {
-	apiKey := allowlistAPIKey(true, "gpt-5.4")
-	apiKey.KeyType = service.APIKeyTypeLink
-	apiKey.LinkState = service.LinkCardStateActive
-	router, calls := newGroupModelAllowlistTestRouter(apiKey, "/v1")
-
-	allowed := doJSON(t, router, http.MethodPost, "/v1/responses", `{"model":"gpt-5.4"}`)
-	if allowed.Code != http.StatusOK {
-		t.Fatalf("expected allowlisted link-card request to pass, got %d: %s", allowed.Code, allowed.Body.String())
-	}
-
-	denied := doJSON(t, router, http.MethodPost, "/v1/responses", `{"model":"gpt-4.1"}`)
-	if denied.Code != http.StatusNotFound {
-		t.Fatalf("expected unlisted link-card request to be denied, got %d: %s", denied.Code, denied.Body.String())
-	}
-	if !strings.Contains(denied.Body.String(), `"model_not_found"`) {
-		t.Fatalf("expected OpenAI error format, got %s", denied.Body.String())
-	}
-	if len(*calls) != 1 {
-		t.Fatalf("expected only the allowlisted link-card request to reach the handler, got %v", *calls)
-	}
-}
-
 func TestGroupModelAllowlistJSONBodyDeniedOpenAIFormat(t *testing.T) {
 	router, calls := newGroupModelAllowlistTestRouter(allowlistAPIKey(true, "claude-sonnet-4.5"), "/v1")
 
