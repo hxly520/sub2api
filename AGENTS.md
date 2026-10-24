@@ -4,12 +4,14 @@
 
 > **候选移除范围**：提链/额度卡已从当前候选运行时代码、路由、页面和部署入口移除，生产尚未切换/重新核验。历史接口、账本及开放证据只用于审计。`194_link_cards.sql` 保留原文件和 checksum，当前迁移 runner 按完整文件名跳过。
 
-## 当前候选（2026-10-24）
+## 当前已发布候选（2026-10-24，生产待人工切换）
 
 - 官方基线 `v0.2.18`：annotated tag object `de86961b627e48db75d61fff8c05535d44a00cbe`，peeled commit `ac1b8f1271be0d674fa6f074403c1410f30a3a81`。官方 tag 内 VERSION 为 `0.2.17`；私有版本为 `0.2.18-52t.1`，Go `1.27.3`。
 - 分支 `codex/upgrade-v0.2.18-no-linkcards`，私有起点为 `main` `6cd5468dff7b874647571b80f08002f51b8a9ea6`，merge-base 为官方 `v0.2.15` `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`。
 - 用户确认 Sub2API 提链和独立额度卡中心全部停用；本候选移除运行时代码、路由、菜单、页面、独立部署模板及专用计费。历史数据仅审计，不能重新启用。
 - 这是候选源码状态，不是生产已经切换或停用的证明。本轮测试、Release、镜像和服务器缓存状态见 [本轮交接](docs/RELEASE_V0_2_18_52T_1_CN.md)，无新证据的项目保持 `pending`。
+- PR #17 已合入 main；私有 annotated Tag `v0.2.18-52t.1`、源码与双平台 OCI revision 均为 `d16c14b135fe8de25ce73850db51040c1cd8d679`。精确 Tag Release run `40056966532` 的质量、安全、真实 PostgreSQL 回归、full 五平台归档和双架构 GHCR 全部通过；实际 GoReleaser `v2.19.0`。
+- 镜像 `ghcr.io/hxly520/sub2api:0.2.18-52t.1` 已核验并于 `2026-10-24 03:31 UTC` 缓存服务器，index 为 `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`。缓存前后五容器身份/状态完全一致；生产仍为 `0.2.15-52t.1`，未切换或触发迁移。246 保留现有生图 true/false 的代码与隔离 PostgreSQL 回归已通过；生产切换后仍须核验。
 
 ## 开始前必读
 

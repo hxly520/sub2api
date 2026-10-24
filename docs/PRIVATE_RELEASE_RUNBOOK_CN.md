@@ -6,9 +6,11 @@
 
 ### 当前候选总览（2026-10-24）
 
+**最终交付状态**：PR #17 已合入 main，精确 annotated Tag `v0.2.18-52t.1` / source `d16c14b135fe8de25ce73850db51040c1cd8d679` 已完成 Release `40056966532`，同 Tag 质量/安全与真实 PostgreSQL 门禁、full 五平台归档、双架构 GHCR 回读均通过。实际 GoReleaser `v2.19.0`。镜像已于 `2026-10-24 03:31 UTC` 缓存服务器，index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`；五个原运行容器前后身份严格不变，生产仍为 `0.2.15-52t.1`。以下生产切换和切换后验收仍由维护者执行，不将缓存等同上线。完整证据与人工命令见 [本轮交接](RELEASE_V0_2_18_52T_1_CN.md)。
+
 - 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
 - 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
-- 用户于 2026-10-24 确认保留分组生图开关现状（true/false 均不变）。官方 `246_enable_gemini_image_generation_groups.sql` 文件和原 checksum 不变；runner 对该精确 filename/hash 不执行开启开关的 SQL，首次仅在同一事务记录原 filename/checksum，已有记录继续核验，未知 hash 失败关闭；其他迁移照常。新增兼容改动的最终精确提交/Tag CI 与隔离 PostgreSQL 验证待完成，不继承此前提交的全绿证据。
+- 用户于 2026-10-24 确认保留分组生图开关现状（true/false 均不变）。官方 `246_enable_gemini_image_generation_groups.sql` 文件和原 checksum 不变；runner 对该精确 filename/hash 不执行开启开关的 SQL，首次仅在同一事务记录原 filename/checksum，已有记录继续核验，未知 hash 失败关闭；其他迁移照常。该改动已通过最终 PR 提交与精确 Tag 的真实 PostgreSQL、质量和安全门禁；不是引用旧提交结论，也未在生产执行迁移。
 - 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
 
 

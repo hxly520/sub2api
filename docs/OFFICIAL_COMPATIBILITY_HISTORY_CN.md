@@ -4,22 +4,25 @@
 
 历史只读生产基线（`2026-10-10`）为 `0.2.11-52t.3`，当时已发布并缓存的候选为 `0.2.15-52t.1`。以下各版本中“当前”“本轮”或 pending 仅代表该版本当时的审计状态，不能代替 2026-10-24 工作树验证或新的生产只读核验。
 
-> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+> **已发布镜像与生产边界（2026-10-24）**：`v0.2.18-52t.1` 已发布并仅缓存服务器；提链/额度卡已从该发布源码移除，但生产仍 `0.2.15-52t.1`，没有因发布或缓存而停用旧入口，尚未完成新版本生产业务验收。历史接口、配置、账本和回滚步骤仅留审计，不作为恢复旧产品的指令；`194_link_cards.sql` 原文件/checksum/历史保留，runner 精确跳过，历史 Key 和非用户资金媒体冻结不得回落普通余额。
 
-### 当前候选总览（2026-10-24）
+### 当前已发布候选与生产状态（2026-10-24）
 
-- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
-- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
-- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+- 官方基线 `v0.2.18`，私有发布 [`v0.2.18-52t.1`](https://github.com/hxly520/sub2api/releases/tag/v0.2.18-52t.1) 已完成；后端与积分构建工具链 Go `1.27.3`，积分业务和生产镜像不变。PR [#17](https://github.com/hxly520/sub2api/pull/17) 已合入 `main`；annotated Tag object 为 `7b92303550f0b645a545f5a2e0a7771fe1396cdd`，发布源码、Tag peeled commit 与双平台 OCI revision 均为 `d16c14b135fe8de25ce73850db51040c1cd8d679`。后续纯文档提交不改变该不可变发布身份。
+- 最终 PR HEAD `1f2b4158bc3c7874b860d47f4cc18ccf3d10b400` 的 [CI 40056021267](https://github.com/hxly520/sub2api/actions/runs/40056021267) 与 [安全扫描 40056021225](https://github.com/hxly520/sub2api/actions/runs/40056021225) 全通过；精确 Tag [Release 40056966532](https://github.com/hxly520/sub2api/actions/runs/40056966532) 18/18 jobs 成功，包含同 Tag 质量/安全与隔离 PostgreSQL 回归。实际 GoReleaser `v2.19.0`，`SIMPLE_RELEASE=false`、`DRY_RUN=false`；五平台归档、checksums 与双架构 GHCR 已回读核验。linux/amd64 归档完整下载校验通过，其余四项 API digest 与 checksums 一致，未宣称全部完整下载。
+- 镜像 `ghcr.io/hxly520/sub2api:0.2.18-52t.1`，index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`，amd64 image/config ID `sha256:349f72bd5cf69d4f139412ac95cdc662fd7cb93cc52d571bf428800bee402101`。北京时间 **2026-10-24 11:30:30–11:31:06**（UTC `03:30:30–03:31:06Z`）服务器仅 pull 缓存，并通过无网络、只读、无挂载、覆盖 entrypoint 的 `-version` / `pg_dump --version` 冒烟；五生产容器的 ID、镜像、启动时间、健康状态、重启数严格不变。
+- 生产仍运行 `ghcr.io/hxly520/sub2api:0.2.15-52t.1`、healthy、restart `0`；积分既有 restart `1` 未变，工作台没有 healthcheck，不误写为 healthy。没有执行 Compose、生产迁移或重启，未修改 PostgreSQL、Redis、Nginx、其他容器或宿主首页/帮助静态资产。镜像缓存不等于生产切换，人工切换及新版本生产业务验收仍待维护者执行。
+- 本发布移除 Sub2API 提链及独立额度卡中心运行时；`194_link_cards.sql` 原文件/checksum、迁移历史和账本仅审计保留，runner 精确跳过，旧 Key/非用户资金媒体冻结失败关闭，不扣退创建者普通余额。生产旧开关未修改，不能把源码移除写成生产已停用。保留积分/签到、既有媒体/视频冻结释放核销、统一媒体接口、TTFT、Codex 48 KiB 头部保护、可盈支付、首页与帮助契约；Seedance 维持官方后扣费。
+- 用户确认分组生图开关 true/false 均保留。官方 `246_enable_gemini_image_generation_groups.sql` 文件/checksum 不改，runner 仅对精确文件名及已审查 hash 不执行开启 SQL，首次同事务记录原身份，未知 hash 失败关闭；最终提交及同 Tag PostgreSQL 回归通过。生产尚未执行新迁移。详细证据与人工切换边界见 [v0.2.18 发布交接](RELEASE_V0_2_18_52T_1_CN.md)。
 
 
-历史 v0.2.15 发布证据（不代替 2026-10-24 当前工作树验收）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
+历史 v0.2.15 发布证据（仅代表 2026-10-10 当时状态，不代替本轮 v0.2.18 验证）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 当时已发布并缓存服务器，当时生产仍为 0.2.11-52t.3，等待人工切换；2026-10-24 状态以上方最新核验为准。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 1. 版本总表
 
 | 官方基线 | 官方 Release commit | 私有状态 | 私有兼容节点/说明 |
 | --- | --- | --- | --- |
-| `v0.2.18` | `ac1b8f1271be0d674fa6f074403c1410f30a3a81` | `0.2.18-52t.1` candidate | 退役提链/额度卡；保留积分、媒体、TTFT、可盈支付和现有首页/帮助；当前门禁/产物以本轮交接为准，生产未切换。 |
+| `v0.2.18` | `ac1b8f1271be0d674fa6f074403c1410f30a3a81` | `v0.2.18-52t.1` released and cached; manual switch pending | PR #17 已合入；源码/Tag/双平台 revision `d16c14b135fe8de25ce73850db51040c1cd8d679`；Release `40056966532` 18/18成功，full资产与GHCR核验并缓存，246保留现状；生产仍v0.2.15。 |
 | `v0.1.164` | `cd8bb98c44303b2c8f04c0da340447c992f0cb7d` | completed (historical) | 私有 `d5bea143b` 合并；保留聚合分组、媒体冻结、积分和首页谱系。 |
 | `v0.1.168` | `99c8e4bf7564823bafbab369acab6539e734c1bb` | completed (historical) | 私有 `d30c42da` 合并；后续由 `9f1b6bae`、`e4179147`、`55ac503b`、`7e598fbb` 补齐媒体、积分同库和首页。 |
 | `v0.1.169` | `26d894ef4f50645a4bf1030e378ac892f17d0223` | completed (historical) | 私有 `3da18b9dd` 合并；保留官方安全修复、定价资源和调度语义，积分/额度卡独立兼容。 |
@@ -30,8 +33,8 @@
 | `v0.1.183` | `e8cb019fabf8b55199436229044cbf9aa7a82564` | `.4` released; superseded in production | annotated tag object `c21fd3382a1c39fe491a96ac6780bac927327ae4`；双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 从私有 `ceb2326d740235852d9d81bbca6bee669a342130` 合入官方源码。该版本 `backend/cmd/server/VERSION=0.1.183-52t.4`，私有发布提交与 Tag 均指向 `b21d92c5239a2aabd47d867e3b3bbb311d2b4272`，GitHub run `33105459243` 全绿，Release、manifest、GHCR 双架构镜像和服务器缓存均已完成，manifest digest 为 `sha256:02ae7c6248110ddb862358701fb912202da9429ec5a535a8918c1a9bf7bf95bf`。维护者曾于 `2026-08-28 07:26:27 +08` 完成人工切换并通过长上下文计费冒烟，后续已由 `v0.2.1-52t.3` 取代。`v0.1.183-52t.3` 因 lint 门禁失败且未生成 Release 或镜像，只保留失败证据。 |
 | `v0.2.1` | `ab99d56e9626e6cd731592dae8553c9758a0efa2` | `v0.2.1-52t.3` released; superseded by `v0.2.5-52t.1` | `.2` 完成首轮兼容发布，`.3` 在同一官方基线上恢复 KeyingPay V2；`.3` commit `15f24da8b0ed607a864dd4cc81f24bc2ee15b4d8`，GHCR manifest `sha256:f27bbe666ae8cb582adc6755c27b29ce2d4ba95dc0156546788b1d236ce90ff0`。`2026-09-17` 服务器只读证据当时确认该版本运行；后续 `v0.2.5-52t.1` 已切换，当前运行状态见最新运维核验。 |
 | `v0.2.5` | `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea` | `v0.2.5-52t.1` released; superseded in production | 从私有 `main` `19d74426a7d41183b128e8aa3b08d79d5d89d533` 合并，官方 tag 后 53 个未发布提交只回移 `611c30f04` grpc 安全修复，其余不纳入。发布源码提交、私有 annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿，GHCR manifest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`。其历史切换和冒烟记录继续保留。 |
-| `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.3` production baseline | `2026-10-10` 只读确认 `.3` 运行，私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`；GHCR manifest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，healthy、restart count `0`。`.1` 的早期候选记录保留在下方，仅代表当时状态。 |
-| `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` released and cached; manual switch pending | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。PR #16 已合入；兼容审查、测试、安全、Release 与服务器缓存全部完成，源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`；尚未生产切换。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
+| `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.3` historical production baseline; superseded | `2026-10-10` 只读确认 `.3` 运行，私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`；GHCR manifest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，healthy、restart count `0`。`.1` 的早期候选记录保留在下方，仅代表当时状态。 |
+| `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` current production (2026-10-24 read-only) | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。PR #16 已合入；兼容审查、测试、安全、Release 与服务器缓存全部完成，源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`；后续维护者已切换，2026-10-24 只读核验仍为该版本，healthy、restart 0。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
 
 ### v0.2.15 历史兼容候选（不代表当前工作树）
 

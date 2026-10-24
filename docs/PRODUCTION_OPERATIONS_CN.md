@@ -2,30 +2,35 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+> **已发布镜像与生产边界（2026-10-24）**：`v0.2.18-52t.1` 已发布并仅缓存服务器；提链/额度卡已从该发布源码移除，但生产仍 `0.2.15-52t.1`，没有因发布或缓存而停用旧入口，尚未完成新版本生产业务验收。历史接口、配置、账本和回滚步骤仅留审计，不作为恢复旧产品的指令；`194_link_cards.sql` 原文件/checksum/历史保留，runner 精确跳过，历史 Key 和非用户资金媒体冻结不得回落普通余额。
 
-### 当前候选总览（2026-10-24）
+### 当前已发布候选与生产状态（2026-10-24）
 
-- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
-- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
-- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+- 官方基线 `v0.2.18`，私有发布 [`v0.2.18-52t.1`](https://github.com/hxly520/sub2api/releases/tag/v0.2.18-52t.1) 已完成；后端与积分构建工具链 Go `1.27.3`，积分业务和生产镜像不变。PR [#17](https://github.com/hxly520/sub2api/pull/17) 已合入 `main`；annotated Tag object 为 `7b92303550f0b645a545f5a2e0a7771fe1396cdd`，发布源码、Tag peeled commit 与双平台 OCI revision 均为 `d16c14b135fe8de25ce73850db51040c1cd8d679`。后续纯文档提交不改变该不可变发布身份。
+- 最终 PR HEAD `1f2b4158bc3c7874b860d47f4cc18ccf3d10b400` 的 [CI 40056021267](https://github.com/hxly520/sub2api/actions/runs/40056021267) 与 [安全扫描 40056021225](https://github.com/hxly520/sub2api/actions/runs/40056021225) 全通过；精确 Tag [Release 40056966532](https://github.com/hxly520/sub2api/actions/runs/40056966532) 18/18 jobs 成功，包含同 Tag 质量/安全与隔离 PostgreSQL 回归。实际 GoReleaser `v2.19.0`，`SIMPLE_RELEASE=false`、`DRY_RUN=false`；五平台归档、checksums 与双架构 GHCR 已回读核验。linux/amd64 归档完整下载校验通过，其余四项 API digest 与 checksums 一致，未宣称全部完整下载。
+- 镜像 `ghcr.io/hxly520/sub2api:0.2.18-52t.1`，index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`，amd64 image/config ID `sha256:349f72bd5cf69d4f139412ac95cdc662fd7cb93cc52d571bf428800bee402101`。北京时间 **2026-10-24 11:30:30–11:31:06**（UTC `03:30:30–03:31:06Z`）服务器仅 pull 缓存，并通过无网络、只读、无挂载、覆盖 entrypoint 的 `-version` / `pg_dump --version` 冒烟；五生产容器的 ID、镜像、启动时间、健康状态、重启数严格不变。
+- 生产仍运行 `ghcr.io/hxly520/sub2api:0.2.15-52t.1`、healthy、restart `0`；积分既有 restart `1` 未变，工作台没有 healthcheck，不误写为 healthy。没有执行 Compose、生产迁移或重启，未修改 PostgreSQL、Redis、Nginx、其他容器或宿主首页/帮助静态资产。镜像缓存不等于生产切换，人工切换及新版本生产业务验收仍待维护者执行。
+- 本发布移除 Sub2API 提链及独立额度卡中心运行时；`194_link_cards.sql` 原文件/checksum、迁移历史和账本仅审计保留，runner 精确跳过，旧 Key/非用户资金媒体冻结失败关闭，不扣退创建者普通余额。生产旧开关未修改，不能把源码移除写成生产已停用。保留积分/签到、既有媒体/视频冻结释放核销、统一媒体接口、TTFT、Codex 48 KiB 头部保护、可盈支付、首页与帮助契约；Seedance 维持官方后扣费。
+- 用户确认分组生图开关 true/false 均保留。官方 `246_enable_gemini_image_generation_groups.sql` 文件/checksum 不改，runner 仅对精确文件名及已审查 hash 不执行开启 SQL，首次同事务记录原身份，未知 hash 失败关闭；最终提交及同 Tag PostgreSQL 回归通过。生产尚未执行新迁移。详细证据与人工切换边界见 [v0.2.18 发布交接](RELEASE_V0_2_18_52T_1_CN.md)。
 
 
 最新生产事实以本文件第 0 节最新日期的只读核验为准；历史 v0.2.15 发布交接见 [v0.2.15-52t.1 发布记录](RELEASE_V0_2_15_52T_1_CN.md)；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
 
 ## 0. 最近已核验生产事实（运行态只读核验至 2026-10-24，其余按各自日期）
 
-### 0.17 2026-10-24 v0.2.18 候选与生产只读核验
+### 0.17 2026-10-24 v0.2.18 已发布并缓存；生产仍 v0.2.15
 
-- 当前生产为 `ghcr.io/hxly520/sub2api:0.2.15-52t.1`，容器 `675cf9c85293...`、2026-10-17 启动、healthy、restart 0。积分、infinite-canvas、PostgreSQL 17.8、Redis 8 未改动。
-- 用户确认本候选取消 Sub2API 提链与独立额度卡中心全部功能。源码/路由/前端入口/专用计费已移除，194 保留审计且 runner 精确跳过；旧 Key 与历史非用户资金媒体 hold 必须失败关闭，不能扣退创建者普通余额。
-- 数据库只读事务核验旧 Key 共 17（1 depleted/quota_exhausted，16 refunded/disabled），无 active Key、在途储备合计0、无独立额度卡资金源媒体 hold；旧开关仍 `enabled=true` / `development_mode=false`，所以生产尚未因为候选源码改动而停用。未修改开关、账单、余额或Nginx。
-- 194 原 checksum 与仓库一致；本次新增官方242_group_i18n至246五项尚未应用。生产2个Gemini分组生图开关分别关闭/开启；官方246默认将已有Gemini/Antigravity设为开启，已向维护者确认切换边界。
-- SSH接入正常；磁盘34GiB、已用18GiB、可用14GiB。只读结果与后续构建、镜像缓存、手工切换状态见 [v0.2.18交接](RELEASE_V0_2_18_52T_1_CN.md)，不得复用v0.2.15旧测试证据。
+- PR #17 已合入；最终 PR HEAD `1f2b4158bc3c7874b860d47f4cc18ccf3d10b400` 的 CI `40056021267` 和安全扫描 `40056021225` 全通过，精确 Tag Release `40056966532` 18/18 jobs成功。发布源码、Tag peeled commit、双平台 OCI revision 为 `d16c14b135fe8de25ce73850db51040c1cd8d679`，annotated Tag object `7b92303550f0b645a545f5a2e0a7771fe1396cdd`。实际 GoReleaser `v2.19.0`，full五平台归档和双架构GHCR已发布/回读；详细资产及平台digest见 [本轮交接](RELEASE_V0_2_18_52T_1_CN.md)。
+- 北京时间 `2026-10-24 11:30:30–11:31:06`（UTC `03:30:30–03:31:06Z`）仅拉取 `ghcr.io/hxly520/sub2api:0.2.18-52t.1`。index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`、amd64 image ID `sha256:349f72bd5cf69d4f139412ac95cdc662fd7cb93cc52d571bf428800bee402101`、OCI revision/version/source与本地证据一致；无网络、只读、无挂载、覆盖entrypoint的 `-version` 和 `pg_dump --version` 冒烟成功。没有启动候选默认业务或连接数据库。
+- 前后五容器ID、镜像、启动时间、运行/健康状态和重启数严格相同。生产仍 `ghcr.io/hxly520/sub2api:0.2.15-52t.1`，容器 `675cf9c85293...`，`2026-10-17T00:46:30.410334515Z` 启动，healthy、restart `0`；image ID仍 `sha256:2f65c62b25a968962085826d44dfe7f5f410e32febf09e1e461654be363313fa`。积分既有restart `1` 未变；工作台无healthcheck（运行中，不宣称healthy）；PostgreSQL17.8和Redis8未变。
+- 用户确认取消Sub2API提链及独立额度卡中心。发布源码/路由/前端/专用计费已移除，194原文件/checksum留审计且runner精确跳过；旧Key和非用户资金媒体hold失败关闭，不扣退普通余额。先前只读数据库审计为旧Key17个（1 depleted/quota_exhausted，16 refunded/disabled），无active、储备合计0、无独立额度卡资金媒体hold；生产旧开关仍 enabled=true / development_mode=false。缓存不应用新代码或改开关，不能称生产旧入口已停用。
+- 194原checksum匹配；新增官方242_group_i18n至246五项尚未应用生产。用户明确保留生图开关true/false，新runner仅对246精确文件名/hash保留配置，首次同事务记录原身份，不执行开启SQL；原SQL/checksum不改，未知hash失败关闭。最终提交及同Tag PostgreSQL回归通过；生产迁移/开关实际效果待人工切换后另验，不把隔离回归视作生产执行。
+- 缓存前根盘34GiB、已用约18GiB、可用约14GiB。首次只读预检因工作台缺Health字段停止、未pull；仅修正本地可选字段采集模板后完成缓存，未放宽其他门禁。原始脱敏证据保存在仓库外 `output/upgrade-plans/v218-release-*`、`v218-server-cache-precheck-failure.json`、`v218-server-cache-evidence.json`；不保存凭据。
+- 未执行Compose、生产替换/重启、迁移或数据写入，未修改Nginx、Redis、其他容器及宿主首页/帮助静态文件。新版本生产业务验收尚未进行；维护者备份后手工仅切换sub2api，再验收健康、登录、普通Key/流式usage、长上下文计费、可盈支付、积分、媒体/视频及退役Key失败关闭。本发布仍为 `image-update-required`，不用后台热更新代替人工Compose。
 
+### 0.0 历史补充快照（2026-08-02/08-27，非当前运行态）
 
-> 2026-10-24 本次仅修改候选源码和文档，没有切换或重新核验生产。下方 0.3/0.4/0.6/0.8 等带日期的提链开放、Nginx、迁移和资金记录均已被当前候选的产品移除边界取代，仅保留历史证据；不执行其启用、发行、迁移或回滚操作。生产旧 Key/在途与独立入口的实际状态仍须维护者切换前只读核验。
-
+> 以下提链开放、Nginx、迁移、资金和容器快照只留历史证据；“当前”仅代表其日期，不覆盖上方2026-10-24核验，不执行恢复旧产品的操作。生产旧入口/开关未因发布或缓存而停用，效果须在人工切换后另验。
 - 切换前只读快照：Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；当时拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。该快照已由 0.13 的实际运行态记录覆盖。官方网关语义与长上下文计费修复随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存；失败候选 `.3` 没有 Release 或镜像。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
 - 积分中心与签到门禁均为全体模式：`POINTS_USER_ACCESS_MODE=all`、`POINTS_USER_PREVIEW_IDS=`、`POINTS_CHECKIN_ACCESS_MODE=all`、`POINTS_CHECKIN_PREVIEW_IDS=`。当前 policy v7 于 `2026-08-02` 生效，按昨日原始成功余额消费使用 `1%-5% / 2%-5% / 3%-5% / 4%-5%` 四档，最低消费 `1 U`、每日一次、三个金额 cap 为 `NULL`；原 v5 保持不可变并于 `2026-08-03` 接管。
