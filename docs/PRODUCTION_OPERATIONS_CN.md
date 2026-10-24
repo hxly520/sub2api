@@ -2,9 +2,29 @@
 
 本文档记录私有 Sub2API 的生产拓扑、只读盘点基线、镜像发布边界和版本交接流程。它只保存脱敏事实，不保存密码、API Key、数据库连接、证书私钥、Worker Secret、完整环境变量或原始日志。
 
-最新生产事实以本文件第 0 节最新日期的只读核验为准；本轮升级交接见 [v0.2.15-52t.1 发布记录](RELEASE_V0_2_15_52T_1_CN.md)；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
+> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
 
-## 0. 当前生产事实（运行态只读核验更新至 2026-10-10，其余条目按各自日期）
+### 当前候选总览（2026-10-24）
+
+- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
+- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+
+
+最新生产事实以本文件第 0 节最新日期的只读核验为准；历史 v0.2.15 发布交接见 [v0.2.15-52t.1 发布记录](RELEASE_V0_2_15_52T_1_CN.md)；[2026-07-31 积分激活与后续候选交接](PRODUCTION_DEPLOYMENT_20260731_CN.md) 和 [2026-07-30 v0.1.168 候选与积分系统生产记录](PRODUCTION_DEPLOYMENT_20260730_CN.md) 只保留分日期的历史证据。后续排障不得把历史文档中的旧积分镜像、disabled policy 或迁移数量当成现状。
+
+## 0. 最近已核验生产事实（运行态只读核验至 2026-10-24，其余按各自日期）
+
+### 0.17 2026-10-24 v0.2.18 候选与生产只读核验
+
+- 当前生产为 `ghcr.io/hxly520/sub2api:0.2.15-52t.1`，容器 `675cf9c85293...`、2026-10-17 启动、healthy、restart 0。积分、infinite-canvas、PostgreSQL 17.8、Redis 8 未改动。
+- 用户确认本候选取消 Sub2API 提链与独立额度卡中心全部功能。源码/路由/前端入口/专用计费已移除，194 保留审计且 runner 精确跳过；旧 Key 与历史非用户资金媒体 hold 必须失败关闭，不能扣退创建者普通余额。
+- 数据库只读事务核验旧 Key 共 17（1 depleted/quota_exhausted，16 refunded/disabled），无 active Key、在途储备合计0、无独立额度卡资金源媒体 hold；旧开关仍 `enabled=true` / `development_mode=false`，所以生产尚未因为候选源码改动而停用。未修改开关、账单、余额或Nginx。
+- 194 原 checksum 与仓库一致；本次新增官方242_group_i18n至246五项尚未应用。生产2个Gemini分组生图开关分别关闭/开启；官方246默认将已有Gemini/Antigravity设为开启，已向维护者确认切换边界。
+- SSH接入正常；磁盘34GiB、已用18GiB、可用14GiB。只读结果与后续构建、镜像缓存、手工切换状态见 [v0.2.18交接](RELEASE_V0_2_18_52T_1_CN.md)，不得复用v0.2.15旧测试证据。
+
+
+> 2026-10-24 本次仅修改候选源码和文档，没有切换或重新核验生产。下方 0.3/0.4/0.6/0.8 等带日期的提链开放、Nginx、迁移和资金记录均已被当前候选的产品移除边界取代，仅保留历史证据；不执行其启用、发行、迁移或回滚操作。生产旧 Key/在途与独立入口的实际状态仍须维护者切换前只读核验。
 
 - 切换前只读快照：Sub2API 运行 `ghcr.io/hxly520/sub2api:0.1.176-52t.1`；当时拉取 `.4` 候选前后容器均为 `678a3b17cdb6...`、healthy、restart count `0`，旧 image ID `sha256:70b83c7356782ea58ffb4e9343d4c2f380b27afe154e5424f70f8841b957b042`、启动时间 `2026-08-27T12:57:44.952658064Z` 均未变化。该快照已由 0.13 的实际运行态记录覆盖。官方网关语义与长上下文计费修复随 `v0.1.183-52t.4` 构建、发布并拉入服务器缓存；失败候选 `.3` 没有 Release 或镜像。宿主首页和帮助中心仍是独立静态资产，镜像切换不会自动更新它们。
 - 积分服务运行 `ghcr.io/hxly520/sub2api-points:0.1.169-b64a0110ab2c`，revision `b64a0110ab2cb0fcf247b94be8f743ac770e8475`，容器 `85b668577d27...`，healthy、restart count `0`。registry digest、image ID、archive SHA256 分别为 `sha256:37949edae511fdd80533d4028dab137e44df4acd0a5797549cf432c25eaaafd2`、`sha256:f0d76d2b57d44eb4b4967e84b5bd55ff92290c2b364aa0a051f83ea0a1de8deb`、`592bfe5bbeff6127332c081b776613c9cf9670af3043b208d13d11c787293e26`。该镜像继承 `fc7ea1fe59c0` 的冲正净额修复并增加双精确父 Origin。
@@ -39,7 +59,7 @@
 - 不可变镜像为 `ghcr.io/hxly520/sub2api:0.2.5-52t.1`；多架构 manifest digest 为 `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`，amd64/arm64 manifest 分别为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`、`sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。
 - 服务器只执行 `docker pull ghcr.io/hxly520/sub2api:0.2.5-52t.1`。缓存的 amd64 image ID 为 `sha256:d674f0ceca50015dd69787312bc01664696e1a2f786b107dd18301884af6cb9b`，RepoDigest 与多架构 manifest 一致，OCI revision 为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`，创建时间为 `2026-09-17T15:26:39.538188747Z`。
 - 拉取前后，运行中 Sub2API 始终为容器 `c3458bdc8ce1...`、镜像 `ghcr.io/hxly520/sub2api:0.2.1-52t.3`、image ID `sha256:4da29aaf61487f94747ab2865ab5aaf2c23ead8ae0a28daf6764456510af12b6`、启动时间 `2026-09-07T23:35:28.690785751Z`、healthy、restart count `0`。积分、生图工作台、PostgreSQL、Redis 的容器 ID、镜像和运行状态也保持不变；未执行 Compose、容器替换、重启、迁移或配置修改。
-- 本候选固定为 `image-update-required`，后台在线热更新不适用。数据库备份、Compose 回滚点、维护者人工切换及切换后的健康、登录、API、积分、额度卡、媒体/视频、首页/帮助页冒烟均为 `pending`。
+- 本候选固定为 `image-update-required`，后台在线热更新不适用。数据库备份、Compose 回滚点、维护者人工切换及切换后的健康、登录、API、积分、媒体/视频、首页/帮助页冒烟均为 `pending`。
 
 ### 0.13 2026-08-28 新版本切换与 GPT-5.6 长上下文计费复核
 
@@ -89,10 +109,10 @@
 - Sub2API、积分服务、PostgreSQL、Redis 和 `infinite-canvas` 容器 ID、镜像和启动时间未变化，restart count 均为 0。Sub2API `/health`、积分 `/healthz` 和工作台根路径均返回 200，PostgreSQL `pg_isready`、Redis PING 和 `nginx -t` 通过；Nginx PID 仍为 `1814246`，未 reload。
 - `postgres_data`、`redis_data`、Sub2API `data`、旧 `images`、`image-reference-tests` 和 `ui-reference-20260731` 均确认仍在原路径。空的发布/传入目录继续保留，未扩大删除范围。
 
-### 0.3 2026-08-07 提链/额度卡开发候选边界
+### 0.3 2026-08-07 提链/额度卡开发候选边界（历史，仅审计）
 
 - 提链/额度卡中心已形成默认关闭的开发候选镜像，镜像已载入生产服务器缓存并启用专用 Nginx 入口；运行中的 Sub2API 尚未切换候选容器，迁移仍未执行。生产第 0 节所列 Sub2API、积分服务、容器和迁移事实除本节明确记录的 Nginx 平滑 reload 外不因该候选改变。
-- 产品与资金契约见 [`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
+- 产品与资金契约见 已停用的提链/额度卡历史契约（仅审计）。候选使用同一 Sub2API 进程和数据库，复用真实 `users.balance`、`groups`、`api_keys`、网关定价与 `usage_logs`；公共页面计划使用 `https://key.52token.org`，API Base 计划使用 `https://api.52token.org/v1`。
 - 候选默认 `link_cards_enabled=false`、开发模式开启且名单仅用户 ID `1`；管理员控制台受管理员认证保护。该默认值只是开发门禁，不是生产已验证状态，也不得据此推断用户 `1` 当前生产可访问。
 - `194_link_cards.sql` 仍是未应用候选迁移。当前生产 `public.schema_migrations` 仍以第 5 节已核验基线为准；在共享或生产数据库首次应用 `194` 前，必须完成数据库备份、隔离迁移、标准 Key 零回归、文本后扣超额完整入账、欠费禁用、媒体并发额度预留、退款在途收口和旧镜像回滚审查。
 - `2026-08-07` 本地已完成后端 `-tags=unit ./internal/...` 全量测试（并补齐既有 points `/auth/me` 契约字段）、提链定向 Go vet、Ent/Wire 重新生成、迁移测试、前端完整 Vitest、Vue TypeScript 检查和前端生产构建；覆盖原生分组交集、专属倍率覆盖、专属分组运行时撤权、发行/当前倍率换算、欠费充值自动恢复和普通 Key 隔离。`0.06x`、`0.07x`、`0.08x`、`0.09x` 的双向换算矩阵固定向上取一位小数，内部结算倍率不低于当前原生倍率。该记录不代表迁移或生产验收完成。
@@ -108,7 +128,7 @@
 - 自动 PostgreSQL 资金竞态测试已经完成；在用户 `1` 最小金额逐笔对账、非名单服务端拒绝和三端桌面/移动真实验收前，仍不得应用生产迁移、切换生产容器或开启全体功能。
 - 候选构建仍按现有边界只把 Sub2API 镜像上传、导入或缓存到服务器，由维护者手工切换；自动化不得替换运行容器、执行生产迁移、修改 Nginx 或开启 `link_cards_enabled`。
 
-### 0.4 2026-08-08 提链候选与用户 1 真实验收
+### 0.4 2026-08-08 提链候选与用户 1 真实验收（历史，仅审计）
 
 - 当前运行 Sub2API 为 `ghcr.io/hxly520/sub2api:0.1.169-daa7cb3fb460`，容器 `157eaffa7973`，healthy，restart `0`；PostgreSQL、Redis、积分服务和生图工作台均未因本次操作重启或替换。
 - UI 修复提交 `b3e230220a9dd023d133b4184a0c0a164ea95d51` 已通过 GitHub CI；候选镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`、GHCR digest `sha256:39baee21d5cfb259d5d903f5a8d54678b58a87345798539bb8a0246681110f81` 已由 GitHub 构建并只载入服务器缓存。归档路径、SHA256 与验收证据见 [`LINK_CARDS_ACCEPTANCE_20260808_CN.md`](LINK_CARDS_ACCEPTANCE_20260808_CN.md)。
@@ -153,7 +173,7 @@
 - `2026-08-28` 本地 handler/service 全包、媒体单次提交回归与 `golangci-lint v2.13.0` 均通过；GitHub run `33105459243` 的质量、安全、版本、前端与 Release 门禁全部通过。Release 附件 digest、`update-manifest.json` 的版本 `0.1.183-52t.4`、source commit、`image-update-required` 策略以及 GHCR 双架构 manifest 已逐项复核。服务器缓存已完成；数据库备份、维护者人工 Compose 切换和生产冒烟仍为 `pending`。
 - 生图工作台已独立升级到 `ghcr.io/hxly520/infinite-canvas:v0.16.0-52t.1`，manifest digest `sha256:8a26b1732aaa672811dcf4264fa30226a4171b63ef3db433e370dd1e132b9bcf`，OCI revision `e1a9fac6407d0894c0b5dc60fc6e4d0fefc2eee7`。Compose 备份为 `/home/api/sub2api-deploy/images/docker-compose.before-v0.16.0-52t.1-20260827-130407.yml`；只重建 `app` 服务并完成 HTTP 探活，Sub2API 容器 ID、启动时间和 restart count 前后完全一致。
 
-### 0.6 2026-08-08 额度卡费用只读审计与悬停修复
+### 0.6 2026-08-08 额度卡费用只读审计与悬停修复（历史，仅审计）
 
 - 当前候选代码提交为 `0948f0191c18045d8d04ccbf275ac4688d2c39af`，基线为 `v0.1.172`。本轮只修改仓库代码、测试和文档；没有替换或重启生产 Sub2API、积分、PostgreSQL、Redis 或生图工作台容器，也没有执行新的生产迁移。
 - 对额度卡 `link-card-1786156809-1` 做了只读精确核对：对应 `api_keys.id=161`、创建者 `user_id=1`、发行倍率 `0.0800`，最新 `usage_logs.id=391794`。原始费用为输入 `0.0050050000`、输出 `0.0005100000`、缓存读取 `0.0017920000`，缓存写入及图像费用为 `0`，`total_cost=0.0073070000`、`actual_cost=0.0005845600`、原生倍率 `0.0800`。
@@ -168,7 +188,7 @@
 - 同一归档已上传至 `/home/api/sub2api-deploy/image-archives/sub2api-0.1.172-7fe54f0856ee-linux-amd64.tar`，远端 SHA256 完全一致，权限 `0600 root:root`；服务器已 `docker load`，候选 image ID 为 `sha256:88c34f7a4c4c175c2baa5699a5bb2f25ad7256cfd69396f541fb2430b98dc06a`，OCI revision 与版本标签正确，候选 `-version` 冒烟通过。
 - 归档和加载前后运行容器均保持 `d028e112b509`、镜像 `ghcr.io/hxly520/sub2api:0.1.169-b3e230220a9d`、healthy、restart `0`、原启动时间不变；没有执行 Compose、迁移、流量切换或服务重启。候选由维护者手工决定切换窗口。
 
-### 0.8 2026-08-09 v0.1.172 手工切换与提链全用户正式开放
+### 0.8 2026-08-09 v0.1.172 手工切换与提链全用户正式开放（历史，仅审计）
 
 - 维护者已手工切换 Sub2API 到不可变镜像 `ghcr.io/hxly520/sub2api:0.1.172-7fe54f0856ee`，运行容器为 `6aef5ed35699...`，OCI revision 为 `7fe54f0856ee8868d7893baa8ee6ea2213e15d96`，启动时间 `2026-08-09 00:33:11 CST`；当前 `healthy`、restart count `0`。PostgreSQL、Redis、积分服务和生图工作台未重启或替换。
 - `194_link_cards.sql` 已在生产数据库应用；本次只在 `settings` 表事务内更新提链门禁：`link_cards_enabled=true`、`link_cards_development_mode=false`。开发名单 `[1]` 与旧兼容键 `link_cards_rollout_user_id=1` 仅作为休眠回滚值保留，在正式模式下不参与授权判断，因此不再限制用户 ID 1，所有已认证且状态正常的注册用户均可访问提链中心。回滚 SQL 与变更前设置快照保存在服务器 root-only 目录 `/root/sub2api-rollbacks/link-cards-global-20260809-005913`。
@@ -187,12 +207,12 @@
 ## 1. 权威来源
 
 - 私有仓库：`hxly520/sub2api`。
-- 当前仓库已发布官方 `v0.2.5` 与完整私有兼容层的 `v0.2.5-52t.1` 候选；生产仍运行 `v0.2.1-52t.3`，新候选仅完成服务器缓存，精确状态以第 0.14 节为准。后续官方升级仍须逐项保留 credit 审计、积分与签到、媒体冻结、额度卡/提链、公开首页、帮助中心和独立工作台契约。
+- 历史 v0.2.5 发布时，仓库已发布官方 `v0.2.5` 与完整私有兼容层的 `v0.2.5-52t.1` 候选；生产仍运行 `v0.2.1-52t.3`，新候选仅完成服务器缓存，精确状态以第 0.14 节为准。当前官方升级仍须保留 credit 审计、积分与签到、媒体冻结、公开首页、帮助中心和独立工作台契约；额度卡/提链只留不可变迁移与历史审计。
 - 当前生产 Sub2API、积分服务及其容器身份以第 0 节为准。自动化不得替换 Sub2API；积分服务允许在备份、不可变镜像、仅单服务 Compose 和完整验收边界内独立发布。
 - `2026-08-01 22:34 CST` 仅更新积分服务镜像和运行门禁：本地归档 SHA256 为 `bbf7d051b2295f230e65d80b77d5ecaf7dac0a049a576fa78e04eb586583ce1f`，服务器 `docker load` 后运行 `bee059a1cec5`，启动健康、restart `0`、无启动错误；Sub2API 容器未更换版本。`POINTS_SYSTEM_ENABLED=true`、`POINTS_USER_ACCESS_MODE=all`，两份 preview list 为空；当前签名 user-access 对用户 1、2、11、174、187 均返回 `200/allowed=true`。
 - 生图工作台唯一源码：[`hxly520/infinite-canvas`](https://github.com/hxly520/infinite-canvas) 的 `main`；它独立于Sub2API版本发布。
 - 独立积分系统源码：本仓库 `points-system/`。它复用现有 PostgreSQL 实例和 `sub2api` 数据库中的独立 `points` schema，不再部署第二个 PostgreSQL；实际容器、schema、域名和 Nginx 状态以本文件后续发布记录为准。
-- 提链/额度卡中心维护契约：[`LINK_CARDS_CN.md`](LINK_CARDS_CN.md)。它是 Sub2API 内置功能，不是独立数据库或第二套网关；当前生产状态与全用户正式开放证据以第 0.8 节为准。
+- 提链/额度卡历史契约仅作审计：它当时是 Sub2API 内置功能；第 0.8 节只证明 2026-08-09 当时曾开放，不代表当前候选能力或 2026-10-24 生产状态。
 - 生产主机：`107.172.147.76`，SSH登录用户为 `root`；认证信息由仓库外的密码管理系统保存。
 - 生产部署根：`/home/api/sub2api-deploy`。
 - 生产变更原则：镜像必须在 CI 或受控本机构建环境完成并验证，服务器只负责拉取或 `docker load`；不在生产机编译源码、前端、二进制或镜像。
@@ -313,7 +333,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 - 私有迁移 `173_media_generation_tasks.sql` 至 `179_media_balance_hold_dispatch_state.sql` 已进入生产，禁止改名、删除或修改内容。
 - 私有迁移 `192_media_balance_hold_reconciliation_index_notx.sql` 已进入生产并提供全站到期冻结扫描索引；继续按 `_notx` 语义执行，禁止修改 checksum。
 - 私有迁移 `193_points_balance_credit_ledger.sql` 已进入生产，为积分服务向 Sub2API 幂等发放余额。积分服务自己的 4 条迁移位于同一数据库的独立 `points` schema，共 21 张表，并记录在 `points_schema_migrations`；不得写入或混入 Sub2API `public.schema_migrations`。第三条迁移保存一次性历史作业及逐日游标，当前生产作业已成功且不得重跑；第四条迁移增加原始消费阶梯与可空金额上限，不增加新表。
-- 私有迁移 `194_link_cards.sql` 已于 `2026-08-08` 进入生产，扩展 `api_keys` 并创建提链分组授权、永久幂等和不可修改资金流水表；生产 checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它已纳入不可变清单，后续只能用新迁移修正，禁止改名、改号、删除或修改 checksum。
+- 私有迁移 `194_link_cards.sql` 已于 `2026-08-08` 进入生产，扩展 `api_keys` 并创建提链分组授权、永久幂等和不可修改资金流水表；生产 checksum 为 `7a40799ddd3379acda1a3f704f110d81278a8d38705cd965325880996a8d23b4`。它已纳入不可变审计清单，禁止改名、改号、删除或修改 checksum；当前候选 migration runner 按完整文件名跳过它，不执行该产品迁移，不清理历史表/行。
 - PostgreSQL实际 `max_connections=100`；当前应用连接池配置为 `max_open=256`、`max_idle=128`，存在连接上限不匹配。
 - 升级前必须备份数据库并记录备份校验、恢复命令和保存位置。积分首次部署备份及 SHA256 已记录在 2.2 节；这不替代后续版本升级的独立新备份，也不代表已建立定时备份或完成隔离恢复演练。
 
@@ -365,7 +385,7 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 7. 四种图片模式的在途任务、失败、冻结余额、后台核销最近运行结果、worker队列和对象存储可用性；分别统计 active、capture_pending、captured、released，禁止只核对用户余额总数。
 8. 15731工作台的 `infinite-canvas` 镜像tag、digest、OCI revision、首页状态、API Base、模型开关和近时段错误；确认旧 `images` 目录未挂载且未被Nginx引用。
 9. 当前镜像与上一稳定镜像的tag、digest和数据库兼容边界。
-10. 若候选包含提链功能，记录功能开关、开发名单是否仅用户 `1`、标准/提链 Key 数量、各状态和资金流水聚合；不读取或保存完整 Key。核对创建者余额差量、提链储备/已用/退款守恒、在途额度和重复 request/operation 数为零异常。
+10. 仅审计历史提链 Key/在途/流水聚合，不读取或保存完整 Key；核验候选认证、缓存和结算对旧 Key 失败关闭、不会扣创建者普通余额。原 194 文件/checksum/历史记录保留且 runner 精确跳过；不得通过旧配置恢复产品。
 
 原始盘点输出只能保存到仓库外受控位置；Git文档只保留本文件这类脱敏结论。
 
@@ -375,10 +395,10 @@ Cloudflare Worker -> 加密媒体URL -> 上游媒体源
 
 1. 从完整克隆的当前私有 `main` 创建 `codex/upgrade-vX.Y.Z-*`。
 2. 获取并审阅目标官方Release tag；禁止直接跟随滚动官方 `main` 或部署官方 `latest`。
-3. 解决协议、调度、四种图片模式、媒体计费、提链 Key 鉴权/计费、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 与 `docs/LINK_CARDS_CN.md` 中的完整门禁。
+3. 解决协议、调度、四种图片模式、媒体计费、历史提链 Key 失败关闭隔离、Nginx/Worker和支付冲突，并运行 `docs/PRIVATE_CUSTOMIZATION_CN.md` 第 6 节的现行门禁；历史测试记录不能代替当前候选验证。
 4. 通过 CI 或受控本机构建环境构建私有镜像。版本取自 `backend/cmd/server/VERSION`，镜像标签必须包含版本和 commit；发布摘要必须记录 manifest digest、image ID 和传输归档 SHA256。
 5. Sub2API 新镜像只上传、导入或缓存，不立即替换运行容器；积分镜像可在 `points` schema 备份和旧镜像记录完成后独立更新。
-6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额；若已启用提链，再确认在途额度为零或可安全恢复、资金账本守恒且旧镜像不会接管活动提链 Key。
+6. 升级窗口前确认没有不可恢复的 `image_task:*` 在途任务，批量队列可恢复，私有媒体任务没有异常冻结余额；历史提链 Key/在途数据只做只读审计，候选和回滚目标均须失败关闭，不得恢复旧入口或接回普通余额结算。
 7. 只替换镜像引用，不同时调整账号、价格、Redis、Nginx或数据库参数。
 8. 上线后核对OCI revision、VERSION、health、DB/Redis、迁移、关键路由、任务终态和日志。
 
@@ -491,7 +511,7 @@ cat POINTS_APP_PSQL_VARS points-system/deploy/shared-database-users-email-rollba
 - 数据库恢复属于单独操作，必须先验证备份可恢复性。
 - Redis状态不作为唯一业务事实源，但后缀异步图片和队列状态会受Redis持久化影响。
 - Cloudflare Worker、Nginx和15731 `infinite-canvas` 工作台各有独立版本与回滚物，Sub2API镜像回滚不会同步回滚它们；旧服务器 `images` 快照不是工作台回滚物。
-- 提链迁移是 forward-only。存在提链 Key 时，回滚到不识别 `key_type` 的旧 Sub2API 前必须先关闭入口、冻结并禁用全部提链 Key、失效鉴权缓存、等待在途请求归零并完成资金对账；不得删除幂等或资金流水表，也不得直接把储备余额加回创建者。
+- `194_link_cards.sql`、旧迁移历史、幂等和资金流水只审计保留。回滚目标必须继续拒绝历史 `key_type=link` Key，禁止重新开放额度卡、接回普通 Key 认证/余额结算、删除旧表/流水或直接把储备余额加回创建者；未知生产旧 Key/在途状态须先由维护者只读核验。
 
 ## 11. 仓库外依赖
 

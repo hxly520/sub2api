@@ -45,13 +45,6 @@ func newMediaBalanceHoldCommand(apiKeyID, userID int64, requestID, requestFinger
 	}
 }
 
-func markLinkCardMediaBalanceHold(cmd *service.MediaBalanceHoldCommand, apiKey *service.APIKey) *service.MediaBalanceHoldCommand {
-	if cmd != nil && apiKey != nil {
-		cmd.LinkCard = apiKey.IsLinkKey()
-	}
-	return cmd
-}
-
 func releaseMediaBalanceHold(h *OpenAIGatewayHandler, cmd *service.MediaBalanceHoldCommand) {
 	if h == nil || h.gatewayService == nil || cmd == nil || strings.TrimSpace(cmd.RequestID) == "" || cmd.HoldAmount <= 0 {
 		return
@@ -167,7 +160,7 @@ func mediaBalanceSettledCost(cmd *service.MediaBalanceHoldCommand, actualCost fl
 	return cmd.HoldAmount
 }
 
-func mediaBalanceHoldCommandForTask(task *service.MediaGenerationTask, keys ...*service.APIKey) *service.MediaBalanceHoldCommand {
+func mediaBalanceHoldCommandForTask(task *service.MediaGenerationTask) *service.MediaBalanceHoldCommand {
 	if task == nil || task.APIKeyID <= 0 || task.UserID <= 0 || strings.TrimSpace(task.ClientTaskID()) == "" {
 		return nil
 	}
@@ -183,7 +176,7 @@ func mediaBalanceHoldCommandForTask(task *service.MediaGenerationTask, keys ...*
 	if amount <= 0 {
 		return nil
 	}
-	cmd := newMediaBalanceHoldCommand(
+	return newMediaBalanceHoldCommand(
 		task.APIKeyID,
 		task.UserID,
 		service.MediaBalanceHoldRequestID(task.ClientTaskID()),
@@ -191,8 +184,4 @@ func mediaBalanceHoldCommandForTask(task *service.MediaGenerationTask, keys ...*
 		task.RequestPayloadHash,
 		amount,
 	)
-	if len(keys) > 0 {
-		markLinkCardMediaBalanceHold(cmd, keys[0])
-	}
-	return cmd
 }

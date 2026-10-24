@@ -300,11 +300,9 @@ func batchImageOwnerFromContext(c *gin.Context) (service.BatchImageOwner, bool) 
 		return service.BatchImageOwner{}, false
 	}
 	return service.BatchImageOwner{
-		UserID:             apiKey.UserID,
-		APIKeyID:           apiKey.ID,
-		GroupID:            apiKey.GroupID,
-		LinkCard:           apiKey.IsLinkKey(),
-		LinkRateMultiplier: apiKey.LinkRateMultiplier,
+		UserID:   apiKey.UserID,
+		APIKeyID: apiKey.ID,
+		GroupID:  apiKey.GroupID,
 	}, true
 }
 

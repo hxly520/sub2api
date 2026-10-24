@@ -56,11 +56,18 @@ export function useTableLoader<T, P extends Record<string, any>>(options: TableL
         { signal: currentController.signal }
       )
 
+      // A fetch implementation may resolve with no payload after its abort
+      // signal fires (for example when a component unmounts during a request).
+      // Treat that completion as cancelled instead of touching reactive state.
+      if (currentController.signal.aborted || !response) {
+        return
+      }
+
       items.value = response.items || []
       pagination.total = response.total || 0
       pagination.pages = response.pages || 0
     } catch (error) {
-      if (!isAbortError(error)) {
+      if (!currentController.signal.aborted && !isAbortError(error)) {
         console.error('Table load error:', error)
         throw error
       }

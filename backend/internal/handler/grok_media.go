@@ -400,14 +400,14 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					holdAmount = mediaPricingSnapshot.EstimatedCost(1, requestInfo.DurationSeconds)
 				}
 				if holdAmount > 0 {
-					mediaHold = markLinkCardMediaBalanceHold(newMediaBalanceHoldCommand(
+					mediaHold = newMediaBalanceHoldCommand(
 						apiKey.ID,
 						subject.UserID,
 						service.NewMediaBalanceHoldRequestID(),
 						service.HashMediaGenerationRequestFingerprint(string(endpoint), body),
 						service.HashUsageRequestPayload(body),
 						holdAmount,
-					), apiKey)
+					)
 					if err := h.gatewayService.ReserveMediaBalance(requestCtx, mediaHold); err != nil {
 						status, code, message, retryAfter := billingErrorDetails(err)
 						if retryAfter > 0 {

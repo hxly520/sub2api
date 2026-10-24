@@ -101,8 +101,19 @@ describe('public help center entry contract', () => {
   const html = readPublicPage('deploy/public-help/index.html')
   const document = new JSDOM(html).window.document
 
-  it('covers the beginner, points, link-card, card-user and distribution journeys', () => {
-    for (const id of ['start', 'points', 'link-cards', 'card-users', 'distribution']) {
+  it('preserves the beginner, points and technical help journeys', () => {
+    for (const id of [
+      'start',
+      'points',
+      'security',
+      'endpoints',
+      'clients',
+      'text-api',
+      'image-api',
+      'video-api',
+      'errors',
+      'statement',
+    ]) {
       expect(document.getElementById(id)).not.toBeNull()
     }
 
@@ -111,7 +122,7 @@ describe('public help center entry contract', () => {
         link.getAttribute('href'),
       ),
     )
-    for (const entryPoint of ['/points', '/link-cards', 'https://key.52token.org/card']) {
+    for (const entryPoint of ['/points', '/login', '#start', '#points', '#clients']) {
       expect(hrefs).toContain(entryPoint)
     }
   })
@@ -131,20 +142,31 @@ describe('public help center entry contract', () => {
     const copy = document.body.textContent || ''
     expect(copy).toContain('最高可达昨日实际消费金额的 10%')
     expect(copy).toContain('并非每次签到固定获得 10%')
+    expect(copy).toContain('00:05')
     for (const privateTier of ['1%-5%', '2%-5%', '3%-5%', '4%-5%']) {
       expect(copy).not.toContain(privateTier)
     }
   })
 
-  it('keeps resale examples templated and free of live credentials', () => {
-    const copy = document.body.textContent || ''
-    expect(copy).toContain('8 / 0.08 = 100U')
-    expect(copy).toContain('CARD_KEY')
-    expect(copy).toContain('https://api.52token.org/v1')
-    expect(copy).toContain('https://key.52token.org')
+  it('preserves the existing blue theme and same-origin uploaded brand logo', () => {
+    expect(html).toContain('--accent: #2563eb')
+    expect(html).toContain('--page: #f5f8fc')
+    expect(document.querySelector('.document-head .document-copy')).not.toBeNull()
+    expect(document.querySelector('.document-route')).not.toBeNull()
     expect(document.querySelector('img.brand-logo')?.getAttribute('src')).toBe(
       '/api/v1/settings/logo',
     )
+  })
+
+  it('does not reintroduce removed product pages, links or sales copy', () => {
+    for (const id of ['link-cards', 'card-users', 'distribution']) {
+      expect(document.getElementById(id)).toBeNull()
+    }
+    expect(html).not.toMatch(/提链|额度卡|分销|发货|key\.52token\.org|CARD_KEY/)
+    const hrefs = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map(
+      (link) => link.getAttribute('href') || '',
+    )
+    expect(hrefs.some((href) => /link-cards|quota-card|\/card(?:$|[/?#])/.test(href))).toBe(false)
   })
 })
 

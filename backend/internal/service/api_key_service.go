@@ -130,22 +130,14 @@ type apiKeyAllByUserIDLister interface {
 
 // APIKeyRateLimitData holds rate limit usage and window state for an API key.
 type APIKeyRateLimitData struct {
+	// QuotaUsed 是总额度已用量（quota_used）。
+	QuotaUsed     float64
 	Usage5h       float64
 	Usage1d       float64
 	Usage7d       float64
 	Window5hStart *time.Time
 	Window1dStart *time.Time
 	Window7dStart *time.Time
-}
-
-// LinkCardBillingState is the authoritative database state checked immediately
-// before forwarding a prepaid request. It intentionally excludes owner data.
-type LinkCardBillingState struct {
-	Status    string
-	LinkState string
-	Quota     float64
-	QuotaUsed float64
-	Reserved  float64
 }
 
 // EffectiveUsage5h returns the 5h window usage, or 0 if the window has expired.

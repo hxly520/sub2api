@@ -28,26 +28,14 @@ func IsWindowExpired(windowStart *time.Time, duration time.Duration) bool {
 }
 
 type APIKey struct {
-	ID                 int64
-	UserID             int64
-	Key                string
-	Name               string
-	GroupID            *int64
-	Status             string
-	KeyType            string
-	LinkState          string
-	LinkRateMultiplier float64
-	LinkOriginalDebit  float64
-	LinkTotalFunded    float64
-	LinkTotalRefunded  float64
-	LinkReservedAmount float64
-	LinkConcurrency    int
-	LinkRPMLimit       int
-	LinkActivatedAt    *time.Time
-	LinkRevokedAt      *time.Time
-	LinkFrozenReason   string
-	IPWhitelist        []string
-	IPBlacklist        []string
+	ID          int64
+	UserID      int64
+	Key         string
+	Name        string
+	GroupID     *int64
+	Status      string
+	IPWhitelist []string
+	IPBlacklist []string
 	// 预编译的 IP 规则，用于认证热路径避免重复 ParseIP/ParseCIDR。
 	CompiledIPWhitelist *ip.CompiledIPRules `json:"-"`
 	CompiledIPBlacklist *ip.CompiledIPRules `json:"-"`
@@ -76,14 +64,9 @@ type APIKey struct {
 	Window7dStart *time.Time // Start of current 7d window
 }
 
-func (k *APIKey) IsLinkKey() bool {
-	return k != nil && k.KeyType == APIKeyTypeLink
-}
-
+// EffectiveConcurrency returns the concurrency limit inherited from the owning
+// user. API keys no longer carry a separate product-specific override.
 func (k *APIKey) EffectiveConcurrency() int {
-	if k != nil && k.IsLinkKey() && k.LinkConcurrency > 0 {
-		return k.LinkConcurrency
-	}
 	if k != nil && k.User != nil {
 		return k.User.Concurrency
 	}

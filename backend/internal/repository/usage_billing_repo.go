@@ -5,12 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/shopspring/decimal"
 )
 
 type usageBillingRepository struct {
@@ -44,6 +42,10 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		}
 	}()
 
+	if err := requireStandardUsageBillingAPIKey(ctx, tx, cmd.APIKeyID); err != nil {
+		return nil, err
+	}
+
 	applied, err := r.claimUsageBillingKey(ctx, tx, cmd)
 	if err != nil {
 		return nil, err
@@ -62,6 +64,32 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	}
 	tx = nil
 	return result, nil
+}
+
+// requireStandardUsageBillingAPIKey is a retirement barrier, not an alternate
+// billing path. It also checks soft-deleted keys because their in-flight usage
+// still settles under the official post-usage contract. Only ordinary keys may
+// reach the owner-balance path; legacy product funds remain audit-only.
+func requireStandardUsageBillingAPIKey(ctx context.Context, tx *sql.Tx, apiKeyID int64) error {
+	var keyType string
+	err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(to_jsonb(api_keys)->>'key_type', 'standard')
+		FROM api_keys
+		WHERE id = $1
+		FOR KEY SHARE
+	`, apiKeyID).Scan(&keyType)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Preserve official settlement for already removed ordinary keys. The
+		// historical product uses retained soft-deleted rows, checked above.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if keyType != "standard" {
+		return service.ErrAPIKeyNotFound
+	}
+	return nil
 }
 
 func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
@@ -149,6 +177,10 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 		}
 	}()
 
+	if err := requireStandardUsageBillingAPIKey(ctx, tx, cmd.APIKeyID); err != nil {
+		return nil, err
+	}
+
 	applied, err := r.claimUsageBillingRequest(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
 	if err != nil {
 		return nil, err
@@ -178,14 +210,6 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
 			return err
 		}
-	}
-
-	if cmd.PrepaidLinkCost > 0 {
-		exhausted, err := consumeUsageBillingLinkCard(ctx, tx, cmd)
-		if err != nil {
-			return err
-		}
-		result.APIKeyQuotaExhausted = exhausted
 	}
 
 	if cmd.MediaBalanceHoldRequestID != "" {
@@ -218,101 +242,16 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		}
 	}
 
-	if cmd.AccountQuotaCost > 0 && (strings.EqualFold(cmd.AccountType, service.AccountTypeAPIKey) || strings.EqualFold(cmd.AccountType, service.AccountTypeBedrock)) {
-		quotaState, err := incrementUsageBillingAccountQuota(ctx, tx, cmd.AccountID, cmd.AccountQuotaCost)
-		if err != nil {
+	// 账号已不存在时跳过其配额计数，其余结算项不受影响。
+	if cmd.AccountQuotaCost > 0 && service.AccountTypeSupportsQuota(cmd.AccountType) {
+		quotaState, err := incrementUsageBillingAccountQuota(ctx, tx, cmd.AccountID, cmd.AccountQuotaCost, cmd.AccountQuotaHasDailyLimit, cmd.AccountQuotaHasWeeklyLimit)
+		if err != nil && !errors.Is(err, service.ErrAccountNotFound) {
 			return err
 		}
 		result.QuotaState = quotaState
 	}
 
 	return nil
-}
-
-func consumeUsageBillingLinkCard(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
-	if cmd == nil || cmd.APIKeyID <= 0 || cmd.UserID <= 0 || cmd.PrepaidLinkCost <= 0 {
-		return false, service.ErrLinkCardOperationNotAllowed
-	}
-	requested := decimal.NewFromFloat(cmd.PrepaidLinkCost).Round(8)
-	if !requested.IsPositive() {
-		return false, service.ErrLinkCardPrepaidExhausted
-	}
-	var quota, used, reserved decimal.Decimal
-	var ownerID int64
-	var state, apiStatus string
-	err := tx.QueryRowContext(ctx, `
-		SELECT quota, quota_used, COALESCE(link_reserved_amount, 0), user_id,
-		       COALESCE(link_state, ''), status
-		FROM api_keys
-		WHERE id=$1 AND key_type=$2 AND deleted_at IS NULL
-		FOR UPDATE
-	`, cmd.APIKeyID, service.APIKeyTypeLink).Scan(&quota, &used, &reserved, &ownerID, &state, &apiStatus)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, service.ErrAPIKeyNotFound
-	}
-	if err != nil {
-		return false, err
-	}
-	if ownerID != cmd.UserID {
-		return false, service.ErrLinkCardOperationNotAllowed
-	}
-	if state == service.LinkCardStateRefunded || state == service.LinkCardStateRevoked || state == service.LinkCardStatePendingActivation {
-		return false, service.ErrLinkCardOperationNotAllowed
-	}
-	if quota.IsNegative() || quota.IsZero() || used.IsNegative() || reserved.IsNegative() {
-		return false, service.ErrLinkCardPrepaidExhausted
-	}
-	// The row lock serializes all settlements for this card.  Link-card text
-	// requests intentionally use Sub2API's normal post-request billing timing:
-	// the upstream request may finish after the last available amount has been
-	// consumed.  In that case charge the *complete* actual cost and let
-	// quota_used exceed quota.  The card is immediately marked depleted and the
-	// preflight check rejects all subsequent requests until a recharge clears
-	// the debt.  Truncating the charge to the remaining amount would make the
-	// overrun free and leave the platform to absorb the upstream cost.
-	available := quota.Sub(used).Sub(reserved)
-	availableBefore := available
-	if availableBefore.IsNegative() {
-		availableBefore = decimal.Zero
-	}
-	charged := requested
-	newUsed := used.Add(charged)
-	exhausted := !quota.Sub(newUsed).Sub(reserved).IsPositive()
-	newState := state
-	newStatus := apiStatus
-	if state == service.LinkCardStateActive && !exhausted {
-		newStatus = service.StatusActive
-	} else if state != service.LinkCardStateFrozen && exhausted {
-		newState = service.LinkCardStateDepleted
-		newStatus = service.StatusAPIKeyQuotaExhausted
-	}
-	updated, err := tx.ExecContext(ctx, `
-		UPDATE api_keys SET quota_used=$1,status=$2,link_state=$3,updated_at=NOW()
-		WHERE id=$4 AND key_type=$5 AND deleted_at IS NULL
-	`, newUsed.StringFixed(8), newStatus, newState, cmd.APIKeyID, service.APIKeyTypeLink)
-	if err != nil {
-		return false, err
-	}
-	if affected, err := updated.RowsAffected(); err != nil {
-		return false, err
-	} else if affected != 1 {
-		return false, service.ErrLinkCardPrepaidExhausted
-	}
-	overdraftCost := requested.Sub(availableBefore)
-	if overdraftCost.IsNegative() {
-		overdraftCost = decimal.Zero
-	}
-	_, err = tx.ExecContext(ctx, `
-			INSERT INTO link_card_ledger(api_key_id,creator_user_id,entry_type,reserve_delta,
-				creator_balance_delta,quota_before,quota_after,quota_used_before,quota_used_after,
-				request_id,reason,metadata)
-			VALUES($1,$2,'usage',-($3::numeric),0,$4,$4,$5,$6,$7,'gateway usage settlement',
-				jsonb_build_object('requested_cost',$8::numeric,'charged_cost',$3,'available_before',$9::numeric,'overdraft_cost',$10::numeric))
-	`, cmd.APIKeyID, ownerID, charged.StringFixed(8), quota.StringFixed(8), used.StringFixed(8), newUsed.StringFixed(8), cmd.RequestID, requested.StringFixed(8), availableBefore.StringFixed(8), overdraftCost.StringFixed(8))
-	if err != nil {
-		return false, err
-	}
-	return exhausted, nil
 }
 
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
@@ -376,22 +315,6 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 }
 
 func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	if cmd != nil && cmd.LinkCard {
-		amount, ok := linkCardHoldAmount(cmd.HoldAmount)
-		if !ok {
-			return &service.BatchImageBalanceHoldResult{}, nil
-		}
-		requestID := service.BatchImageHoldRequestID(cmd.BatchID)
-		result, err := (&usageBillingRepository{}).reserveLinkCardHoldTx(ctx, tx, requestID, cmd.APIKeyID, cmd.UserID,
-			cmd.RequestFingerprint, amount, int64((24*time.Hour)/time.Second))
-		if err != nil {
-			if errors.Is(err, service.ErrLinkCardPrepaidExhausted) {
-				return nil, service.ErrBatchImageInsufficientBalance
-			}
-			return nil, err
-		}
-		return &service.BatchImageBalanceHoldResult{NewBalance: nil, FrozenBalance: nil, Applied: result != nil && result.Applied}, nil
-	}
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
@@ -419,24 +342,6 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 }
 
 func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	if cmd != nil && cmd.LinkCard {
-		holdAmount, ok := linkCardHoldAmount(cmd.HoldAmount)
-		actual, actualOK := linkCardHoldAmount(cmd.ActualAmount)
-		if !ok {
-			return &service.BatchImageBalanceHoldResult{}, nil
-		}
-		if cmd.ActualAmount <= 0 {
-			actual = decimal.Zero
-		} else if !actualOK || actual.GreaterThan(holdAmount) {
-			return nil, service.ErrBatchImageSettlementCostExceedsHold
-		}
-		result, err := (&usageBillingRepository{}).captureLinkCardHoldTx(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID, cmd.UserID,
-			"", holdAmount, actual)
-		if err != nil {
-			return nil, err
-		}
-		return &service.BatchImageBalanceHoldResult{Applied: result != nil && result.Applied}, nil
-	}
 	if cmd.HoldAmount <= 0 && cmd.ActualAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
@@ -469,18 +374,6 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 }
 
 func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	if cmd != nil && cmd.LinkCard {
-		holdAmount, ok := linkCardHoldAmount(cmd.HoldAmount)
-		if !ok {
-			return &service.BatchImageBalanceHoldResult{}, nil
-		}
-		result, err := (&usageBillingRepository{}).releaseLinkCardHoldTx(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID, cmd.UserID,
-			"", holdAmount)
-		if err != nil {
-			return nil, err
-		}
-		return &service.BatchImageBalanceHoldResult{Applied: result != nil && result.Applied}, nil
-	}
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
@@ -613,82 +506,129 @@ func incrementUsageBillingAPIKeyRateLimit(ctx context.Context, tx *sql.Tx, apiKe
 	return nil
 }
 
-func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountID int64, amount float64) (*service.AccountQuotaState, error) {
-	rows, err := tx.QueryContext(ctx,
-		`UPDATE accounts SET extra = (
-			COALESCE(extra, '{}'::jsonb)
-			|| jsonb_build_object('quota_used', COALESCE((extra->>'quota_used')::numeric, 0) + $1)
+// accountQuotaTotalIncrementExpr 累加总额度已用量。
+const accountQuotaTotalIncrementExpr = `COALESCE(extra, '{}'::jsonb)
+			|| jsonb_build_object('quota_used', COALESCE((extra->>'quota_used')::numeric, 0) + $1)`
+
+// accountQuotaDailyIncrementExpr 在库中设置了日上限时累加日用量，周期过期时从本次金额重新计数。
+const accountQuotaDailyIncrementExpr = `
 			|| CASE WHEN COALESCE((extra->>'quota_daily_limit')::numeric, 0) > 0 THEN
 				jsonb_build_object(
 					'quota_daily_used',
-					CASE WHEN `+dailyExpiredExpr+`
+					CASE WHEN ` + dailyExpiredExpr + `
 					THEN $1
 					ELSE COALESCE((extra->>'quota_daily_used')::numeric, 0) + $1 END,
 					'quota_daily_start',
-					CASE WHEN `+dailyExpiredExpr+`
-					THEN `+nowUTC+`
-					ELSE COALESCE(extra->>'quota_daily_start', `+nowUTC+`) END
+					CASE WHEN ` + dailyExpiredExpr + `
+					THEN ` + nowUTC + `
+					ELSE COALESCE(extra->>'quota_daily_start', ` + nowUTC + `) END
 				)
-				|| CASE WHEN `+dailyExpiredExpr+` AND `+nextDailyResetAtExpr+` IS NOT NULL
-				   THEN jsonb_build_object('quota_daily_reset_at', `+nextDailyResetAtExpr+`)
+				|| CASE WHEN ` + dailyExpiredExpr + ` AND ` + nextDailyResetAtExpr + ` IS NOT NULL
+				   THEN jsonb_build_object('quota_daily_reset_at', ` + nextDailyResetAtExpr + `)
 				   ELSE '{}'::jsonb END
-			ELSE '{}'::jsonb END
+			ELSE '{}'::jsonb END`
+
+// accountQuotaWeeklyIncrementExpr 在库中设置了周上限时累加周用量，周期过期时从本次金额重新计数。
+const accountQuotaWeeklyIncrementExpr = `
 			|| CASE WHEN COALESCE((extra->>'quota_weekly_limit')::numeric, 0) > 0 THEN
 				jsonb_build_object(
 					'quota_weekly_used',
-					CASE WHEN `+weeklyExpiredExpr+`
+					CASE WHEN ` + weeklyExpiredExpr + `
 					THEN $1
 					ELSE COALESCE((extra->>'quota_weekly_used')::numeric, 0) + $1 END,
 					'quota_weekly_start',
-					CASE WHEN `+weeklyExpiredExpr+`
-					THEN `+nowUTC+`
-					ELSE COALESCE(extra->>'quota_weekly_start', `+nowUTC+`) END
+					CASE WHEN ` + weeklyExpiredExpr + `
+					THEN ` + nowUTC + `
+					ELSE COALESCE(extra->>'quota_weekly_start', ` + nowUTC + `) END
 				)
-				|| CASE WHEN `+weeklyExpiredExpr+` AND `+nextWeeklyResetAtExpr+` IS NOT NULL
-				   THEN jsonb_build_object('quota_weekly_reset_at', `+nextWeeklyResetAtExpr+`)
+				|| CASE WHEN ` + weeklyExpiredExpr + ` AND ` + nextWeeklyResetAtExpr + ` IS NOT NULL
+				   THEN jsonb_build_object('quota_weekly_reset_at', ` + nextWeeklyResetAtExpr + `)
 				   ELSE '{}'::jsonb END
-			ELSE '{}'::jsonb END
-		), updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+			ELSE '{}'::jsonb END`
+
+// accountQuotaExtraIsObjectCond 要求 extra 为 JSON 对象：省略某个维度的语句只在对象上与完整语句等价。
+//
+// accountQuotaDailyLimitUnsetCond / accountQuotaWeeklyLimitUnsetCond 在库中未设置日/周上限时为真：
+// 键不存在、值为 JSON null 或不大于 0 的数字。其他取值一律为假，交给包含该维度的语句处理。
+// 三个条件都只使用 ->、jsonb_typeof 与 jsonb 比较，对任何行求值都不会报错。
+const (
+	accountQuotaExtraIsObjectCond   = `jsonb_typeof(extra) = 'object'`
+	accountQuotaDailyLimitUnsetCond = `(extra->'quota_daily_limit' IS NULL
+			OR jsonb_typeof(extra->'quota_daily_limit') = 'null'
+			OR (jsonb_typeof(extra->'quota_daily_limit') = 'number' AND extra->'quota_daily_limit' <= '0'::jsonb))`
+	accountQuotaWeeklyLimitUnsetCond = `(extra->'quota_weekly_limit' IS NULL
+			OR jsonb_typeof(extra->'quota_weekly_limit') = 'null'
+			OR (jsonb_typeof(extra->'quota_weekly_limit') = 'number' AND extra->'quota_weekly_limit' <= '0'::jsonb))`
+)
+
+const accountQuotaIncrementReturning = `
 		RETURNING
 			COALESCE((extra->>'quota_used')::numeric, 0),
 			COALESCE((extra->>'quota_limit')::numeric, 0),
 			COALESCE((extra->>'quota_daily_used')::numeric, 0),
 			COALESCE((extra->>'quota_daily_limit')::numeric, 0),
 			COALESCE((extra->>'quota_weekly_used')::numeric, 0),
-			COALESCE((extra->>'quota_weekly_limit')::numeric, 0)`,
-		amount, accountID)
+			COALESCE((extra->>'quota_weekly_limit')::numeric, 0)`
+
+// accountQuotaIncrementSQLs 按 accountQuotaIncrementSQLIndex 存放账号配额累加语句。省略日或周维度的语句
+// 在 WHERE 中附加 accountQuotaExtraIsObjectCond 与被省略维度的未设置条件，条件不成立时命中 0 行；
+// 同时包含日、周维度的语句不附加这些条件，对任何账号配置都给出完整的累加结果。
+var accountQuotaIncrementSQLs = buildAccountQuotaIncrementSQLs()
+
+func accountQuotaIncrementSQLIndex(daily, weekly bool) int {
+	index := 0
+	if daily {
+		index |= 1
+	}
+	if weekly {
+		index |= 2
+	}
+	return index
+}
+
+func buildAccountQuotaIncrementSQLs() [4]string {
+	var sqls [4]string
+	for _, daily := range []bool{false, true} {
+		for _, weekly := range []bool{false, true} {
+			set := accountQuotaTotalIncrementExpr
+			where := "id = $2 AND deleted_at IS NULL"
+			if !daily || !weekly {
+				where += "\n\t\t\tAND " + accountQuotaExtraIsObjectCond
+			}
+			if daily {
+				set += accountQuotaDailyIncrementExpr
+			} else {
+				where += "\n\t\t\tAND " + accountQuotaDailyLimitUnsetCond
+			}
+			if weekly {
+				set += accountQuotaWeeklyIncrementExpr
+			} else {
+				where += "\n\t\t\tAND " + accountQuotaWeeklyLimitUnsetCond
+			}
+			sqls[accountQuotaIncrementSQLIndex(daily, weekly)] = "UPDATE accounts SET extra = (\n\t\t\t" + set +
+				"\n\t\t), updated_at = NOW()\n\t\tWHERE " + where + accountQuotaIncrementReturning
+		}
+	}
+	return sqls
+}
+
+// incrementUsageBillingAccountQuota 累加账号配额并返回累加后的状态。hasDaily/hasWeekly 是调用方所见的
+// 账号日/周上限设置，只决定先执行哪条语句；该语句的附加条件不成立而命中 0 行时，再执行同时包含日、周维度的语句。
+func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountID int64, amount float64, hasDaily, hasWeekly bool) (*service.AccountQuotaState, error) {
+	index := accountQuotaIncrementSQLIndex(hasDaily, hasWeekly)
+	fullIndex := accountQuotaIncrementSQLIndex(true, true)
+	state, err := execAccountQuotaIncrement(ctx, tx, accountQuotaIncrementSQLs[index], accountID, amount)
 	if err != nil {
 		return nil, err
 	}
-
-	var state service.AccountQuotaState
-	if rows.Next() {
-		if err := rows.Scan(
-			&state.TotalUsed, &state.TotalLimit,
-			&state.DailyUsed, &state.DailyLimit,
-			&state.WeeklyUsed, &state.WeeklyLimit,
-		); err != nil {
-			_ = rows.Close()
+	if state == nil && index != fullIndex {
+		state, err = execAccountQuotaIncrement(ctx, tx, accountQuotaIncrementSQLs[fullIndex], accountID, amount)
+		if err != nil {
 			return nil, err
 		}
-	} else {
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		_ = rows.Close()
+	}
+	if state == nil {
 		return nil, service.ErrAccountNotFound
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	// 必须在执行下一条 SQL 前显式关闭 rows：pq 驱动在同一连接上
-	// 不允许前一条查询的结果集未耗尽时启动新查询，否则会返回
-	// "unexpected Parse response" 错误。
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	// 任意维度额度在本次递增中从"未超"跨越到"已超"时，必须刷新调度快照，
 	// 否则 Redis 中缓存的 Account 仍显示旧的 used 值，后续请求会继续选中本账号，
@@ -704,5 +644,37 @@ func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountI
 			return nil, err
 		}
 	}
-	return &state, nil
+	return state, nil
+}
+
+// execAccountQuotaIncrement 执行一条账号配额累加语句，未命中任何行时返回 nil 状态。
+func execAccountQuotaIncrement(ctx context.Context, tx *sql.Tx, query string, accountID int64, amount float64) (*service.AccountQuotaState, error) {
+	rows, err := tx.QueryContext(ctx, query, amount, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	var state *service.AccountQuotaState
+	if rows.Next() {
+		state = &service.AccountQuotaState{}
+		if err := rows.Scan(
+			&state.TotalUsed, &state.TotalLimit,
+			&state.DailyUsed, &state.DailyLimit,
+			&state.WeeklyUsed, &state.WeeklyLimit,
+		); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	// 必须在执行下一条 SQL 前显式关闭 rows：pq 驱动在同一连接上
+	// 不允许前一条查询的结果集未耗尽时启动新查询，否则会返回
+	// "unexpected Parse response" 错误。
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return state, nil
 }

@@ -11,9 +11,7 @@ import { useAdminComplianceStore } from '@/stores/adminCompliance'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
-import { getLinkCardAccess } from '@/api/linkCards'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
-import { resolveLinkCardPortalRedirect } from './linkCardPortal'
 import { resolveRouteDocumentTitle } from './title'
 
 /**
@@ -187,22 +185,10 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'modelPlaza.title'
     }
   },
-  {
-    path: '/card',
-    alias: ['/link-card', '/quota-card'],
-    name: 'LinkCardPortal',
-    component: () => import('@/views/public/LinkCardPortalView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Quota Card Center',
-      titleKey: 'linkCards.cardPortal'
-    }
-  },
-
   // ==================== User Routes ====================
   {
     path: '/',
-    redirect: () => resolveLinkCardPortalRedirect(window.location.hostname, '/') || '/home'
+    redirect: '/home'
   },
   {
     path: '/dashboard',
@@ -411,18 +397,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/link-cards',
-    name: 'LinkCards',
-    component: () => import('@/views/user/LinkCardsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      requiresLinkCards: true,
-      title: 'Link Card Center',
-      titleKey: 'linkCards.title'
-    }
-  },
-  {
     path: '/custom/:id',
     name: 'CustomPage',
     component: () => import('@/views/user/CustomPageView.vue'),
@@ -460,17 +434,6 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       title: 'Points System',
       titleKey: 'nav.pointsSettings',
-    }
-  },
-  {
-    path: '/admin/link-cards',
-    name: 'AdminLinkCards',
-    component: () => import('@/views/admin/LinkCardsConsoleView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Link Card Console',
-      titleKey: 'linkCards.adminTitle'
     }
   },
   {
@@ -810,7 +773,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/card', '/link-card', '/quota-card', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -841,12 +804,6 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
 router.beforeEach(async (to, _from, next) => {
   // 开始导航加载状态
   navigationLoading.startNavigation()
-
-  const portalRedirect = resolveLinkCardPortalRedirect(window.location.hostname, to.path)
-  if (portalRedirect) {
-    next(portalRedirect)
-    return
-  }
 
   const authStore = useAuthStore()
 
@@ -953,19 +910,6 @@ router.beforeEach(async (to, _from, next) => {
     // User is authenticated but not admin, redirect to user dashboard
     next('/dashboard')
     return
-  }
-
-  if (to.meta.requiresLinkCards) {
-    try {
-      const access = await getLinkCardAccess()
-      if (access.allowed !== true) {
-        next('/dashboard')
-        return
-      }
-    } catch {
-      next('/dashboard')
-      return
-    }
   }
 
   if (requiresAdmin && authStore.isAdmin) {

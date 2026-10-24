@@ -38,21 +38,24 @@ func newAPIKeyRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *apiKeyR
 }
 
 func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
-	// 默认过滤已软删除记录，避免删除后仍被查询到。
-	return r.client.APIKey.Query().Where(apikey.DeletedAtIsNil())
+	// Historical product keys must not inherit ordinary user-balance billing.
+	// Read the retired discriminator through the row JSON so fresh databases,
+	// which never applied its audit-only migration, need no legacy column.
+	return r.client.APIKey.Query().Where(apikey.DeletedAtIsNil(), standardAPIKeyPredicate)
 }
 
-func standardAPIKeyPredicate(selector *entsql.Selector) {
-	keyType := selector.C("key_type")
-	selector.Where(entsql.Or(
-		entsql.EQ(keyType, service.APIKeyTypeStandard),
-		entsql.IsNull(keyType),
-		entsql.EQ(keyType, ""),
-	))
-}
-
-func (r *apiKeyRepository) standardQuery() *dbent.APIKeyQuery {
-	return r.activeQuery().Where(standardAPIKeyPredicate)
+func standardAPIKeyPredicate(s *entsql.Selector) {
+	// SQLite is used only by repository unit fixtures and has neither the
+	// historical PostgreSQL schema nor its whole-row JSON conversion.
+	if s.Dialect() == dialect.SQLite {
+		return
+	}
+	column := s.C(apikey.FieldID)
+	rowRef := column[:strings.LastIndexByte(column, '.')]
+	s.Where(entsql.P(func(b *entsql.Builder) {
+		b.WriteString("COALESCE(to_jsonb(").WriteString(rowRef).
+			WriteString(")->>'key_type', 'standard') = 'standard'")
+	}))
 }
 
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
@@ -88,7 +91,7 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
-	m, err := r.standardQuery().
+	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
@@ -108,7 +111,7 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 //   - 不加载完整的 API Key 实体及其关联数据（User、Group 等）
 //   - 适用于删除等只需 key 与用户 ID 的场景
 func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error) {
-	m, err := r.standardQuery().
+	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
 		Select(apikey.FieldKey, apikey.FieldUserID).
 		Only(ctx)
@@ -137,13 +140,7 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 		}
 		return nil, err
 	}
-	out := apiKeyEntityToService(m)
-	if out.IsLinkKey() {
-		if err := r.attachLinkAPIKeyMetadata(ctx, out); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return apiKeyEntityToService(m), nil
 }
 
 func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
@@ -155,17 +152,6 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldGroupID,
 			apikey.FieldName,
 			apikey.FieldStatus,
-			apikey.FieldKeyType,
-			apikey.FieldLinkState,
-			apikey.FieldLinkRateMultiplier,
-			apikey.FieldLinkOriginalDebit,
-			apikey.FieldLinkTotalFunded,
-			apikey.FieldLinkTotalRefunded,
-			apikey.FieldLinkConcurrency,
-			apikey.FieldLinkRpmLimit,
-			apikey.FieldLinkActivatedAt,
-			apikey.FieldLinkRevokedAt,
-			apikey.FieldLinkFrozenReason,
 			apikey.FieldIPWhitelist,
 			apikey.FieldIPBlacklist,
 			apikey.FieldQuota,
@@ -269,13 +255,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 		}
 		return nil, err
 	}
-	out := apiKeyEntityToService(m)
-	if out.IsLinkKey() {
-		if err := r.attachLinkAPIKeyMetadata(ctx, out); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return apiKeyEntityToService(m), nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fields service.APIKeyUpdateFields) error {
@@ -469,7 +449,7 @@ func (r *apiKeyRepository) deleteWithTombstone(ctx context.Context, exec *dbent.
 }
 
 func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters) *dbent.APIKeyQuery {
-	q := r.standardQuery().Where(apikey.UserIDEQ(userID))
+	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
 
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
@@ -636,8 +616,8 @@ func (r *apiKeyRepository) VerifyOwnership(ctx context.Context, userID int64, ap
 		return []int64{}, nil
 	}
 
-	ids, err := r.standardQuery().
-		Where(apikey.UserIDEQ(userID), apikey.IDIn(apiKeyIDs...)).
+	ids, err := r.client.APIKey.Query().
+		Where(apikey.UserIDEQ(userID), apikey.IDIn(apiKeyIDs...), apikey.DeletedAtIsNil()).
 		IDs(ctx)
 	if err != nil {
 		return nil, err
@@ -646,7 +626,7 @@ func (r *apiKeyRepository) VerifyOwnership(ctx context.Context, userID int64, ap
 }
 
 func (r *apiKeyRepository) CountByUserID(ctx context.Context, userID int64) (int64, error) {
-	count, err := r.standardQuery().Where(apikey.UserIDEQ(userID)).Count(ctx)
+	count, err := r.activeQuery().Where(apikey.UserIDEQ(userID)).Count(ctx)
 	return int64(count), err
 }
 
@@ -656,7 +636,7 @@ func (r *apiKeyRepository) ExistsByKey(ctx context.Context, key string) (bool, e
 }
 
 func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
-	q := r.standardQuery().Where(apikey.GroupIDEQ(groupID))
+	q := r.activeQuery().Where(apikey.GroupIDEQ(groupID))
 
 	total, err := q.Count(ctx)
 	if err != nil {
@@ -733,7 +713,7 @@ func apiKeyListOrder(params pagination.PaginationParams) []func(*entsql.Selector
 
 // SearchAPIKeys searches API keys by user ID and/or keyword (name)
 func (r *apiKeyRepository) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
-	q := r.standardQuery()
+	q := r.activeQuery()
 	if userID > 0 {
 		q = q.Where(apikey.UserIDEQ(userID))
 	}
@@ -757,7 +737,7 @@ func (r *apiKeyRepository) SearchAPIKeys(ctx context.Context, userID int64, keyw
 // ClearGroupIDByGroupID 将指定分组的所有 API Key 的 group_id 设为 nil
 func (r *apiKeyRepository) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	n, err := r.client.APIKey.Update().
-		Where(apikey.GroupIDEQ(groupID), apikey.DeletedAtIsNil(), standardAPIKeyPredicate).
+		Where(apikey.GroupIDEQ(groupID), apikey.DeletedAtIsNil()).
 		ClearGroupID().
 		Save(ctx)
 	return int64(n), err
@@ -767,7 +747,7 @@ func (r *apiKeyRepository) ClearGroupIDByGroupID(ctx context.Context, groupID in
 func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	client := clientFromContext(ctx, r.client)
 	n, err := client.APIKey.Update().
-		Where(apikey.UserIDEQ(userID), apikey.GroupIDEQ(oldGroupID), apikey.DeletedAtIsNil(), standardAPIKeyPredicate).
+		Where(apikey.UserIDEQ(userID), apikey.GroupIDEQ(oldGroupID), apikey.DeletedAtIsNil()).
 		SetGroupID(newGroupID).
 		Save(ctx)
 	return int64(n), err
@@ -775,13 +755,11 @@ func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, user
 
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
-	count, err := r.standardQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
+	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
 	return int64(count), err
 }
 
 func (r *apiKeyRepository) ListKeysByUserID(ctx context.Context, userID int64) ([]string, error) {
-	// This method is used only for authentication-cache invalidation. Include
-	// prepaid link keys so user status changes take effect for every credential.
 	keys, err := r.activeQuery().
 		Where(apikey.UserIDEQ(userID)).
 		Select(apikey.FieldKey).
@@ -793,8 +771,6 @@ func (r *apiKeyRepository) ListKeysByUserID(ctx context.Context, userID int64) (
 }
 
 func (r *apiKeyRepository) ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error) {
-	// This method is used only for authentication-cache invalidation. Include
-	// prepaid link keys so group changes and authorization removal are immediate.
 	keys, err := r.activeQuery().
 		Where(apikey.GroupIDEQ(groupID)).
 		Select(apikey.FieldKey).
@@ -897,7 +873,7 @@ func (r *apiKeyRepository) ResetRateLimitWindows(ctx context.Context, id int64) 
 // GetRateLimitData returns the current rate limit usage and window start times for an API key.
 func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (result *service.APIKeyRateLimitData, err error) {
 	rows, err := r.sql.QueryContext(ctx, `
-		SELECT usage_5h, usage_1d, usage_7d, window_5h_start, window_1d_start, window_7d_start
+		SELECT quota_used, usage_5h, usage_1d, usage_7d, window_5h_start, window_1d_start, window_7d_start
 		FROM api_keys
 		WHERE id = $1 AND deleted_at IS NULL`,
 		id)
@@ -913,27 +889,10 @@ func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (resu
 		return nil, service.ErrAPIKeyNotFound
 	}
 	data := &service.APIKeyRateLimitData{}
-	if err := rows.Scan(&data.Usage5h, &data.Usage1d, &data.Usage7d, &data.Window5hStart, &data.Window1dStart, &data.Window7dStart); err != nil {
+	if err := rows.Scan(&data.QuotaUsed, &data.Usage5h, &data.Usage1d, &data.Usage7d, &data.Window5hStart, &data.Window1dStart, &data.Window7dStart); err != nil {
 		return nil, err
 	}
 	return data, rows.Err()
-}
-
-func (r *apiKeyRepository) GetLinkCardBillingState(ctx context.Context, id int64) (*service.LinkCardBillingState, error) {
-	state := &service.LinkCardBillingState{}
-	err := scanSingleRow(ctx, r.sql, `
-		SELECT status, COALESCE(link_state, ''), quota, quota_used,
-		       COALESCE(link_reserved_amount, 0)
-		FROM api_keys
-		WHERE id=$1 AND key_type=$2 AND deleted_at IS NULL
-	`, []any{id, service.APIKeyTypeLink}, &state.Status, &state.LinkState, &state.Quota, &state.QuotaUsed, &state.Reserved)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, service.ErrAPIKeyNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return state, nil
 }
 
 func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
@@ -946,7 +905,6 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		Key:           m.Key,
 		Name:          m.Name,
 		Status:        m.Status,
-		KeyType:       m.KeyType,
 		IPWhitelist:   m.IPWhitelist,
 		IPBlacklist:   m.IPBlacklist,
 		LastUsedAt:    m.LastUsedAt,
@@ -966,39 +924,6 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		Window1dStart: m.Window1dStart,
 		Window7dStart: m.Window7dStart,
 	}
-	if strings.TrimSpace(out.KeyType) == "" {
-		out.KeyType = service.APIKeyTypeStandard
-	}
-	if m.LinkState != nil {
-		out.LinkState = *m.LinkState
-	}
-	if m.LinkRateMultiplier != nil {
-		out.LinkRateMultiplier = *m.LinkRateMultiplier
-	}
-	if m.LinkOriginalDebit != nil {
-		out.LinkOriginalDebit = *m.LinkOriginalDebit
-	}
-	if m.LinkTotalFunded != 0 {
-		out.LinkTotalFunded = m.LinkTotalFunded
-	}
-	if m.LinkTotalRefunded != 0 {
-		out.LinkTotalRefunded = m.LinkTotalRefunded
-	}
-	if m.LinkConcurrency != nil {
-		out.LinkConcurrency = *m.LinkConcurrency
-	}
-	if m.LinkRpmLimit != nil {
-		out.LinkRPMLimit = *m.LinkRpmLimit
-	}
-	if m.LinkActivatedAt != nil {
-		out.LinkActivatedAt = m.LinkActivatedAt
-	}
-	if m.LinkRevokedAt != nil {
-		out.LinkRevokedAt = m.LinkRevokedAt
-	}
-	if m.LinkFrozenReason != nil {
-		out.LinkFrozenReason = *m.LinkFrozenReason
-	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
 		if allowed := m.Edges.User.Edges.AllowedGroups; len(allowed) > 0 {
@@ -1014,70 +939,6 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		out.Group = groupEntityToService(m.Edges.Group)
 	}
 	return out
-}
-
-func (r *apiKeyRepository) attachLinkAPIKeyMetadata(ctx context.Context, out *service.APIKey) error {
-	if out == nil || r == nil || r.sql == nil {
-		return nil
-	}
-	var state, frozenReason sql.NullString
-	var rate, originalDebit, totalFunded, totalRefunded sql.NullFloat64
-	var concurrency, rpmLimit sql.NullInt64
-	var activatedAt, revokedAt sql.NullTime
-	err := scanSingleRow(ctx, r.sql, `
-		SELECT key_type, link_state, link_rate_multiplier, link_original_debit,
-		       link_total_funded, link_total_refunded, link_concurrency,
-		       link_rpm_limit, link_activated_at, link_revoked_at, link_frozen_reason
-		FROM api_keys
-		WHERE id = $1 AND deleted_at IS NULL
-	`, []any{out.ID}, &out.KeyType, &state, &rate, &originalDebit, &totalFunded,
-		&totalRefunded, &concurrency, &rpmLimit, &activatedAt, &revokedAt, &frozenReason)
-	if errors.Is(err, sql.ErrNoRows) {
-		return service.ErrAPIKeyNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if state.Valid {
-		out.LinkState = state.String
-	}
-	if rate.Valid {
-		out.LinkRateMultiplier = rate.Float64
-	}
-	if originalDebit.Valid {
-		out.LinkOriginalDebit = originalDebit.Float64
-	}
-	if totalFunded.Valid {
-		out.LinkTotalFunded = totalFunded.Float64
-	}
-	if totalRefunded.Valid {
-		out.LinkTotalRefunded = totalRefunded.Float64
-	}
-	var reserved sql.NullFloat64
-	if err := scanSingleRow(ctx, r.sql, `SELECT COALESCE(link_reserved_amount, 0) FROM api_keys WHERE id=$1 AND deleted_at IS NULL`, []any{out.ID}, &reserved); err != nil {
-		return err
-	}
-	if reserved.Valid {
-		out.LinkReservedAmount = reserved.Float64
-	}
-	if concurrency.Valid {
-		out.LinkConcurrency = int(concurrency.Int64)
-	}
-	if rpmLimit.Valid {
-		out.LinkRPMLimit = int(rpmLimit.Int64)
-	}
-	if activatedAt.Valid {
-		value := activatedAt.Time
-		out.LinkActivatedAt = &value
-	}
-	if revokedAt.Valid {
-		value := revokedAt.Time
-		out.LinkRevokedAt = &value
-	}
-	if frozenReason.Valid {
-		out.LinkFrozenReason = frozenReason.String
-	}
-	return nil
 }
 
 func userEntityToService(u *dbent.User) *service.User {
@@ -1134,6 +995,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		ID:                              g.ID,
 		Name:                            g.Name,
 		Description:                     derefString(g.Description),
+		I18n:                            g.I18n,
 		Platform:                        g.Platform,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,

@@ -2,14 +2,24 @@
 
 本文只记录可由 Git 历史、官方 Release tag、测试结果和脱敏部署证据复核的事实。`pending` 不得写成已完成；源码候选可以继续验证，但门禁未完成前不得创建 Release、生产镜像或宣称已上线。
 
-现行状态（`2026-10-10`）：生产为 `0.2.11-52t.3`，本轮候选为 `0.2.15-52t.1`。以下旧版本中“当前”“本轮”或 pending 描述仅代表该版本当时的审计状态，不能代替本节最新记录。
+历史只读生产基线（`2026-10-10`）为 `0.2.11-52t.3`，当时已发布并缓存的候选为 `0.2.15-52t.1`。以下各版本中“当前”“本轮”或 pending 仅代表该版本当时的审计状态，不能代替 2026-10-24 工作树验证或新的生产只读核验。
 
-本轮本地证据：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
+> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+
+### 当前候选总览（2026-10-24）
+
+- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
+- 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
+- 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
+
+
+历史 v0.2.15 发布证据（不代替 2026-10-24 当前工作树验收）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 已发布并缓存服务器，生产仍为 0.2.11-52t.3，等待维护者人工切换。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 1. 版本总表
 
 | 官方基线 | 官方 Release commit | 私有状态 | 私有兼容节点/说明 |
 | --- | --- | --- | --- |
+| `v0.2.18` | `ac1b8f1271be0d674fa6f074403c1410f30a3a81` | `0.2.18-52t.1` candidate | 退役提链/额度卡；保留积分、媒体、TTFT、可盈支付和现有首页/帮助；当前门禁/产物以本轮交接为准，生产未切换。 |
 | `v0.1.164` | `cd8bb98c44303b2c8f04c0da340447c992f0cb7d` | completed (historical) | 私有 `d5bea143b` 合并；保留聚合分组、媒体冻结、积分和首页谱系。 |
 | `v0.1.168` | `99c8e4bf7564823bafbab369acab6539e734c1bb` | completed (historical) | 私有 `d30c42da` 合并；后续由 `9f1b6bae`、`e4179147`、`55ac503b`、`7e598fbb` 补齐媒体、积分同库和首页。 |
 | `v0.1.169` | `26d894ef4f50645a4bf1030e378ac892f17d0223` | completed (historical) | 私有 `3da18b9dd` 合并；保留官方安全修复、定价资源和调度语义，积分/额度卡独立兼容。 |
@@ -23,13 +33,15 @@
 | `v0.2.11` | `96f4c115c9749078f90cbf210a01d39baf3f53b6` | `v0.2.11-52t.3` production baseline | `2026-10-10` 只读确认 `.3` 运行，私有起点 `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f`；GHCR manifest `sha256:100f8eb357fb2bddba42fb7d3f6fa1e7cc50160180bc5b92f93006b852928d83`，healthy、restart count `0`。`.1` 的早期候选记录保留在下方，仅代表当时状态。 |
 | `v0.2.15` | `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2` | `v0.2.15-52t.1` released and cached; manual switch pending | 从私有 `main` `27f5e0c2ffa6ff50c37e9fb2d3bb6cc849aeaf1f` 合入，merge-base 为官方 v0.2.11 `96f4c115c9749078f90cbf210a01d39baf3f53b6`；分支 `codex/upgrade-v0.2.15-compat`。PR #16 已合入；兼容审查、测试、安全、Release 与服务器缓存全部完成，源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`；尚未生产切换。官方 tag 的 `VERSION=0.2.14`，私有候选主动设 `0.2.15-52t.1`。 |
 
-### v0.2.15 当前兼容候选
+### v0.2.15 历史兼容候选（不代表当前工作树）
+
+本节的测试、资金边界与产物只属于当时仍含提链产品的 v0.2.15；当前额度卡移除和旧 Key 失败关闭须另有当前工作树验证证据，不得引用旧全绿门禁代替。
 
 - 官方 Release 于 `2026-10-09 11:35:49 +08` 发布；只合入精确 Release peeled commit `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`，不混入官方 tag 后未发布 tip。Go 工具链和 CI 同步至 `1.27.2`。
 - 官方重点差异包括充值赠送/折扣及订单 bonus amount、类型化平台约束调整、WS 后续轮次价格刷新、图像输入计费、Claude 计费/冷却与平台调度结构。兼容回归和发布门禁已全部通过，生产切换仍待维护者人工操作。
-- 保留积分/签到同库桥接、提链/额度卡独立资金账本、既有图片/视频冻结释放核销、统一媒体接口、真实 TTFT、Codex 单值 48 KiB 头部保护、KeyingPay V2 及当前首页/帮助/Logo。Seedance 按用户确认维持官方请求后计费。
+- 当时保留积分/签到同库桥接、提链/额度卡独立资金账本及既有图片/视频冻结释放核销、统一媒体接口、真实 TTFT、Codex 单值 48 KiB 头部保护、KeyingPay V2 及当前首页/帮助/Logo。Seedance 按用户确认维持官方请求后计费。
 - 新增迁移 `241_add_payment_order_bonus_amount.sql`、`241_add_typesafe_platform.sql`、`242_drop_platform_check_constraints.sql`；双 `241` 按完整文件名共存。旧私有迁移与官方 238b/239/240 共 13 份已只读匹配生产 checksum；checksum 对 UTF-8 内容执行 `strings.TrimSpace` 后 SHA256。新增迁移尚未在生产执行，隔离 PostgreSQL 迁移/事务回归已通过。
-- 资金兼容重点：KeyingPay 的实付金额、余额入账、赠送与退款不能混用；回调保持签名/金额核验与幂等。官方允许删除普通 Key 后仍结算余额，必须验证提链删除/退款与在途 usage 的独立余额结算、资金守恒和终态边界。
+- 资金兼容重点：KeyingPay 的实付金额、余额入账、赠送与退款不能混用；回调保持签名/金额核验与幂等。官方允许删除普通 Key 后仍结算余额，当时验证提链删除/退款与在途 usage 的独立余额结算、资金守恒和终态边界。该历史产品链路不属于当前候选；当前旧 Key 隔离、失败关闭和普通余额不回落须独立验证。
 - `kimi-k3` 零 usage 记录仍需独立核查；升级不代表缺失 usage 已修复。不得估算 token/费用，不进行未经单独批准的历史追扣。
 - 本地和隔离 PostgreSQL 测试、PR #16、CI、安全扫描、full GoReleaser Release 和服务器缓存全部完成；源码/Tag/OCI revision `8afa8d339eec95607ccca76386813e1874b53159`，Release run `38060183370`，manifest `sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948`。沿用现有私有 annotated Tag/精确 CI/full GoReleaser/GHCR 流程，`SIMPLE_RELEASE=false`。
 - 发布分类为 `image-update-required`。自动化只准备和缓存候选，维护者手工仅替换 `sub2api`；不替换积分、生图工作台等容器，不改生产数据库/Redis/Nginx，不发布宿主首页/帮助静态资产。
@@ -135,9 +147,9 @@
 - 三份 `194` 迁移按完整文件名共存：`194_add_usage_log_upstream_response_model.sql`、`194_channel_monitor_v2.sql`、`194_link_cards.sql`。官方 `195-206`、`217-220` 也原名保留，发布策略固定为 `image-update-required`。
 - 首轮验证曾通过本地门禁，但 Tag CI 暴露了两处测试调用签名落后、Grok usage 错误未处理、格式问题，以及容量重试重新生成 Codex 指纹导致请求体变化。`v0.1.175-52t.1` Release 已取消且无 GHCR 产物；修复候选需重新执行完整门禁，不能沿用首轮结论。生产数据库迁移和上线冒烟仍待维护者在 Compose 窗口完成。
 
-## 3. v0.1.183 兼容矩阵与发布缺口
+## 3. v0.1.183 历史兼容矩阵与当时发布缺口
 
-在创建私有兼容分支前，逐项填写状态和测试证据：
+本节仅保留该历史版本的兼容矩阵与当时门禁，不作为当前发布或生产操作指令；历史提链验证项不代表当前候选仍有该功能。
 
 | 范围 | 官方变化 | 私有风险 | 处理状态 |
 | --- | --- | --- | --- |
@@ -148,7 +160,7 @@
 | 产品与前端 | 模型广场、渠道监控、插件和管理页面 | 积分、提链、首页/帮助和嵌入导航不得覆盖 | source merged；本地与 GitHub 前端门禁通过 |
 | 发布 | Tag、manifest、GHCR、数据库备份和人工切换 | 不能把源码候选或镜像构建误当生产 | Tag/Release/GHCR/服务器缓存 completed；策略为 `image-update-required`；备份及维护者手动 Compose 切换 pending |
 
-### v0.1.183 发布门禁
+### v0.1.183 历史发布门禁（不可作为当前执行清单）
 
 1. 以双父合并提交 `e973f23ad474586cb607b8c6b4b6a1fa5c60c60c` 为源码节点执行并记录 `git diff --check`、后端全量测试/vet 和前端 lint/typecheck/Vitest/build；最终发布提交允许只追加门禁/文档收口，但不得改写该合并谱系。
 2. 使用 Go `1.27.0` 运行积分系统全量测试，并定向覆盖 `v21` 快照、GPT-5.6 长上下文阈值/倍率/跨协议矩阵、长上下文 OR 开关、渠道区间不重复计费、Fast/Flex/分时计价、提链资金守恒、媒体冻结释放、视频兼容、容量精确重试、首页和帮助入口。

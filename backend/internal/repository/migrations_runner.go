@@ -64,6 +64,15 @@ const usageLogsEffectiveRequestedModelIndex = "idx_usage_logs_effective_requeste
 const usageLogsEffectiveUpstreamModelIndex = "idx_usage_logs_effective_upstream_model_created"
 const usageLogsUpstreamRequestIDIndexMigration = "233_add_usage_log_upstream_request_id_index_notx.sql"
 const usageLogsUpstreamRequestIDIndex = "idx_usage_logs_upstream_request_id"
+const geminiImageGenerationGroupsMigration = "246_enable_gemini_image_generation_groups.sql"
+const geminiImageGenerationGroupsMigrationChecksum = "87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c"
+
+// historicalAuditOnlyMigrations are retained for checksum and production
+// history audits, but must never be applied by a fresh runtime. Link-card
+// tables and settings are intentionally not recreated after product removal.
+var historicalAuditOnlyMigrations = map[string]struct{}{
+	"194_link_cards.sql": {},
+}
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -180,6 +189,10 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	sort.Strings(files) // 确保按文件名顺序执行迁移
 
 	for _, name := range files {
+		if _, auditOnly := historicalAuditOnlyMigrations[name]; auditOnly {
+			continue
+		}
+
 		// 读取迁移文件内容
 		contentBytes, err := fs.ReadFile(fsys, name)
 		if err != nil {
@@ -187,7 +200,7 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 
 		content := strings.TrimSpace(string(contentBytes))
-		if content == "" {
+		if content == "" && name != geminiImageGenerationGroupsMigration {
 			continue // 跳过空文件
 		}
 
@@ -195,6 +208,10 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		// 这是一种防篡改机制：如果有人修改了已应用的迁移文件，系统会拒绝启动。
 		sum := sha256.Sum256([]byte(content))
 		checksum := hex.EncodeToString(sum[:])
+		preserveConfiguration, err := preserveMigrationConfiguration(name, checksum)
+		if err != nil {
+			return err
+		}
 
 		// 检查该迁移是否已经应用
 		var existing string
@@ -261,10 +278,13 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 			return fmt.Errorf("begin migration %s: %w", name, err)
 		}
 
-		// 执行迁移 SQL
-		if _, err := tx.ExecContext(ctx, content); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("apply migration %s: %w", name, err)
+		// Keep an explicitly approved configuration baseline without executing
+		// the upstream data rewrite; still record its immutable identity below.
+		if !preserveConfiguration {
+			if _, err := tx.ExecContext(ctx, content); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply migration %s: %w", name, err)
+			}
 		}
 
 		// 记录迁移已完成，保存文件名和校验和
@@ -281,6 +301,22 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	}
 
 	return nil
+}
+
+// preserveMigrationConfiguration is a narrowly scoped, maintainer-approved
+// baseline exception (2026-10-24). Migration 246 only enables existing group
+// image flags; this deployment must preserve both true and false values.
+// Keep the upstream file and checksum unchanged, validate existing history,
+// and record first-time handling atomically so future runtimes do not replay
+// the rewrite. Unknown contents must fail closed, never fall back to execution.
+func preserveMigrationConfiguration(name, checksum string) (bool, error) {
+	if name != geminiImageGenerationGroupsMigration {
+		return false, nil
+	}
+	if checksum != geminiImageGenerationGroupsMigrationChecksum {
+		return false, fmt.Errorf("migration %s has unreviewed configuration rewrite checksum %s; refusing to change existing group image settings", name, checksum)
+	}
+	return true, nil
 }
 
 type migrationConnection interface {

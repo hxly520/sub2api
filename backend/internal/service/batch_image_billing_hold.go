@@ -13,7 +13,6 @@ const (
 	batchImageHoldRequestPrefix    = "batch_image_hold:"
 	batchImageCaptureRequestPrefix = "batch_image_capture:"
 	batchImageReleaseRequestPrefix = "batch_image_release:"
-	batchImageLinkCardHoldPrefix   = "link_card:"
 )
 
 func BatchImageHoldRequestID(batchID string) string {
@@ -26,14 +25,6 @@ func BatchImageCaptureRequestID(batchID string) string {
 
 func BatchImageReleaseRequestID(batchID string) string {
 	return batchImageReleaseRequestPrefix + strings.TrimSpace(batchID)
-}
-
-func LinkCardBatchImageHoldID(batchID string) string {
-	return batchImageLinkCardHoldPrefix + BatchImageHoldRequestID(batchID)
-}
-
-func isLinkCardBatchImageHoldID(holdID *string) bool {
-	return holdID != nil && strings.HasPrefix(strings.TrimSpace(*holdID), batchImageLinkCardHoldPrefix+batchImageHoldRequestPrefix)
 }
 
 func buildBatchImageHoldCommand(job *BatchImageJob, requestID string, actualAmount float64, payloadHash string) (*BatchImageBalanceHoldCommand, error) {
@@ -61,7 +52,6 @@ func buildBatchImageHoldCommand(job *BatchImageJob, requestID string, actualAmou
 		HoldAmount:         holdAmount,
 		ActualAmount:       actualAmount,
 		RequestPayloadHash: strings.TrimSpace(payloadHash),
-		LinkCard:           isLinkCardBatchImageHoldID(job.HoldID),
 	}, nil
 }
 
@@ -77,7 +67,7 @@ func reserveBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 		return nil
 	}
 	if _, err := repo.ReserveBatchImageBalance(ctx, cmd); err != nil {
-		if errors.Is(err, ErrBatchImageInsufficientBalance) || errors.Is(err, ErrLinkCardPrepaidExhausted) {
+		if errors.Is(err, ErrBatchImageInsufficientBalance) {
 			return ErrBatchImageInsufficientBalance
 		}
 		return ErrBatchImageBillingHoldFailed.WithCause(err)

@@ -63,25 +63,6 @@ func TestReserveInflightBalance_SkipsWhenDisabledOrSubscription(t *testing.T) {
 	require.Equal(t, 0, est.calls, "subscription mode must be unaffected")
 }
 
-func TestReserveInflightBalance_SkipsLinkCardQuota(t *testing.T) {
-	cache := newHandlerInflightCache(0)
-	cfg := &config.Config{}
-	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
-	billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
-	t.Cleanup(billing.Stop)
-	est := &countingEstimator{cost: 0.9, priced: true}
-	apiKey := &service.APIKey{
-		ID: 91, KeyType: service.APIKeyTypeLink,
-		User: &service.User{ID: 7, Balance: 0},
-	}
-
-	done, err := reserveInflightBalance(newInflightTestGinContext(), billing, est, apiKey, nil, tokenInflightEstimate("m", nil))
-	require.NoError(t, err)
-	done()
-	require.Zero(t, est.calls, "link cards use prepaid card quota, not the creator's balance estimator")
-	require.Zero(t, cache.count(), "link card requests must not reserve creator balance")
-}
-
 func TestReserveInflightBalance_UnpricedFailOpenByDefaultFailClosedOptIn(t *testing.T) {
 	cache := newHandlerInflightCache(10)
 	cfg := &config.Config{}
