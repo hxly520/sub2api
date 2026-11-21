@@ -2,13 +2,19 @@
 
 > 本手册只描述当前源码和可复核的发布动作，不记录生产密钥、数据库连接串、GHCR PAT 或用户数据。生产 Sub2API 容器始终由维护者手工切换；自动化只负责检查、构建和发布候选产物。
 
-> **候选源码边界（2026-10-24）**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
+> **候选源码边界**：提链/额度卡已从当前候选的运行时代码、路由、前端页面和部署入口移除；本次未切换生产容器，尚未核验生产运行态是否停用。下文旧版本的相关接口、配置、账本、验收和回滚步骤仅为历史或审计资料，不是当前候选的部署、启用或回滚指令。`194_link_cards.sql` 原文件、原 checksum 和既有迁移历史保持不变，当前候选迁移 runner 按完整文件名跳过它；不得借升级重新启用旧入口或把历史提链 Key 当作普通 Key 使用。
 
-### 当前候选总览（2026-10-24）
+### 当前候选总览：v0.2.24-52t.1（2026-11-21）
 
-**最终交付状态**：PR #17 已合入 main，精确 annotated Tag `v0.2.18-52t.1` / source `d16c14b135fe8de25ce73850db51040c1cd8d679` 已完成 Release `40056966532`，同 Tag 质量/安全与真实 PostgreSQL 门禁、full 五平台归档、双架构 GHCR 回读均通过。实际 GoReleaser `v2.19.0`。镜像已于 `2026-10-24 03:31 UTC` 缓存服务器，index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`；五个原运行容器前后身份严格不变，生产仍为 `0.2.15-52t.1`。以下生产切换和切换后验收仍由维护者执行，不将缓存等同上线。完整证据与人工命令见 [本轮交接](RELEASE_V0_2_18_52T_1_CN.md)。
+- 当前从私有 `main` 合并官方 `v0.2.24`，后端 Go `1.27.4`、前端 Node `24` / pnpm `9`。精确 Git 身份、8 份新增官方迁移、局部验证和待办见[升级交接](RELEASE_V0_2_24_52T_1_CN.md)。
+- 提链、额度卡不重新启用；旧 Key、旧快照、历史账本和非普通用户资金媒体冻结不回落到普通余额。积分、工作台和其他独立容器不属于本次发布或替换范围。
+- 继续走 `image-update-required`、精确 annotated Tag、同 Tag 质量/安全、full 五平台归档、Buildx amd64/arm64 GHCR 和人工 Compose。切换前须核验当前生产镜像、迁移、在途媒体与回滚条件，备份数据库但不提前运行生产迁移。
 
-- 当前工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当前测试、发布、镜像与缓存状态以 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，不沿用下方 v0.2.15 的历史全绿结论。
+### 历史候选总览（2026-10-24）
+
+**当时交付状态**：PR #17 已合入 main，精确 annotated Tag `v0.2.18-52t.1` / source `d16c14b135fe8de25ce73850db51040c1cd8d679` 已完成 Release `40056966532`，同 Tag 质量/安全与真实 PostgreSQL 门禁、full 五平台归档、双架构 GHCR 回读均通过。实际 GoReleaser `v2.19.0`。镜像已于 `2026-10-24 03:31 UTC` 缓存服务器，index `sha256:5a3abb7da355d5e9df8bf203aca79e84c53e5d6215720034580f01160bc262fc`；五个原运行容器前后身份严格不变，生产仍为 `0.2.15-52t.1`。以下生产切换和切换后验收仍由维护者执行，不将缓存等同上线。完整证据与人工命令见 [本轮交接](RELEASE_V0_2_18_52T_1_CN.md)。
+
+- 当时工作树版本为 `0.2.18-52t.1`，官方升级目标为 `v0.2.18`；后端 `go.mod` 使用 Go `1.27.3`。当时测试、发布、镜像与缓存状态见 [v0.2.18 候选交接](RELEASE_V0_2_18_52T_1_CN.md) 的逐项证据为准，仅代表该版本的验收。
 - 当前候选完全移除提链/额度卡产品运行时，只保留原 `194_link_cards.sql`、checksum、迁移历史和审计数据；历史 Key/媒体冻结分类须失败关闭，禁止回落普通余额。
 - 用户于 2026-10-24 确认保留分组生图开关现状（true/false 均不变）。官方 `246_enable_gemini_image_generation_groups.sql` 文件和原 checksum 不变；runner 对该精确 filename/hash 不执行开启开关的 SQL，首次仅在同一事务记录原 filename/checksum，已有记录继续核验，未知 hash 失败关闭；其他迁移照常。该改动已通过最终 PR 提交与精确 Tag 的真实 PostgreSQL、质量和安全门禁；不是引用旧提交结论，也未在生产执行迁移。
 - 本次不切换或重启生产，不修改生产 PostgreSQL、Redis、Nginx 或其他容器。2026-10-24 已重新只读核验生产为 `0.2.15-52t.1`，healthy、restart 0；旧配置仍启用提链，尚未切换本候选，具体见本轮交接。
@@ -125,21 +131,19 @@ git diff --check
 ## 3. 生成候选 Tag 与 GitHub Actions 镜像
 
 1. 在升级分支确认工作树干净、官方 commit 和 `backend/cmd/server/VERSION` 已记录。版本文件必须已经等于 Tag 去掉前导 `v` 后的完整值；工作流不会代替源码改写版本。
-2. 提交候选变更并创建 annotated tag；Tag 名称只允许 `vX.Y.Z-52t.N`。以下仅展示历史 v0.2.15 的命令结构，执行时必须替换为当前已核验候选分支、版本和 Tag，不得重建或覆盖已发布 Tag：
+2. 提交且只推送本轮候选分支，提交 PR 后等待质量/安全与隔离 PostgreSQL 回归通过。保留双亲上游合并谱系，不进行 squash 或 rebase 合并。确认 PR 已实际合入私有 `main` 后，才在该精确合并提交上创建 annotated Tag（只允许 `vX.Y.Z-52t.N`）。不重建或覆盖已发布 Tag，不直接推送 `main`，也不把候选 Tag 提前用于试运行。
 
 ```bash
-git add -A
-git diff --cached --check
-git commit -m "merge: official v0.2.15 with 52Token compatibility"
-git push origin codex/upgrade-v0.2.15-compat
-# PR/审查后把候选合入私有 main，再在该 main commit 上创建 annotated Tag
-git tag -a v0.2.15-52t.1 -m "private compatibility release v0.2.15-52t.1 [image-update-required]"
-git push origin main
-git push origin v0.2.15-52t.1
+git fetch origin main
+# 精确填写该 PR 的已审查合并提交，不取之后可能变化的 main tip。
+git tag -a v0.2.24-52t.1 <PR-merge-commit> \
+  -m "Sub2API v0.2.24-52t.1" \
+  -m "[image-update-required] Only the Sub2API image is included; deployment is manual."
+git push origin refs/tags/v0.2.24-52t.1
 ```
 
 3. `.github/workflows/release.yml` 只接受现存的私有 Tag。它先确认名称格式、annotated Tag、精确 checkout commit、Tag 树内 `VERSION` 和默认分支祖先关系，再以同一个 `refs/tags/<tag>` 调用 `backend-ci.yml` 与 `security-scan.yml`。任何校验、质量或安全门禁失败都会阻止 GoReleaser 和镜像发布。
-4. 质量门禁通过后才从同一 Tag 构建前端，再由 GoReleaser 构建 Linux 多架构 GHCR 镜像、各平台二进制和 checksums。当前工作流实际使用 `~> v2` 范围，不能将其描述成固定 `v2.17.1`；发布时记录实际工具版本。正式候选应保持 `SIMPLE_RELEASE=false`，镜像仓库按当前 GitHub 仓库 owner 发布，即 `ghcr.io/hxly520/sub2api:<tag-without-v>`。
+4. 质量和安全门禁通过后，当前流程由 `.github/release-tools/release_matrix.py` 固定同一 Tag 源码，统一构建前端。各平台用 GoReleaser `~> v2` 分别生成归档，校验完整矩阵后由 Docker Buildx 从已核验二进制构建 GHCR 镜像，再用 GoReleaser 发布既有归档和 checksums；发布时记录实际工具版本。正式候选应保持 `SIMPLE_RELEASE=false`，镜像仓库按当前 GitHub 仓库 owner 发布，即 `ghcr.io/hxly520/sub2api:<tag-without-v>`。
 5. 发布流程不提交代码、不推进默认分支，也不单独同步 `VERSION`；候选源码何时合并到 `main` 由维护者按正常 Git 审查流程决定。
 6. 记录 workflow run URL、Tag commit、`backend/cmd/server/VERSION`、GHCR 多架构 manifest digest 和 OCI revision。不要把 `latest` 当作候选或回滚标识。
 7. 只有源码门禁、Actions、Release 资产和 digest 全部复核后，才把文档中的 pending 改为完成。Release 成功也不代表生产已切换。

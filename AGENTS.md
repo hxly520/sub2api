@@ -4,7 +4,13 @@
 
 > **候选移除范围**：提链/额度卡已从当前候选运行时代码、路由、页面和部署入口移除，生产尚未切换/重新核验。历史接口、账本及开放证据只用于审计。`194_link_cards.sql` 保留原文件和 checksum，当前迁移 runner 按完整文件名跳过。
 
-## 当前已发布候选（2026-10-24，生产待人工切换）
+## 当前升级候选：v0.2.24-52t.1（2026-11-21）
+
+- 从私有 `main` `572cb8e6c4a1b00e82f02d0299a5d7cd602f3b80` 合入官方 `v0.2.24` peeled commit `5c2982a81b46e2142d0143d2f83c1ce9c4da1d24`，merge-base 为官方 `v0.2.18` `ac1b8f1271be0d674fa6f074403c1410f30a3a81`。候选分支 `codex/upgrade-v0.2.24-52t`，源码版本 `0.2.24-52t.1`。
+- 本轮确认取消提链与额度卡，其他二开按下文保留。新镜像只交付 Sub2API；工作台、积分、独立额度卡等容器不操作，生产只由维护者手工替换。
+- 本轮源代码、门禁、SSH、镜像与人工切换状态见[升级交接](docs/RELEASE_V0_2_24_52T_1_CN.md)；下方 2026-10-24 快照仅作历史，生产运行版本及停用状态需要新证据。
+
+## 历史已发布候选（2026-10-24，当时生产待人工切换）
 
 - 官方基线 `v0.2.18`：annotated tag object `de86961b627e48db75d61fff8c05535d44a00cbe`，peeled commit `ac1b8f1271be0d674fa6f074403c1410f30a3a81`。官方 tag 内 VERSION 为 `0.2.17`；私有版本为 `0.2.18-52t.1`，Go `1.27.3`。
 - 分支 `codex/upgrade-v0.2.18-no-linkcards`，私有起点为 `main` `6cd5468dff7b874647571b80f08002f51b8a9ea6`，merge-base 为官方 `v0.2.15` `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`。
@@ -16,7 +22,7 @@
 ## 开始前必读
 
 1. `docs/PRIVATE_CUSTOMIZATION_CN.md`：二开功能清单、代码入口和官方合并规则。
-2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前 v0.2.18 私有发布的测试、GitHub Actions、GHCR 和人工 Compose 流程。
+2. `docs/PRIVATE_RELEASE_RUNBOOK_CN.md`：当前私有候选的测试、GitHub Actions、GHCR 和人工 Compose 流程。
 3. `docs/OFFICIAL_COMPATIBILITY_HISTORY_CN.md`：官方版本差异及证据状态。
 4. `docs/PRODUCTION_OPERATIONS_CN.md`：生产镜像、数据库、Redis、Nginx 和只读证据；不要以旧文档猜测运行态。
 5. `docs/LINK_CARDS_ACCEPTANCE_20260808_CN.md`、`docs/MEDIA_API_CN.md` 和 `points-system/README.md`：额度卡历史验收（仅审计）、媒体和积分契约。
@@ -37,7 +43,7 @@
 - Codex `x-codex-turn-state` 单值 48 KiB 保护及 Nginx 响应头缓冲约束。
 - 当前未登录首页、帮助页、导航和独立 `infinite-canvas` 工作台部署契约。
 
-普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配。额度卡 CCSwitch 教程与提链 Key 均为历史内容，当前入口和鉴权路径已移除。当前升级以官方 `v0.2.18` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key 和媒体入口继续经过同一模型白名单。
+普通 API Key 页旧 CCSwitch 自动导入仍不属于当前保留范围；KeyingPay V2（可盈Pay）支付通道必须保留签名、金额核验、幂等回调、查询和退款适配。额度卡 CCSwitch 教程与提链 Key 均为历史内容，当前入口和鉴权路径已移除。当前升级以官方 `v0.2.24` 网关、协议、重试、缓存、计费和账号调度语义为准。官方 `235_group_model_allowlist.sql` 已属于历史基线，普通 Key 和媒体入口继续经过同一模型白名单。
 
 ## 不可破坏契约
 
@@ -53,7 +59,7 @@
 
 当前版本身份见上文和本轮交接；旧 v0.2.15 发布/服务器缓存证据只属于历史，不代替本次验证。
 
-官方相对 v0.2.15 新增 `242_group_i18n.sql`、`243_gemini_cached_contents.sql`、`244_gemini_cached_contents_channel_usage.sql`、`245_gemini_cached_contents_mutation_lease.sql`、`246_enable_gemini_image_generation_groups.sql`，两份 `242` 按完整文件名共存。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；旧迁移不修改、不改名。用户于 **2026-10-24 明确保留分组生图开关现状（true/false 均不变）**：246 原 SQL 及 checksum `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c` 保持不变，runner 仅对该完整文件名和已审查 checksum 执行配置保留例外，不执行其开启开关的 SQL；首次处理在同一事务记录原 filename/checksum，已有迁移历史继续校验，未知 checksum 失败关闭。其他迁移正常执行，不泛化跳过同号文件。该兼容改动的最终精确提交及 Tag 必须另经 CI/隔离数据库验证，不继承此前代码全绿结论。未经隔离数据库验证不得发布；不把 `kimi-k3` 缺失 usage 自动视为修复，不估计扣费、不历史追扣。
+历史 v0.2.18 相对 v0.2.15 新增 `242_group_i18n.sql`、`243_gemini_cached_contents.sql`、`244_gemini_cached_contents_channel_usage.sql`、`245_gemini_cached_contents_mutation_lease.sql`、`246_enable_gemini_image_generation_groups.sql`，两份 `242` 按完整文件名共存。迁移 checksum 是 UTF-8 内容经 `strings.TrimSpace` 后的 SHA256；旧迁移不修改、不改名。用户于 **2026-10-24 明确保留分组生图开关现状（true/false 均不变）**：246 原 SQL 及 checksum `87267be7ab657173768989e2b0b105c5569c5930a7f1ed124f4cf81e5198297c` 保持不变，runner 仅对该完整文件名和已审查 checksum 执行配置保留例外，不执行其开启开关的 SQL；首次处理在同一事务记录原 filename/checksum，已有迁移历史继续校验，未知 checksum 失败关闭。其他迁移正常执行，不泛化跳过同号文件。该兼容改动的最终精确提交及 Tag 必须另经 CI/隔离数据库验证，不继承此前代码全绿结论。未经隔离数据库验证不得发布；不把 `kimi-k3` 缺失 usage 自动视为修复，不估计扣费、不历史追扣。
 
 沿用既有 full 发布目标和 GHCR，适配已审查的官方发布工作流结构，`SIMPLE_RELEASE=false`，发布策略为 `image-update-required`。本轮仅构建并缓存 Sub2API 候选镜像；生产由维护者手工仅切换 `sub2api` 服务，不替换积分、生图工作台等其他容器，不修改生产数据库、Redis、Nginx 或宿主首页/帮助静态资产。
 

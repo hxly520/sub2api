@@ -63,12 +63,11 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		var err error
 		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
-			logRequestBodyReadFailure(reqLog, c.Request, err)
-			if maxErr, ok := extractMaxBytesError(err); ok {
-				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			if handleRequestBodyReadError(c, reqLog, err) {
 				return
 			}
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+			status, message := requestBodyReadFailure(reqLog, c.Request, err)
+			h.errorResponse(c, status, "invalid_request_error", message)
 			return
 		}
 	}

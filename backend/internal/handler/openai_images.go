@@ -57,12 +57,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		logRequestBodyReadFailure(reqLog, c.Request, err)
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		if handleRequestBodyReadError(c, reqLog, err) {
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		status, message := requestBodyReadFailure(reqLog, c.Request, err)
+		h.errorResponse(c, status, "invalid_request_error", message)
 		return
 	}
 	if len(body) == 0 {
@@ -70,11 +69,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 
-	if isMultipartImagesContentType(c.GetHeader("Content-Type")) {
-		setOpsRequestContext(c, "", false)
-	} else {
-		setOpsRequestContext(c, "", false)
-	}
+	setOpsRequestContext(c, "", false)
 
 	parsed, err := h.gatewayService.ParseOpenAIImagesRequest(c, body)
 	if err != nil {
@@ -161,6 +156,25 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.handleStreamingAwareError(c, status, code, message, streamStarted)
 		return
 	}
+	// The durable private reservation is authoritative for balance-backed media.
+	// Do not reserve the same amount again in the official in-flight cache.
+	inflightDone := inflightNoop
+	if !h.gatewayService.MediaGenerationBalanceHoldRequired(apiKey, subscription) {
+		var inflightErr error
+		inflightDone, inflightErr = reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{
+			Model: routingModel, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: parsed.N,
+		})
+		if inflightErr != nil {
+			status, code, message, retryAfter := billingErrorDetails(inflightErr)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.handleStreamingAwareError(c, status, code, message, streamStarted)
+			return
+		}
+	}
+	defer inflightDone()
+
 	if parsed.Async {
 		h.handleOpenAIImageAsyncCreation(c, reqLog, apiKey, subject, subscription, body, parsed, channelMapping, asyncCreation, routingStart)
 		return
@@ -168,7 +182,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
 	requestCtx := withOpenAIAccountScheduleProfile(
-		service.WithOpenAIImageGenerationIntent(c.Request.Context()),
+		service.WithOpenAIImageSizeRouting(service.WithOpenAIImageGenerationIntent(c.Request.Context()), openAIImageRoutingSize(parsed)),
 		c,
 		routingModel,
 	)
@@ -186,6 +200,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	if err != nil {
 		if failoverClientGone(c) {
 			reqLog.Info("openai.images.account_select_aborted_client_disconnected", zap.Error(err))
+			return
+		}
+		if tier, unsupported := h.gatewayService.OpenAIImageSizeTierUnsupported(requestCtx, apiKey.GroupID, routingModel, openAIImageRoutingSize(parsed), "", parsed.RequiredCapabilityForModel(channelMapping.MappedModel)); unsupported {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+			h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", service.OpenAIImageSizeTierUnsupportedMessage(openAIImageRoutingSize(parsed), tier), streamStarted)
 			return
 		}
 		reqLog.Warn("openai.images.account_select_failed",
@@ -478,6 +497,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	reqLog.Debug("openai.images.request_completed", zap.Int64("account_id", account.ID))
+}
+
+// Route explicit provider size fields through the same official tier selector.
+func openAIImageRoutingSize(parsed *service.OpenAIImagesRequest) string {
+	if parsed.ImageSize != "" {
+		return parsed.ImageSize
+	}
+	return parsed.Size
 }
 
 func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration {
