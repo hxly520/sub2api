@@ -93,6 +93,7 @@ func TestMain(m *testing.M) {
 	}
 	integrationDSN = dsn
 
+	integrationDSN = dsn
 	integrationDB, err = openSQLWithRetry(ctx, dsn, 30*time.Second)
 	if err != nil {
 		log.Printf("failed to open sql db: %v", err)

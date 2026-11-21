@@ -53,6 +53,7 @@ func TestAPIKeyRetirement_PostgresBarrierWorksWithAndWithoutLegacyColumn(t *test
 	_, err = tx.ExecContext(ctx, `INSERT INTO api_keys (id) VALUES (1)`)
 	require.NoError(t, err)
 	require.NoError(t, requireStandardUsageBillingAPIKey(ctx, tx, 1), "fresh schema has no retired discriminator")
+	require.NoError(t, requireStandardUsageBillingBatchAPIKeys(ctx, tx, []*service.UsageBillingCommand{{APIKeyID: 1}}))
 
 	selector := entsql.Dialect(dialect.Postgres).Select("id").From(entsql.Table("api_keys").As("auth_key"))
 	standardAPIKeyPredicate(selector)
@@ -68,8 +69,14 @@ func TestAPIKeyRetirement_PostgresBarrierWorksWithAndWithoutLegacyColumn(t *test
 	for _, retiredID := range []int64{2, 3} {
 		require.ErrorIs(t, requireStandardUsageBillingAPIKey(ctx, tx, retiredID), service.ErrAPIKeyNotFound,
 			"active and soft-deleted retired keys must both remain isolated from owner funds")
+		require.ErrorIs(t, requireStandardUsageBillingBatchAPIKeys(ctx, tx, []*service.UsageBillingCommand{
+			{APIKeyID: 1}, {APIKeyID: retiredID},
+		}), service.ErrAPIKeyNotFound, "the batch path must preserve the same retirement barrier")
 	}
 	require.NoError(t, requireStandardUsageBillingAPIKey(ctx, tx, 4), "ordinary in-flight usage still settles after soft deletion")
+	require.NoError(t, requireStandardUsageBillingBatchAPIKeys(ctx, tx, []*service.UsageBillingCommand{
+		{APIKeyID: 4}, {APIKeyID: 1}, {APIKeyID: 99},
+	}), "ordinary soft-deleted and missing keys match the existing single-command semantics")
 
 	rows, err := tx.QueryContext(ctx, query, args...)
 	require.NoError(t, err)

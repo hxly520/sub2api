@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 )
 
 const usageBillingKeyTypeSQL = `(?s)SELECT COALESCE\(to_jsonb\(api_keys\)->>'key_type', 'standard'\)\s+FROM api_keys\s+WHERE id = \$1\s+FOR KEY SHARE`
+const usageBillingBatchKeyTypeSQL = `(?s)SELECT COALESCE\(to_jsonb\(api_keys\)->>'key_type', 'standard'\)\s+FROM api_keys\s+WHERE id = ANY\(\$1::bigint\[\]\)\s+ORDER BY id\s+FOR KEY SHARE`
 
 func TestStandardAPIKeyPredicate_ReadsOptionalRetiredColumnWithoutSelectingIt(t *testing.T) {
 	for _, alias := range []string{"", "auth_key"} {
@@ -107,6 +109,46 @@ func TestUsageBillingApply_KeyClassificationReadErrorFailsClosed(t *testing.T) {
 	})
 	require.Nil(t, result)
 	require.ErrorIs(t, err, sql.ErrConnDone)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageBillingApplyBatch_RetirementBarrierRunsBeforeDedupAndOwnerBalance(t *testing.T) {
+	for _, expectedErr := range []error{service.ErrAPIKeyNotFound, sql.ErrConnDone} {
+		t.Run(expectedErr.Error(), func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			mock.ExpectBegin()
+			query := mock.ExpectQuery(usageBillingBatchKeyTypeSQL).WithArgs("{7,8}")
+			if errors.Is(expectedErr, sql.ErrConnDone) {
+				query.WillReturnError(sql.ErrConnDone)
+			} else {
+				query.WillReturnRows(sqlmock.NewRows([]string{"key_type"}).AddRow("standard").AddRow("link"))
+			}
+			mock.ExpectRollback()
+
+			res, err := (&usageBillingRepository{db: db}).ApplyBatch(context.Background(), []*service.UsageBillingCommand{
+				{RequestID: "standard", APIKeyID: 7, UserID: 42, BalanceCost: 1},
+				{RequestID: "retired", APIKeyID: 8, UserID: 42, BalanceCost: 10},
+			})
+			require.Nil(t, res)
+			require.ErrorIs(t, err, expectedErr)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestUsageBillingApplyBatch_RejectsMediaHoldBeforeAnyTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	res, err := (&usageBillingRepository{db: db}).ApplyBatch(context.Background(), []*service.UsageBillingCommand{
+		{RequestID: "ordinary", APIKeyID: 7, UserID: 42, BalanceCost: 1},
+		{RequestID: "media", APIKeyID: 7, UserID: 42, MediaBalanceHoldRequestID: " hold ", MediaBalanceHoldActualCost: 2},
+	})
+	require.Nil(t, res)
+	require.ErrorIs(t, err, errUsageBillingBatchMediaHold)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

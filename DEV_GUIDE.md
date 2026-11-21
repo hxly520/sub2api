@@ -55,7 +55,8 @@ npm install -g pnpm
 
 ### CI 要求
 
-- 后端与独立积分服务的 Go 版本必须同时固定为 **1.27.0**。后端工作流以 `backend/go.mod` 为版本源并硬断言 `go version | grep -q 'go1.27.0'`；积分任务和 `points-image.yml` 以 `points-system/go.mod` 为版本源。升级 Go 时必须同时修改两份 `go.mod`、`backend-ci.yml`（两处）、`release.yml`、`security-scan.yml` 的版本断言，**以及四个 Dockerfile 的 Go 构建镜像**：`Dockerfile` / `deploy/Dockerfile` 的 `ARG GOLANG_IMAGE`、`backend/Dockerfile` 和 `points-system/Dockerfile` 的 `FROM golang:`。Sub2API 镜像使用仓库根目录作为构建上下文；积分镜像固定使用 `points-system/` 作为上下文（`docker build -f points-system/Dockerfile points-system`）。漏改工作流会在版本校验步骤失败；漏改镜像会在对应上下文构建时失败（`go.mod requires go >= X (running Y; GOTOOLCHAIN=local)`）。
+- Go 版本必须是 **1.27.4**：三个 workflow 都用 `go-version-file: backend/go.mod` 取版本，随后硬断言 `go version | grep -q 'go1.27.4'`。升级 Go 时要同时改 `backend/go.mod`、`backend-ci.yml`（两处）、`release.yml`、`security-scan.yml` 里的这句断言，**以及三个 Dockerfile 里的 Go 构建镜像**（`Dockerfile` / `deploy/Dockerfile` 的 `ARG GOLANG_IMAGE`、`backend/Dockerfile` 的 `FROM golang:`）。前者漏了 CI 会在版本校验步骤直接失败；**后者漏了 CI 不会报，而是等到有人用这些 Dockerfile 构建时才失败**（`go.mod requires go >= X (running Y; GOTOOLCHAIN=local)`）。
+- 独立积分服务的 Go 版本由 `points-system/go.mod` 与 `points-system/Dockerfile` 配套固定；只升级 Sub2API 时，不调整积分服务的构建镜像或生产容器。
 - 前端使用 `pnpm install --frozen-lockfile`，必须提交 `pnpm-lock.yaml`
 
 ### 本地测试命令

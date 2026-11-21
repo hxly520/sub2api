@@ -163,7 +163,7 @@ func TestReadRequestBodyWithPrealloc_RespectsIdentityEncoding(t *testing.T) {
 	}
 }
 
-func TestReadLenientJSONRequestBodyWithPrealloc_RecoversCompleteDeclaredBodyAfterTransportError(t *testing.T) {
+func TestReadLenientJSONRequestBodyWithPrealloc_RejectsCompleteDeclaredBodyAfterTransportError(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "/v1/responses", nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
@@ -172,15 +172,12 @@ func TestReadLenientJSONRequestBodyWithPrealloc_RecoversCompleteDeclaredBodyAfte
 	req.ContentLength = int64(len(samplePayload))
 
 	got, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1<<20)
-	if err != nil {
-		t.Fatalf("expected complete JSON recovery, got %v", err)
-	}
-	if string(got) != samplePayload {
-		t.Fatalf("body mismatch: got %q", got)
+	if !errors.Is(err, io.ErrUnexpectedEOF) || got != nil {
+		t.Fatalf("expected transport failure with no usable body, got %d bytes and %v", len(got), err)
 	}
 }
 
-func TestReadLenientJSONRequestBodyWithPrealloc_RecoversCompleteDeclaredCompressedFrameAfterTransportError(t *testing.T) {
+func TestReadLenientJSONRequestBodyWithPrealloc_RejectsCompleteDeclaredCompressedFrameAfterTransportError(t *testing.T) {
 	enc, _ := zstd.NewWriter(nil)
 	compressed := enc.EncodeAll([]byte(samplePayload), nil)
 	_ = enc.Close()
@@ -194,14 +191,8 @@ func TestReadLenientJSONRequestBodyWithPrealloc_RecoversCompleteDeclaredCompress
 	req.Header.Set("Content-Encoding", "zstd")
 
 	got, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1<<20)
-	if err != nil {
-		t.Fatalf("expected complete compressed JSON recovery, got %v", err)
-	}
-	if string(got) != samplePayload {
-		t.Fatalf("body mismatch: got %q", got)
-	}
-	if req.Header.Get("Content-Encoding") != "" {
-		t.Fatal("Content-Encoding should be cleared after recovery")
+	if !errors.Is(err, io.ErrUnexpectedEOF) || got != nil {
+		t.Fatalf("expected transport failure with no usable body, got %d bytes and %v", len(got), err)
 	}
 }
 
@@ -232,7 +223,7 @@ func TestReadLenientJSONRequestBodyWithPrealloc_RejectsTruncatedJSONAfterInterru
 	if err == nil {
 		t.Fatal("expected interrupted truncated body to fail")
 	}
-	if !IsInterruptedRequestBodyError(err) {
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected interrupted error classification, got %v", err)
 	}
 	var detail *RequestBodyReadError
@@ -258,31 +249,5 @@ func TestReadLenientJSONRequestBodyWithPrealloc_DoesNotRecoverMaxBytesError(t *t
 	var maxErr *http.MaxBytesError
 	if !errors.As(err, &maxErr) {
 		t.Fatalf("expected MaxBytesError, got %T: %v", err, err)
-	}
-}
-
-func TestIsInterruptedRequestBodyError_DoesNotMisclassifyDecodeFailure(t *testing.T) {
-	err := &RequestBodyReadError{
-		Stage: RequestBodyReadStageDecode,
-		Err:   io.ErrUnexpectedEOF,
-	}
-	if IsInterruptedRequestBodyError(err) {
-		t.Fatal("decode-stage unexpected EOF must not be classified as a transport interruption")
-	}
-}
-
-func TestReadDecompressedRequestBodyRejectsTruncationAtLimit(t *testing.T) {
-	t.Parallel()
-
-	body, err := readDecompressedRequestBody(strings.NewReader(`{"ok":true}`), 4)
-	if body != nil {
-		t.Fatalf("expected no truncated body, got %q", body)
-	}
-	var maxErr *http.MaxBytesError
-	if !errors.As(err, &maxErr) {
-		t.Fatalf("expected MaxBytesError, got %T: %v", err, err)
-	}
-	if maxErr.Limit != 4 {
-		t.Fatalf("MaxBytesError.Limit = %d, want 4", maxErr.Limit)
 	}
 }

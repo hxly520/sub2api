@@ -2,9 +2,11 @@
 
 本文档是本私有分支的维护入口。它记录官方 Sub2API 之外的兼容扩展、代码入口、不可破坏约束和升级流程，供后续维护者在合并官方新版本时使用。
 
-> **已发布镜像与生产边界（2026-10-24）**：`v0.2.18-52t.1` 已发布并仅缓存服务器；提链/额度卡已从该发布源码移除，但生产仍 `0.2.15-52t.1`，没有因发布或缓存而停用旧入口，尚未完成新版本生产业务验收。历史接口、配置、账本和回滚步骤仅留审计，不作为恢复旧产品的指令；`194_link_cards.sql` 原文件/checksum/历史保留，runner 精确跳过，历史 Key 和非用户资金媒体冻结不得回落普通余额。
+> **本轮升级（2026-11-21）**：官方 `v0.2.24` → 私有 `v0.2.24-52t.1`。提链与额度卡继续移除，只留历史资金与迁移审计；积分、媒体/视频、TTFT、Codex 响应头保护、KeyingPay V2、首页与帮助均保留。官方网关、计费、缓存、重试和调度优先。测试、发布、镜像和生产只读证据以[升级交接](RELEASE_V0_2_24_52T_1_CN.md)为准。
 
-### 当前已发布候选与生产状态（2026-10-24）
+> **历史发布与生产边界（2026-10-24）**：`v0.2.18-52t.1` 已发布并仅缓存服务器；提链/额度卡已从该发布源码移除，但当时生产仍 `0.2.15-52t.1`，没有因发布或缓存而停用旧入口，尚未完成新版本生产业务验收。历史接口、配置、账本和回滚步骤仅留审计，不作为恢复旧产品的指令；`194_link_cards.sql` 原文件/checksum/历史保留，runner 精确跳过，历史 Key 和非用户资金媒体冻结不得回落普通余额。
+
+### 历史发布与生产快照（2026-10-24）
 
 - 官方基线 `v0.2.18`，私有发布 [`v0.2.18-52t.1`](https://github.com/hxly520/sub2api/releases/tag/v0.2.18-52t.1) 已完成；后端与积分构建工具链 Go `1.27.3`，积分业务和生产镜像不变。PR [#17](https://github.com/hxly520/sub2api/pull/17) 已合入 `main`；annotated Tag object 为 `7b92303550f0b645a545f5a2e0a7771fe1396cdd`，发布源码、Tag peeled commit 与双平台 OCI revision 均为 `d16c14b135fe8de25ce73850db51040c1cd8d679`。后续纯文档提交不改变该不可变发布身份。
 - 最终 PR HEAD `1f2b4158bc3c7874b860d47f4cc18ccf3d10b400` 的 [CI 40056021267](https://github.com/hxly520/sub2api/actions/runs/40056021267) 与 [安全扫描 40056021225](https://github.com/hxly520/sub2api/actions/runs/40056021225) 全通过；精确 Tag [Release 40056966532](https://github.com/hxly520/sub2api/actions/runs/40056966532) 18/18 jobs 成功，包含同 Tag 质量/安全与隔离 PostgreSQL 回归。实际 GoReleaser `v2.19.0`，`SIMPLE_RELEASE=false`、`DRY_RUN=false`；五平台归档、checksums 与双架构 GHCR 已回读核验。linux/amd64 归档完整下载校验通过，其余四项 API digest 与 checksums 一致，未宣称全部完整下载。
@@ -16,11 +18,11 @@
 
 自动化维护者应先阅读根目录 [`AGENTS.md`](../AGENTS.md)。候选构建、GitHub Actions、Compose 更新和回退边界见 [`PRIVATE_RELEASE_RUNBOOK_CN.md`](PRIVATE_RELEASE_RUNBOOK_CN.md)；官方版本状态只以 [`OFFICIAL_COMPATIBILITY_HISTORY_CN.md`](OFFICIAL_COMPATIBILITY_HISTORY_CN.md) 为准。当前后台在线更新器采用官方实现，只识别官方 Release，本私有候选不得通过在线热更新安装。
 
-历史 v0.2.15 发布证据（仅代表 2026-10-10 当时状态，不代替本轮 v0.2.18 验证）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 当时已发布并缓存服务器，当时生产仍为 0.2.11-52t.3，等待人工切换；2026-10-24 状态以上方最新核验为准。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
+历史 v0.2.15 发布证据（仅代表 2026-10-10 当时状态，不代替当时 v0.2.18 验证）：前端 377 文件 / 2925 项 Vitest、lint/typecheck/build，后端编译/vet/unit/default 与私有重点回归，积分 test/vet/build 已通过。PR #16 已合入 main；本地与 CI/隔离 PostgreSQL 门禁、安全扫描和 Release 均通过。v0.2.15-52t.1 当时已发布并缓存服务器，当时生产仍为 0.2.11-52t.3，等待人工切换；2026-10-24 状态以上方历史核验为准。Release run 38060183370；镜像源码/Tag/OCI revision 8afa8d339eec95607ccca76386813e1874b53159；manifest sha256:bd08b5ba2f5c6ca527fff280c4b3b27bb93d4415a1f24f70a96172628f1ca948。为修复 CI 已识别的旧依赖漏洞，仅积分构建元数据更新为 Go 1.27.2、x/text 0.42.0 及其 x/sync 0.23.0；积分业务源码和生产容器不变，不发布积分镜像。最终构建/缓存证据见 `docs/RELEASE_V0_2_15_52T_1_CN.md`。
 
 ## 0. 历史已发布候选：v0.2.15-52t.1（已发布并缓存，当时待人工切换）
 
-本节保留 `2026-10-10` 的只读生产基线及 v0.2.15 已发布候选证据，不构成本轮 v0.2.18 的发布证据，也不代表其已切换生产。当前工作树的额度卡移除边界以上方声明为准；后面的 v0.2.11 首轮候选、v0.2.5 与更早版本同样只保留当时证据。
+本节保留 `2026-10-10` 的只读生产基线及 v0.2.15 已发布候选证据，不构成当时 v0.2.18 的发布证据，也不代表其已切换生产。当前工作树的额度卡移除边界以上方声明为准；后面的 v0.2.11 首轮候选、v0.2.5 与更早版本同样只保留当时证据。
 
 | 项目 | 当前记录 |
 | --- | --- |
@@ -39,7 +41,7 @@
 
 ## 0.1 历史首轮候选：v0.2.11-52t.1（当时未发布）
 
-本节保留 v0.2.11 `.1` 首轮验证阶段的记录，其 pending 与生产基线仅代表当时状态。当前生产已是 `.3`，本轮 v0.2.15 的门禁不得引用此处旧测试作为替代。
+本节保留 v0.2.11 `.1` 首轮验证阶段的记录，其 pending 与生产基线仅代表当时状态。后续曾切换到 `.3`；任何升级门禁均不得用此处旧测试替代。
 
 | 项目 | 当前记录 |
 | --- | --- |
@@ -61,14 +63,14 @@
 | --- | --- |
 | 官方基线 | 官方 `v0.2.5`；annotated tag object `4af0e80db1b0bc7626dfb8fb76ccaffc6bb0dc17`，peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`；tag 树内 `VERSION=0.2.4`；额外精确回移官方 `611c30f04` 的 grpc 安全修复 |
 | 私有候选 | `v0.2.5-52t.1`；发布源码提交、annotated Tag peeled commit 与 OCI revision 均为 `58d2b2f85f34fc11c103437b21945dae248ffe2a`；Release run `35237673572` 全绿 |
-| 历史生产基线 | 后续曾切换到 `v0.2.5-52t.1`；v0.2.11 首轮候选阶段只读确认运行该镜像。当前运行版本以第 0 节为准 |
+| 历史生产基线 | 后续曾切换到 `v0.2.5-52t.1`；v0.2.11 首轮候选阶段只读确认运行该镜像。本轮运行版本待只读核验，不以历史章节为准 |
 | 官方优先边界 | 网关、协议转换、重试、计费、缓存和账号调度采用当时官方 `v0.2.5` 实现；不得恢复旧私有广泛重放、计费旁路或并行网关 |
 | 当时保留范围（非当前候选） | 积分系统；提链/额度卡；图片媒体冻结、释放与核销；视频；真实 TTFT/首字 Token 优化；Codex `x-codex-turn-state` 单值 `48 KiB` 保护；当前首页和帮助页 |
 | 数据库迁移 | 官方 `235_group_model_allowlist.sql`、`236_group_model_allowlist_repair.sql`、`237_add_minimax_platform.sql` 和两份 `238_*` 与私有 `173-179`、`192-194` 按完整文件名和 checksum 共存；同号文件不得覆盖、改名、合并或按数字前缀去重 |
 | 发布方式 | 固定为 `image-update-required`，本轮必须由维护者在备份与回滚点确认后手工执行 Compose；后台热更新不适用 |
 | 验证与产物 | 冲突解析、Wire/Ent 重生成、本地全量门禁、积分 PostgreSQL 集成、macOS 部署脚本、GitHub Actions、Release、双架构镜像 digest/OCI revision 与服务器缓存：completed；数据库备份、维护者人工 Compose 切换与生产冒烟：`pending` |
 
-当前 API Key 认证快照常量为 `v25`（额度卡退役屏障；拒绝复用旧 v24 快照并强制回源标准 Key 查询）。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
+当前 API Key 认证快照常量为 `v29`，在官方 v28 字段基础上保留额度卡退役屏障；旧快照失效后回源标准 Key 查询。它完整保留历史私有 `v21` 的长上下文和逐模型价格字段，并继续携带官方后续加入的免费 Fast、Codex 模型清单及 `model_allowlist`；旧版本快照只会失效并从数据库回源重建，不需要手工清空 Redis。
 
 发布证据固定为 PR `#13`、Release run `35237673572`、Release `v0.2.5-52t.1` 和 GHCR manifest `sha256:c6c6f534fa1aa6d2e396961b0351e3ee95c2bc549fb2da5b3b878653498d1f26`；amd64/arm64 manifest 分别为 `sha256:10502066ddb8880fde154cd026e265800c2207aafe3af19c5281609fab05ab1d`、`sha256:5487351ede4bc029d7e6efc2dc3f044d228b425252728f91a3014e2b2c968b05`。服务器缓存不等于生产切换，不能用构建或拉取证据代替备份、人工 Compose 切换和生产冒烟。版本升级只允许在官方核心路径外接入上述明确保留模块，所有冲突均先恢复官方语义，再以最小适配点接回私有产品契约。
 
@@ -111,7 +113,7 @@
 | `2ad2815e` | 首个 v0.1.168 生产镜像 | 由维护者手工切换；包含媒体核销、积分桥接和同库积分服务契约 |
 | `339422728` | 积分管理入口与余额桥接加固 | 管理员入口不受用户开关限制；增加 step-up、缓存代次/CAS、credit 重试和 fail-close 限流；历史 v0.1.168 生产 revision |
 | `c0fe91506` | 中文积分双工作区 | 用户/管理员页面与脚本分离、用户关闭态二次校验、7/30/90 日趋势和用户响应脱敏；历史积分生产节点 |
-| `d6b367f31` | 历史积分激活与容量错误精确重试 | 增加一次性历史回算、启用策略门禁，以及仅针对精确容量拒绝文案的有界文本重试；当前 Sub2API 候选必须保留 |
+| `d6b367f31` | 历史积分激活与容量错误精确重试 | 增加一次性历史回算、启用策略门禁，以及仅针对精确容量拒绝文案的历史有界文本重试；当前网关遵循官方重试机制 |
 | `28e760bc8` | 积分用户明细与签到发放任务收敛 | 管理员全站用户积分明细；删除积分侧手工赠送和快照刷新入口，发放任务只处理签到奖励；历史生产积分 revision |
 | `874255bcd` | 嵌入式积分大屏优化 | 用户大屏、管理员紧凑工作区、中文结算状态和嵌入式布局优化；历史视觉基线，已由 `7e50f9aa9/e39c78bf8` 演进 |
 | `1e33e7f7a` | v0.1.169 升级前二开收口 | 历史用户名积分展示与最小 ACL、软删除会话失效、双工作区/首页视觉、跨协议终态和客户端断连有限排空；当前展示契约已演进为登录邮箱 |
@@ -149,7 +151,7 @@
 | 提示词归属 | OpenAI APIKey 账号可显式开启 `extra.openai_upstream_relay`。开启后不再由平台重复注入默认 Codex 基础提示词；客户端显式 `instructions` 原样保留，上游内部提示词由上游负责。默认关闭，维持官方兼容行为 | `backend/internal/service/account.go`、`openai_gateway_forward.go`、账号创建/编辑前端 | `account_openai_passthrough_test.go`、`openai_gateway_service_hotpath_test.go`、账号前端测试 |
 | Chat/Responses/Anthropic 工具流 | 保留 function/custom/freeform 工具、工具顺序归一、call id、thinking 和 terminal 事件 | `backend/internal/pkg/apicompat/`、`backend/internal/service/openai_gateway_*` | `chatcompletions_responses_bridge_*`、`openai_gateway_*_test.go` |
 | 跨协议流终态与断流保护 | Responses、原生 Chat、Anthropic 转 Chat、Gemini 转 Chat/Messages、Responses WS v2 和 WS-to-HTTP bridge 只有收到各自正式成功终态才可成功；EOF、读取错误、上游 SSE/WebSocket error 和缺终态不能静默返回成功 | `backend/internal/service/openai_gateway_response_handling.go`、`openai_gateway_chat_completions*.go`、`gateway_forward_as_chat_completions.go`、`gemini_*_compat_service.go`、`openai_ws_http_bridge.go`、`openai_ws_v2/` 及对应 handler | `openai_gateway_chat_completions*_test.go`、`gateway_forward_as_chat_completions_test.go`、`gemini_*_compat_service_test.go`、`openai_ws_*_test.go` |
-| 官方网关/计费/重试基线 | OpenAI Responses、Chat、Anthropic、Gemini、WS 转发、usage 结算和账号故障切换优先沿用当前官方候选 `v0.2.15` 入口；私有广泛请求重放与首响应故障切换旁路不再覆盖官方语义 | `backend/internal/handler/openai_gateway_handler.go`、`openai_chat_completions.go`、`backend/internal/service/openai_gateway_forward.go`、`openai_gateway_response_handling.go` | Responses/Chat/WS、计费和 failover 定向回归；当前候选本地门禁按第 0 节记录，远端 CI 和生产切换不得预写完成 |
+| 官方网关/计费/重试基线 | OpenAI Responses、Chat、Anthropic、Gemini、WS 转发、usage 结算和账号故障切换优先沿用当前官方候选 `v0.2.24` 入口；私有广泛请求重放与首响应故障切换旁路不再覆盖官方语义 | `backend/internal/handler/openai_gateway_handler.go`、`openai_chat_completions.go`、`backend/internal/service/openai_gateway_forward.go`、`openai_gateway_response_handling.go` | Responses/Chat/WS、计费和 failover 定向回归；当前候选本地门禁按本轮升级交接记录，远端 CI 和生产切换不得预写完成 |
 | Codex turn-state 头部保护 | `x-codex-turn-state` 经过 trim 和单值 `48 KiB` 上限校验；空值或超限值被丢弃。Nginx API 示例使用 `128k` 响应头缓冲，避免合法上限被边缘层截断 | `backend/internal/service/openai_codex_turn_state.go`、`deploy/nginx/api.52token.org.conf.example`、`deploy/EDGE_SECURITY.md` | `openai_codex_turn_state_test.go`、Nginx 配置静态检查 |
 | OpenAI-compatible 账号 | 支持精确 Chat Completions URL、Responses/Chat 模式和可配置认证头 | `backend/internal/service/openai_compatible_auth.go`、账号配置与各 OpenAI 转发服务 | 账号探测、模型同步、Chat/Responses/Embeddings/Images 回归 |
 | Codex 模型清单 | 带 `client_version` 的请求优先使用同组 OAuth/Setup Token 获取 ChatGPT manifest；APIKey 账号按官方代理路径获取并复用缓存、ETag 与 singleflight。APIKey-only 分组全部失败时返回合法空远程清单，由 Codex 合并内置目录；OAuth 凭据损坏仍报错 | `backend/internal/service/openai_codex_models_service.go`、`handler/openai_codex_models_handler.go` | `openai_codex_models_service_test.go`、`openai_codex_models_handler_test.go`、`gateway_codex_models_test.go` |
@@ -178,7 +180,7 @@
 
 不得将“还没收到首字”视为“请求没有被上游接受”。文本请求的错误切换策略必须区分确定拒绝与状态不明；媒体创建一律使用更保守的边界。高级调度开关关闭时，新会话回到官方兼容选择流程；独立的 `sticky_escape_enabled` 只允许上述有充分成功样本且可原子改绑的性能迁移，关闭该配置即可恢复硬粘性。
 
-同一文本请求只有 `401/402/403/404/429` 这类明确拒绝才允许执行最多两次跨账号重放；首响应等待、transport 异常、一般 `5xx/524`、流中断和一般 `response.failed` 都可能已经触发上游计费，不得在同一请求中自动重放。唯一新增例外是上游错误消息去除首尾空白后精确等于 `Selected model is at capacity. Please try a different model.`：该消息被视为生成前的明确容量拒绝，不依赖 HTTP 状态码；HTTP 错误、HTTP 200 内的 `response.failed` 或 SSE `error` 只要尚未向客户端输出任何语义正文，即可复用原请求体执行最多两次重放，并分别等待 `100ms`、`200ms`。调度先选择其他账号；没有其他候选时可在同一账号上使用剩余预算，故单账号组最多为首次请求加两次重放。该请求级错误不得降低账号健康分、写入运行时 block 或触发账号冷却。近似文案、大小写变化、附加前后缀、媒体创建请求及已经输出正文的流均不适用。每次容量重试写入 `openai.model_capacity_retry_scheduled` 结构化日志，但不记录请求正文。pool 上游发生其他故障后，当前请求返回真实错误；下一次客户端重试会在绑定仍指向故障账号时原子解除旧粘性，并在 2 分钟软降权窗口内优先选择健康账号。并发请求已经写入的新绑定不会被旧失败请求删除。软降权只改变排序，不改变 `schedulable`，因此不会造成单账号分组无可用账号。
+文本请求采用官方 v0.2.24 的错误分类、首次输出前故障切换条件及请求级预算；不得照搬历史私有精确容量文案重放、固定等待或自定义降权规则。输出已开始或客户端已断开时，不得为改善 TTFT 或掩盖断流另开上游请求。媒体创建仍遵守独立的一次提交约束。
 
 响应成功不能由 HTTP 200、EOF 或通用 framing 哨兵推断，必须满足当前协议的正式成功终态：Responses 为 `response.completed`/`response.done`；原生 Chat 非流式每个 choice 必须有 `finish_reason`，流式必须观察到 `finish_reason` 和 `[DONE]`；Anthropic 转 Chat 必须收到 `message_stop` 或带 `stop_reason` 的 `message_delta`；Gemini 转 Chat/Messages 与 Gemini native 流必须收到 `finishReason`；Responses WS v2 和 WS-to-HTTP bridge 必须收到正式 Responses 成功终态。`response.failed`、`response.incomplete`、`response.cancelled`/`response.canceled`、Anthropic/Gemini/OpenAI SSE `error` 和 WebSocket `error` 都是显式失败，不得改写为成功。
 
@@ -292,7 +294,7 @@ DROP FUNCTION IF EXISTS public.points_credit_audit_request_body_compat();
 ### 3.8 支付扩展
 
 - 工厂、路由、配置和前端入口：`payment/provider/factory.go`、`server/routes/payment.go`、`handler/payment_webhook_handler.go`、`frontend/src/components/payment/`。
-- 当前支付 provider、订单状态机、路由、配置与回调以本轮官方 `v0.2.15` 实现为基线，并保留 KeyingPay V2（可盈Pay）支付 provider 的最小适配；详见 `deploy/KEYINGPAY_V2.md`。官方充值赠送/折扣上线后必须区分实付金额、余额到账与赠送金额，回调、主动查单和退款复用同一订单事实，不重复加余额、不把赠送当成第三方实付退款。
+- 当前支付 provider、订单状态机、路由、配置与回调以本轮官方 `v0.2.24` 实现为基线，并保留 KeyingPay V2（可盈Pay）支付 provider 的最小适配；详见 `deploy/KEYINGPAY_V2.md`。官方充值赠送/折扣上线后必须区分实付金额、余额到账与赠送金额，回调、主动查单和退款复用同一订单事实，不重复加余额、不把赠送当成第三方实付退款。
 
 支付回调必须验证签名并保持幂等。创建、回调、主动查单、退款、退款查询和关闭订单要复用 Sub2API 原有订单状态机，不能绕过平台订单表直接加余额。
 

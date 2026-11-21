@@ -68,23 +68,37 @@ func TestMediaGenerationFinalizationRestartRecoveryBillsOnce(t *testing.T) {
 	client := testEntClient(t)
 	repo := &usageBillingRepository{db: integrationDB}
 
+	// Billing commits its own transaction, so explicitly clean up rows written
+	// through the shared client instead of leaking a schedulable test account.
 	user := mustCreateUser(t, client, &service.User{
 		Email:        fmt.Sprintf("media-recovery-%s@example.com", uuid.NewString()),
 		PasswordHash: "hash",
 		Balance:      100,
+	})
+	t.Cleanup(func() {
+		require.NoError(t, client.User.DeleteOneID(user.ID).Exec(ctx))
 	})
 	apiKey := mustCreateApiKey(t, client, &service.APIKey{
 		UserID: user.ID,
 		Key:    "sk-media-recovery-" + uuid.NewString(),
 		Name:   "media-recovery",
 	})
+	t.Cleanup(func() {
+		require.NoError(t, client.APIKey.DeleteOneID(apiKey.ID).Exec(ctx))
+	})
 	account := mustCreateAccount(t, client, &service.Account{
 		Name: "media-recovery-" + uuid.NewString(),
 		Type: service.AccountTypeAPIKey,
 	})
+	t.Cleanup(func() {
+		require.NoError(t, client.Account.DeleteOneID(account.ID).Exec(ctx))
+	})
 	taskID := "video-" + uuid.NewString()
 	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM media_generation_tasks WHERE api_key_id = $1", apiKey.ID)
+		_, err := integrationDB.ExecContext(ctx, "DELETE FROM media_generation_tasks WHERE api_key_id = $1", apiKey.ID)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, "DELETE FROM usage_billing_dedup WHERE api_key_id = $1 AND request_id = $2", apiKey.ID, taskID)
+		require.NoError(t, err)
 	})
 	require.NoError(t, repo.CreateMediaGenerationTask(ctx, &service.MediaGenerationTask{
 		TaskID:             taskID,

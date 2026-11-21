@@ -694,6 +694,7 @@ func recordOpenAIImageFinalUsage(
 		UpstreamModel:       upstreamModel,
 		Usage:               statusResult.Usage,
 		Duration:            statusResult.Duration,
+		ImageEndpoint:       true,
 		ImageCount:          statusResult.ImageCount,
 		ImageSize:           strings.TrimSpace(task.SizeTier),
 		ImageInputSize:      strings.TrimSpace(task.Resolution),
